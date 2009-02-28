@@ -76,7 +76,7 @@ __FBSDID("$FreeBSD$");
 #define BOTH    3
 
 static int
-proc_sum(struct proc *p, int *estcpup)
+proc_sum(struct proc *p, fixpt_t *estcpup)
 {
 	struct thread *td;
 	int estcpu;
@@ -261,7 +261,6 @@ tty_info(struct tty *tp)
 
 	PROC_LOCK(pick);
 	picktd = NULL;
-	td = FIRST_THREAD_IN_PROC(pick);
 	FOREACH_THREAD_IN_PROC(pick, td)
 		if (thread_compare(picktd, td))
 			picktd = td;
@@ -285,6 +284,8 @@ tty_info(struct tty *tp)
 		state = "suspended";
 	else if (TD_AWAITING_INTR(td))
 		state = "intrwait";
+	else if (pick->p_state == PRS_ZOMBIE)
+		state = "zombie";
 	else
 		state = "unknown";
 	pctcpu = (sched_pctcpu(td) * 10000 + FSCALE / 2) >> FSHIFT;
