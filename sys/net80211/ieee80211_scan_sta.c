@@ -32,10 +32,11 @@ __FBSDID("$FreeBSD$");
 #include "opt_wlan.h"
 
 #include <sys/param.h>
-#include <sys/systm.h> 
+#include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/module.h>
- 
+#include <sys/taskqueue.h>
+
 #include <sys/socket.h>
 
 #include <net/if.h>
@@ -1609,7 +1610,7 @@ ap_force_promisc(struct ieee80211com *ic)
 	IEEE80211_LOCK(ic);
 	/* set interface into promiscuous mode */
 	ifp->if_flags |= IFF_PROMISC;
-	ic->ic_update_promisc(ifp);
+	taskqueue_enqueue(ic->ic_tq, &ic->ic_promisc_task);
 	IEEE80211_UNLOCK(ic);
 }
 

@@ -119,6 +119,8 @@ struct ieee80211com {
 	struct callout		ic_inact;	/* inactivity processing */
 	struct taskqueue	*ic_tq;		/* deferred state thread */
 	struct task		ic_parent_task;	/* deferred parent processing */
+	struct task		ic_promisc_task;/* deferred promisc update */
+	struct task		ic_mcast_task;	/* deferred mcast update */
 
 	uint32_t		ic_flags;	/* state flags */
 	uint32_t		ic_flags_ext;	/* extended state flags */

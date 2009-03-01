@@ -624,9 +624,11 @@ ieee80211_syncifflag_locked(struct ieee80211com *ic, int flag)
 		/* XXX should we return 1/0 and let caller do this? */
 		if (ifp->if_drv_flags & IFF_DRV_RUNNING) {
 			if (flag == IFF_PROMISC)
-				ic->ic_update_promisc(ifp);
+				taskqueue_enqueue(ic->ic_tq,
+				    &ic->ic_promisc_task);
 			else if (flag == IFF_ALLMULTI)
-				ic->ic_update_mcast(ifp);
+				taskqueue_enqueue(ic->ic_tq,
+				    &ic->ic_mcast_task);
 		}
 	}
 }
