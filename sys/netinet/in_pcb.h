@@ -106,6 +106,12 @@ struct in_conninfo {
 	/* protocol dependent part */
 	struct	in_endpoints inc_ie;
 };
+
+/*
+ * Flags for inc_flags.
+ */
+#define	INC_ISIPV6	0x01
+
 #define inc_isipv6	inc_flags	/* temp compatability */
 #define	inc_fport	inc_ie.ie_fport
 #define	inc_lport	inc_ie.ie_lport
@@ -154,6 +160,7 @@ struct inpcb {
 	void	*inp_ppcb;		/* (i) pointer to per-protocol pcb */
 	struct	inpcbinfo *inp_pcbinfo;	/* (c) PCB list info */
 	struct	socket *inp_socket;	/* (i) back pointer to socket */
+	struct	ucred	*inp_cred;	/* (c) cache of socket cred */
 	u_int32_t inp_flow;		/* (i) IPv6 flow information */
 	int	inp_flags;		/* (i) generic IP/datagram flags */
 	u_char	inp_vflag;		/* (i) IP version flag (v4/v6) */
@@ -161,8 +168,8 @@ struct inpcb {
 	u_char	inp_ip_p;		/* (c) protocol proto */
 	u_char	inp_ip_minttl;		/* (i) minimum TTL or drop */
 	uint32_t inp_ispare1;		/* (x) connection id / queue id */
-	void	*inp_pspare;		/* (x) rtentry / general use */
-	struct	ucred	*inp_cred;	/* (c) cache of socket cred */
+	u_int	inp_refcount;		/* (i) refcount */
+	void	*inp_pspare[2];		/* (x) rtentry / general use */
 
 	/* Local and foreign ports, local and foreign addr. */
 	struct	in_conninfo inp_inc;	/* (i/p) list for PCB's local port */
@@ -332,11 +339,6 @@ void inp_runlock(struct inpcb *);
 #ifdef INVARIANTS
 void inp_lock_assert(struct inpcb *);
 void inp_unlock_assert(struct inpcb *);
-void inp_wlock_assert(struct inpcb *);
-void inp_wunlock_assert(struct inpcb *);
-void inp_rlock_assert(struct inpcb *);
-void inp_runlock_assert(struct inpcb *);
-
 #else
 static __inline void
 inp_lock_assert(struct inpcb *inp __unused)
@@ -347,27 +349,6 @@ static __inline void
 inp_unlock_assert(struct inpcb *inp __unused)
 {
 }
-
-static __inline void
-inp_wlock_assert(struct inpcb *inp __unused)
-{
-}
-
-static __inline void
-inp_wunlock_assert(struct inpcb *inp __unused)
-{
-}
-
-static __inline void
-inp_rlock_assert(struct inpcb *inp __unused)
-{
-}
-
-static __inline void
-inp_runlock_assert(struct inpcb *inp __unused)
-{
-}
-
 
 #endif
 
@@ -430,6 +411,8 @@ void 	inp_4tuple_get(struct inpcb *inp, uint32_t *laddr, uint16_t *lp,
 #define	INP_FAITH		0x200	/* accept FAITH'ed connections */
 #define	INP_RECVTTL		0x400	/* receive incoming IP TTL */
 #define	INP_DONTFRAG		0x800	/* don't fragment packet */
+#define	INP_NONLOCALOK		0x1000	/* Allow bind to spoof any address */
+					/* - requires options IP_NONLOCALBIND */
 
 #define IN6P_IPV6_V6ONLY	0x008000 /* restrict AF_INET6 socket for v6 */
 
@@ -460,7 +443,7 @@ void 	inp_4tuple_get(struct inpcb *inp, uint32_t *laddr, uint16_t *lp,
 #define	IN6P_RECVIF		INP_RECVIF
 #define	IN6P_MTUDISC		INP_MTUDISC
 #define	IN6P_FAITH		INP_FAITH
-#define	IN6P_CONTROLOPTS INP_CONTROLOPTS
+#define	IN6P_CONTROLOPTS	INP_CONTROLOPTS
 	/*
 	 * socket AF version is {newer than,or include}
 	 * actual datagram AF version
@@ -475,6 +458,7 @@ void 	inp_4tuple_get(struct inpcb *inp, uint32_t *laddr, uint16_t *lp,
 #define	INP_CHECK_SOCKAF(so, af)	(INP_SOCKAF(so) == af)
 
 #ifdef _KERNEL
+#ifdef VIMAGE_GLOBALS
 extern int	ipport_reservedhigh;
 extern int	ipport_reservedlow;
 extern int	ipport_lowfirstauto;
@@ -483,6 +467,12 @@ extern int	ipport_firstauto;
 extern int	ipport_lastauto;
 extern int	ipport_hifirstauto;
 extern int	ipport_hilastauto;
+extern int	ipport_randomized;
+extern int	ipport_randomcps;
+extern int	ipport_randomtime;
+extern int	ipport_stoprandom;
+extern int	ipport_tcpallocs;
+#endif
 extern struct callout ipport_tick_callout;
 
 void	in_pcbpurgeif0(struct inpcbinfo *, struct ifnet *);
@@ -507,7 +497,9 @@ struct inpcb *
 	    struct in_addr, u_int, int, struct ifnet *);
 void	in_pcbnotifyall(struct inpcbinfo *pcbinfo, struct in_addr,
 	    int, struct inpcb *(*)(struct inpcb *, int));
+void	in_pcbref(struct inpcb *);
 void	in_pcbrehash(struct inpcb *);
+int	in_pcbrele(struct inpcb *);
 void	in_pcbsetsolabel(struct socket *so);
 int	in_getpeeraddr(struct socket *so, struct sockaddr **nam);
 int	in_getsockaddr(struct socket *so, struct sockaddr **nam);

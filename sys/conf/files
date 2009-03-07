@@ -1489,6 +1489,7 @@ kern/subr_acl_posix1e.c		standard
 kern/subr_autoconf.c		standard
 kern/subr_blist.c		standard
 kern/subr_bus.c			standard
+kern/subr_bufring.c		standard
 kern/subr_clock.c		standard
 kern/subr_devstat.c		standard
 kern/subr_disk.c		standard
@@ -1513,6 +1514,7 @@ kern/subr_rman.c		standard
 kern/subr_rtc.c			optional genclock
 kern/subr_sbuf.c		standard
 kern/subr_scanf.c		standard
+kern/kern_rmlock.c		standard
 kern/kern_sdt.c			optional kdtrace_hooks
 kern/subr_sleepqueue.c		standard
 kern/subr_smp.c			standard
@@ -1611,8 +1613,10 @@ libkern/strtoul.c		standard
 libkern/strtouq.c		standard
 libkern/strvalid.c		standard
 net/bpf.c			standard
+net/bpf_buffer.c		optional bpf
 net/bpf_jitter.c		optional bpf_jitter
 net/bpf_filter.c		optional bpf | netgraph_bpf
+net/bpf_zerocopy.c		optional bpf
 net/bridgestp.c			optional bridge | if_bridge
 net/bsd_comp.c			optional ppp_bsdcomp
 net/ieee8023ad_lacp.c		optional lagg
@@ -1635,6 +1639,7 @@ net/if_gre.c			optional gre
 net/if_iso88025subr.c		optional token
 net/if_lagg.c			optional lagg
 net/if_loop.c			optional loop
+net/if_llatbl.c			standard
 net/if_media.c			standard
 net/if_mib.c			standard
 net/if_ppp.c			optional ppp
@@ -1652,6 +1657,7 @@ net/ppp_deflate.c		optional ppp_deflate
 net/ppp_tty.c			optional ppp
 net/pfil.c			optional ether | inet
 net/radix.c			standard
+net/radix_mpath.c		standard
 net/raw_cb.c			standard
 net/raw_usrreq.c		standard
 net/route.c			standard

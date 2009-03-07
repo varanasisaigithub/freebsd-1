@@ -56,7 +56,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/smp.h>
 #include <ddb/ddb.h>
 
-static struct pcpu *cpuid_to_pcpu[MAXCPU];
+struct pcpu *cpuid_to_pcpu[MAXCPU];
 struct cpuhead cpuhead = SLIST_HEAD_INITIALIZER(cpuhead);
 
 /*

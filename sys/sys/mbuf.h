@@ -237,11 +237,13 @@ struct mbuf {
 #define	CSUM_IP_FRAGS		0x0008		/* will csum IP fragments */
 #define	CSUM_FRAGMENT		0x0010		/* will do IP fragmentation */
 #define	CSUM_TSO		0x0020		/* will do TSO */
+#define	CSUM_SCTP		0x0040		/* will csum SCTP */
 
 #define	CSUM_IP_CHECKED		0x0100		/* did csum IP */
 #define	CSUM_IP_VALID		0x0200		/*   ... the csum is valid */
 #define	CSUM_DATA_VALID		0x0400		/* csum_data field is valid */
 #define	CSUM_PSEUDO_HDR		0x0800		/* csum_data has pseudo hdr */
+#define	CSUM_SCTP_VALID		0x1000		/* SCTP checksum is valid */
 
 #define	CSUM_DELAY_DATA		(CSUM_TCP | CSUM_UDP)
 #define	CSUM_DELAY_IP		(CSUM_IP)	/* XXX add ipv6 here too? */
@@ -972,5 +974,12 @@ m_tag_find(struct mbuf *m, int type, struct m_tag *start)
 } while (0) 
 
 #endif /* _KERNEL */
+
+#ifdef MBUF_PROFILING
+ void m_profile(struct mbuf *m);
+ #define M_PROFILE(m) m_profile(m)
+#else
+ #define M_PROFILE(m)
+#endif
 
 #endif /* !_SYS_MBUF_H_ */
