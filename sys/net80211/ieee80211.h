@@ -696,6 +696,36 @@ enum {
 	IEEE80211_ELEMID_TPC		= 150,
 	IEEE80211_ELEMID_CCKM		= 156,
 	IEEE80211_ELEMID_VENDOR		= 221,	/* vendor private */
+
+	/*
+	 * XXXRP: new IEs for 11s. Keep them compatible with Linux until
+	 * ANA defines new ones.
+	 */
+	IEEE80211_ELEMID_MESHCONF	= 33,
+	IEEE80211_ELEMID_MESHID		= 34,
+	IEEE80211_ELEMID_MESHLINK	= 35,
+	IEEE80211_ELEMID_MESHCNGST	= 36,
+	IEEE80211_ELEMID_MESHPEER	= 37,
+	IEEE80211_ELEMID_MESHCSA	= 38,
+	IEEE80211_ELEMID_MESHTIM	= 39,
+	IEEE80211_ELEMID_MESHAWAKEW	= 40,
+	IEEE80211_ELEMID_MESHBEACONT	= 41,
+	IEEE80211_ELEMID_MESHTIMINGINFO	= 42,
+	IEEE80211_ELEMID_MESHSYNCPROTO	= 43,
+	IEEE80211_ELEMID_MESHDAOPSREQ	= 44, /* MDAOP Setup Request */
+	IEEE80211_ELEMID_MESHDAOPSREPLY = 45, /* MDAOP Setup Request */
+	IEEE80211_ELEMID_MESHDAOPADV	= 46, /* MDAOP Advertisements */
+	IEEE80211_ELEMID_MESHDAOPST	= 47, /* MDAOP Set Teardown */
+	IEEE80211_ELEMID_MESHPANN	= 48,
+	IEEE80211_ELEMID_MESHRANN	= 49,
+	IEEE80211_ELEMID_MESHPREQ	= 50,
+	IEEE80211_ELEMID_MESHPREP	= 51,
+	IEEE80211_ELEMID_MESHPERR	= 52,
+	IEEE80211_ELEMID_MESHPU		= 53,
+	IEEE80211_ELEMID_MESHPUC	= 54,
+	IEEE80211_ELEMID_MESHSC		= 55,
+	IEEE80211_ELEMID_MESHSA		= 56,
+	IEEE80211_ELEMID_MESHACT	= 57, /* Anti-Clogging Token */
 };
 
 struct ieee80211_tim_ie {
@@ -731,6 +761,253 @@ struct ieee80211_csa_ie {
 	uint8_t		csa_mode;		/* Channel Switch Mode */
 	uint8_t		csa_newchan;		/* New Channel Number */
 	uint8_t		csa_count;		/* Channel Switch Count */
+} __packed;
+
+/*
+ * 802.11s Information Elements.
+ */
+/* Mesh Configuration */
+struct ieee80211_meshconf_ie {
+	uint8_t		conf_ie;	/* IEEE80211_ELEMID_MESHCONF */
+	uint8_t		conf_len;
+	uint8_t		conf_ver;
+	uint32_t	conf_apspi;	/* Active Path Sel. Proto. ID */
+	uint32_t	conf_apsmi;	/* APS Metric Identifier */
+	uint32_t	conf_ccmi;	/* Congestion Control Mode ID  */
+	uint8_t		conf_meshinfo;
+	uint8_t		conf_meshcap;
+} __packed;
+
+/* Mesh Identifier */
+struct ieee80211_meshid_ie {
+	uint8_t		id_ie;		/* IEEE80211_ELEMID_MESHID */
+	uint8_t		id_len;
+} __packed;
+
+#define	IEEE80211_MESHID_MAX_SIZE \
+	(sizeof(struct ieee80211_meshid_ie) + 32)
+
+/* Link Metric Report */
+struct ieee80211_meshlink_ie {
+	uint8_t		link_ie;	/* IEEE80211_ELEMID_MESHLINK */
+	uint8_t		link_len;
+	/* XXXRP: missing  variable metric */
+} __packed;
+
+/* Congestion Notification */
+struct ieee80211_meshcngst_ie {
+	uint8_t		cngst_ie;	/* IEEE80211_ELEMID_MESHCNGST */
+	uint8_t		cngst_len;
+	uint16_t	cngst_timer[4];	/* Expiration Timers: AC_BK,
+					   AC_BE, AC_VI, AC_VO */
+} __packed;
+
+/* Peer Link Management */
+struct ieee80211_meshpeer_ie {
+	uint8_t		peer_ie;	/* IEEE80211_ELEMID_MESHPEER */
+	uint8_t		peer_len;
+	uint8_t		peer_subtype;
+	uint16_t	peer_llinkid;	/* Local Link ID */
+	uint16_t	peer_linkid;	/* Peer Link ID */
+	uint16_t	peer_rcode;
+} __packed;
+
+enum {
+	IEEE80211_MESH_PEER_LINK_OPEN		= 0,
+	IEEE80211_MESH_PEER_LINK_CONFIRM	= 1,
+	IEEE80211_MESH_PEER_LINK_CLOSE		= 2,
+	/* values 3-255 are reserved */
+};
+
+/* Mesh Channel Switch Annoucement */
+struct ieee80211_meshcsa_ie {
+	uint8_t		csa_ie;		/* IEEE80211_ELEMID_MESHCSA */
+	uint8_t		csa_len;
+	uint8_t		csa_mode;
+	uint8_t		csa_newclass;	/* New Regulatory Class */
+	uint8_t		csa_newchan;
+	uint8_t		csa_precvalue;	/* Precedence Value */
+	uint8_t		csa_count;
+} __packed;
+
+/* XXXRP: this is equal to the non mesh version. Should we simplify ? */
+/* Mesh TIM */
+struct ieee80211_meshtim_ie {
+	uint8_t		tim_ie;			/* IEEE80211_ELEMID_MESHTIM */
+	uint8_t		tim_len;
+	uint8_t		tim_count;		/* DTIM count */
+	uint8_t		tim_period;		/* DTIM period */
+	uint8_t		tim_bitctl;		/* bitmap control */
+	uint8_t		tim_bitmap[1];		/* variable-length bitmap */
+} __packed;
+
+/* Mesh Awake Window */
+struct ieee80211_meshawakew_ie {
+	uint8_t		awakew_ie;		/* IEEE80211_ELEMID_MESHAWAKEW */
+	uint8_t		awakew_len;
+	uint8_t		awakew_windowlen;	/* in TUs */
+} __packed;
+
+/* Mesh Beacon Timing */
+struct ieee80211_meshbeacont_ie {
+	uint8_t		beacont_ie;		/* IEEE80211_ELEMID_MESHBEACONT */
+	uint8_t		beacont_len;
+	struct {
+		uint8_t		mp_aid;		/* Least Octet of AID */
+		uint16_t	mp_btime;	/* Beacon Time */
+		uint16_t	mp_bint;	/* Beacon Interval */
+	} mp[1] __packed;			/* NB: variable size */
+} __packed;
+
+/* Mesh Timing Info */
+struct ieee80211_meshtinfo_ie {
+	uint8_t		tinfo_ie;		/* IEEE80211_ELEMID_MESHTIMINGINFO */
+	uint8_t		tinfo_len;
+	uint8_t		tinfo_field;
+} __packed;
+
+#define IEEE80211_MESH_TINFO_BEACON_PARAMS_CHANGED	(1 << 8)
+#define	IEEE80211_MESH_TINFO_MDA_ENABLED		(1 << 7)
+
+/* Synchronization Protocol */
+struct ieee80211_meshsyncproto_ie {
+	uint8_t		syncproto_ie;		/* IEEE80211_ELEMID_MESHSYNCPROTO */
+	uint8_t		syncproto_len;
+	uint32_t	syncproto_id;		/* Sync Protocol ID OUI */
+} __packed;
+
+/* Neighbour Offset Protocol */
+#define IEEE80211_MESH_SYNCPROTO_NEIGHOFFSET_OUI	0x000fac
+#define IEEE80211_MESH_SYNCPROTO_NEIGHOFFSET_VALUE	0
+
+/* MDAOP Setup Request */
+struct ieee80211_meshdaopsreq_ie {
+	uint8_t		daopsreq_ie;		/* IEEE80211_ELEMID_MESHDAOPSREQ */
+	uint8_t		daopsreq_len;
+	uint8_t		daopsreq_setid;
+	uint32_t	daposreq_reserv;	/* MDAOP Reservation */
+} __packed;
+
+/* MDAOP Setup Reply */
+struct ieee80211_meshdaopsrep_ie {
+	uint8_t		daopsrep_ie;		/* IEEE80211_ELEMID_MESHDAOPSREPLY */
+	uint8_t		daopsrep_len;
+	uint8_t		daopsrep_setid;
+	uint8_t		daopsrep_code;		/* Reply Code */
+	uint8_t		daopsrep_reserv;	/* MDAOP Reservation */
+} __packed;
+
+enum {
+	IEEE80211_MESH_DAOP_REPLY_ACCEPT 		= 0,
+	IEEE80211_MESH_DAOP_REPLY_RESERV_CONFLICT	= 1,
+	IEEE80211_MESH_DAOP_REPLY_MAF_LIMIT		= 2,
+	/* everything else is reserved */
+};
+
+/* MDAOP Advertisements */
+/* TBD */
+
+
+/* MDAOP Set Teardown */
+struct ieee80211_meshdaopst_ie {
+        uint8_t         daopsrep_ie;            /* IEEE80211_ELEMID_MESHDAOPSREP */
+        uint8_t         daopsrep_len;
+        uint8_t         daopsrep_setid;
+        uint8_t         daopsrep_setowner[IEEE80211_ADDR_LEN];
+} __packed;
+
+/* Portal (MP) Annoucement */
+struct ieee80211_meshpann_ie {
+	uint8_t		pann_ie;		/* IEEE80211_ELEMID_MESHPANN */
+	uint8_t		pann_len;
+	uint8_t		pann_flags;
+	uint8_t		pann_hopcount;
+	uint8_t		pann_ttl;
+	uint8_t		pann_addr[IEEE80211_ADDR_LEN];
+	uint8_t		pann_seq;		/* PANN Sequence Number */
+} __packed;
+
+/* Root (MP) Annoucement */
+struct ieee80211_meshrann_ie {
+	uint8_t		rann_ie;		/* IEEE80211_ELEMID_MESHRANN */
+	uint8_t		rann_len;
+	uint8_t		rann_flags;
+	uint8_t		rann_hopcount;
+	uint8_t		rann_ttl;
+	uint8_t		rann_addr[IEEE80211_ADDR_LEN];
+	uint32_t	rann_seq;		/* HWMP Sequence Number */		
+	uint32_t	rann_metric;
+} __packed;
+
+/* Mesh Path Request */
+struct ieee80211_meshpreq_ie {
+	uint8_t		preq_ie;	/* IEEE80211_ELEMID_MESHPREQ */
+	uint8_t		preq_len;
+	/* XXXRP: TBD */
+} __packed;
+
+/* Mesh Path Reply */
+struct ieee80211_meshprep_ie {
+	uint8_t		prep_ie;	/* IEEE80211_ELEMID_MESHPREP */
+	uint8_t		prep_len;
+	/* XXXRP: TBD */
+} __packed;
+
+/* Mesh Path Error */
+struct ieee80211_meshperr_ie {
+	uint8_t		perr_ie;	/* IEEE80211_ELEMID_MESHPERR */
+	uint8_t		perr_len;
+	uint8_t		perr_mode;
+	uint8_t		perr_ndests;	/* Number of Destinations */
+	struct {
+		uint8_t		dest_addr[IEEE80211_ADDR_LEN];
+		uint32_t	dest_seq;
+	} dests[1] __packed;		/* NB: variable size */
+} __packed;
+
+/* Mesh Proxy Update */
+struct ieee80211_meshpu_ie {
+	uint8_t		pu_ie;		/* IEEE80211_ELEMID_MESHPU */
+	uint8_t		pu_len;
+	/* XXXRP: TBD */
+} __packed;
+
+/* Mesh Proxy Update Confirmation */
+struct ieee80211_meshpuc_ie {
+	uint8_t		puc_ie;		/* IEEE80211_ELEMID_MESHPUC */
+	uint8_t		puc_len;
+	uint8_t		puc_flags;
+	uint8_t		puc_seq;	/* PU Sequence Number */
+	uint8_t		puc_daddr[IEEE80211_ADDR_LEN];
+} __packed;
+
+/* Mesh Security Capability */
+struct ieee80211_meshsc_ie {
+	uint8_t		sc_ie;		/* IEEE80211_ELEMID_MESHSC */
+	uint8_t		sc_len;
+	uint8_t		sc_mkdid[IEEE80211_ADDR_LEN];	/* MKD Domain ID */
+	uint8_t		sc_sconfig;	/* Security Configuration */
+} __packed;
+
+/* Mesh Security Authentication */
+struct ieee80211_meshsa_ie {
+	uint8_t		sa_ie;		/* IEEE80211_ELEMID_MESHSA */
+	uint8_t		sa_len;
+	uint8_t		sa_handshake;
+	uint8_t		sa_maid[IEEE80211_ADDR_LEN];	/* MA-ID */
+	uint8_t		sa_lmpid[IEEE80211_ADDR_LEN];
+	uint32_t	sa_akm;		/* Selected AKM Suite */
+	uint32_t	sa_pcs;		/* Selected Pairwise Cipher Suite */
+	uint8_t		sa_pmk[16];
+	uint8_t		sa_lnonce[32];
+	uint8_t		sa_pnonce[32];
+	/* XXX more parameters */
+} __packed;
+
+/* Mesh Anti-Clogging Token */
+struct ieee80211_meshact_ie {
+	uint8_t		act_ie;		/* IEEE80211_ELEMID_MESHACT */
+	uint8_t		act_len;
 } __packed;
 
 /*
@@ -892,6 +1169,19 @@ enum {
 	IEEE80211_REASON_BAD_MECHANISM		= 37,	/* 11e */
 	IEEE80211_REASON_SETUP_NEEDED		= 38,	/* 11e */
 	IEEE80211_REASON_TIMEOUT		= 39,	/* 11e */
+	/* values not yet allocated by ANA */
+	IEEE80211_REASON_PEER_LINK_CANCELED	= 2,	/* 11s */
+	IEEE80211_REASON_MESH_MAX_PEERS		= 3,	/* 11s */
+	IEEE80211_REASON_MESH_CAP_POLICY_VIOLATION = 4,	/* 11s */
+	IEEE80211_REASON_MESH_CLOSE_RCVD	= 5,	/* 11s */
+	IEEE80211_REASON_MESH_MAX_RETRIES	= 6,	/* 11s */
+	IEEE80211_REASON_MESH_CONFIRM_TIMEOUT	= 7,	/* 11s */
+	IEEE80211_REASON_MESH_SEC_ROLE_NEG_DIFFERS = 8,	/* 11s */
+	IEEE80211_REASON_MESH_SEC_AUTH_IMPOSSIBLE = 9,	/* 11s */
+	IEEE80211_REASON_MESH_SEC_FAILED_VERIF	= 10,	/* 11s */
+	IEEE80211_REASON_MESH_INVALID_GTK	= 11,	/* 11s */
+	IEEE80211_REASON_MESH_MISMATCH_GTK	= 12,	/* 11s */
+	IEEE80211_REASON_MESH_INCONSISTENT_PARAMS = 13,	/* 11s */
 
 	IEEE80211_STATUS_SUCCESS		= 0,
 	IEEE80211_STATUS_UNSPECIFIED		= 1,
@@ -919,6 +1209,18 @@ enum {
 	IEEE80211_STATUS_UNSUPP_RSN_IE_VERSION	= 44,	/* 11i */
 	IEEE80211_STATUS_INVALID_RSN_IE_CAP	= 45,	/* 11i */
 	IEEE80211_STATUS_CIPHER_SUITE_REJECTED	= 46,	/* 11i */
+	/* values not yet allocated by ANA */
+	IEEE80211_STATUS_PEER_LINK_ESTABLISHED	= 14,	/* 11s */
+	IEEE80211_STATUS_PEER_LINK_CLOSED	= 15,	/* 11s */
+	/* XXXRP: no identifiers for 16-17 */
+	IEEE80211_STATUS_PEER_LINK_MAX_RETRIES	= 18,	/* 11s */
+	IEEE80211_STATUS_PEER_LINK_NO_PMK	= 19,	/* 11s */
+	IEEE80211_STATUS_PEER_LINK_ALT_PMK	= 20,	/* 11s */
+	IEEE80211_STATUS_PEER_LINK_NO_AKM	= 21,	/* 11s */
+	IEEE80211_STATUS_PEER_LINK_ALT_AKM	= 22,	/* 11s */
+	IEEE80211_STATUS_PEER_LINK_NO_KDF	= 23,	/* 11s */
+	IEEE80211_STATUS_PEER_LINK_SA_ESTABLISHED = 24,	/* 11s */
+	/* XXRP: no identifier for 25 */
 };
 
 #define	IEEE80211_WEP_KEYLEN		5	/* 40bit */
