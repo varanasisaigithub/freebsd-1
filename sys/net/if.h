@@ -451,9 +451,4 @@ unsigned int		 if_nametoindex(const char *);
 __END_DECLS
 #endif
 
-#ifdef _KERNEL
-/* XXX - this should go away soon. */
-#include <net/if_var.h>
-#endif
-
 #endif /* !_NET_IF_H_ */

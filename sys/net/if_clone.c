@@ -41,6 +41,7 @@
 #include <sys/socket.h>
 
 #include <net/if.h>
+#include <net/if_var.h>
 #include <net/if_clone.h>
 #if 0
 #include <net/if_dl.h>
