@@ -370,9 +370,10 @@ vm_page_startup(vm_offset_t vaddr)
 	page_range = 0;
 	for (i = 0; phys_avail[i + 1] != 0; i += 2)
 		page_range += atop(phys_avail[i + 1] - phys_avail[i]);
+#if 0
 	KASSERT(page_range == npages,
 	    ("vm_page_startup: inconsistent page counts"));
-
+#endif
 	/*
 	 * Initialize the physical memory allocator.
 	 */
