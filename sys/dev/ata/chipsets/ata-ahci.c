@@ -722,7 +722,7 @@ ata_ahci_reset(device_t dev)
     /* enable FIS based switching */
     //ATA_OUTL(ctlr->r_res2, ATA_AHCI_P_FBS + offset, 0x00000003);
 
-    if (!ata_sata_phy_reset(dev)) {
+    if (!ata_sata_phy_reset(dev, -1, 0)) {
 	if (bootverbose)
 	    device_printf(dev, "AHCI reset done: phy reset found no device\n");
 	ch->devices = 0;
