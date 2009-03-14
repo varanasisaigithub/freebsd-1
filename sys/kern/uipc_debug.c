@@ -330,7 +330,6 @@ db_print_protosw(struct protosw *pr, const char *prname, int indent)
 	db_printf("pr_drain: %p\n", pr->pr_drain);
 
 	db_print_indent(indent);
-	db_printf("pr_ousrreq: %p\n", pr->pr_ousrreq);
 }
 
 static void
