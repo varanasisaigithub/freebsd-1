@@ -307,13 +307,24 @@ ata_pm_identify(device_t dev)
     switch (pm_chipid) {
     case 0x37261095:
 	/* Some of these bogusly reports 6 ports */
-	pm_ports = 5;
-	device_printf(dev, "SiI 3726 r%x Portmultiplier with %d ports\n",
+	device_printf(dev, "SiI 3726 (rev=%x) Port Multiplier with %d (5) ports\n",
 		      pm_revision, pm_ports);
+	pm_ports = 5;
+	break;
+
+    case 0x47261095:
+	/* This PM declares 7 ports, while only 5 of them are real.
+	 * Port 5 is some fake "Config  Disk" with 640 sectors size,
+	 * port 6 is enclosure management bridge port.
+	 * Both fake ports has implementation problems, causing
+	 * probe faults. Hide them for now. */
+	device_printf(dev, "SiI 4726 (rev=%x) Port Multiplier with %d (5) ports\n",
+		      pm_revision, pm_ports);
+	pm_ports = 5;
 	break;
 
     default:
-	device_printf(dev, "Portmultiplier (id=%08x rev=%x) with %d ports\n",
+	device_printf(dev, "Port Multiplier (id=%08x rev=%x) with %d ports\n",
 		      pm_chipid, pm_revision, pm_ports);
     }
 
