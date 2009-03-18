@@ -238,7 +238,7 @@ static driver_t axe_driver = {
 
 static devclass_t axe_devclass;
 
-DRIVER_MODULE(axe, ushub, axe_driver, axe_devclass, NULL, 0);
+DRIVER_MODULE(axe, uhub, axe_driver, axe_devclass, NULL, 0);
 DRIVER_MODULE(miibus, axe, miibus_driver, miibus_devclass, 0, 0);
 MODULE_DEPEND(axe, uether, 1, 1, 1);
 MODULE_DEPEND(axe, usb, 1, 1, 1);
@@ -318,7 +318,7 @@ axe_miibus_writereg(device_t dev, int phy, int reg, int val)
 	struct axe_softc *sc = device_get_softc(dev);
 	int locked;
 
-	val = htole16(val);
+	val = htole32(val);
 
 	if (sc->sc_phyno != phy)
 		return (0);

@@ -130,7 +130,7 @@ static void	ath_start(struct ifnet *);
 static int	ath_reset(struct ifnet *);
 static int	ath_reset_vap(struct ieee80211vap *, u_long);
 static int	ath_media_change(struct ifnet *);
-static void	ath_watchdog(struct ifnet *);
+static void	ath_watchdog(void *);
 static int	ath_ioctl(struct ifnet *, u_long, caddr_t);
 static void	ath_fatal_proc(void *, int);
 static void	ath_bmiss_vap(struct ieee80211vap *);
@@ -225,7 +225,7 @@ static void	ath_tdma_bintvalsetup(struct ath_softc *sc,
 		    const struct ieee80211_tdma_state *tdma);
 static void	ath_tdma_config(struct ath_softc *sc, struct ieee80211vap *vap);
 static void	ath_tdma_update(struct ieee80211_node *ni,
-		    const struct ieee80211_tdma_param *tdma);
+		    const struct ieee80211_tdma_param *tdma, int);
 static void	ath_tdma_beacon_send(struct ath_softc *sc,
 		    struct ieee80211vap *vap);
 
@@ -458,7 +458,8 @@ ath_attach(u_int16_t devid, struct ath_softc *sc)
 		if_printf(ifp, "failed to allocate descriptors: %d\n", error);
 		goto bad;
 	}
-	callout_init(&sc->sc_cal_ch, CALLOUT_MPSAFE);
+	callout_init_mtx(&sc->sc_cal_ch, &sc->sc_mtx, 0);
+	callout_init_mtx(&sc->sc_wd_ch, &sc->sc_mtx, 0);
 
 	ATH_TXBUF_LOCK_INIT(sc);
 
@@ -567,7 +568,7 @@ ath_attach(u_int16_t devid, struct ath_softc *sc)
 	ifp->if_softc = sc;
 	ifp->if_flags = IFF_SIMPLEX | IFF_BROADCAST | IFF_MULTICAST;
 	ifp->if_start = ath_start;
-	ifp->if_watchdog = ath_watchdog;
+	ifp->if_watchdog = NULL;
 	ifp->if_ioctl = ath_ioctl;
 	ifp->if_init = ath_init;
 	IFQ_SET_MAXLEN(&ifp->if_snd, IFQ_MAXLEN);
@@ -1528,6 +1529,7 @@ ath_init(void *arg)
 		sc->sc_imask |= HAL_INT_MIB;
 
 	ifp->if_drv_flags |= IFF_DRV_RUNNING;
+	callout_reset(&sc->sc_wd_ch, hz, ath_watchdog, sc);
 	ath_hal_intrset(ah, sc->sc_imask);
 
 	ATH_UNLOCK(sc);
@@ -1570,8 +1572,9 @@ ath_stop_locked(struct ifnet *ifp)
 		if (sc->sc_tx99 != NULL)
 			sc->sc_tx99->stop(sc->sc_tx99);
 #endif
+		callout_stop(&sc->sc_wd_ch);
+		sc->sc_wd_timer = 0;
 		ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
-		ifp->if_timer = 0;
 		if (!sc->sc_invalid) {
 			if (sc->sc_softled) {
 				callout_stop(&sc->sc_ledtimer);
@@ -2195,7 +2198,7 @@ ath_start(struct ifnet *ifp)
 			goto nextfrag;
 		}
 
-		ifp->if_timer = 5;
+		sc->sc_wd_timer = 5;
 #if 0
 		/*
 		 * Flush stale frames from the fast-frame staging queue.
@@ -5372,7 +5375,7 @@ ath_tx_proc_q0(void *arg, int npending)
 	if (txqactive(sc->sc_ah, sc->sc_cabq->axq_qnum))
 		ath_tx_processq(sc, sc->sc_cabq);
 	ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
-	ifp->if_timer = 0;
+	sc->sc_wd_timer = 0;
 
 	if (sc->sc_softled)
 		ath_led_event(sc, sc->sc_txrix);
@@ -5409,7 +5412,7 @@ ath_tx_proc_q0123(void *arg, int npending)
 		sc->sc_lastrx = ath_hal_gettsf64(sc->sc_ah);
 
 	ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
-	ifp->if_timer = 0;
+	sc->sc_wd_timer = 0;
 
 	if (sc->sc_softled)
 		ath_led_event(sc, sc->sc_txrix);
@@ -5438,7 +5441,7 @@ ath_tx_proc(void *arg, int npending)
 		sc->sc_lastrx = ath_hal_gettsf64(sc->sc_ah);
 
 	ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
-	ifp->if_timer = 0;
+	sc->sc_wd_timer = 0;
 
 	if (sc->sc_softled)
 		ath_led_event(sc, sc->sc_txrix);
@@ -5557,7 +5560,7 @@ ath_draintxq(struct ath_softc *sc)
 	}
 #endif /* ATH_DEBUG */
 	ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
-	ifp->if_timer = 0;
+	sc->sc_wd_timer = 0;
 }
 
 /*
@@ -5902,7 +5905,7 @@ ath_newstate(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
 		ieee80211_state_name[vap->iv_state],
 		ieee80211_state_name[nstate]);
 
-	callout_stop(&sc->sc_cal_ch);
+	callout_drain(&sc->sc_cal_ch);
 	ath_hal_setledstate(ah, leds[nstate]);	/* set LED */
 
 	if (nstate == IEEE80211_S_SCAN) {
@@ -6436,11 +6439,12 @@ ath_printtxbuf(struct ath_softc *sc, const struct ath_buf *bf,
 #endif /* ATH_DEBUG */
 
 static void
-ath_watchdog(struct ifnet *ifp)
+ath_watchdog(void *arg)
 {
-	struct ath_softc *sc = ifp->if_softc;
+	struct ath_softc *sc = arg;
 
-	if ((ifp->if_drv_flags & IFF_DRV_RUNNING) && !sc->sc_invalid) {
+	if (sc->sc_wd_timer != 0 && --sc->sc_wd_timer == 0) {
+		struct ifnet *ifp = sc->sc_ifp;
 		uint32_t hangs;
 
 		if (ath_hal_gethangstate(sc->sc_ah, 0xffff, &hangs) &&
@@ -6453,6 +6457,7 @@ ath_watchdog(struct ifnet *ifp)
 		ifp->if_oerrors++;
 		sc->sc_stats.ast_watchdog++;
 	}
+	callout_schedule(&sc->sc_wd_ch, hz);
 }
 
 #ifdef ATH_DIAGAPI
@@ -6861,6 +6866,22 @@ ath_sysctl_intmit(SYSCTL_HANDLER_ARGS)
 	return !ath_hal_setintmit(sc->sc_ah, intmit) ? EINVAL : 0;
 }
 
+#ifdef ATH_SUPPORT_TDMA
+static int
+ath_sysctl_setcca(SYSCTL_HANDLER_ARGS)
+{
+	struct ath_softc *sc = arg1;
+	int setcca, error;
+
+	setcca = sc->sc_setcca;
+	error = sysctl_handle_int(oidp, &setcca, 0, req);
+	if (error || !req->newptr)
+		return error;
+	sc->sc_setcca = (setcca != 0);
+	return 0;
+}
+#endif /* ATH_SUPPORT_TDMA */
+
 static void
 ath_sysctlattach(struct ath_softc *sc)
 {
@@ -6974,6 +6995,9 @@ ath_sysctlattach(struct ath_softc *sc)
 		SYSCTL_ADD_INT(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
 			"superframe", CTLFLAG_RD, &sc->sc_tdmabintval, 0,
 			"TDMA calculated super frame");
+		SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
+			"setcca", CTLTYPE_INT | CTLFLAG_RW, sc, 0,
+			ath_sysctl_setcca, "I", "enable CCA control");
 	}
 #endif
 }
@@ -7253,7 +7277,7 @@ ath_raw_xmit(struct ieee80211_node *ni, struct mbuf *m,
 		if (ath_tx_raw_start(sc, ni, bf, m, params))
 			goto bad;
 	}
-	ifp->if_timer = 5;
+	sc->sc_wd_timer = 5;
 
 	return 0;
 bad:
@@ -7423,7 +7447,8 @@ ath_tdma_config(struct ath_softc *sc, struct ieee80211vap *vap)
 	ath_hal_intrset(ah, 0);
 
 	ath_beaconq_config(sc);			/* setup h/w beacon q */
-	ath_hal_setcca(ah, AH_FALSE);		/* disable CCA */
+	if (sc->sc_setcca)
+		ath_hal_setcca(ah, AH_FALSE);	/* disable CCA */
 	ath_tdma_bintvalsetup(sc, tdma);	/* calculate beacon interval */
 	ath_tdma_settimers(sc, sc->sc_tdmabintval,
 		sc->sc_tdmabintval | HAL_BEACON_RESET_TSF);
@@ -7452,7 +7477,7 @@ ath_tdma_config(struct ath_softc *sc, struct ieee80211vap *vap)
  */
 static void
 ath_tdma_update(struct ieee80211_node *ni,
-	const struct ieee80211_tdma_param *tdma)
+	const struct ieee80211_tdma_param *tdma, int changed)
 {
 #define	TSF_TO_TU(_h,_l) \
 	((((u_int32_t)(_h)) << 22) | (((u_int32_t)(_l)) >> 10))
@@ -7473,7 +7498,7 @@ ath_tdma_update(struct ieee80211_node *ni,
 	/*
 	 * Check for and adopt configuration changes.
 	 */
-	if (isset(ATH_VAP(vap)->av_boff.bo_flags, IEEE80211_BEACON_TDMA)) {
+	if (changed != 0) {
 		const struct ieee80211_tdma_state *ts = vap->iv_tdma;
 
 		ath_tdma_bintvalsetup(sc, ts);

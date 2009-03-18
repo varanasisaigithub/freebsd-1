@@ -56,6 +56,12 @@ struct pcb {
 	register_t	pcb_fsbase;
 	register_t	pcb_gsbase;
 	u_long		pcb_flags;
+#define	PCB_DBREGS	0x02	/* process using debug registers */
+#define	PCB_FPUINITDONE	0x08	/* fpu state is initialized */
+#define	PCB_GS32BIT	0x20	/* linux gs switch */
+#define	PCB_32BIT	0x40	/* process has 32 bit context (segs etc) */
+#define	PCB_FULLCTX	0x80	/* full context restore on sysret */
+
 	u_int32_t	pcb_ds;
 	u_int32_t	pcb_es;
 	u_int32_t	pcb_fs;
@@ -68,11 +74,7 @@ struct pcb {
 	u_int64_t	pcb_dr7;
 
 	struct	savefpu	pcb_save;
-#define	PCB_DBREGS	0x02	/* process using debug registers */
-#define	PCB_FPUINITDONE	0x08	/* fpu state is initialized */
-#define	PCB_GS32BIT	0x20	/* linux gs switch */
-#define	PCB_32BIT	0x40	/* process has 32 bit context (segs etc) */
-#define	PCB_FULLCTX	0x80	/* full context restore on sysret */
+	uint16_t	pcb_initial_fpucw;
 
 	caddr_t	pcb_onfault;	/* copyin/out fault recovery */
 
@@ -80,11 +82,25 @@ struct pcb {
 	struct user_segment_descriptor	pcb_gs32sd;
 };
 
+struct xpcb {
+	struct pcb	xpcb_pcb;
+	register_t	xpcb_cr0;
+	register_t	xpcb_cr2;
+	register_t	xpcb_cr4;
+	register_t	xpcb_kgsbase;
+	uint32_t	xpcb_ss;
+	struct region_descriptor xpcb_gdt;
+	struct region_descriptor xpcb_idt;
+	struct region_descriptor xpcb_ldt;
+	uint16_t	xpcb_tr;
+};
+
 #ifdef _KERNEL
 struct trapframe;
 
 void	makectx(struct trapframe *, struct pcb *);
 void	savectx(struct pcb *);
+int	savectx2(struct xpcb *);
 #endif
 
 #endif /* _AMD64_PCB_H_ */

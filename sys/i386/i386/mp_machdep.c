@@ -575,7 +575,7 @@ init_secondary(void)
 	cpu_setregs();
 
 	/* set up FPU state on the AP */
-	npxinit(__INITIAL_NPXCW__);
+	npxinit();
 
 	/* set up SSE registers */
 	enable_sse();
@@ -1398,7 +1398,7 @@ sysctl_hyperthreading_allowed(SYSCTL_HANDLER_ARGS)
 #ifdef SCHED_ULE
 	/*
 	 * SCHED_ULE doesn't allow enabling/disabling HT cores at
-	 * run time.
+	 * run-time.
 	 */
 	if (allowed != hyperthreading_allowed)
 		return (ENOTSUP);

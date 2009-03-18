@@ -200,7 +200,8 @@ ulpt_write_callback(struct usb2_xfer *xfer)
 		DPRINTF("no FIFO\n");
 		return;
 	}
-	DPRINTF("state=0x%x\n", USB_GET_STATE(xfer));
+	DPRINTF("state=0x%x actlen=%u\n",
+	    USB_GET_STATE(xfer), xfer->actlen);
 
 	switch (USB_GET_STATE(xfer)) {
 	case USB_ST_TRANSFERRED:
@@ -208,7 +209,6 @@ ulpt_write_callback(struct usb2_xfer *xfer)
 tr_setup:
 		if (usb2_fifo_get_data(f, xfer->frbuffers,
 		    0, xfer->max_data_length, &actlen, 0)) {
-
 			xfer->frlengths[0] = actlen;
 			usb2_start_hardware(xfer);
 		}
@@ -339,7 +339,7 @@ static const struct usb2_config ulpt_config[ULPT_N_TRANSFER] = {
 		.endpoint = UE_ADDR_ANY,
 		.direction = UE_DIR_OUT,
 		.mh.bufsize = ULPT_BSIZE,
-		.mh.flags = {.pipe_bof = 1,.force_short_xfer = 1,.proxy_buffer = 1},
+		.mh.flags = {.pipe_bof = 1,.proxy_buffer = 1},
 		.mh.callback = &ulpt_write_callback,
 	},
 
@@ -636,9 +636,7 @@ ulpt_detach(device_t dev)
 	mtx_unlock(&sc->sc_mtx);
 
 	usb2_transfer_unsetup(sc->sc_xfer, ULPT_N_TRANSFER);
-
 	usb2_callout_drain(&sc->sc_watchdog);
-
 	mtx_destroy(&sc->sc_mtx);
 
 	return (0);
@@ -719,6 +717,6 @@ static driver_t ulpt_driver = {
 	.size = sizeof(struct ulpt_softc),
 };
 
-DRIVER_MODULE(ulpt, ushub, ulpt_driver, ulpt_devclass, NULL, 0);
+DRIVER_MODULE(ulpt, uhub, ulpt_driver, ulpt_devclass, NULL, 0);
 MODULE_DEPEND(ulpt, usb, 1, 1, 1);
 MODULE_DEPEND(ulpt, ucom, 1, 1, 1);

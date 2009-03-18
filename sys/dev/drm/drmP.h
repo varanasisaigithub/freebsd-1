@@ -240,17 +240,23 @@ typedef u_int8_t u8;
 #endif
 
 #define DRM_READ8(map, offset)						\
-	*(volatile u_int8_t *) (((unsigned long)(map)->handle) + (offset))
+	*(volatile u_int8_t *)(((vm_offset_t)(map)->handle) +		\
+	    (vm_offset_t)(offset))
 #define DRM_READ16(map, offset)						\
-	*(volatile u_int16_t *) (((unsigned long)(map)->handle) + (offset))
+	*(volatile u_int16_t *)(((vm_offset_t)(map)->handle) +		\
+	    (vm_offset_t)(offset))
 #define DRM_READ32(map, offset)						\
-	*(volatile u_int32_t *)(((unsigned long)(map)->handle) + (offset))
+	*(volatile u_int32_t *)(((vm_offset_t)(map)->handle) +		\
+	    (vm_offset_t)(offset))
 #define DRM_WRITE8(map, offset, val)					\
-	*(volatile u_int8_t *) (((unsigned long)(map)->handle) + (offset)) = val
+	*(volatile u_int8_t *)(((vm_offset_t)(map)->handle) +		\
+	    (vm_offset_t)(offset)) = val
 #define DRM_WRITE16(map, offset, val)					\
-	*(volatile u_int16_t *) (((unsigned long)(map)->handle) + (offset)) = val
+	*(volatile u_int16_t *)(((vm_offset_t)(map)->handle) +		\
+	    (vm_offset_t)(offset)) = val
 #define DRM_WRITE32(map, offset, val)					\
-	*(volatile u_int32_t *)(((unsigned long)(map)->handle) + (offset)) = val
+	*(volatile u_int32_t *)(((vm_offset_t)(map)->handle) +		\
+	    (vm_offset_t)(offset)) = val
 
 #define DRM_VERIFYAREA_READ( uaddr, size )		\
 	(!useracc(__DECONST(caddr_t, uaddr), size, VM_PROT_READ))
@@ -607,7 +613,7 @@ struct drm_driver_info {
 };
 
 /* Length for the array of resource pointers for drm_get_resource_*. */
-#define DRM_MAX_PCI_RESOURCE	3
+#define DRM_MAX_PCI_RESOURCE	6
 
 /** 
  * DRM device functions structure
@@ -720,10 +726,10 @@ static inline int drm_core_has_AGP(struct drm_device *dev)
 extern int	drm_debug_flag;
 
 /* Device setup support (drm_drv.c) */
-int	drm_probe(device_t nbdev, drm_pci_id_list_t *idlist);
-int	drm_attach(device_t nbdev, drm_pci_id_list_t *idlist);
+int	drm_probe(device_t kdev, drm_pci_id_list_t *idlist);
+int	drm_attach(device_t kdev, drm_pci_id_list_t *idlist);
 void	drm_close(void *data);
-int	drm_detach(device_t nbdev);
+int	drm_detach(device_t kdev);
 d_ioctl_t drm_ioctl;
 d_open_t drm_open;
 d_read_t drm_read;
@@ -794,6 +800,7 @@ void	drm_handle_vblank(struct drm_device *dev, int crtc);
 u32	drm_vblank_count(struct drm_device *dev, int crtc);
 int	drm_vblank_get(struct drm_device *dev, int crtc);
 void	drm_vblank_put(struct drm_device *dev, int crtc);
+void	drm_vblank_cleanup(struct drm_device *dev);
 int	drm_vblank_wait(struct drm_device *dev, unsigned int *vbl_seq);
 int	drm_vblank_init(struct drm_device *dev, int num_crtcs);
 void	drm_vbl_send_signals(struct drm_device *dev, int crtc);

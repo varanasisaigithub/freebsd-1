@@ -72,7 +72,8 @@ SYSCTL_INT(_hw_usb2_dev, OID_AUTO, debug, CTLFLAG_RW,
 
 /* prototypes */
 
-static int	usb2_fifo_open(struct usb2_fifo *, int);
+static int	usb2_fifo_open(struct usb2_cdev_privdata *, 
+		    struct usb2_fifo *, int);
 static void	usb2_fifo_close(struct usb2_fifo *, int);
 static void	usb2_dev_init(void *);
 static void	usb2_dev_init_post(void *);
@@ -82,7 +83,7 @@ static int	usb2_fifo_uiomove(struct usb2_fifo *, void *, int,
 static void	usb2_fifo_check_methods(struct usb2_fifo_methods *);
 static struct	usb2_fifo *usb2_fifo_alloc(void);
 static struct	usb2_pipe *usb2_dev_get_pipe(struct usb2_device *, uint8_t,
-		    uint8_t, uint8_t);
+		    uint8_t);
 static void	usb2_loc_fill(struct usb2_fs_privdata *,
 		    struct usb2_cdev_privdata *);
 static void	usb2_close(void *);
@@ -140,7 +141,6 @@ usb2_loc_fill(struct usb2_fs_privdata* pd, struct usb2_cdev_privdata *cpd)
 {
 	cpd->bus_index = pd->bus_index;
 	cpd->dev_index = pd->dev_index;
-	cpd->iface_index = pd->iface_index;
 	cpd->ep_addr = pd->ep_addr;
 	cpd->fifo_index = pd->fifo_index;
 }
@@ -161,7 +161,6 @@ usb2_ref_device(struct usb2_cdev_privdata* cpd, int need_uref)
 {
 	struct usb2_fifo **ppf;
 	struct usb2_fifo *f;
-	int dev_ep_index;
 
 	DPRINTFN(2, "usb2_ref_device, cpd=%p need uref=%d\n", cpd, need_uref);
 
@@ -181,7 +180,6 @@ usb2_ref_device(struct usb2_cdev_privdata* cpd, int need_uref)
 		goto error;
 	}
 	/* check if we are doing an open */
-	dev_ep_index = cpd->ep_addr;
 	if (cpd->fflags == 0) {
 		/* set defaults */
 		cpd->txfifo = NULL;
@@ -201,15 +199,12 @@ usb2_ref_device(struct usb2_cdev_privdata* cpd, int need_uref)
 			cpd->is_write = 1;	/* ref */
 			if (f == NULL || f->refcount == USB_FIFO_REF_MAX)
 				goto error;
+			if (f->curr_cpd != cpd)
+				goto error;
 			/* check if USB-FS is active */
 			if (f->fs_ep_max != 0) {
 				cpd->is_usbfs = 1;
 			}
-			/*
-			 * Get real endpoint index associated with
-			 * this FIFO:
-			 */
-			dev_ep_index = f->dev_ep_index;
 		} else {
 			cpd->txfifo = NULL;
 			cpd->is_write = 0;	/* no ref */
@@ -223,34 +218,18 @@ usb2_ref_device(struct usb2_cdev_privdata* cpd, int need_uref)
 			cpd->is_read = 1;	/* ref */
 			if (f == NULL || f->refcount == USB_FIFO_REF_MAX)
 				goto error;
+			if (f->curr_cpd != cpd)
+				goto error;
 			/* check if USB-FS is active */
 			if (f->fs_ep_max != 0) {
 				cpd->is_usbfs = 1;
 			}
-			/*
-			 * Get real endpoint index associated with
-			 * this FIFO:
-			 */
-			dev_ep_index = f->dev_ep_index;
 		} else {
 			cpd->rxfifo = NULL;
 			cpd->is_read = 0;	/* no ref */
 		}
 	}
 
-	/* check if we require an interface */
-	cpd->iface = usb2_get_iface(cpd->udev, cpd->iface_index);
-	if (dev_ep_index != 0) {
-		/* non control endpoint - we need an interface */
-		if (cpd->iface == NULL) {
-			DPRINTFN(2, "no iface\n");
-			goto error;
-		}
-		if (cpd->iface->idesc == NULL) {
-			DPRINTFN(2, "no idesc\n");
-			goto error;
-		}
-	}
 	/* when everything is OK we increment the refcounts */
 	if (cpd->is_write) {
 		DPRINTFN(2, "ref write\n");
@@ -394,7 +373,6 @@ usb2_fifo_create(struct usb2_cdev_privdata *cpd)
 	struct usb2_device *udev = cpd->udev;
 	struct usb2_fifo *f;
 	struct usb2_pipe *pipe;
-	uint8_t iface_index = cpd->iface_index;
 	uint8_t n;
 	uint8_t is_tx;
 	uint8_t is_rx;
@@ -449,12 +427,7 @@ usb2_fifo_create(struct usb2_cdev_privdata *cpd)
 					/* wrong endpoint index */
 					continue;
 				}
-				if (ep != 0 &&
-				    f->iface_index != iface_index) {
-					/* wrong interface index */
-					continue;
-				}
-				if (f->opened) {
+				if (f->curr_cpd != NULL) {
 					/* FIFO is opened */
 					is_busy = 1;
 					continue;
@@ -471,12 +444,7 @@ usb2_fifo_create(struct usb2_cdev_privdata *cpd)
 					/* wrong endpoint index */
 					continue;
 				}
-				if (ep != 0 &&
-				    f->iface_index != iface_index) {
-					/* wrong interface index */
-					continue;
-				}
-				if (f->opened) {
+				if (f->curr_cpd != NULL) {
 					/* FIFO is opened */
 					is_busy = 1;
 					continue;
@@ -491,16 +459,25 @@ usb2_fifo_create(struct usb2_cdev_privdata *cpd)
 	if (no_null == 0) {
 		if (ep >= (USB_EP_MAX / 2)) {
 			/* we don't create any endpoints in this range */
-			DPRINTFN(5, "dev_ep_index out of range\n");
+			DPRINTFN(5, "ep out of range\n");
 			return (is_busy ? EBUSY : EINVAL);
 		}
 	}
+
+	if ((ep != 0) && is_busy) {
+		/*
+		 * Only the default control endpoint is allowed to be
+		 * opened multiple times!
+		 */
+		DPRINTFN(5, "busy\n");
+		return (EBUSY);
+	}
+
 	/* Check TX FIFO */
 	if (is_tx &&
 	    (udev->fifo[n + USB_FIFO_TX] == NULL)) {
-		pipe = usb2_dev_get_pipe(udev,
-		    iface_index, ep, USB_FIFO_TX);
-		DPRINTFN(5, "dev_get_pipe(%d, 0x%x, 0x%x)\n", iface_index, ep, USB_FIFO_TX);
+		pipe = usb2_dev_get_pipe(udev, ep, USB_FIFO_TX);
+		DPRINTFN(5, "dev_get_pipe(%d, 0x%x)\n", ep, USB_FIFO_TX);
 		if (pipe == NULL) {
 			DPRINTFN(5, "dev_get_pipe returned NULL\n");
 			return (EINVAL);
@@ -516,7 +493,7 @@ usb2_fifo_create(struct usb2_cdev_privdata *cpd)
 		f->priv_mtx = udev->default_mtx;
 		f->priv_sc0 = pipe;
 		f->methods = &usb2_ugen_methods;
-		f->iface_index = iface_index;
+		f->iface_index = pipe->iface_index;
 		f->udev = udev;
 		mtx_lock(&usb2_ref_lock);
 		udev->fifo[n + USB_FIFO_TX] = f;
@@ -526,9 +503,8 @@ usb2_fifo_create(struct usb2_cdev_privdata *cpd)
 	if (is_rx &&
 	    (udev->fifo[n + USB_FIFO_RX] == NULL)) {
 
-		pipe = usb2_dev_get_pipe(udev,
-		    iface_index, ep, USB_FIFO_RX);
-		DPRINTFN(5, "dev_get_pipe(%d, 0x%x, 0x%x)\n", iface_index, ep, USB_FIFO_RX);
+		pipe = usb2_dev_get_pipe(udev, ep, USB_FIFO_RX);
+		DPRINTFN(5, "dev_get_pipe(%d, 0x%x)\n", ep, USB_FIFO_RX);
 		if (pipe == NULL) {
 			DPRINTFN(5, "dev_get_pipe returned NULL\n");
 			return (EINVAL);
@@ -544,7 +520,7 @@ usb2_fifo_create(struct usb2_cdev_privdata *cpd)
 		f->priv_mtx = udev->default_mtx;
 		f->priv_sc0 = pipe;
 		f->methods = &usb2_ugen_methods;
-		f->iface_index = iface_index;
+		f->iface_index = pipe->iface_index;
 		f->udev = udev;
 		mtx_lock(&usb2_ref_lock);
 		udev->fifo[n + USB_FIFO_RX] = f;
@@ -623,8 +599,7 @@ usb2_fifo_free(struct usb2_fifo *f)
 }
 
 static struct usb2_pipe *
-usb2_dev_get_pipe(struct usb2_device *udev,
-    uint8_t iface_index, uint8_t ep_index, uint8_t dir)
+usb2_dev_get_pipe(struct usb2_device *udev, uint8_t ep_index, uint8_t dir)
 {
 	struct usb2_pipe *pipe;
 	uint8_t ep_dir;
@@ -656,15 +631,6 @@ usb2_dev_get_pipe(struct usb2_device *udev,
 		/* invalid pipe */
 		return (NULL);
 	}
-	if (ep_index != 0) {
-		if (pipe->iface_index != iface_index) {
-			/*
-			 * Permissions violation - trying to access a
-			 * pipe that does not belong to the interface.
-			 */
-			return (NULL);
-		}
-	}
 	return (pipe);			/* success */
 }
 
@@ -676,7 +642,8 @@ usb2_dev_get_pipe(struct usb2_device *udev,
  * Else: Failure
  *------------------------------------------------------------------------*/
 static int
-usb2_fifo_open(struct usb2_fifo *f, int fflags)
+usb2_fifo_open(struct usb2_cdev_privdata *cpd, 
+    struct usb2_fifo *f, int fflags)
 {
 	int err;
 
@@ -697,10 +664,13 @@ usb2_fifo_open(struct usb2_fifo *f, int fflags)
 
 	/* check if we are already opened */
 	/* we don't need any locks when checking this variable */
-	if (f->opened) {
+	if (f->curr_cpd != NULL) {
 		err = EBUSY;
 		goto done;
 	}
+
+	/* reset short flag before open */
+	f->flag_short = 0;
 
 	/* call open method */
 	err = (f->methods->f_open) (f, fflags);
@@ -727,9 +697,9 @@ usb2_fifo_open(struct usb2_fifo *f, int fflags)
 	/* reset ASYNC proc flag */
 	f->async_p = NULL;
 
-	/* flag the fifo as opened to prevent others */
 	mtx_lock(&usb2_ref_lock);
-	f->opened = 1;
+	/* flag the fifo as opened to prevent others */
+	f->curr_cpd = cpd;
 	mtx_unlock(&usb2_ref_lock);
 
 	/* reset queue */
@@ -770,14 +740,14 @@ usb2_fifo_close(struct usb2_fifo *f, int fflags)
 	int err;
 
 	/* check if we are not opened */
-	if (!f->opened) {
+	if (f->curr_cpd == NULL) {
 		/* nothing to do - already closed */
 		return;
 	}
 	mtx_lock(f->priv_mtx);
 
-	/* clear current file flag */
-	f->opened = 0;
+	/* clear current cdev private data pointer */
+	f->curr_cpd = NULL;
 
 	/* check if we are selected */
 	if (f->flag_isselect) {
@@ -871,21 +841,6 @@ usb2_open(struct cdev *dev, int fflags, int devtype, struct thread *td)
 	}
 	cpd->fflags = fflags;	/* access mode for open lifetime */
 
-	/* Check if the endpoint is already open, we always allow EP0 */
-	if (ep > 0) {
-		if ((fflags & FREAD && cpd->udev->ep_rd_opened & (1 << ep)) ||
-		    (fflags & FWRITE && cpd->udev->ep_wr_opened & (1 << ep))) {
-			DPRINTFN(2, "endpoint already open\n");
-			usb2_unref_device(cpd);
-			free(cpd, M_USBDEV);
-			return (EBUSY);
-		}
-		if (fflags & FREAD)
-			cpd->udev->ep_rd_opened |= (1 << ep);
-		if (fflags & FWRITE)
-			cpd->udev->ep_wr_opened |= (1 << ep);
-	}
-
 	/* create FIFOs, if any */
 	err = usb2_fifo_create(cpd);
 	/* check for error */
@@ -896,7 +851,7 @@ usb2_open(struct cdev *dev, int fflags, int devtype, struct thread *td)
 		return (err);
 	}
 	if (fflags & FREAD) {
-		err = usb2_fifo_open(cpd->rxfifo, fflags);
+		err = usb2_fifo_open(cpd, cpd->rxfifo, fflags);
 		if (err) {
 			DPRINTFN(2, "read open failed\n");
 			usb2_unref_device(cpd);
@@ -905,7 +860,7 @@ usb2_open(struct cdev *dev, int fflags, int devtype, struct thread *td)
 		}
 	}
 	if (fflags & FWRITE) {
-		err = usb2_fifo_open(cpd->txfifo, fflags);
+		err = usb2_fifo_open(cpd, cpd->txfifo, fflags);
 		if (err) {
 			DPRINTFN(2, "write open failed\n");
 			if (fflags & FREAD) {
@@ -929,27 +884,20 @@ static void
 usb2_close(void *arg)
 {
 	struct usb2_cdev_privdata *cpd = arg;
-	struct usb2_device *udev;
 	int err;
 
-	DPRINTFN(2, "usb2_close, cpd=%p\n", cpd);
+	DPRINTFN(2, "cpd=%p\n", cpd);
 
 	err = usb2_ref_device(cpd, 1);
 	if (err) {
 		free(cpd, M_USBDEV);
 		return;
 	}
-
-	udev = cpd->udev;
 	if (cpd->fflags & FREAD) {
 		usb2_fifo_close(cpd->rxfifo, cpd->fflags);
-		/* clear read bitmask */
-		udev->ep_rd_opened &= ~(1 << cpd->ep_addr);
 	}
 	if (cpd->fflags & FWRITE) {
 		usb2_fifo_close(cpd->txfifo, cpd->fflags);
-		/* clear write bitmask */
-		udev->ep_wr_opened &= ~(1 << cpd->ep_addr);
 	}
 
 	usb2_unref_device(cpd);
@@ -1059,7 +1007,12 @@ usb2_ioctl(struct cdev *dev, u_long cmd, caddr_t addr, int fflag, struct thread*
 	if (err != 0)
 		return (err);
 
-	err = usb2_ref_device(cpd, 1);
+	/* 
+	 * Performance optimistaion: We try to check for IOCTL's that
+	 * don't need the USB reference first. Then we grab the USB
+	 * reference if we need it!
+	 */
+	err = usb2_ref_device(cpd, 0 /* no uref */ );
 	if (err) {
 		return (ENXIO);
 	}
@@ -1104,16 +1057,12 @@ usb2_poll(struct cdev* dev, int events, struct thread* td)
 	struct usb2_cdev_privdata* cpd;
 	struct usb2_fifo *f;
 	struct usb2_mbuf *m;
-	int fflags;
-	int err, revents;
+	int fflags, revents;
 
-	err = devfs_get_cdevpriv((void **)&cpd);
-	if (err != 0)
-		return (err);
-
-	err = usb2_ref_device(cpd, 0 /* no uref */ );
-	if (err)
-		return (POLLHUP);
+	if (devfs_get_cdevpriv((void **)&cpd) != 0 ||
+	    usb2_ref_device(cpd, 0) != 0)
+		return (events &
+		    (POLLHUP|POLLIN|POLLRDNORM|POLLOUT|POLLWRNORM));
 
 	fflags = cpd->fflags;
 
@@ -1657,7 +1606,6 @@ usb2_fifo_attach(struct usb2_device *udev, void *priv_sc,
 	/* initialise FIFO structures */
 
 	f_tx->fifo_index = n + USB_FIFO_TX;
-	f_tx->dev_ep_index = (n / 2) + (USB_EP_MAX / 2);
 	f_tx->priv_mtx = priv_mtx;
 	f_tx->priv_sc0 = priv_sc;
 	f_tx->methods = pm;
@@ -1665,7 +1613,6 @@ usb2_fifo_attach(struct usb2_device *udev, void *priv_sc,
 	f_tx->udev = udev;
 
 	f_rx->fifo_index = n + USB_FIFO_RX;
-	f_rx->dev_ep_index = (n / 2) + (USB_EP_MAX / 2);
 	f_rx->priv_mtx = priv_mtx;
 	f_rx->priv_sc0 = priv_sc;
 	f_rx->methods = pm;
@@ -1719,14 +1666,14 @@ usb2_fifo_attach(struct usb2_device *udev, void *priv_sc,
 		pd = malloc(sizeof(struct usb2_fs_privdata), M_USBDEV, M_WAITOK | M_ZERO);
 		pd->bus_index = device_get_unit(udev->bus->bdev);
 		pd->dev_index = udev->device_index;
-		pd->iface_index = iface_index;
 		pd->ep_addr = -1;	/* not an endpoint */
-		pd->fifo_index = f_tx->fifo_index;
+		pd->fifo_index = f_tx->fifo_index & f_rx->fifo_index;
 		pd->mode = FREAD|FWRITE;
 
 		/* Now, create the device itself */
 		f_sc->dev = make_dev(&usb2_devsw, 0, uid, gid, mode,
 		    devname);
+		/* XXX setting si_drv1 and creating the device is not atomic! */
 		f_sc->dev->si_drv1 = pd;
 	}
 
@@ -1799,7 +1746,9 @@ usb2_fifo_detach(struct usb2_fifo_sc *f_sc)
 	f_sc->fp[USB_FIFO_RX] = NULL;
 
 	if (f_sc->dev != NULL) {
-		destroy_dev_sched_cb(f_sc->dev, usb2_fifo_cleanup, f_sc->dev->si_drv1);
+		destroy_dev_sched_cb(f_sc->dev, 
+		    usb2_fifo_cleanup, f_sc->dev->si_drv1);
+		f_sc->dev = NULL;
 	}
 
 	DPRINTFN(2, "detached %p\n", f_sc);
@@ -1986,6 +1935,13 @@ usb2_fifo_get_data(struct usb2_fifo *f, struct usb2_page_cache *pc,
 				break;
 			}
 			if (f->flag_flushing) {
+				/* check if we should send a short packet */
+				if (f->flag_short != 0) {
+					f->flag_short = 0;
+					tr_data = 1;
+					break;
+				}
+				/* flushing complete */
 				f->flag_flushing = 0;
 				usb2_fifo_wakeup(f);
 			}
@@ -2044,6 +2000,13 @@ usb2_fifo_get_data_linear(struct usb2_fifo *f, void *ptr,
 				break;
 			}
 			if (f->flag_flushing) {
+				/* check if we should send a short packet */
+				if (f->flag_short != 0) {
+					f->flag_short = 0;
+					tr_data = 1;
+					break;
+				}
+				/* flushing complete */
 				f->flag_flushing = 0;
 				usb2_fifo_wakeup(f);
 			}
@@ -2222,4 +2185,14 @@ usb2_read_symlink(uint8_t *user_ptr, uint32_t startentry, uint32_t user_len)
 	}
 	sx_unlock(&usb2_sym_lock);
 	return (error);
+}
+
+void
+usb2_fifo_set_close_zlp(struct usb2_fifo *f, uint8_t onoff)
+{
+	if (f == NULL)
+		return;
+
+	/* send a Zero Length Packet, ZLP, before close */
+	f->flag_short = onoff;
 }

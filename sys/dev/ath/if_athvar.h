@@ -255,6 +255,7 @@ struct ath_softc {
 				sc_wmetkipmic:1,/* can do WME+TKIP MIC */
 				sc_resume_up: 1,/* on resume, start all vaps */
 				sc_tdma	    : 1,/* TDMA in use */
+				sc_setcca   : 1,/* set/clr CCA with TDMA */
 				sc_resetcal : 1;/* reset cal state next trip */
 	uint32_t		sc_eerd;	/* regdomain from EEPROM */
 	uint32_t		sc_eecc;	/* country code from EEPROM */
@@ -320,6 +321,8 @@ struct ath_softc {
 	struct ath_txq		sc_txq[HAL_NUM_TX_QUEUES];
 	struct ath_txq		*sc_ac2q[5];	/* WME AC -> h/w q map */ 
 	struct task		sc_txtask;	/* tx int processing */
+	int			sc_wd_timer;	/* count down for wd timer */
+	struct callout		sc_wd_ch;	/* tx watchdog timer */
 
 	struct ath_descdma	sc_bdma;	/* beacon descriptors */
 	ath_bufhead		sc_bbuf;	/* beacon buffers */

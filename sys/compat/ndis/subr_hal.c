@@ -102,7 +102,7 @@ hal_libinit()
 		patch++;
 	}
 
-	
+
 	return(0);
 }
 
@@ -420,7 +420,7 @@ KfRaiseIrql(uint8_t irql)
 	return(oldirql);
 }
 
-void 
+void
 KfLowerIrql(uint8_t oldirql)
 {
 	if (oldirql == DISPATCH_LEVEL)

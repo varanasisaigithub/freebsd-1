@@ -158,53 +158,56 @@ static int drm_msi_is_blacklisted(int vendor, int device)
 	return 0;
 }
 
-int drm_probe(device_t dev, drm_pci_id_list_t *idlist)
+int drm_probe(device_t kdev, drm_pci_id_list_t *idlist)
 {
 	drm_pci_id_list_t *id_entry;
 	int vendor, device;
 #if __FreeBSD_version < 700010
 	device_t realdev;
 
-	if (!strcmp(device_get_name(dev), "drmsub"))
-		realdev = device_get_parent(dev);
+	if (!strcmp(device_get_name(kdev), "drmsub"))
+		realdev = device_get_parent(kdev);
 	else
-		realdev = dev;
+		realdev = kdev;
 	vendor = pci_get_vendor(realdev);
 	device = pci_get_device(realdev);
 #else
-	vendor = pci_get_vendor(dev);
-	device = pci_get_device(dev);
+	vendor = pci_get_vendor(kdev);
+	device = pci_get_device(kdev);
 #endif
 
-	if (pci_get_class(dev) != PCIC_DISPLAY
-	    || pci_get_subclass(dev) != PCIS_DISPLAY_VGA)
+	if (pci_get_class(kdev) != PCIC_DISPLAY
+	    || pci_get_subclass(kdev) != PCIS_DISPLAY_VGA)
 		return ENXIO;
 
 	id_entry = drm_find_description(vendor, device, idlist);
 	if (id_entry != NULL) {
-		device_set_desc(dev, id_entry->name);
+		if (!device_get_desc(kdev)) {
+			DRM_DEBUG("desc : %s\n", device_get_desc(kdev));
+			device_set_desc(kdev, id_entry->name);
+		}
 		return 0;
 	}
 
 	return ENXIO;
 }
 
-int drm_attach(device_t nbdev, drm_pci_id_list_t *idlist)
+int drm_attach(device_t kdev, drm_pci_id_list_t *idlist)
 {
 	struct drm_device *dev;
 	drm_pci_id_list_t *id_entry;
 	int unit, msicount;
 
-	unit = device_get_unit(nbdev);
-	dev = device_get_softc(nbdev);
+	unit = device_get_unit(kdev);
+	dev = device_get_softc(kdev);
 
 #if __FreeBSD_version < 700010
-	if (!strcmp(device_get_name(nbdev), "drmsub"))
-		dev->device = device_get_parent(nbdev);
+	if (!strcmp(device_get_name(kdev), "drmsub"))
+		dev->device = device_get_parent(kdev);
 	else
-		dev->device = nbdev;
+		dev->device = kdev;
 #else
-	dev->device = nbdev;
+	dev->device = kdev;
 #endif
 	dev->devnode = make_dev(&drm_cdevsw,
 			unit,
@@ -259,11 +262,11 @@ int drm_attach(device_t nbdev, drm_pci_id_list_t *idlist)
 	return drm_load(dev);
 }
 
-int drm_detach(device_t nbdev)
+int drm_detach(device_t kdev)
 {
 	struct drm_device *dev;
 
-	dev = device_get_softc(nbdev);
+	dev = device_get_softc(kdev);
 
 	drm_unload(dev);
 
@@ -290,7 +293,8 @@ drm_pci_id_list_t *drm_find_description(int vendor, int device,
 	
 	for (i = 0; idlist[i].vendor != 0; i++) {
 		if ((idlist[i].vendor == vendor) &&
-		    (idlist[i].device == device)) {
+		    ((idlist[i].device == device) ||
+		    (idlist[i].device == 0))) {
 			return &idlist[i];
 		}
 	}
@@ -523,6 +527,8 @@ static void drm_unload(struct drm_device *dev)
 		DRM_DEBUG("mtrr_del = %d", retcode);
 	}
 
+	drm_vblank_cleanup(dev);
+
 	DRM_LOCK();
 	drm_lastclose(dev);
 	DRM_UNLOCK();
@@ -664,7 +670,7 @@ void drm_close(void *data)
 			}
 			/* Contention */
 			retcode = mtx_sleep((void *)&dev->lock.lock_queue,
-			    &dev->dev_lock, PZERO | PCATCH, "drmlk2", 0);
+			    &dev->dev_lock, PCATCH, "drmlk2", 0);
 			if (retcode)
 				break;
 		}

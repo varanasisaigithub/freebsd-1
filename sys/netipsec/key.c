@@ -2687,7 +2687,10 @@ key_delsah(sah)
 			if (sav->refcnt == 0) {
 				/* sanity check */
 				KEY_CHKSASTATE(state, sav->state, __func__);
-				KEY_FREESAV(&sav);
+				/* do NOT call KEY_FREESAV here: it will only delete the sav if refcnt == 1,
+				 * where we already know that refcnt == 0
+				 */
+				key_delsav(sav);
 			} else {
 				/* give up to delete this sa */
 				zombie++;
@@ -4131,6 +4134,8 @@ key_flush_sad(time_t now)
 
 		/* if LARVAL entry doesn't become MATURE, delete it. */
 		LIST_FOREACH_SAFE(sav, &sah->savtree[SADB_SASTATE_LARVAL], chain, nextsav) {
+			/* Need to also check refcnt for a larval SA ???
+			 */
 			if (now - sav->created > V_key_larval_lifetime)
 				KEY_FREESAV(&sav);
 		}
@@ -4154,22 +4159,15 @@ key_flush_sad(time_t now)
 			/* check SOFT lifetime */
 			if (sav->lft_s->addtime != 0 &&
 			    now - sav->created > sav->lft_s->addtime) {
-				/*
-				 * check SA to be used whether or not.
-				 * when SA hasn't been used, delete it.
+				key_sa_chgstate(sav, SADB_SASTATE_DYING);
+				/* Actually, only send expire message if SA has been used, as it
+				 * was done before, but should we always send such message, and let IKE
+				 * daemon decide if it should be renegociated or not ?
+				 * XXX expire message will actually NOT be sent if SA is only used
+				 * after soft lifetime has been reached, see below (DYING state)
 				 */
-				if (sav->lft_c->usetime == 0) {
-					key_sa_chgstate(sav, SADB_SASTATE_DEAD);
-					KEY_FREESAV(&sav);
-				} else {
-					key_sa_chgstate(sav, SADB_SASTATE_DYING);
-					/*
-					 * XXX If we keep to send expire
-					 * message in the status of
-					 * DYING. Do remove below code.
-					 */
+				if (sav->lft_c->usetime != 0)
 					key_expire(sav);
-				}
 			}
 			/* check SOFT lifetime by bytes */
 			/*

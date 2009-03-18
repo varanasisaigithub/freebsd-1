@@ -716,7 +716,7 @@ SYSCTL_PROC(_machdep, OID_AUTO, idle, CTLTYPE_STRING | CTLFLAG_RW, 0, 0,
     idle_sysctl, "A", "currently selected idle function");
 
 /*
- * Clear registers on exec
+ * Reset registers to default values on exec.
  */
 void
 exec_setregs(td, entry, stack, ps_strings)
@@ -743,6 +743,7 @@ exec_setregs(td, entry, stack, ps_strings)
 	pcb->pcb_es = _udatasel;
 	pcb->pcb_fs = _udatasel;
 	pcb->pcb_gs = _udatasel;
+	pcb->pcb_initial_fpucw = __INITIAL_FPUCW__;
 
 	bzero((char *)regs, sizeof(struct trapframe));
 	regs->tf_rip = entry;
@@ -1492,6 +1493,14 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
         env = getenv("kernelname");
 	if (env != NULL)
 		strlcpy(kernelname, env, sizeof(kernelname));
+
+#ifdef XENHVM
+	if (inw(0x10) == 0x49d2) {
+		if (bootverbose)
+			printf("Xen detected: disabling emulated block and network devices\n");
+		outw(0x10, 3);
+	}
+#endif
 
 	/* Location of kernel stack for locore */
 	return ((u_int64_t)thread0.td_pcb);
