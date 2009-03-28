@@ -343,7 +343,7 @@ g_part_ebr_name(struct g_part_table *table, struct g_part_entry *entry,
     char *buf, size_t bufsz)
 {
 
-	snprintf(buf, bufsz, ".%08u", entry->gpe_index);
+	snprintf(buf, bufsz, "+%08x", entry->gpe_index);
 	return (buf);
 }
 
@@ -420,7 +420,7 @@ g_part_ebr_probe(struct g_part_table *table, struct g_consumer *cp)
 			goto out;
 	}
 
-	res = G_PART_PROBE_PRI_HIGH;
+	res = G_PART_PROBE_PRI_NORM;
 
  out:
 	g_free(buf);

@@ -89,11 +89,6 @@ __FBSDID("$FreeBSD$");
 #endif
 
 /*
- * We require a HAL w/ the changes for split tx/rx MIC.
- */
-CTASSERT(HAL_ABI_VERSION > 0x06052200);
-
-/*
  * ATH_BCBUF determines the number of vap's that can transmit
  * beacons and also (currently) the number of vap's that can
  * have unique mac addresses/bssid.  When staggering beacons
@@ -225,7 +220,7 @@ static void	ath_tdma_bintvalsetup(struct ath_softc *sc,
 		    const struct ieee80211_tdma_state *tdma);
 static void	ath_tdma_config(struct ath_softc *sc, struct ieee80211vap *vap);
 static void	ath_tdma_update(struct ieee80211_node *ni,
-		    const struct ieee80211_tdma_param *tdma);
+		    const struct ieee80211_tdma_param *tdma, int);
 static void	ath_tdma_beacon_send(struct ath_softc *sc,
 		    struct ieee80211vap *vap);
 
@@ -377,13 +372,6 @@ ath_attach(u_int16_t devid, struct ath_softc *sc)
 	if (ah == NULL) {
 		if_printf(ifp, "unable to attach hardware; HAL status %u\n",
 			status);
-		error = ENXIO;
-		goto bad;
-	}
-	if (ah->ah_abi != HAL_ABI_VERSION) {
-		if_printf(ifp, "HAL ABI mismatch detected "
-			"(HAL:0x%x != driver:0x%x)\n",
-			ah->ah_abi, HAL_ABI_VERSION);
 		error = ENXIO;
 		goto bad;
 	}
@@ -2689,17 +2677,8 @@ ath_calcrxfilter(struct ath_softc *sc)
 	u_int32_t rfilt;
 
 	rfilt = HAL_RX_FILTER_UCAST | HAL_RX_FILTER_BCAST | HAL_RX_FILTER_MCAST;
-#if HAL_ABI_VERSION < 0x08011600
-	rfilt |= (ath_hal_getrxfilter(sc->sc_ah) &
-		(HAL_RX_FILTER_PHYRADAR | HAL_RX_FILTER_PHYERR));
-#elif HAL_ABI_VERSION < 0x08060100
-	if (ic->ic_opmode == IEEE80211_M_STA &&
-	    !sc->sc_needmib && !sc->sc_scanning)
-		rfilt |= HAL_RX_FILTER_PHYERR;
-#else
 	if (!sc->sc_needmib && !sc->sc_scanning)
 		rfilt |= HAL_RX_FILTER_PHYERR;
-#endif
 	if (ic->ic_opmode != IEEE80211_M_STA)
 		rfilt |= HAL_RX_FILTER_PROBEREQ;
 	if (ic->ic_opmode == IEEE80211_M_MONITOR || (ifp->if_flags & IFF_PROMISC))
@@ -6273,10 +6252,6 @@ ath_rate_setup(struct ath_softc *sc, u_int mode)
 		break;
 	case IEEE80211_MODE_TURBO_A:
 		rt = ath_hal_getratetable(ah, HAL_MODE_108A);
-#if HAL_ABI_VERSION < 0x07013100
-		if (rt == NULL)		/* XXX bandaid for old hal's */
-			rt = ath_hal_getratetable(ah, HAL_MODE_TURBO);
-#endif
 		break;
 	case IEEE80211_MODE_TURBO_G:
 		rt = ath_hal_getratetable(ah, HAL_MODE_108G);
@@ -7477,7 +7452,7 @@ ath_tdma_config(struct ath_softc *sc, struct ieee80211vap *vap)
  */
 static void
 ath_tdma_update(struct ieee80211_node *ni,
-	const struct ieee80211_tdma_param *tdma)
+	const struct ieee80211_tdma_param *tdma, int changed)
 {
 #define	TSF_TO_TU(_h,_l) \
 	((((u_int32_t)(_h)) << 22) | (((u_int32_t)(_l)) >> 10))
@@ -7498,7 +7473,7 @@ ath_tdma_update(struct ieee80211_node *ni,
 	/*
 	 * Check for and adopt configuration changes.
 	 */
-	if (isset(ATH_VAP(vap)->av_boff.bo_flags, IEEE80211_BEACON_TDMA)) {
+	if (changed != 0) {
 		const struct ieee80211_tdma_state *ts = vap->iv_tdma;
 
 		ath_tdma_bintvalsetup(sc, ts);

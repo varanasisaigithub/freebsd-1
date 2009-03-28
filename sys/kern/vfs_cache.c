@@ -35,6 +35,8 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
+#include "opt_ktrace.h"
+
 #include <sys/param.h>
 #include <sys/filedesc.h>
 #include <sys/fnv_hash.h>
@@ -50,6 +52,9 @@ __FBSDID("$FreeBSD$");
 #include <sys/sysproto.h>
 #include <sys/systm.h>
 #include <sys/vnode.h>
+#ifdef KTRACE
+#include <sys/ktrace.h>
+#endif
 
 #include <vm/uma.h>
 
@@ -315,7 +320,7 @@ cache_zap(ncp)
  * (negative cacheing), a status of ENOENT is returned. If the lookup
  * fails, a status of zero is returned.  If the directory vnode is
  * recycled out from under us due to a forced unmount, a status of
- * EBADF is returned.
+ * ENOENT is returned.
  *
  * vpp is locked and ref'd on return.  If we're looking up DOTDOT, dvp is
  * unlocked.  If we're looking up . an extra ref is taken, but the lock is
@@ -467,7 +472,7 @@ success:
 					/* forced unmount */
 					vrele(*vpp);
 					*vpp = NULL;
-					return (EBADF);
+					return (ENOENT);
 				}
 			} else
 				vn_lock(*vpp, LK_DOWNGRADE | LK_RETRY);
@@ -807,6 +812,10 @@ kern___getcwd(struct thread *td, u_char *buf, enum uio_seg bufseg, u_int buflen)
 			bcopy(bp, buf, strlen(bp) + 1);
 		else
 			error = copyout(bp, buf, strlen(bp) + 1);
+#ifdef KTRACE
+	if (KTRPOINT(curthread, KTR_NAMEI))
+		ktrnamei(bp);
+#endif
 	}
 	free(tmpbuf, M_TEMP);
 	return (error);
@@ -947,7 +956,8 @@ vn_fullpath1(struct thread *td, struct vnode *vp, struct vnode *rdir,
 	if (vp->v_type != VDIR) {
 		ncp = TAILQ_FIRST(&vp->v_cache_dst);
 		if (ncp != NULL) {
-			for (i = ncp->nc_nlen - 1; i >= 0 && bp > buf; i--)
+			buflen -= ncp->nc_nlen;
+			for (i = ncp->nc_nlen - 1; i >= 0 && bp != buf; i--)
 				*--bp = ncp->nc_name[i];
 			if (bp == buf) {
 				numfullpathfail4++;
@@ -957,24 +967,23 @@ vn_fullpath1(struct thread *td, struct vnode *vp, struct vnode *rdir,
 			vp = ncp->nc_dvp;
 		} else {
 			error = vn_vptocnp(&vp, &bp, buf, &buflen);
-			if (error) {
+			if (error)
 				return (error);
-			}
 		}
-		*--bp = '/';
-		buflen--;
-		if (buflen < 0) {
+		if (buflen <= 0) {
 			numfullpathfail4++;
 			CACHE_RUNLOCK();
 			return (ENOMEM);
 		}
+		*--bp = '/';
+		buflen--;
 		slash_prefixed = 1;
 	}
 	while (vp != rdir && vp != rootvnode) {
 		if (vp->v_vflag & VV_ROOT) {
 			if (vp->v_iflag & VI_DOOMED) {	/* forced unmount */
 				CACHE_RUNLOCK();
-				error = EBADF;
+				error = ENOENT;
 				break;
 			}
 			vp = vp->v_mount->mnt_vnodecovered;
@@ -989,7 +998,7 @@ vn_fullpath1(struct thread *td, struct vnode *vp, struct vnode *rdir,
 		ncp = TAILQ_FIRST(&vp->v_cache_dst);
 		if (ncp != NULL) {
 			MPASS(vp->v_dd == NULL || ncp->nc_dvp == vp->v_dd);
-			buflen -= ncp->nc_nlen - 1;
+			buflen -= ncp->nc_nlen;
 			for (i = ncp->nc_nlen - 1; i >= 0 && bp != buf; i--)
 				*--bp = ncp->nc_name[i];
 			if (bp == buf) {
@@ -1001,18 +1010,17 @@ vn_fullpath1(struct thread *td, struct vnode *vp, struct vnode *rdir,
 			vp = ncp->nc_dvp;
 		} else {
 			error = vn_vptocnp(&vp, &bp, buf, &buflen);
-			if (error) {
+			if (error)
 				break;
-			}
 		}
-		*--bp = '/';
-		buflen--;
-		if (buflen < 0) {
+		if (buflen <= 0) {
 			numfullpathfail4++;
 			CACHE_RUNLOCK();
 			error = ENOMEM;
 			break;
 		}
+		*--bp = '/';
+		buflen--;
 		slash_prefixed = 1;
 	}
 	if (error)
@@ -1022,9 +1030,8 @@ vn_fullpath1(struct thread *td, struct vnode *vp, struct vnode *rdir,
 			numfullpathfail4++;
 			CACHE_RUNLOCK();
 			return (ENOMEM);
-		} else {
+		} else
 			*--bp = '/';
-		}
 	}
 	numfullpathfound++;
 	CACHE_RUNLOCK();

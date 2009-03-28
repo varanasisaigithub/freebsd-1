@@ -174,7 +174,6 @@ int r600_page_table_init(struct drm_device *dev)
 		if (entry->busaddr[i] == 0) {
 			DRM_ERROR("unable to map PCIGART pages!\n");
 			r600_page_table_cleanup(dev, gart_info);
-			ret = -EINVAL;
 			goto done;
 		}
 #endif
@@ -193,6 +192,7 @@ int r600_page_table_init(struct drm_device *dev)
 			entry_addr += ATI_PCIGART_PAGE_SIZE;
 		}
 	}
+	ret = 1;
 #ifdef __linux__
 done:
 #endif
@@ -1740,9 +1740,6 @@ static void r600_cp_init_ring_buffer(struct drm_device *dev,
 
 	RADEON_WRITE(R600_CP_DEBUG, (1 << 27) | (1 << 28));
 
-	/* Start with assuming that writeback doesn't work */
-	dev_priv->writeback_works = 0;
-
 	/* Initialize the scratch register pointer.  This will cause
 	 * the scratch register values to be written out to memory
 	 * whenever they are updated.
@@ -2103,7 +2100,7 @@ int r600_do_init_cp(struct drm_device *dev, drm_radeon_init_t *init,
 			  dev_priv->gart_info.addr,
 			  dev_priv->pcigart_offset);
 
-		if (r600_page_table_init(dev)) {
+		if (!r600_page_table_init(dev)) {
 			DRM_ERROR("Failed to init GART table\n");
 			r600_do_cleanup_cp(dev);
 			return -EINVAL;
