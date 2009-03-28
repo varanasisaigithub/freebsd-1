@@ -130,7 +130,8 @@ ata_sata_connect(struct ata_channel *ch, int port)
 
     /* wait up to 1 second for "connect well" */
     for (timeout = 0; timeout < 100 ; timeout++) {
-	ata_sata_scr_read(ch, port, ATA_SSTATUS, &status);
+	if (ata_sata_scr_read(ch, port, ATA_SSTATUS, &status))
+	    return (0);
 	if ((status & ATA_SS_CONWELL_MASK) == ATA_SS_CONWELL_GEN1 ||
 	    (status & ATA_SS_CONWELL_MASK) == ATA_SS_CONWELL_GEN2)
 	    break;
@@ -172,27 +173,39 @@ ata_sata_phy_reset(device_t dev, int port, int quick)
     uint32_t val;
 
     if (quick) {
-	ata_sata_scr_read(ch, port, ATA_SCONTROL, &val);
+	if (ata_sata_scr_read(ch, port, ATA_SCONTROL, &val))
+	    return (0);
 	if ((val & ATA_SC_DET_MASK) == ATA_SC_DET_IDLE)
 	    return ata_sata_connect(ch, port);
     }
 
+    if (bootverbose) {
+	if (port < 0) {
+	    device_printf(dev, "hardware reset ...\n");
+	} else {
+	    device_printf(dev, "p%d: hardware reset ...\n", port);
+	}
+    }
     for (retry = 0; retry < 10; retry++) {
 	for (loop = 0; loop < 10; loop++) {
-	    ata_sata_scr_write(ch, port, ATA_SCONTROL, ATA_SC_DET_RESET);
+	    if (ata_sata_scr_write(ch, port, ATA_SCONTROL, ATA_SC_DET_RESET))
+		return (0);
 	    ata_udelay(100);
-	    ata_sata_scr_read(ch, port, ATA_SCONTROL, &val);
+	    if (ata_sata_scr_read(ch, port, ATA_SCONTROL, &val))
+		return (0);
 	    if ((val & ATA_SC_DET_MASK) == ATA_SC_DET_RESET)
 		break;
 	}
 	ata_udelay(5000);
 	for (loop = 0; loop < 10; loop++) {
-	    ata_sata_scr_write(ch, port, ATA_SCONTROL,
+	    if (ata_sata_scr_write(ch, port, ATA_SCONTROL,
 					ATA_SC_DET_IDLE |
 					ATA_SC_IPM_DIS_PARTIAL |
-					ATA_SC_IPM_DIS_SLUMBER);
+					ATA_SC_IPM_DIS_SLUMBER))
+		return (0);
 	    ata_udelay(100);
-	    ata_sata_scr_read(ch, port, ATA_SCONTROL, &val);
+	    if (ata_sata_scr_read(ch, port, ATA_SCONTROL, &val))
+		return (0);
 	    if ((val & ATA_SC_DET_MASK) == 0)
 		return ata_sata_connect(ch, port);
 	}
@@ -306,7 +319,9 @@ ata_pm_identify(device_t dev)
     /* chip specific quirks */
     switch (pm_chipid) {
     case 0x37261095:
-	/* Some of these bogusly reports 6 ports */
+	/* This PM declares 6 ports, while only 5 of them are real.
+	 * Port 5 is enclosure management bridge port, which has implementation
+	 * problems, causing probe faults. Hide it for now. */
 	device_printf(dev, "SiI 3726 (rev=%x) Port Multiplier with %d (5) ports\n",
 		      pm_revision, pm_ports);
 	pm_ports = 5;
@@ -337,6 +352,13 @@ ata_pm_identify(device_t dev)
 
 	if (!ata_sata_phy_reset(dev, port, 1))
 	    continue;
+
+	/*
+	 * XXX: I have no idea how to properly wait for PMP port hardreset
+	 * completion. Without this delay soft reset does not completes
+	 * successfully.
+	 */
+	DELAY(1000000);
 
 	signature = ch->hw.softreset(dev, port);
 

@@ -57,6 +57,8 @@ struct ata_pci_controller {
     int                 (*resume)(device_t);
     int                 (*ch_attach)(device_t);
     int                 (*ch_detach)(device_t);
+    int                 (*ch_suspend)(device_t);
+    int                 (*ch_resume)(device_t);
     int                 (*locking)(device_t, int);
     void                (*reset)(device_t);
     void                (*setmode)(device_t, int);
@@ -454,6 +456,8 @@ void ata_pm_identify(device_t dev);
 int ata_ahci_chipinit(device_t);
 int ata_ahci_ch_attach(device_t dev);
 int ata_ahci_ch_detach(device_t dev);
+int ata_ahci_ch_suspend(device_t dev);
+int ata_ahci_ch_resume(device_t dev);
 void ata_ahci_reset(device_t dev);
 int ata_marvell_edma_chipinit(device_t);
 int ata_sii_chipinit(device_t);
