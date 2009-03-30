@@ -135,7 +135,7 @@ struct vnode {
 	 */
 	LIST_HEAD(, namecache) v_cache_src;	/* c Cache entries from us */
 	TAILQ_HEAD(, namecache) v_cache_dst;	/* c Cache entries to us */
-	struct	vnode *v_dd;			/* c .. vnode */
+	struct namecache *v_cache_dd;		/* c Cache entry for .. vnode */
 
 	/*
 	 * clustering stuff
@@ -314,7 +314,6 @@ struct vattr {
 #define	VWRITE			000000000200 /* write permission */
 #define	VREAD			000000000400 /* read permission */
 #define	VADMIN			000000010000 /* being the file owner */
-#define	VSTAT			000000020000 /* permission to retrieve attrs */
 #define	VAPPEND			000000040000 /* permission to write/append */
 /*
  * VEXPLICIT_DENY makes VOP_ACCESS(9) return EPERM or EACCES only
@@ -344,7 +343,7 @@ struct vattr {
 /*
  * Permissions that were traditionally granted to everyone.
  */
-#define VSTAT_PERMS	(VSTAT | VREAD_ATTRIBUTES | VREAD_ACL | VSYNCHRONIZE)
+#define VSTAT_PERMS	(VREAD_ATTRIBUTES | VREAD_ACL)
 
 /*
  * Permissions that allow to change the state of the file in any way.

@@ -47,6 +47,7 @@
 #include <net80211/ieee80211_crypto.h>
 #include <net80211/ieee80211_dfs.h>
 #include <net80211/ieee80211_ioctl.h>		/* for ieee80211_stats */
+#include <net80211/ieee80211_phy.h>
 #include <net80211/ieee80211_power.h>
 #include <net80211/ieee80211_node.h>
 #include <net80211/ieee80211_proto.h>
@@ -115,7 +116,6 @@ struct ieee80211com {
 	enum ieee80211_phytype	ic_phytype;	/* XXX wrong for multi-mode */
 	enum ieee80211_opmode	ic_opmode;	/* operation mode */
 	struct ifmedia		ic_media;	/* interface media config */
-	uint8_t			ic_myaddr[IEEE80211_ADDR_LEN];
 	struct callout		ic_inact;	/* inactivity processing */
 	struct task		ic_parent_task;	/* deferred parent processing */
 
@@ -162,6 +162,7 @@ struct ieee80211com {
 	uint8_t			ic_chan_active[IEEE80211_CHAN_BYTES];
 	uint8_t			ic_chan_scan[IEEE80211_CHAN_BYTES];
 	struct ieee80211_channel *ic_curchan;	/* current channel */
+	const struct ieee80211_rate_table *ic_rt; /* table for ic_curchan */
 	struct ieee80211_channel *ic_bsschan;	/* bss channel */
 	struct ieee80211_channel *ic_prevchan;	/* previous channel */
 	struct ieee80211_regdomain ic_regdomain;/* regulatory data */
@@ -575,7 +576,8 @@ MALLOC_DECLARE(M_80211_VAP);
 	"\20\1LDPC\2CHWIDTH40\5GREENFIELD\6SHORTGI20\7SHORTGI40\10TXSTBC" \
 	"\21AMPDU\22AMSDU\23HT\24SMPS\25RIFS"
 
-void	ieee80211_ifattach(struct ieee80211com *);
+void	ieee80211_ifattach(struct ieee80211com *,
+		const uint8_t macaddr[IEEE80211_ADDR_LEN]);
 void	ieee80211_ifdetach(struct ieee80211com *);
 int	ieee80211_vap_setup(struct ieee80211com *, struct ieee80211vap *,
 		const char name[IFNAMSIZ], int unit, int opmode, int flags,

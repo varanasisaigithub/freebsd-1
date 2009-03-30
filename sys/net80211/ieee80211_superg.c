@@ -490,6 +490,7 @@ ieee80211_dturbo_switch(struct ieee80211vap *vap, int newflags)
 	ic->ic_bsschan = chan;
 	ic->ic_prevchan = ic->ic_curchan;
 	ic->ic_curchan = chan;
+	ic->ic_rt = ieee80211_get_ratetable(chan);
 	ic->ic_set_channel(ic);
 	/* NB: do not need to reset ERP state 'cuz we're in sta mode */
 }
@@ -537,7 +538,7 @@ superg_ioctl_set80211(struct ieee80211vap *vap, struct ieee80211req *ireq)
 			vap->iv_flags |= IEEE80211_F_FF;
 		} else
 			vap->iv_flags &= ~IEEE80211_F_FF;
-		return ERESTART;
+		return ENETRESET;
 	case IEEE80211_IOC_TURBOP:
 		if (ireq->i_val) {
 			if ((vap->iv_caps & IEEE80211_C_TURBOP) == 0)
