@@ -48,7 +48,6 @@ __FBSDID("$FreeBSD$");
 #include <dev/usb/usb_mfunc.h>
 #include <dev/usb/usb_error.h>
 #include <dev/usb/usb_cdc.h>
-#include <dev/usb/usb_defs.h>
 
 #define	USB_DEBUG_VAR cdce_debug
 
@@ -665,13 +664,10 @@ cdce_bulk_read_callback(struct usb2_xfer *xfer)
 		 */
 		for (x = 0; x != 1; x++) {
 			if (sc->sc_rx_buf[x] == NULL) {
-				m = m_getcl(M_DONTWAIT, MT_DATA, M_PKTHDR);
+				m = usb2_ether_newbuf();
 				if (m == NULL)
 					goto tr_stall;
 				sc->sc_rx_buf[x] = m;
-				/* adjust for ethernet */
-				m->m_len = m->m_pkthdr.len = MCLBYTES;
-				m_adj(m, ETHER_ALIGN);
 			} else {
 				m = sc->sc_rx_buf[x];
 			}

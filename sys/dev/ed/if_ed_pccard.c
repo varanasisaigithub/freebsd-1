@@ -126,6 +126,7 @@ static const struct ed_product {
 #define	NE2000DVF_DL100XX	0x0001		/* chip is D-Link DL10019/22 */
 #define	NE2000DVF_AX88X90	0x0002		/* chip is ASIX AX88[17]90 */
 #define NE2000DVF_TC5299J	0x0004		/* chip is Tamarack TC5299J */
+#define NE2000DVF_TOSHIBA	0x0008		/* Toshiba DP83902A */
 #define NE2000DVF_ENADDR	0x0100		/* Get MAC from attr mem */
 #define NE2000DVF_ANYFUNC	0x0200		/* Allow any function type */
 #define NE2000DVF_MODEM		0x0400		/* Has a modem/serial */
@@ -138,6 +139,7 @@ static const struct ed_product {
 	{ PCMCIA_CARD(BILLIONTON, CFLT10N), 0},
 	{ PCMCIA_CARD(BILLIONTON, LNA100B), NE2000DVF_AX88X90},
 	{ PCMCIA_CARD(BILLIONTON, LNT10TN), 0},
+	{ PCMCIA_CARD(BROMAX, AXNET), NE2000DVF_AX88X90},
 	{ PCMCIA_CARD(BROMAX, IPORT), 0},
 	{ PCMCIA_CARD(BROMAX, IPORT2), 0},
 	{ PCMCIA_CARD(BUFFALO, LPC2_CLT), 0},
@@ -188,6 +190,7 @@ static const struct ed_product {
 	{ PCMCIA_CARD(MAGICRAM, ETHER), 0},
 	{ PCMCIA_CARD(MELCO, LPC3_CLX), NE2000DVF_AX88X90},
 	{ PCMCIA_CARD(MELCO, LPC3_TX), NE2000DVF_AX88X90},
+	{ PCMCIA_CARD(MITSUBISHI, B8895), NE2000DVF_ANYFUNC}, /* NG */
 	{ PCMCIA_CARD(MICRORESEARCH, MR10TPC), 0},
 	{ PCMCIA_CARD(NDC, ND5100_E), 0},
 	{ PCMCIA_CARD(NETGEAR, FA410TXC), NE2000DVF_DL100XX},
@@ -206,6 +209,7 @@ static const struct ed_product {
 	{ PCMCIA_CARD(RACORE, FASTENET), NE2000DVF_AX88X90},
 	{ PCMCIA_CARD(RACORE, 8041TX), NE2000DVF_AX88X90 | NE2000DVF_TC5299J},
 	{ PCMCIA_CARD(RELIA, COMBO), 0},
+	{ PCMCIA_CARD(RIOS, PCCARD3), 0},
 	{ PCMCIA_CARD(RPTI, EP400), 0},
 	{ PCMCIA_CARD(RPTI, EP401), 0},
 	{ PCMCIA_CARD(SMC, EZCARD), 0},
@@ -222,6 +226,8 @@ static const struct ed_product {
 	{ PCMCIA_CARD(TDK, DFL5610WS), 0},
 	{ PCMCIA_CARD(TELECOMDEVICE, LM5LT), 0 },
 	{ PCMCIA_CARD(TELECOMDEVICE, TCD_HPC100), NE2000DVF_AX88X90},
+	{ PCMCIA_CARD(TJ, PTJ_LAN_T), 0 },
+	{ PCMCIA_CARD(TOSHIBA2, LANCT00A), NE2000DVF_ANYFUNC | NE2000DVF_TOSHIBA},
 	{ PCMCIA_CARD(ZONET, ZEN), 0},
 	{ { NULL } }
 };
@@ -429,9 +435,10 @@ ed_pccard_attach(device_t dev)
 	u_char sum;
 	u_char enaddr[ETHER_ADDR_LEN];
 	const struct ed_product *pp;
-	int	error, i;
+	int	error, i, flags;
 	struct ed_softc *sc = device_get_softc(dev);
 	u_long size;
+	static uint16_t *intr_vals[] = {NULL, NULL};
 
 	if ((pp = (const struct ed_product *) pccard_product_lookup(dev, 
 	    (const struct pccard_product *) ed_pccard_products,
@@ -469,6 +476,7 @@ ed_pccard_attach(device_t dev)
 	sc->asic_offset = ED_NOVELL_ASIC_OFFSET;
 	sc->nic_offset  = ED_NOVELL_NIC_OFFSET;
 	error = ENXIO;
+	flags = device_get_flags(dev);
 	if (error != 0)
 		error = ed_pccard_dl100xx(dev, pp);
 	if (error != 0)
@@ -476,7 +484,15 @@ ed_pccard_attach(device_t dev)
 	if (error != 0)
 		error = ed_pccard_tc5299j(dev, pp);
 	if (error != 0)
-		error = ed_probe_Novell_generic(dev, device_get_flags(dev));
+		error = ed_probe_Novell_generic(dev, flags);
+	if (error != 0) {
+		if (pp->flags & NE2000DVF_TOSHIBA)
+			flags |= ED_FLAGS_TOSH_ETHER;
+		flags |= ED_FLAGS_PCCARD;
+		sc->asic_offset = ED_WD_ASIC_OFFSET;
+		sc->nic_offset  = ED_WD_NIC_OFFSET;
+		error = ed_probe_WD80x3_generic(dev, flags, intr_vals);
+	}
 	if (error)
 		goto bad;
 
@@ -497,7 +513,9 @@ ed_pccard_attach(device_t dev)
 	 * default value.  In all fails, we should fail the attach,
 	 * but don't right now.
 	 */
-	if (sc->chip_type == ED_CHIP_TYPE_DP8390) {
+	for (i = 0, sum = 0; i < ETHER_ADDR_LEN; i++)
+		sum |= sc->enaddr[i];
+	if (sc->chip_type == ED_CHIP_TYPE_DP8390 && sum == 0) {
 		pccard_get_ether(dev, enaddr);
 		if (bootverbose)
 			device_printf(dev, "CIS MAC %6D\n", enaddr, ":");
@@ -1017,7 +1035,7 @@ ed_miibus_readreg(device_t dev, int phy, int reg)
 	return (failed ? 0 : val);
 }
 
-static void
+static int
 ed_miibus_writereg(device_t dev, int phy, int reg, int data)
 {
 	struct ed_softc *sc;
@@ -1028,7 +1046,7 @@ ed_miibus_writereg(device_t dev, int phy, int reg, int data)
 	 * 0x11 through 0x1f.
 	 */
 	if (phy >= 0x11)
-		return;
+		return (0);
 
 	sc = device_get_softc(dev);
 	(*sc->mii_writebits)(sc, 0xffffffff, 32);
@@ -1039,6 +1057,7 @@ ed_miibus_writereg(device_t dev, int phy, int reg, int data)
 	(*sc->mii_writebits)(sc, ED_MII_TURNAROUND, ED_MII_TURNAROUND_BITS);
 	(*sc->mii_writebits)(sc, data, ED_MII_DATA_BITS);
 	(*sc->mii_writebits)(sc, ED_MII_IDLE, ED_MII_IDLE_BITS);
+	return (0);
 }
 
 static int

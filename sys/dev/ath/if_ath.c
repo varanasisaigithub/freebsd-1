@@ -89,11 +89,6 @@ __FBSDID("$FreeBSD$");
 #endif
 
 /*
- * We require a HAL w/ the changes for split tx/rx MIC.
- */
-CTASSERT(HAL_ABI_VERSION > 0x06052200);
-
-/*
  * ATH_BCBUF determines the number of vap's that can transmit
  * beacons and also (currently) the number of vap's that can
  * have unique mac addresses/bssid.  When staggering beacons
@@ -130,7 +125,7 @@ static void	ath_start(struct ifnet *);
 static int	ath_reset(struct ifnet *);
 static int	ath_reset_vap(struct ieee80211vap *, u_long);
 static int	ath_media_change(struct ifnet *);
-static void	ath_watchdog(struct ifnet *);
+static void	ath_watchdog(void *);
 static int	ath_ioctl(struct ifnet *, u_long, caddr_t);
 static void	ath_fatal_proc(void *, int);
 static void	ath_bmiss_vap(struct ieee80211vap *);
@@ -225,7 +220,7 @@ static void	ath_tdma_bintvalsetup(struct ath_softc *sc,
 		    const struct ieee80211_tdma_state *tdma);
 static void	ath_tdma_config(struct ath_softc *sc, struct ieee80211vap *vap);
 static void	ath_tdma_update(struct ieee80211_node *ni,
-		    const struct ieee80211_tdma_param *tdma);
+		    const struct ieee80211_tdma_param *tdma, int);
 static void	ath_tdma_beacon_send(struct ath_softc *sc,
 		    struct ieee80211vap *vap);
 
@@ -358,6 +353,7 @@ ath_attach(u_int16_t devid, struct ath_softc *sc)
 	HAL_STATUS status;
 	int error = 0, i;
 	u_int wmodes;
+	uint8_t macaddr[IEEE80211_ADDR_LEN];
 
 	DPRINTF(sc, ATH_DEBUG_ANY, "%s: devid 0x%x\n", __func__, devid);
 
@@ -377,13 +373,6 @@ ath_attach(u_int16_t devid, struct ath_softc *sc)
 	if (ah == NULL) {
 		if_printf(ifp, "unable to attach hardware; HAL status %u\n",
 			status);
-		error = ENXIO;
-		goto bad;
-	}
-	if (ah->ah_abi != HAL_ABI_VERSION) {
-		if_printf(ifp, "HAL ABI mismatch detected "
-			"(HAL:0x%x != driver:0x%x)\n",
-			ah->ah_abi, HAL_ABI_VERSION);
 		error = ENXIO;
 		goto bad;
 	}
@@ -458,7 +447,8 @@ ath_attach(u_int16_t devid, struct ath_softc *sc)
 		if_printf(ifp, "failed to allocate descriptors: %d\n", error);
 		goto bad;
 	}
-	callout_init(&sc->sc_cal_ch, CALLOUT_MPSAFE);
+	callout_init_mtx(&sc->sc_cal_ch, &sc->sc_mtx, 0);
+	callout_init_mtx(&sc->sc_wd_ch, &sc->sc_mtx, 0);
 
 	ATH_TXBUF_LOCK_INIT(sc);
 
@@ -567,7 +557,7 @@ ath_attach(u_int16_t devid, struct ath_softc *sc)
 	ifp->if_softc = sc;
 	ifp->if_flags = IFF_SIMPLEX | IFF_BROADCAST | IFF_MULTICAST;
 	ifp->if_start = ath_start;
-	ifp->if_watchdog = ath_watchdog;
+	ifp->if_watchdog = NULL;
 	ifp->if_ioctl = ath_ioctl;
 	ifp->if_init = ath_init;
 	IFQ_SET_MAXLEN(&ifp->if_snd, IFQ_MAXLEN);
@@ -692,14 +682,14 @@ ath_attach(u_int16_t devid, struct ath_softc *sc)
 	sc->sc_hasveol = ath_hal_hasveol(ah);
 
 	/* get mac address from hardware */
-	ath_hal_getmac(ah, ic->ic_myaddr);
+	ath_hal_getmac(ah, macaddr);
 	if (sc->sc_hasbmask)
 		ath_hal_getbssidmask(ah, sc->sc_hwbssidmask);
 
 	/* NB: used to size node table key mapping array */
 	ic->ic_max_keyix = sc->sc_keymax;
 	/* call MI attach routine. */
-	ieee80211_ifattach(ic);
+	ieee80211_ifattach(ic, macaddr);
 	ic->ic_setregdomain = ath_setregdomain;
 	ic->ic_getradiocaps = ath_getradiocaps;
 	sc->sc_opmode = HAL_M_STA;
@@ -1528,6 +1518,7 @@ ath_init(void *arg)
 		sc->sc_imask |= HAL_INT_MIB;
 
 	ifp->if_drv_flags |= IFF_DRV_RUNNING;
+	callout_reset(&sc->sc_wd_ch, hz, ath_watchdog, sc);
 	ath_hal_intrset(ah, sc->sc_imask);
 
 	ATH_UNLOCK(sc);
@@ -1570,8 +1561,9 @@ ath_stop_locked(struct ifnet *ifp)
 		if (sc->sc_tx99 != NULL)
 			sc->sc_tx99->stop(sc->sc_tx99);
 #endif
+		callout_stop(&sc->sc_wd_ch);
+		sc->sc_wd_timer = 0;
 		ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
-		ifp->if_timer = 0;
 		if (!sc->sc_invalid) {
 			if (sc->sc_softled) {
 				callout_stop(&sc->sc_ledtimer);
@@ -2195,7 +2187,7 @@ ath_start(struct ifnet *ifp)
 			goto nextfrag;
 		}
 
-		ifp->if_timer = 5;
+		sc->sc_wd_timer = 5;
 #if 0
 		/*
 		 * Flush stale frames from the fast-frame staging queue.
@@ -2686,17 +2678,8 @@ ath_calcrxfilter(struct ath_softc *sc)
 	u_int32_t rfilt;
 
 	rfilt = HAL_RX_FILTER_UCAST | HAL_RX_FILTER_BCAST | HAL_RX_FILTER_MCAST;
-#if HAL_ABI_VERSION < 0x08011600
-	rfilt |= (ath_hal_getrxfilter(sc->sc_ah) &
-		(HAL_RX_FILTER_PHYRADAR | HAL_RX_FILTER_PHYERR));
-#elif HAL_ABI_VERSION < 0x08060100
-	if (ic->ic_opmode == IEEE80211_M_STA &&
-	    !sc->sc_needmib && !sc->sc_scanning)
-		rfilt |= HAL_RX_FILTER_PHYERR;
-#else
 	if (!sc->sc_needmib && !sc->sc_scanning)
 		rfilt |= HAL_RX_FILTER_PHYERR;
-#endif
 	if (ic->ic_opmode != IEEE80211_M_STA)
 		rfilt |= HAL_RX_FILTER_PROBEREQ;
 	if (ic->ic_opmode == IEEE80211_M_MONITOR || (ifp->if_flags & IFF_PROMISC))
@@ -2773,7 +2756,6 @@ static void
 ath_mode_init(struct ath_softc *sc)
 {
 	struct ifnet *ifp = sc->sc_ifp;
-	struct ieee80211com *ic = ifp->if_l2com;
 	struct ath_hal *ah = sc->sc_ah;
 	u_int32_t rfilt;
 
@@ -2784,16 +2766,8 @@ ath_mode_init(struct ath_softc *sc)
 	/* configure operational mode */
 	ath_hal_setopmode(ah);
 
-	/*
-	 * Handle any link-level address change.  Note that we only
-	 * need to force ic_myaddr; any other addresses are handled
-	 * as a byproduct of the ifnet code marking the interface
-	 * down then up.
-	 *
-	 * XXX should get from lladdr instead of arpcom but that's more work
-	 */
-	IEEE80211_ADDR_COPY(ic->ic_myaddr, IF_LLADDR(ifp));
-	ath_hal_setmac(ah, ic->ic_myaddr);
+	/* handle any link-level address change */
+	ath_hal_setmac(ah, IF_LLADDR(ifp));
 
 	/* calculate and install multicast filter */
 	ath_update_mcast(ifp);
@@ -5372,7 +5346,7 @@ ath_tx_proc_q0(void *arg, int npending)
 	if (txqactive(sc->sc_ah, sc->sc_cabq->axq_qnum))
 		ath_tx_processq(sc, sc->sc_cabq);
 	ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
-	ifp->if_timer = 0;
+	sc->sc_wd_timer = 0;
 
 	if (sc->sc_softled)
 		ath_led_event(sc, sc->sc_txrix);
@@ -5409,7 +5383,7 @@ ath_tx_proc_q0123(void *arg, int npending)
 		sc->sc_lastrx = ath_hal_gettsf64(sc->sc_ah);
 
 	ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
-	ifp->if_timer = 0;
+	sc->sc_wd_timer = 0;
 
 	if (sc->sc_softled)
 		ath_led_event(sc, sc->sc_txrix);
@@ -5438,7 +5412,7 @@ ath_tx_proc(void *arg, int npending)
 		sc->sc_lastrx = ath_hal_gettsf64(sc->sc_ah);
 
 	ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
-	ifp->if_timer = 0;
+	sc->sc_wd_timer = 0;
 
 	if (sc->sc_softled)
 		ath_led_event(sc, sc->sc_txrix);
@@ -5557,7 +5531,7 @@ ath_draintxq(struct ath_softc *sc)
 	}
 #endif /* ATH_DEBUG */
 	ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
-	ifp->if_timer = 0;
+	sc->sc_wd_timer = 0;
 }
 
 /*
@@ -5902,7 +5876,7 @@ ath_newstate(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
 		ieee80211_state_name[vap->iv_state],
 		ieee80211_state_name[nstate]);
 
-	callout_stop(&sc->sc_cal_ch);
+	callout_drain(&sc->sc_cal_ch);
 	ath_hal_setledstate(ah, leds[nstate]);	/* set LED */
 
 	if (nstate == IEEE80211_S_SCAN) {
@@ -6270,10 +6244,6 @@ ath_rate_setup(struct ath_softc *sc, u_int mode)
 		break;
 	case IEEE80211_MODE_TURBO_A:
 		rt = ath_hal_getratetable(ah, HAL_MODE_108A);
-#if HAL_ABI_VERSION < 0x07013100
-		if (rt == NULL)		/* XXX bandaid for old hal's */
-			rt = ath_hal_getratetable(ah, HAL_MODE_TURBO);
-#endif
 		break;
 	case IEEE80211_MODE_TURBO_G:
 		rt = ath_hal_getratetable(ah, HAL_MODE_108G);
@@ -6436,11 +6406,12 @@ ath_printtxbuf(struct ath_softc *sc, const struct ath_buf *bf,
 #endif /* ATH_DEBUG */
 
 static void
-ath_watchdog(struct ifnet *ifp)
+ath_watchdog(void *arg)
 {
-	struct ath_softc *sc = ifp->if_softc;
+	struct ath_softc *sc = arg;
 
-	if ((ifp->if_drv_flags & IFF_DRV_RUNNING) && !sc->sc_invalid) {
+	if (sc->sc_wd_timer != 0 && --sc->sc_wd_timer == 0) {
+		struct ifnet *ifp = sc->sc_ifp;
 		uint32_t hangs;
 
 		if (ath_hal_gethangstate(sc->sc_ah, 0xffff, &hangs) &&
@@ -6453,6 +6424,7 @@ ath_watchdog(struct ifnet *ifp)
 		ifp->if_oerrors++;
 		sc->sc_stats.ast_watchdog++;
 	}
+	callout_schedule(&sc->sc_wd_ch, hz);
 }
 
 #ifdef ATH_DIAGAPI
@@ -7272,7 +7244,7 @@ ath_raw_xmit(struct ieee80211_node *ni, struct mbuf *m,
 		if (ath_tx_raw_start(sc, ni, bf, m, params))
 			goto bad;
 	}
-	ifp->if_timer = 5;
+	sc->sc_wd_timer = 5;
 
 	return 0;
 bad:
@@ -7472,7 +7444,7 @@ ath_tdma_config(struct ath_softc *sc, struct ieee80211vap *vap)
  */
 static void
 ath_tdma_update(struct ieee80211_node *ni,
-	const struct ieee80211_tdma_param *tdma)
+	const struct ieee80211_tdma_param *tdma, int changed)
 {
 #define	TSF_TO_TU(_h,_l) \
 	((((u_int32_t)(_h)) << 22) | (((u_int32_t)(_l)) >> 10))
@@ -7493,7 +7465,7 @@ ath_tdma_update(struct ieee80211_node *ni,
 	/*
 	 * Check for and adopt configuration changes.
 	 */
-	if (isset(ATH_VAP(vap)->av_boff.bo_flags, IEEE80211_BEACON_TDMA)) {
+	if (changed != 0) {
 		const struct ieee80211_tdma_state *ts = vap->iv_tdma;
 
 		ath_tdma_bintvalsetup(sc, ts);

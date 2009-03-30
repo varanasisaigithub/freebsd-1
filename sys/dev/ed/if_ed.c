@@ -389,7 +389,8 @@ ed_detach(device_t dev)
 		callout_drain(&sc->tick_ch);
 		ether_ifdetach(ifp);
 	}
-	bus_teardown_intr(dev, sc->irq_res, sc->irq_handle);
+	if (sc->irq_res != NULL && sc->irq_handle)
+		bus_teardown_intr(dev, sc->irq_res, sc->irq_handle);
 	ed_release_resources(dev);
 	ED_LOCK_DESTROY(sc);
 	bus_generic_detach(dev);
@@ -806,14 +807,15 @@ ed_rint(struct ed_softc *sc)
 			/*
 			 * Length is a wild value. There's a good chance that
 			 * this was caused by the NIC being old and buggy.
-			 * The bug is that the length low byte is duplicated in
-			 * the high byte. Try to recalculate the length based on
-			 * the pointer to the next packet.
+			 * The bug is that the length low byte is duplicated
+			 * in the high byte. Try to recalculate the length
+			 * based on the pointer to the next packet.  Also,
+			 * need ot preserve offset into page.
+			 *
+			 * NOTE: sc->next_packet is pointing at the current
+			 * packet.
 			 */
-			/*
-			 * NOTE: sc->next_packet is pointing at the current packet.
-			 */
-			len &= ED_PAGE_SIZE - 1;	/* preserve offset into page */
+			len &= ED_PAGE_SIZE - 1;
 			if (packet_hdr.next_packet >= sc->next_packet)
 				len += (packet_hdr.next_packet -
 				    sc->next_packet) * ED_PAGE_SIZE;
@@ -834,14 +836,14 @@ ed_rint(struct ed_softc *sc)
 		}
 
 		/*
-		 * Be fairly liberal about what we allow as a "reasonable" length
-		 * so that a [crufty] packet will make it to BPF (and can thus
-		 * be analyzed). Note that all that is really important is that
-		 * we have a length that will fit into one mbuf cluster or less;
-		 * the upper layer protocols can then figure out the length from
-		 * their own length field(s).
-		 * But make sure that we have at least a full ethernet header
-		 * or we would be unable to call ether_input() later.
+		 * Be fairly liberal about what we allow as a "reasonable"
+		 * length so that a [crufty] packet will make it to BPF (and
+		 * can thus be analyzed). Note that all that is really
+		 * important is that we have a length that will fit into one
+		 * mbuf cluster or less; the upper layer protocols can then
+		 * figure out the length from their own length field(s).  But
+		 * make sure that we have at least a full ethernet header or
+		 * we would be unable to call ether_input() later.
 		 */
 		if ((len >= sizeof(struct ed_ring) + ETHER_HDR_LEN) &&
 		    (len <= MCLBYTES) &&
@@ -1309,7 +1311,7 @@ ed_shmem_readmem16(struct ed_softc *sc, bus_size_t src, uint8_t *dst,
     uint16_t amount)
 {
 	bus_space_read_region_2(sc->mem_bst, sc->mem_bsh, src, (uint16_t *)dst,
-	    amount + 1 / 2);
+	    (amount + 1) / 2);
 }
 
 /*

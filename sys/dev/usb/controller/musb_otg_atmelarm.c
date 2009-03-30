@@ -25,7 +25,6 @@
  */
 
 #include <dev/usb/usb_mfunc.h>
-#include <dev/usb/usb_defs.h>
 #include <dev/usb/usb.h>
 
 #include <dev/usb/usb_core.h>
@@ -36,7 +35,7 @@
 
 #include <dev/usb/usb_controller.h>
 #include <dev/usb/usb_bus.h>
-#include <dev/usb/controller/mus2_otg.h>
+#include <dev/usb/controller/musb_otg.h>
 
 #include <sys/rman.h>
 
@@ -131,10 +130,10 @@ musbotg_attach(device_t dev)
 
 #if (__FreeBSD_version >= 700031)
 	err = bus_setup_intr(dev, sc->sc_otg.sc_irq_res, INTR_TYPE_BIO | INTR_MPSAFE,
-	    NULL, (void *)musbotg_interrupt, sc, &sc->sc_otg.sc_intr_hdl);
+	    NULL, (driver_intr_t *)musbotg_interrupt, sc, &sc->sc_otg.sc_intr_hdl);
 #else
 	err = bus_setup_intr(dev, sc->sc_otg.sc_irq_res, INTR_TYPE_BIO | INTR_MPSAFE,
-	    (void *)musbotg_interrupt, sc, &sc->sc_otg.sc_intr_hdl);
+	    (driver_intr_t *)musbotg_interrupt, sc, &sc->sc_otg.sc_intr_hdl);
 #endif
 	if (err) {
 		sc->sc_otg.sc_intr_hdl = NULL;

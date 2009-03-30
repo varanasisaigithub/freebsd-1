@@ -49,7 +49,6 @@ __FBSDID("$FreeBSD$");
  */
 
 #include <dev/usb/usb_mfunc.h>
-#include <dev/usb/usb_defs.h>
 #include <dev/usb/usb.h>
 
 #include <dev/usb/usb_core.h>
@@ -324,10 +323,10 @@ uhci_pci_attach(device_t self)
 
 #if (__FreeBSD_version >= 700031)
 	err = bus_setup_intr(self, sc->sc_irq_res, INTR_TYPE_BIO | INTR_MPSAFE,
-	    NULL, (void *)(void *)uhci_interrupt, sc, &sc->sc_intr_hdl);
+	    NULL, (driver_intr_t *)uhci_interrupt, sc, &sc->sc_intr_hdl);
 #else
 	err = bus_setup_intr(self, sc->sc_irq_res, INTR_TYPE_BIO | INTR_MPSAFE,
-	    (void *)(void *)uhci_interrupt, sc, &sc->sc_intr_hdl);
+	    (driver_intr_t *)uhci_interrupt, sc, &sc->sc_intr_hdl);
 #endif
 
 	if (err) {
@@ -439,5 +438,4 @@ static driver_t uhci_driver =
 static devclass_t uhci_devclass;
 
 DRIVER_MODULE(uhci, pci, uhci_driver, uhci_devclass, 0, 0);
-DRIVER_MODULE(uhci, cardbus, uhci_driver, uhci_devclass, 0, 0);
 MODULE_DEPEND(uhci, usb, 1, 1, 1);
