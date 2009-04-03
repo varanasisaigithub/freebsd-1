@@ -260,7 +260,7 @@ malo_attach(uint16_t devid, struct malo_softc *sc)
 	}
 	error = malo_setup_hwdma(sc);	/* push to firmware */
 	if (error != 0)			/* NB: malo_setupdma prints msg */
-		goto bad1;
+		goto bad2;
 
 	sc->malo_tq = taskqueue_create_fast("malo_taskq", M_NOWAIT,
 		taskqueue_thread_enqueue, &sc->malo_tq);
@@ -329,6 +329,8 @@ malo_attach(uint16_t devid, struct malo_softc *sc)
 	malo_announce(sc);
 
 	return 0;
+bad2:
+	malo_dma_cleanup(sc);
 bad1:
 	malo_hal_detach(mh);
 bad:
@@ -1288,20 +1290,9 @@ malo_start(struct ifnet *ifp)
 			break;
 		}
 		/*
-		 * Encapsulate the packet in prep for transmission.
-		 */
-		m = ieee80211_encap(ni, m);
-		if (m == NULL) {
-			DPRINTF(sc, MALO_DEBUG_XMIT,
-			    "%s: encapsulation failure\n", __func__);
-			sc->malo_stats.mst_tx_encap++;
-			goto bad;
-		}
-		/*
 		 * Pass the frame to the h/w for transmission.
 		 */
 		if (malo_tx_start(sc, ni, bf, m)) {
-	bad:
 			ifp->if_oerrors++;
 			if (bf != NULL) {
 				bf->bf_m = NULL;

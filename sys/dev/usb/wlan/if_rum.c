@@ -95,6 +95,7 @@ static const struct usb2_device_id rum_devs[] = {
     { USB_VP(USB_VENDOR_PLANEX2,	USB_PRODUCT_PLANEX2_GWUSMM) },
     { USB_VP(USB_VENDOR_QCOM,		USB_PRODUCT_QCOM_RT2573) },
     { USB_VP(USB_VENDOR_QCOM,		USB_PRODUCT_QCOM_RT2573_2) },
+    { USB_VP(USB_VENDOR_QCOM,		USB_PRODUCT_QCOM_RT2573_3) },
     { USB_VP(USB_VENDOR_RALINK,		USB_PRODUCT_RALINK_RT2573) },
     { USB_VP(USB_VENDOR_RALINK,		USB_PRODUCT_RALINK_RT2573_2) },
     { USB_VP(USB_VENDOR_RALINK,		USB_PRODUCT_RALINK_RT2671) },
@@ -1354,12 +1355,6 @@ rum_start(struct ifnet *ifp)
 			break;
 		}
 		ni = (struct ieee80211_node *) m->m_pkthdr.rcvif;
-		m = ieee80211_encap(ni, m);
-		if (m == NULL) {
-			ieee80211_free_node(ni);
-			ifp->if_oerrors++;
-			continue;
-		}
 		if (rum_tx_data(sc, m, ni) != 0) {
 			ieee80211_free_node(ni);
 			ifp->if_oerrors++;

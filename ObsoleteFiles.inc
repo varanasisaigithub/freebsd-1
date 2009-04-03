@@ -1440,6 +1440,8 @@ OLD_FILES+=lib/geom/geom_concat.so.1
 OLD_FILES+=lib/geom/geom_label.so.1
 OLD_FILES+=lib/geom/geom_nop.so.1
 OLD_FILES+=lib/geom/geom_stripe.so.1
+# 20040713: fla(4) removed.
+OLD_FILES+=usr/share/man/man4/fla.4.gz
 # 200407XX
 OLD_FILES+=usr/sbin/kernbb
 OLD_FILES+=usr/sbin/ntp-genkeys

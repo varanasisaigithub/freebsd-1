@@ -392,6 +392,8 @@ ed_detach(device_t dev)
 	if (sc->irq_res != NULL && sc->irq_handle)
 		bus_teardown_intr(dev, sc->irq_res, sc->irq_handle);
 	ed_release_resources(dev);
+	if (sc->miibus)
+		device_delete_child(dev, sc->miibus);
 	ED_LOCK_DESTROY(sc);
 	bus_generic_detach(dev);
 	return (0);
@@ -427,10 +429,19 @@ ed_stop_hw(struct ed_softc *sc)
 	 * Wait for interface to enter stopped state, but limit # of checks to
 	 * 'n' (about 5ms). It shouldn't even take 5us on modern DS8390's, but
 	 * just in case it's an old one.
+	 *
+	 * The AX88x90 chips don't seem to implement this behavor.  The
+	 * datasheets say it is only turned on when the chip enters a RESET
+	 * state and is silent about behavior for the stopped state we just
+	 * entered.
 	 */
-	if (sc->chip_type != ED_CHIP_TYPE_AX88190)
-		while (((ed_nic_inb(sc, ED_P0_ISR) & ED_ISR_RST) == 0) && --n)
-			continue;
+	if (sc->chip_type == ED_CHIP_TYPE_AX88190 ||
+	    sc->chip_type == ED_CHIP_TYPE_AX88790)
+		return;
+	while (((ed_nic_inb(sc, ED_P0_ISR) & ED_ISR_RST) == 0) && --n)
+		continue;
+	if (n <= 0)
+		device_printf(sc->dev, "ed_stop_hw RST never set\n");
 }
 
 /*
@@ -916,10 +927,10 @@ edintr(void *arg)
 	ed_nic_outb(sc, ED_P0_CR, sc->cr_proto | ED_CR_STA);
 
 	/*
-	 * loop until there are no more new interrupts.  When the card
-	 * goes away, the hardware will read back 0xff.  Looking at
-	 * the interrupts, it would appear that 0xff is impossible,
-	 * or at least extremely unlikely.
+	 * loop until there are no more new interrupts.  When the card goes
+	 * away, the hardware will read back 0xff.  Looking at the interrupts,
+	 * it would appear that 0xff is impossible, or at least extremely
+	 * unlikely.
 	 */
 	while ((isr = ed_nic_inb(sc, ED_P0_ISR)) != 0 && isr != 0xff) {
 
@@ -930,12 +941,14 @@ edintr(void *arg)
 		 */
 		ed_nic_outb(sc, ED_P0_ISR, isr);
 
-		/* 
-		 * XXX workaround for AX88190
+		/*
+		 * The AX88190 and AX88190A has problems acking an interrupt
+		 * and having them clear.  This interferes with top-level loop
+		 * here.  Wait for all the bits to clear.
+		 *
 		 * We limit this to 5000 iterations.  At 1us per inb/outb,
-		 * this translates to about 15ms, which should be plenty
-		 * of time, and also gives protection in the card eject
-		 * case.
+		 * this translates to about 15ms, which should be plenty of
+		 * time, and also gives protection in the card eject case.
 		 */
 		if (sc->chip_type == ED_CHIP_TYPE_AX88190) {
 			count = 5000;		/* 15ms */
@@ -1530,7 +1543,8 @@ ed_setrcr(struct ed_softc *sc)
 	ED_ASSERT_LOCKED(sc);
 
 	/* Bit 6 in AX88190 RCR register must be set. */
-	if (sc->chip_type == ED_CHIP_TYPE_AX88190)
+	if (sc->chip_type == ED_CHIP_TYPE_AX88190 ||
+	    sc->chip_type == ED_CHIP_TYPE_AX88790)
 		reg1 = ED_RCR_INTT;
 	else
 		reg1 = 0x00;

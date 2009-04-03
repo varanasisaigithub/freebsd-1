@@ -1,13 +1,12 @@
 /*-
- * Copyright (c) 2005, M. Warner Losh.
+ * Copyright (c) 2009 Konstantin Belousov
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
  * 1. Redistributions of source code must retain the above copyright
- *    notice unmodified, this list of conditions, and the following
- *    disclaimer.
+ *    notice, this list of conditions and the following disclaimer.
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
@@ -23,21 +22,50 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- * $FreeBSD$
  */
 
-/* Dlink chipset used on some Netgear and Dlink PCMCIA cards */
-#define ED_DL100XX_MIIBUS	0x0c	/* MII bus register on ASIC */
-#define ED_DL10022_DIAG		0x0d
-#define ED_DL10022_COLLISON_DIS	    4	/* Disable collision detection */
+#include <sys/cdefs.h>
+__FBSDID("$FreeBSD$");
 
-#define ED_DL10022_MII_RESET1	0x04
-#define ED_DL10022_MII_RESET2	0x08
+#include "opt_compat.h"
 
-#define ED_DL100XX_MII_DATAIN	0x10
-#define ED_DL10022_MII_DIROUT	0x20
-#define ED_DL10019_MII_DIROUT	0x10
-#define ED_DL100XX_MII_DIROUT	(ED_DL10022_MII_DIROUT | ED_DL10019_MII_DIROUT)
-#define ED_DL100XX_MII_DATAOUT	0x40
-#define ED_DL100XX_MII_CLK	0x80
+#include <sys/param.h>
+#include <sys/mount.h>
+#include <sys/proc.h>
+#include <sys/socket.h>
+#include <sys/sysent.h>
+#include <sys/sysproto.h>
+#include <sys/systm.h>
+#include <sys/uio.h>
+
+#include <machine/cpu.h>
+#include <machine/sysarch.h>
+
+#include <compat/freebsd32/freebsd32_util.h>
+#include <compat/freebsd32/freebsd32.h>
+#include <compat/freebsd32/freebsd32_proto.h>
+
+int
+freebsd32_sysarch(struct thread *td, struct freebsd32_sysarch_args *uap)
+{
+	struct sysarch_args uap1;
+	struct i386_ldt_args uapl;
+	struct i386_ldt_args32 uapl32;
+	int error;
+
+	if (uap->op == I386_SET_LDT || uap->op == I386_GET_LDT) {
+		if ((error = copyin(uap->parms, &uapl32, sizeof(uapl32))) != 0)
+			return (error);
+		uap1.op = uap->op;
+		uap1.parms = (char *)&uapl;
+		uapl.start = uapl32.start;
+		uapl.descs = (struct user_segment_descriptor *)(uintptr_t)
+		    uapl32.descs;
+		uapl.num = uapl32.num;
+		return (sysarch_ldt(td, &uap1, UIO_SYSSPACE));
+	} else {
+		uap1.op = uap->op;
+		uap1.parms = uap->parms;
+		return (sysarch(td, &uap1));
+	}
+}

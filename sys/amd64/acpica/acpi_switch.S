@@ -64,12 +64,15 @@ ENTRY(acpi_restorecpu)
 	/* Fetch PCB. */
 	movq	WAKEUP_CTX(xpcb), %r11
 
-	/* Restore segment registers. */
-	mov	WAKEUP_PCB(DS), %ds
-	mov	WAKEUP_PCB(ES), %es
-	mov	WAKEUP_XPCB(SS), %ss
-	mov	WAKEUP_PCB(FS), %fs
-	mov	WAKEUP_PCB(GS), %gs
+	/* Force kernel segment registers. */
+	movl	$KDSEL, %eax
+	movw	%ax, %ds
+	movw	%ax, %es
+	movw	%ax, %ss
+	movl	$KUF32SEL, %eax
+	movw	%ax, %fs
+	movl	$KUG32SEL, %eax
+	movw	%ax, %gs
 
 	movl	$MSR_FSBASE, %ecx
 	movl	WAKEUP_PCB(FSBASE), %eax
@@ -123,8 +126,18 @@ ENTRY(acpi_restorecpu)
 	/* Restore descriptor tables. */
 	lidt	WAKEUP_XPCB(IDT)
 	lldt	WAKEUP_XPCB(LDT)
+
+#define	SDT_SYSTSS	9
+#define	SDT_SYSBSY	11
+
+	/* Clear "task busy" bit and reload TR. */
+	movq	PCPU(TSS), %rax
+	andb	$(~SDT_SYSBSY | SDT_SYSTSS), 5(%rax)
 	movw	WAKEUP_XPCB(TR), %ax
 	ltr	%ax
+
+#undef	SDT_SYSTSS
+#undef	SDT_SYSBSY
 
 	/* Restore other callee saved registers. */
 	movq	WAKEUP_PCB(R15), %r15

@@ -47,15 +47,9 @@
   #include <sys/time.h>
 #endif /* WIN32/MSDOS/UN*X */
 
-#ifndef PCAP_DONT_INCLUDE_PCAP_BPF_H
-#include <pcap-bpf.h>
-#endif
+#include <net/bpf.h>
 
 #include <stdio.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 #define PCAP_VERSION_MAJOR 2
 #define PCAP_VERSION_MINOR 4
