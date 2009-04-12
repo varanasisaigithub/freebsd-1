@@ -196,6 +196,7 @@ dev/ipmi/ipmi_smbus.c		optional ipmi smbus
 dev/ipmi/ipmi_smbios.c		optional ipmi
 dev/ipmi/ipmi_ssif.c		optional ipmi smbus
 dev/ipmi/ipmi_pci.c		optional ipmi pci
+dev/ipmi/ipmi_linux.c		optional ipmi compat_linux
 dev/kbd/kbd.c			optional atkbd | sc | ukbd | usb2_input_kbd
 dev/le/if_le_isa.c		optional le isa
 dev/mem/memutil.c		optional mem
@@ -241,6 +242,7 @@ i386/bios/smapi_bios.S		optional smapi
 i386/bios/smbios.c		optional smbios
 i386/bios/vpd.c			optional vpd
 i386/cpufreq/est.c		optional cpufreq
+i386/cpufreq/hwpstate.c		optional cpufreq
 i386/cpufreq/p4tcc.c		optional cpufreq
 i386/cpufreq/powernow.c		optional cpufreq
 i386/cpufreq/smist.c		optional cpufreq

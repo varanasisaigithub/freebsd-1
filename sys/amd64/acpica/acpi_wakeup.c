@@ -37,7 +37,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/malloc.h>
 #include <sys/memrange.h>
 #include <sys/smp.h>
-#include <sys/sysctl.h>
 #include <sys/types.h>
 
 #include <vm/vm.h>
@@ -67,8 +66,8 @@ CTASSERT(sizeof(wakecode) < PAGE_SIZE - 1024);
 #error this file needs sys/cdefs.h as a prerequisite
 #endif
 
-extern uint32_t		acpi_resume_beep;
-extern uint32_t		acpi_reset_video;
+extern int		acpi_resume_beep;
+extern int		acpi_reset_video;
 
 #ifdef SMP
 extern struct xpcb	*stopxpcbs;
@@ -79,7 +78,6 @@ static struct xpcb	*stopxpcbs;
 int			acpi_restorecpu(struct xpcb *, vm_offset_t);
 int			acpi_savecpu(struct xpcb *);
 
-static void		acpi_reset_tss(int cpu);
 static void		acpi_alloc_wakeup_handler(void);
 static void		acpi_stop_beep(void *);
 
@@ -116,8 +114,6 @@ acpi_wakeup_ap(struct acpi_softc *sc, int cpu)
 	WAKECODE_FIXUP(wakeup_gdt + 2, uint64_t,
 	    stopxpcbs[cpu].xpcb_gdt.rd_base);
 	WAKECODE_FIXUP(wakeup_cpu, int, cpu);
-
-	acpi_reset_tss(cpu);
 
 	/* do an INIT IPI: assert RESET */
 	lapic_ipi_raw(APIC_DEST_DESTFLD | APIC_TRIGMOD_EDGE |
@@ -221,19 +217,6 @@ acpi_wakeup_cpus(struct acpi_softc *sc, cpumask_t wakeup_cpus)
 }
 #endif
 
-static void
-acpi_reset_tss(int cpu)
-{
-	uint32_t	*tss;
-
-	/*
-	 * We have to clear "task busy" bit in TSS to restore
-	 * task register later.  Otherwise, ltr causes GPF.
-	 */
-	tss = (uint32_t *)&gdt[NGDT * cpu + GPROC0_SEL] + 1;
-	*tss &= ~((SDT_SYSBSY ^ SDT_SYSTSS) << 8);
-}
-
 int
 acpi_sleep_machdep(struct acpi_softc *sc, int state)
 {
@@ -280,8 +263,8 @@ acpi_sleep_machdep(struct acpi_softc *sc, int state)
 		}
 #endif
 
-		WAKECODE_FIXUP(resume_beep, uint32_t, acpi_resume_beep);
-		WAKECODE_FIXUP(reset_video, uint32_t, acpi_reset_video);
+		WAKECODE_FIXUP(resume_beep, uint8_t, (acpi_resume_beep != 0));
+		WAKECODE_FIXUP(reset_video, uint8_t, (acpi_reset_video != 0));
 
 		WAKECODE_FIXUP(wakeup_xpcb, struct xpcb *, &stopxpcbs[0]);
 		WAKECODE_FIXUP(wakeup_gdt, uint16_t,
@@ -289,8 +272,6 @@ acpi_sleep_machdep(struct acpi_softc *sc, int state)
 		WAKECODE_FIXUP(wakeup_gdt + 2, uint64_t,
 		    stopxpcbs[0].xpcb_gdt.rd_base);
 		WAKECODE_FIXUP(wakeup_cpu, int, 0);
-
-		acpi_reset_tss(0);
 
 		/* Call ACPICA to enter the desired sleep state */
 		if (state == ACPI_STATE_S4 && sc->acpi_s4bios)
@@ -309,13 +290,11 @@ acpi_sleep_machdep(struct acpi_softc *sc, int state)
 			ia32_pause();
 	} else {
 		fpusetregs(curthread, stopfpu);
-
-		WAKECODE_FIXUP(resume_beep, uint32_t, 0);
-		WAKECODE_FIXUP(reset_video, uint32_t, 0);
 #ifdef SMP
 		if (wakeup_cpus != 0)
 			acpi_wakeup_cpus(sc, wakeup_cpus);
 #endif
+		acpi_resync_clock(sc);
 		ret = 0;
 	}
 

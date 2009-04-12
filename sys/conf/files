@@ -1073,6 +1073,8 @@ dev/ixgbe/ixgbe_common.c	optional ixgbe \
 	compile-with "${NORMAL_C} -I$S/dev/ixgbe"
 dev/ixgbe/ixgbe_82598.c		optional ixgbe \
 	compile-with "${NORMAL_C} -I$S/dev/ixgbe"
+dev/ixgbe/ixgbe_82599.c		optional ixgbe \
+	compile-with "${NORMAL_C} -I$S/dev/ixgbe"
 dev/jme/if_jme.c		optional jme pci
 dev/joy/joy.c			optional joy
 dev/joy/joy_isa.c		optional joy isa
@@ -1103,6 +1105,7 @@ dev/mfi/mfi_cam.c		optional mfip scbus
 dev/mii/acphy.c			optional miibus | acphy
 dev/mii/amphy.c			optional miibus | amphy
 dev/mii/atphy.c			optional miibus | atphy
+dev/mii/axphy.c			optional miibus | axphy
 dev/mii/bmtphy.c		optional miibus | bmtphy
 dev/mii/brgphy.c		optional miibus | brgphy
 dev/mii/ciphy.c			optional miibus | ciphy
@@ -1584,7 +1587,6 @@ dev/usb/usb_msctest.c		optional usb
 dev/usb/usb_parse.c		optional usb
 dev/usb/usb_process.c		optional usb
 dev/usb/usb_request.c		optional usb
-dev/usb/usb_sw_transfer.c	optional usb
 dev/usb/usb_transfer.c		optional usb
 dev/usb/usb_util.c		optional usb
 #
@@ -1655,10 +1657,6 @@ dev/usb/template/usb_template.c	optional usb_template
 dev/usb/template/usb_template_cdce.c	optional usb_template
 dev/usb/template/usb_template_msc.c	optional usb_template
 dev/usb/template/usb_template_mtp.c	optional usb_template
-#
-# USB image drivers
-#
-dev/usb/image/uscanner.c	optional uscanner
 #
 # USB END
 #
@@ -2193,14 +2191,14 @@ net/zlib.c			optional crypto | geom_uzip | ipsec | \
 					 mxge | netgraph_deflate | \
 					 ddb_ctf
 net80211/ieee80211.c		optional wlan
-net80211/ieee80211_acl.c	optional wlan_acl
+net80211/ieee80211_acl.c	optional wlan wlan_acl
 net80211/ieee80211_adhoc.c	optional wlan
-net80211/ieee80211_amrr.c	optional wlan_amrr
+net80211/ieee80211_amrr.c	optional wlan wlan_amrr
 net80211/ieee80211_crypto.c	optional wlan
-net80211/ieee80211_crypto_ccmp.c optional wlan_ccmp
+net80211/ieee80211_crypto_ccmp.c optional wlan wlan_ccmp
 net80211/ieee80211_crypto_none.c optional wlan
-net80211/ieee80211_crypto_tkip.c optional wlan_tkip
-net80211/ieee80211_crypto_wep.c	optional wlan_wep
+net80211/ieee80211_crypto_tkip.c optional wlan wlan_tkip
+net80211/ieee80211_crypto_wep.c	optional wlan wlan_wep
 net80211/ieee80211_ddb.c	optional wlan ddb
 net80211/ieee80211_dfs.c	optional wlan
 net80211/ieee80211_freebsd.c	optional wlan
@@ -2215,13 +2213,14 @@ net80211/ieee80211_phy.c	optional wlan
 net80211/ieee80211_power.c	optional wlan
 net80211/ieee80211_proto.c	optional wlan
 net80211/ieee80211_regdomain.c	optional wlan
-net80211/ieee80211_rssadapt.c	optional wlan_rssadapt
+net80211/ieee80211_rssadapt.c	optional wlan wlan_rssadapt
 net80211/ieee80211_scan.c	optional wlan
 net80211/ieee80211_scan_sta.c	optional wlan
 net80211/ieee80211_sta.c	optional wlan
-net80211/ieee80211_tdma.c	optional wlan
+net80211/ieee80211_superg.c	optional wlan ieee80211_support_superg
+net80211/ieee80211_tdma.c	optional wlan ieee80211_support_tdma
 net80211/ieee80211_wds.c	optional wlan
-net80211/ieee80211_xauth.c	optional wlan_xauth
+net80211/ieee80211_xauth.c	optional wlan wlan_xauth
 netatalk/aarp.c			optional netatalk
 netatalk/at_control.c		optional netatalk
 netatalk/at_proto.c		optional netatalk
@@ -2470,6 +2469,7 @@ nfsserver/nfs_srvsock.c		optional nfsserver
 nfsserver/nfs_srvcache.c	optional nfsserver
 nfsserver/nfs_srvsubs.c		optional nfsserver
 nfsserver/nfs_syscalls.c	optional nfsserver
+nfs/nfs_nfssvc.c		optional nfsserver
 nlm/nlm_advlock.c		optional nfslockd nfsclient
 nlm/nlm_prot_clnt.c		optional nfslockd
 nlm/nlm_prot_impl.c		optional nfslockd

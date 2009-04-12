@@ -13,6 +13,7 @@ MAN+=	catclose.3 catgets.3 catopen.3
 #       for translators.
 
 NLSNAME=	libc
+NLS+=	be_BY.UTF-8
 NLS+=	ca_ES.ISO8859-1
 NLS+=	de_DE.ISO8859-1
 NLS+=	el_GR.ISO8859-7
@@ -31,3 +32,4 @@ NLS+=	pt_BR.ISO8859-1
 NLS+=	ru_RU.KOI8-R
 NLS+=	sk_SK.ISO8859-2
 NLS+=	sv_SE.ISO8859-1
+NLS+=	uk_UA.UTF-8

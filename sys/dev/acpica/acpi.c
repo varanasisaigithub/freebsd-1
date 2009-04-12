@@ -254,6 +254,12 @@ TUNABLE_INT("debug.acpi.do_powerstate", &acpi_do_powerstate);
 SYSCTL_INT(_debug_acpi, OID_AUTO, do_powerstate, CTLFLAG_RW,
     &acpi_do_powerstate, 1, "Turn off devices when suspending.");
 
+/* Reset system clock while resuming.  XXX Remove once tested. */
+static int acpi_reset_clock = 1;
+TUNABLE_INT("debug.acpi.reset_clock", &acpi_reset_clock);
+SYSCTL_INT(_debug_acpi, OID_AUTO, reset_clock, CTLFLAG_RW,
+    &acpi_reset_clock, 1, "Reset system clock while resuming.");
+
 /* Allow users to override quirks. */
 TUNABLE_INT("debug.acpi.quirks", &acpi_quirks);
 
@@ -2336,7 +2342,7 @@ acpi_ReqSleepState(struct acpi_softc *sc, int state)
 #endif
 
     /* If devd(8) is not running, immediately enter the sleep state. */
-    if (devctl_process_running() == FALSE) {
+    if (!devctl_process_running()) {
 	ACPI_UNLOCK(acpi);
 	if (ACPI_SUCCESS(acpi_EnterSleepState(sc, sc->acpi_next_sstate))) {
 	    return (0);
@@ -2344,9 +2350,6 @@ acpi_ReqSleepState(struct acpi_softc *sc, int state)
 	    return (ENXIO);
 	}
     }
-
-    /* Now notify devd(8) also. */
-    acpi_UserNotify("Suspend", ACPI_ROOT_OBJECT, state);
 
     /*
      * Set a timeout to fire if userland doesn't ack the suspend request
@@ -2357,6 +2360,10 @@ acpi_ReqSleepState(struct acpi_softc *sc, int state)
      */
     callout_reset(&sc->susp_force_to, 10 * hz, acpi_sleep_force, sc);
     ACPI_UNLOCK(acpi);
+
+    /* Now notify devd(8) also. */
+    acpi_UserNotify("Suspend", ACPI_ROOT_OBJECT, state);
+
     return (0);
 #else
     /* This platform does not support acpi suspend/resume. */
@@ -2432,8 +2439,24 @@ acpi_AckSleepState(struct apm_clone_data *clone, int error)
 static void
 acpi_sleep_enable(void *arg)
 {
+    struct acpi_softc	*sc = (struct acpi_softc *)arg;
 
-    ((struct acpi_softc *)arg)->acpi_sleep_disabled = 0;
+    ACPI_LOCK(acpi);
+    sc->acpi_sleep_disabled = 0;
+    ACPI_UNLOCK(acpi);
+}
+
+static ACPI_STATUS
+acpi_sleep_disable(struct acpi_softc *sc)
+{
+    ACPI_STATUS		status;
+
+    ACPI_LOCK(acpi);
+    status = sc->acpi_sleep_disabled ? AE_ERROR : AE_OK;
+    sc->acpi_sleep_disabled = 1;
+    ACPI_UNLOCK(acpi);
+
+    return (status);
 }
 
 enum acpi_sleep_state {
@@ -2460,15 +2483,11 @@ acpi_EnterSleepState(struct acpi_softc *sc, int state)
     ACPI_FUNCTION_TRACE_U32((char *)(uintptr_t)__func__, state);
 
     /* Re-entry once we're suspending is not allowed. */
-    status = AE_OK;
-    ACPI_LOCK(acpi);
-    if (sc->acpi_sleep_disabled) {
-	ACPI_UNLOCK(acpi);
+    status = acpi_sleep_disable(sc);
+    if (ACPI_FAILURE(status)) {
 	printf("acpi: suspend request ignored (not ready yet)\n");
-	return (AE_ERROR);
+	return (status);
     }
-    sc->acpi_sleep_disabled = 1;
-    ACPI_UNLOCK(acpi);
 
 #ifdef SMP
     thread_lock(curthread);
@@ -2557,6 +2576,7 @@ acpi_EnterSleepState(struct acpi_softc *sc, int state)
 	 * shutdown handlers.
 	 */
 	shutdown_nice(RB_POWEROFF);
+	status = AE_OK;
 	break;
     case ACPI_STATE_S0:
     default:
@@ -2580,18 +2600,7 @@ acpi_EnterSleepState(struct acpi_softc *sc, int state)
     if (slp_state >= ACPI_SS_SLEPT)
 	acpi_enable_fixed_events(sc);
 
-    /* Allow another sleep request after a while. */
-    if (state != ACPI_STATE_S5)
-	timeout(acpi_sleep_enable, sc, hz * ACPI_MINIMUM_AWAKETIME);
-
-    /* Run /etc/rc.resume after we are back. */
-    acpi_UserNotify("Resume", ACPI_ROOT_OBJECT, state);
-
     mtx_unlock(&Giant);
-
-    /* Warm up timecounter again */
-    (void)timecounter->tc_get_timecount(timecounter);
-    (void)timecounter->tc_get_timecount(timecounter);
 
 #ifdef SMP
     thread_lock(curthread);
@@ -2599,7 +2608,30 @@ acpi_EnterSleepState(struct acpi_softc *sc, int state)
     thread_unlock(curthread);
 #endif
 
+    /* Allow another sleep request after a while. */
+    if (state != ACPI_STATE_S5)
+	timeout(acpi_sleep_enable, sc, hz * ACPI_MINIMUM_AWAKETIME);
+
+    /* Run /etc/rc.resume after we are back. */
+    if (devctl_process_running())
+	acpi_UserNotify("Resume", ACPI_ROOT_OBJECT, state);
+
     return_ACPI_STATUS (status);
+}
+
+void
+acpi_resync_clock(struct acpi_softc *sc)
+{
+
+    if (!acpi_reset_clock)
+	return;
+
+    /*
+     * Warm up timecounter again and reset system clock.
+     */
+    (void)timecounter->tc_get_timecount(timecounter);
+    (void)timecounter->tc_get_timecount(timecounter);
+    inittodr(time_second + sc->acpi_sleep_delay);
 }
 
 /* Initialize a device's wake GPE. */

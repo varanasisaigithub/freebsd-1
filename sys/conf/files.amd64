@@ -183,6 +183,7 @@ dev/ipmi/ipmi_smbus.c		optional	ipmi smbus
 dev/ipmi/ipmi_smbios.c		optional	ipmi
 dev/ipmi/ipmi_ssif.c		optional	ipmi smbus
 dev/ipmi/ipmi_pci.c		optional	ipmi pci
+dev/ipmi/ipmi_linux.c		optional	ipmi compat_linux32
 dev/fdc/fdc.c			optional	fdc
 dev/fdc/fdc_acpi.c		optional	fdc
 dev/fdc/fdc_isa.c		optional	fdc isa
@@ -231,6 +232,7 @@ amd64/ia32/ia32_reg.c		optional	compat_ia32
 amd64/ia32/ia32_signal.c	optional	compat_ia32
 amd64/ia32/ia32_sigtramp.S	optional	compat_ia32
 amd64/ia32/ia32_syscall.c	optional	compat_ia32
+amd64/ia32/ia32_misc.c		optional	compat_ia32
 compat/freebsd32/freebsd32_ioctl.c	optional	compat_ia32
 compat/freebsd32/freebsd32_misc.c	optional	compat_ia32
 compat/freebsd32/freebsd32_syscalls.c	optional	compat_ia32
@@ -282,6 +284,7 @@ i386/bios/smbios.c		optional	smbios
 i386/bios/vpd.c			optional	vpd
 i386/cpufreq/powernow.c		optional	cpufreq
 i386/cpufreq/est.c		optional	cpufreq
+i386/cpufreq/hwpstate.c		optional	cpufreq
 i386/cpufreq/p4tcc.c		optional	cpufreq
 #
 libkern/memmove.c		standard

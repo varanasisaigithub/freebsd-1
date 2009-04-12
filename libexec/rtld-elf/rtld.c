@@ -162,6 +162,7 @@ static char *ld_debug;		/* Environment variable for debugging */
 static char *ld_library_path;	/* Environment variable for search path */
 static char *ld_preload;	/* Environment variable for libraries to
 				   load first */
+static char *ld_elf_hints_path;	/* Environment variable for alternative hints path */
 static char *ld_tracing;	/* Called from ldd to print libs */
 static char *ld_utrace;		/* Use utrace() to log events. */
 static Obj_Entry *obj_list;	/* Head of linked list of shared objects */
@@ -199,6 +200,7 @@ static func_ptr_type exports[] = {
     (func_ptr_type) &dlerror,
     (func_ptr_type) &dlopen,
     (func_ptr_type) &dlsym,
+    (func_ptr_type) &dlfunc,
     (func_ptr_type) &dlvsym,
     (func_ptr_type) &dladdr,
     (func_ptr_type) &dllockinit,
@@ -370,16 +372,22 @@ _rtld(Elf_Addr *sp, func_ptr_type *exit_proc, Obj_Entry **objp)
         unsetenv(LD_ "LIBRARY_PATH");
         unsetenv(LD_ "LIBMAP_DISABLE");
         unsetenv(LD_ "DEBUG");
+        unsetenv(LD_ "ELF_HINTS_PATH");
     }
     ld_debug = getenv(LD_ "DEBUG");
     libmap_disable = getenv(LD_ "LIBMAP_DISABLE") != NULL;
     libmap_override = getenv(LD_ "LIBMAP");
     ld_library_path = getenv(LD_ "LIBRARY_PATH");
     ld_preload = getenv(LD_ "PRELOAD");
+    ld_elf_hints_path = getenv(LD_ "ELF_HINTS_PATH");
     dangerous_ld_env = libmap_disable || (libmap_override != NULL) ||
-	(ld_library_path != NULL) || (ld_preload != NULL);
+	(ld_library_path != NULL) || (ld_preload != NULL) ||
+	(ld_elf_hints_path != NULL);
     ld_tracing = getenv(LD_ "TRACE_LOADED_OBJECTS");
     ld_utrace = getenv(LD_ "UTRACE");
+
+    if ((ld_elf_hints_path == NULL) || strlen(ld_elf_hints_path) == 0)
+	ld_elf_hints_path = _PATH_ELF_HINTS;
 
     if (ld_debug != NULL && *ld_debug != '\0')
 	debug = 1;
@@ -930,6 +938,8 @@ digest_dynamic(Obj_Entry *obj, int early)
 			/* XXX */;
 		if (dynp->d_un.d_val & DF_1_BIND_NOW)
 		    obj->bind_now = true;
+		if (dynp->d_un.d_val & DF_1_NODELETE)
+		    obj->z_nodelete = true;
 	    break;
 
 	default:
@@ -1118,7 +1128,7 @@ find_library(const char *xname, const Obj_Entry *refobj)
 	      xname);
 	    return NULL;
 	}
-	if (refobj->z_origin)
+	if (refobj != NULL && refobj->z_origin)
 	    return origin_subst(xname, refobj->origin_path);
 	else
 	    return xstrdup(xname);
@@ -1240,7 +1250,7 @@ gethints(void)
 	/* Keep from trying again in case the hints file is bad. */
 	hints = "";
 
-	if ((fd = open(_PATH_ELF_HINTS, O_RDONLY)) == -1)
+	if ((fd = open(ld_elf_hints_path, O_RDONLY)) == -1)
 	    return NULL;
 	if (read(fd, &hdr, sizeof hdr) != sizeof hdr ||
 	  hdr.magic != ELFHINTS_MAGIC ||
@@ -1415,15 +1425,21 @@ is_exported(const Elf_Sym *def)
 static int
 load_needed_objects(Obj_Entry *first)
 {
-    Obj_Entry *obj;
+    Obj_Entry *obj, *obj1;
 
     for (obj = first;  obj != NULL;  obj = obj->next) {
 	Needed_Entry *needed;
 
 	for (needed = obj->needed;  needed != NULL;  needed = needed->next) {
-	    needed->obj = load_object(obj->strtab + needed->name, obj);
-	    if (needed->obj == NULL && !ld_tracing)
+	    obj1 = needed->obj = load_object(obj->strtab + needed->name, obj);
+	    if (obj1 == NULL && !ld_tracing)
 		return -1;
+	    if (obj1 != NULL && obj1->z_nodelete && !obj1->ref_nodel) {
+		dbg("obj %s nodelete", obj1->path);
+		init_dag(obj1);
+		ref_dag(obj1);
+		obj1->ref_nodel = true;
+	    }
 	}
     }
 
@@ -1969,12 +1985,13 @@ dlopen(const char *name, int mode)
     Obj_Entry **old_obj_tail;
     Obj_Entry *obj;
     Objlist initlist;
-    int result, lockstate;
+    int result, lockstate, nodelete;
 
     LD_UTRACE(UTRACE_DLOPEN_START, NULL, NULL, 0, mode, name);
     ld_tracing = (mode & RTLD_TRACE) == 0 ? NULL : "1";
     if (ld_tracing != NULL)
 	environ = (char **)*get_program_var_addr("environ");
+    nodelete = mode & RTLD_NODELETE;
 
     objlist_init(&initlist);
 
@@ -2021,6 +2038,11 @@ dlopen(const char *name, int mode)
 
 	    if (ld_tracing)
 		goto trace;
+	}
+	if (obj != NULL && (nodelete || obj->z_nodelete) && !obj->ref_nodel) {
+	    dbg("obj %s nodelete", obj->path);
+	    ref_dag(obj);
+	    obj->z_nodelete = obj->ref_nodel = true;
 	}
     }
 
@@ -2147,6 +2169,19 @@ dlsym(void *handle, const char *name)
 {
 	return do_dlsym(handle, name, __builtin_return_address(0), NULL,
 	    SYMLOOK_DLSYM);
+}
+
+dlfunc_t
+dlfunc(void *handle, const char *name)
+{
+	union {
+		void *d;
+		dlfunc_t f;
+	} rv;
+
+	rv.d = do_dlsym(handle, name, __builtin_return_address(0), NULL,
+	    SYMLOOK_DLSYM);
+	return (rv.f);
 }
 
 void *
