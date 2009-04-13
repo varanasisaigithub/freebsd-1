@@ -56,6 +56,8 @@ __FBSDID("$FreeBSD$");
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 
+#include <common/cxgb_common.h>
+
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
 

@@ -6,7 +6,6 @@
 #include <sys/param.h>
 #include <sys/types.h>
 #include <machine/bus.h>
-#ifdef CONFIG_DEFINED
 #include <cxgb_osdep.h>
 #include <common/cxgb_common.h>
 #include <cxgb_ioctl.h>
@@ -17,4 +16,3 @@
 #include <common/cxgb_sge_defs.h>
 #include <common/cxgb_firmware_exports.h>
 #include <common/jhash.h>
-#endif
