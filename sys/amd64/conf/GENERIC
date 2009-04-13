@@ -25,7 +25,7 @@ ident		GENERIC
 #hints		"GENERIC.hints"		# Default places to look for devices.
 
 makeoptions	DEBUG=-g		# Build kernel with gdb(1) debug symbols
-makeoptions	MODULES_OVERRIDE="mxge zlib geom"
+makeoptions	MODULES_OVERRIDE="mxge zlib geom opensolaris zfs cxgb fxp nfe"
 
 options 	SCHED_ULE		# ULE scheduler
 options 	PREEMPTION		# Enable kernel thread preemption
@@ -66,6 +66,11 @@ options 	STOP_NMI		# Stop CPUS using NMI instead of IPI
 options 	AUDIT			# Security event auditing
 #options 	KDTRACE_FRAME		# Ensure frames are compiled in
 #options 	KDTRACE_HOOKS		# Kernel DTrace hooks
+#options 	INVARIANTS		# Enable calls of extra sanity checking
+#options 	INVARIANT_SUPPORT	# Extra sanity checks of internal structures, required by INVARIANTS
+#options 	WITNESS			# Enable checks to detect deadlocks and cycles
+#options 	WITNESS_SKIPSPIN	# Don't run witness on spinlocks for speed
+
 
 # Make an SMP-capable kernel by default
 options 	SMP			# Symmetric MultiProcessor Kernel
