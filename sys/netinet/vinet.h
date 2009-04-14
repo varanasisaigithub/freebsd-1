@@ -27,7 +27,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $FreeBSD: head/sys/netinet/vinet.h 189225 2009-03-01 11:01:00Z bz $
+ * $FreeBSD: head/sys/netinet/vinet.h 190787 2009-04-06 22:29:41Z zec $
  */
 
 #ifndef _NETINET_VINET_H_
@@ -54,7 +54,7 @@ struct vnet_inet {
 	struct	in_ifaddrhashhead *_in_ifaddrhashtbl;
 	struct	in_ifaddrhead _in_ifaddrhead;
 	u_long	_in_ifaddrhmask;
-	struct	in_multihead _in_multihead;
+	struct	in_multihead _in_multihead;	/* XXX unused */
 
 	int	_arpt_keep;
 	int	_arp_maxtries;
@@ -85,6 +85,11 @@ struct vnet_inet {
 	struct	tcpstat _tcpstat;	/* tcp statistics */
 	struct	tcp_hostcache _tcp_hostcache;
 	struct  callout _tcp_hc_callout;
+
+	uma_zone_t _tcp_reass_zone;
+	uma_zone_t _tcpcb_zone;
+	uma_zone_t _tcptw_zone;
+	uma_zone_t _sack_hole_zone;
 
 	struct	tcp_syncache _tcp_syncache;
 	int	_tcp_syncookies;
@@ -157,9 +162,21 @@ struct vnet_inet {
 
 	struct	icmpstat _icmpstat;
 	struct	ipstat _ipstat;
-	struct	igmpstat _igmpstat;
 
-	SLIST_HEAD(, router_info) _router_info_head;
+	LIST_HEAD(, igmp_ifinfo)	 _igi_head;
+	struct igmpstat	 _igmpstat;
+	int		 _interface_timers_running;
+	int		 _state_change_timers_running;
+	int		 _current_state_timers_running;
+	int		 _igmp_recvifkludge;
+	int		 _igmp_sendra;
+	int		 _igmp_sendlocal;
+	int		 _igmp_v1enable;
+	int		 _igmp_v2enable;
+	int		 _igmp_legacysupp;
+	int		 _igmp_sgalloc;
+	int		 _igmp_default_version;
+	struct timeval	 _igmp_gsrdelay;
 
 	int	_rtq_timeout;
 	int	_rtq_reallyold;
@@ -231,7 +248,23 @@ extern struct vnet_inet vnet_inet_0;
 #define	V_icmpmaskfake		VNET_INET(icmpmaskfake)
 #define	V_icmpmaskrepl		VNET_INET(icmpmaskrepl)
 #define	V_icmpstat		VNET_INET(icmpstat)
+#define	V_igi_head		VNET_INET(igi_head)
 #define	V_igmpstat		VNET_INET(igmpstat)
+#define V_interface_timers_running \
+				VNET_INET(interface_timers_running)
+#define V_state_change_timers_running \
+				VNET_INET(state_change_timers_running)
+#define V_current_state_timers_running \
+				VNET_INET(current_state_timers_running)
+#define V_igmp_recvifkludge	VNET_INET(igmp_recvifkludge)
+#define V_igmp_sendra		VNET_INET(igmp_sendra)
+#define V_igmp_sendlocal	VNET_INET(igmp_sendlocal)
+#define V_igmp_v1enable		VNET_INET(igmp_v1enable)
+#define V_igmp_v2enable		VNET_INET(igmp_v2enable)
+#define V_igmp_legacysupp	VNET_INET(igmp_legacysupp)
+#define V_igmp_sgalloc		VNET_INET(igmp_sgalloc)
+#define V_igmp_default_version	VNET_INET(igmp_default_version)
+#define V_igmp_gsrdelay		VNET_INET(igmp_gsrdelay)
 #define	V_in_ifaddrhashtbl	VNET_INET(in_ifaddrhashtbl)
 #define	V_in_ifaddrhead		VNET_INET(in_ifaddrhead)
 #define	V_in_ifaddrhmask	VNET_INET(in_ifaddrhmask)
@@ -287,12 +320,15 @@ extern struct vnet_inet vnet_inet_0;
 #define	V_rtq_timeout		VNET_INET(rtq_timeout)
 #define	V_rtq_timer		VNET_INET(rtq_timer)
 #define	V_rtq_toomany		VNET_INET(rtq_toomany)
+#define	V_sack_hole_zone	VNET_INET(sack_hole_zone)
 #define	V_sameprefixcarponly	VNET_INET(sameprefixcarponly)
 #define	V_ss_fltsz		VNET_INET(ss_fltsz)
 #define	V_ss_fltsz_local	VNET_INET(ss_fltsz_local)
 #define	V_subnetsarelocal	VNET_INET(subnetsarelocal)
 #define	V_tcb			VNET_INET(tcb)
 #define	V_tcbinfo		VNET_INET(tcbinfo)
+#define	V_tcpcb_zone		VNET_INET(tcpcb_zone)
+#define	V_tcptw_zone		VNET_INET(tcptw_zone)
 #define	V_tcp_abc_l_var		VNET_INET(tcp_abc_l_var)
 #define	V_tcp_autorcvbuf_inc	VNET_INET(tcp_autorcvbuf_inc)
 #define	V_tcp_autorcvbuf_max	VNET_INET(tcp_autorcvbuf_max)
@@ -325,6 +361,7 @@ extern struct vnet_inet vnet_inet_0;
 #define	V_tcp_reass_maxseg	VNET_INET(tcp_reass_maxseg)
 #define	V_tcp_reass_overflows	VNET_INET(tcp_reass_overflows)
 #define	V_tcp_reass_qsize	VNET_INET(tcp_reass_qsize)
+#define	V_tcp_reass_zone	VNET_INET(tcp_reass_zone)
 #define	V_tcp_sack_globalholes	VNET_INET(tcp_sack_globalholes)
 #define	V_tcp_sack_globalmaxholes VNET_INET(tcp_sack_globalmaxholes)
 #define	V_tcp_sack_maxholes	VNET_INET(tcp_sack_maxholes)

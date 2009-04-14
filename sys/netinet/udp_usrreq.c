@@ -255,7 +255,7 @@ udp_append(struct inpcb *inp, struct ip *ip, struct mbuf *n, int off,
 		m_freem(n);
 		if (opts)
 			m_freem(opts);
-		V_udpstat.udps_fullsock++;
+		UDPSTAT_INC(udps_fullsock);
 	} else
 		sorwakeup_locked(so);
 }
@@ -277,7 +277,7 @@ udp_input(struct mbuf *m, int off)
 #endif
 
 	ifp = m->m_pkthdr.rcvif;
-	V_udpstat.udps_ipackets++;
+	UDPSTAT_INC(udps_ipackets);
 
 	/*
 	 * Strip IP options, if any; should skip this, make available to
@@ -295,7 +295,7 @@ udp_input(struct mbuf *m, int off)
 	ip = mtod(m, struct ip *);
 	if (m->m_len < iphlen + sizeof(struct udphdr)) {
 		if ((m = m_pullup(m, iphlen + sizeof(struct udphdr))) == 0) {
-			V_udpstat.udps_hdrops++;
+			UDPSTAT_INC(udps_hdrops);
 			return;
 		}
 		ip = mtod(m, struct ip *);
@@ -325,7 +325,7 @@ udp_input(struct mbuf *m, int off)
 	len = ntohs((u_short)uh->uh_ulen);
 	if (ip->ip_len != len) {
 		if (len > ip->ip_len || len < sizeof(struct udphdr)) {
-			V_udpstat.udps_badlen++;
+			UDPSTAT_INC(udps_badlen);
 			goto badunlocked;
 		}
 		m_adj(m, len - ip->ip_len);
@@ -365,12 +365,12 @@ udp_input(struct mbuf *m, int off)
 			bcopy(b, ((struct ipovly *)ip)->ih_x1, 9);
 		}
 		if (uh_sum) {
-			V_udpstat.udps_badsum++;
+			UDPSTAT_INC(udps_badsum);
 			m_freem(m);
 			return;
 		}
 	} else
-		V_udpstat.udps_nosum++;
+		UDPSTAT_INC(udps_nosum);
 
 #ifdef IPFIREWALL_FORWARD
 	/*
@@ -414,12 +414,6 @@ udp_input(struct mbuf *m, int off)
 			if (inp->inp_faddr.s_addr != INADDR_ANY &&
 			    inp->inp_faddr.s_addr != ip->ip_src.s_addr)
 				continue;
-			/*
-			 * XXX: Do not check source port of incoming datagram
-			 * unless inp_connect() has been called to bind the
-			 * fport part of the 4-tuple; the source could be
-			 * trying to talk to us with an ephemeral port.
-			 */
 			if (inp->inp_fport != 0 &&
 			    inp->inp_fport != uh->uh_sport)
 				continue;
@@ -433,54 +427,23 @@ udp_input(struct mbuf *m, int off)
 			imo = inp->inp_moptions;
 			if (IN_MULTICAST(ntohl(ip->ip_dst.s_addr)) &&
 			    imo != NULL) {
-				struct sockaddr_in	 sin;
-				struct in_msource	*ims;
-				int			 blocked, mode;
-				size_t			 idx;
+				struct sockaddr_in	 group;
+				int			 blocked;
 
-				bzero(&sin, sizeof(struct sockaddr_in));
-				sin.sin_len = sizeof(struct sockaddr_in);
-				sin.sin_family = AF_INET;
-				sin.sin_addr = ip->ip_dst;
+				bzero(&group, sizeof(struct sockaddr_in));
+				group.sin_len = sizeof(struct sockaddr_in);
+				group.sin_family = AF_INET;
+				group.sin_addr = ip->ip_dst;
 
-				blocked = 0;
-				idx = imo_match_group(imo, ifp,
-				    (struct sockaddr *)&sin);
-				if (idx == -1) {
-					/*
-					 * No group membership for this socket.
-					 * Do not bump udps_noportbcast, as
-					 * this will happen further down.
-					 */
-					blocked++;
-				} else {
-					/*
-					 * Check for a multicast source filter
-					 * entry on this socket for this group.
-					 * MCAST_EXCLUDE is the default
-					 * behaviour.  It means default accept;
-					 * entries, if present, denote sources
-					 * to be excluded from delivery.
-					 */
-					ims = imo_match_source(imo, idx,
-					    (struct sockaddr *)&udp_in);
-					mode = imo->imo_mfilters[idx].imf_fmode;
-					if ((ims != NULL &&
-					     mode == MCAST_EXCLUDE) ||
-					    (ims == NULL &&
-					     mode == MCAST_INCLUDE)) {
-#ifdef DIAGNOSTIC
-						if (bootverbose) {
-							printf("%s: blocked by"
-							    " source filter\n",
-							    __func__);
-						}
-#endif
-						V_udpstat.udps_filtermcast++;
-						blocked++;
-					}
-				}
-				if (blocked != 0) {
+				blocked = imo_multi_filter(imo, ifp,
+					(struct sockaddr *)&group,
+					(struct sockaddr *)&udp_in);
+				if (blocked != MCAST_PASS) {
+					if (blocked == MCAST_NOTGMEMBER)
+						IPSTAT_INC(ips_notmember);
+					if (blocked == MCAST_NOTSMEMBER ||
+					    blocked == MCAST_MUTED)
+						UDPSTAT_INC(udps_filtermcast);
 					INP_RUNLOCK(inp);
 					continue;
 				}
@@ -532,7 +495,7 @@ udp_input(struct mbuf *m, int off)
 			 * to send an ICMP Port Unreachable for a broadcast
 			 * or multicast datgram.)
 			 */
-			V_udpstat.udps_noportbcast++;
+			UDPSTAT_INC(udps_noportbcast);
 			goto badheadlocked;
 		}
 		if (last->inp_ppcb == NULL) {
@@ -569,9 +532,9 @@ udp_input(struct mbuf *m, int off)
 			    buf, ntohs(uh->uh_dport), inet_ntoa(ip->ip_src),
 			    ntohs(uh->uh_sport));
 		}
-		V_udpstat.udps_noport++;
+		UDPSTAT_INC(udps_noport);
 		if (m->m_flags & (M_BCAST | M_MCAST)) {
-			V_udpstat.udps_noportbcast++;
+			UDPSTAT_INC(udps_noportbcast);
 			goto badheadlocked;
 		}
 		if (V_udp_blackhole)
@@ -1110,7 +1073,7 @@ udp_output(struct inpcb *inp, struct mbuf *m, struct sockaddr *addr,
 	((struct ip *)ui)->ip_len = sizeof (struct udpiphdr) + len;
 	((struct ip *)ui)->ip_ttl = inp->inp_ip_ttl;	/* XXX */
 	((struct ip *)ui)->ip_tos = inp->inp_ip_tos;	/* XXX */
-	V_udpstat.udps_opackets++;
+	UDPSTAT_INC(udps_opackets);
 
 	if (unlock_udbinfo == 2)
 		INP_INFO_WUNLOCK(&V_udbinfo);
