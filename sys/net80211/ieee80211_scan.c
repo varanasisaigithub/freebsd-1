@@ -885,12 +885,15 @@ scan_task(void *arg, int pending)
 
 	printf("%s: starting scan loop\n", __func__);
 	scanend = ticks + SCAN_PRIVATE(ss)->ss_duration;
+	IEEE80211_UNLOCK(ic);
 	ic->ic_scan_start(ic);		/* notify driver */
+	IEEE80211_LOCK(ic);
 
 	for (;;) {
 		scandone = (ss->ss_next >= ss->ss_last) ||
 		    (SCAN_PRIVATE(ss)->ss_iflags & ISCAN_CANCEL) != 0;
 		if (scandone || (ss->ss_flags & IEEE80211_SCAN_GOTPICK) ||
+		    (SCAN_PRIVATE(ss)->ss_iflags & ISCAN_ABORT) ||
 		     time_after(ticks + ss->ss_mindwell, scanend))
 			break;
 
@@ -927,18 +930,26 @@ scan_task(void *arg, int pending)
 		 * sending a probe request (as needed), and arming the
 		 * timeout to switch channels after maxdwell ticks.
 		 */
+		IEEE80211_UNLOCK(ic);
 		ic->ic_scan_curchan(ss, maxdwell);
+		IEEE80211_LOCK(ic);
 
 		SCAN_PRIVATE(ss)->ss_chanmindwell = ticks + ss->ss_mindwell;
 		/* clear mindwell lock and initial channel change flush */
 		SCAN_PRIVATE(ss)->ss_iflags &= ~ISCAN_REP;
 
+		if ((SCAN_PRIVATE(ss)->ss_iflags & (ISCAN_CANCEL|ISCAN_ABORT)))
+			continue;
+
 		/* Wait to be signalled to scan the next channel */
 		cv_wait(&SCAN_PRIVATE(ss)->ss_scan_cv, IEEE80211_LOCK_OBJ(ic));
-		if (SCAN_PRIVATE(ss)->ss_iflags & ISCAN_ABORT)
-			goto done;
 	}
+	if (SCAN_PRIVATE(ss)->ss_iflags & ISCAN_ABORT)
+		goto done;
+
+	IEEE80211_UNLOCK(ic);
 	ic->ic_scan_end(ic);		/* notify driver */
+	IEEE80211_LOCK(ic);
 
 	/*
 	 * Record scan complete time.  Note that we also do
