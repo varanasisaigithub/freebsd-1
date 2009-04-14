@@ -1491,7 +1491,7 @@ ieee80211_cac_completeswitch(struct ieee80211vap *vap0)
  * and mark them as waiting for a scan to complete.  These vaps
  * will be brought up when the scan completes and the scanning vap
  * reaches RUN state by wakeupwaiting.
- * XXX if we do this in threads we can use sleep/wakeup.
+ * This is called from the state taskqueue.
  */
 static void
 markwaiting(struct ieee80211vap *vap0)
@@ -1515,6 +1515,7 @@ markwaiting(struct ieee80211vap *vap0)
  * Wakeup all vap's waiting for a scan to complete.  This is the
  * companion to markwaiting (above) and is used to coordinate
  * multiple vaps scanning.
+ * This is called from the state taskqueue.
  */
 static void
 wakeupwaiting(struct ieee80211vap *vap0)
@@ -1565,6 +1566,19 @@ ieee80211_newstate_cb_locked(struct ieee80211vap *vap,
 
 	IEEE80211_DPRINTF(vap, IEEE80211_MSG_STATE,
 	    "%s: %s arg %d\n", __func__, ieee80211_state_name[nstate], arg);
+
+	if (nstate == IEEE80211_S_SCAN && ostate != IEEE80211_S_INIT) {
+		/*
+		 * SCAN was forced; e.g. on beacon miss.  Force other running
+		 * vap's to INIT state and mark them as waiting for the scan to
+		 * complete.  This insures they don't interfere with our
+		 * scanning.  Since we are single threaded the vaps can not
+		 * transition again while we are executing.
+		 *
+		 * XXX not always right, assumes ap follows sta
+		 */
+		markwaiting(vap);
+	}
 
 	rc = vap->iv_newstate(vap, nstate, arg);
 	if (rc != 0 || vap->iv_state != nstate) {
@@ -1642,9 +1656,16 @@ ieee80211_new_state_locked(struct ieee80211vap *vap,
 	struct ieee80211com *ic = vap->iv_ic;
 	struct ieee80211vap *vp;
 	enum ieee80211_state ostate;
-	int forcesync, nrunning, nscanning, rc;
+	int nrunning, nscanning, rc;
 
 	IEEE80211_LOCK_ASSERT(ic);
+
+	/* Warn if the previous state hasn't completed. XXX Queue? */
+	if (vap->iv_state != vap->iv_nstate)
+		IEEE80211_DPRINTF(vap, IEEE80211_MSG_STATE,
+			     "%s: pending %s -> %s transition lost\n", __func__,
+			     ieee80211_state_name[vap->iv_state],
+			     ieee80211_state_name[vap->iv_nstate]);
 
 	nrunning = nscanning = 0;
 	/* XXX can track this state instead of calculating */
@@ -1659,7 +1680,6 @@ ieee80211_new_state_locked(struct ieee80211vap *vap,
 		}
 	}
 	ostate = vap->iv_state;
-	forcesync = 0;
 	IEEE80211_DPRINTF(vap, IEEE80211_MSG_STATE,
 	    "%s: %s -> %s (nrunning %d nscanning %d)\n", __func__,
 	    ieee80211_state_name[ostate], ieee80211_state_name[nstate],
@@ -1707,16 +1727,6 @@ ieee80211_new_state_locked(struct ieee80211vap *vap,
 				}
 #endif
 			}
-		} else {
-			/*
-			 * SCAN was forced; e.g. on beacon miss.  Force
-			 * other running vap's to INIT state and mark
-			 * them as waiting for the scan to complete.  This
-			 * insures they don't interfere with our scanning.
-			 *
-			 * XXX not always right, assumes ap follows sta
-			 */
-			markwaiting(vap);
 		}
 		break;
 	case IEEE80211_S_RUN:
@@ -1759,26 +1769,15 @@ ieee80211_new_state_locked(struct ieee80211vap *vap,
 			/* INIT -> INIT. nothing to do */
 			vap->iv_flags_ext &= ~IEEE80211_FEXT_SCANWAIT;
 		}
-		forcesync = 1;
 		/* fall thru... */
 	default:
 		break;
 	}
-	if (forcesync) {
-		/*
-		 * Complete the state transition synchronously, asserting that
-		 * the lock is not dropped.
-		 */
-		WITNESS_NORELEASE(IEEE80211_LOCK_OBJ(ic));
-		rc = ieee80211_newstate_cb_locked(vap, nstate, arg);
-		WITNESS_RELEASEOK(IEEE80211_LOCK_OBJ(ic));
-	} else {
-		/* defer the state change to a thread */
-		vap->iv_nstate = nstate;
-		vap->iv_nstate_arg = arg;
-		taskqueue_enqueue(ic->ic_tq, &vap->iv_nstate_task);
-		return (EINPROGRESS);
-	}
+	/* defer the state change to a thread */
+	vap->iv_nstate = nstate;
+	vap->iv_nstate_arg = arg;
+	taskqueue_enqueue(ic->ic_tq, &vap->iv_nstate_task);
+	return (EINPROGRESS);
 done:
 	return rc;
 }
