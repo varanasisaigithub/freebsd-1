@@ -207,7 +207,6 @@ ieee80211_start(struct ifnet *ifp)
 		}
 		if (ni->ni_associd == 0 &&
 		    (ni->ni_flags & IEEE80211_NODE_ASSOCID)) {
-			printf("%x %x\n", ni->ni_associd, ni->ni_flags);
 			IEEE80211_DISCARD_MAC(vap, IEEE80211_MSG_OUTPUT,
 			    eh->ether_dhost, NULL,
 			    "sta not associated (type 0x%04x)",
