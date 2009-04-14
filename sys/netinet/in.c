@@ -58,7 +58,6 @@ __FBSDID("$FreeBSD$");
 #include <netinet/in_pcb.h>
 #include <netinet/ip_var.h>
 #include <netinet/vinet.h>
-#include <netinet/igmp_var.h>
 
 static int in_mask2len(struct in_addr *);
 static void in_len2mask(struct in_addr *, int);
@@ -217,7 +216,6 @@ in_control(struct socket *so, u_long cmd, caddr_t data, struct ifnet *ifp,
 	struct in_addr allhosts_addr;
 	struct in_addr dst;
 	struct in_ifaddr *oia;
-	struct in_ifinfo *ii;
 	struct in_aliasreq *ifra = (struct in_aliasreq *)data;
 	struct sockaddr_in oldaddr;
 	int error, hostIsNew, iaIsNew, maskIsNew, s;
@@ -398,8 +396,10 @@ in_control(struct socket *so, u_long cmd, caddr_t data, struct ifnet *ifp,
 		oldaddr = ia->ia_dstaddr;
 		ia->ia_dstaddr = *(struct sockaddr_in *)&ifr->ifr_dstaddr;
 		if (ifp->if_ioctl != NULL) {
+			IFF_LOCKGIANT(ifp);
 			error = (*ifp->if_ioctl)(ifp, SIOCSIFDSTADDR,
 			    (caddr_t)ia);
+			IFF_UNLOCKGIANT(ifp);
 			if (error) {
 				ia->ia_dstaddr = oldaddr;
 				return (error);
@@ -426,12 +426,8 @@ in_control(struct socket *so, u_long cmd, caddr_t data, struct ifnet *ifp,
 		if (error != 0 && iaIsNew)
 			break;
 		if (error == 0) {
-			ii = ((struct in_ifinfo *)ifp->if_afdata[AF_INET]);
-			if (iaIsFirst &&
-			    (ifp->if_flags & IFF_MULTICAST) != 0) {
-				error = in_joingroup(ifp, &allhosts_addr,
-				    NULL, &ii->ii_allhosts);
-			}
+			if (iaIsFirst && (ifp->if_flags & IFF_MULTICAST) != 0)
+				in_addmulti(&allhosts_addr, ifp);
 			EVENTHANDLER_INVOKE(ifaddr_event, ifp);
 		}
 		return (0);
@@ -477,12 +473,8 @@ in_control(struct socket *so, u_long cmd, caddr_t data, struct ifnet *ifp,
 		    (ifra->ifra_broadaddr.sin_family == AF_INET))
 			ia->ia_broadaddr = ifra->ifra_broadaddr;
 		if (error == 0) {
-			ii = ((struct in_ifinfo *)ifp->if_afdata[AF_INET]);
-			if (iaIsFirst &&
-			    (ifp->if_flags & IFF_MULTICAST) != 0) {
-				error = in_joingroup(ifp, &allhosts_addr,
-				    NULL, &ii->ii_allhosts);
-			}
+			if (iaIsFirst && (ifp->if_flags & IFF_MULTICAST) != 0)
+				in_addmulti(&allhosts_addr, ifp);
 			EVENTHANDLER_INVOKE(ifaddr_event, ifp);
 		}
 		return (error);
@@ -506,7 +498,10 @@ in_control(struct socket *so, u_long cmd, caddr_t data, struct ifnet *ifp,
 	default:
 		if (ifp == NULL || ifp->if_ioctl == NULL)
 			return (EOPNOTSUPP);
-		return ((*ifp->if_ioctl)(ifp, cmd, data));
+		IFF_LOCKGIANT(ifp);
+		error = (*ifp->if_ioctl)(ifp, cmd, data);
+		IFF_UNLOCKGIANT(ifp);
+		return (error);
 	}
 
 	/*
@@ -521,19 +516,20 @@ in_control(struct socket *so, u_long cmd, caddr_t data, struct ifnet *ifp,
 		/*
 		 * If this is the last IPv4 address configured on this
 		 * interface, leave the all-hosts group.
-		 * No state-change report need be transmitted.
+		 * XXX: This is quite ugly because of locking and structure.
 		 */
 		oia = NULL;
 		IFP_TO_IA(ifp, oia);
 		if (oia == NULL) {
-			ii = ((struct in_ifinfo *)ifp->if_afdata[AF_INET]);
+			struct in_multi *inm;
+
+			IFF_LOCKGIANT(ifp);
 			IN_MULTI_LOCK();
-			if (ii->ii_allhosts) {
-				(void)in_leavegroup_locked(ii->ii_allhosts,
-				    NULL);
-				ii->ii_allhosts = NULL;
-			}
+			IN_LOOKUP_MULTI(allhosts_addr, ifp, inm);
+			if (inm != NULL)
+				in_delmulti_locked(inm);
 			IN_MULTI_UNLOCK();
+			IFF_UNLOCKGIANT(ifp);
 		}
 	}
 	IFAFREE(&ia->ia_ifa);
@@ -747,7 +743,9 @@ in_ifinit(struct ifnet *ifp, struct in_ifaddr *ia, struct sockaddr_in *sin,
 	 * and to validate the address if necessary.
 	 */
 	if (ifp->if_ioctl != NULL) {
+		IFF_LOCKGIANT(ifp);
 		error = (*ifp->if_ioctl)(ifp, SIOCSIFADDR, (caddr_t)ia);
+		IFF_UNLOCKGIANT(ifp);
 		if (error) {
 			splx(s);
 			/* LIST_REMOVE(ia, ia_hash) is done in in_control */
@@ -996,6 +994,27 @@ in_broadcast(struct in_addr in, struct ifnet *ifp)
 }
 
 /*
+ * Delete all IPv4 multicast address records, and associated link-layer
+ * multicast address records, associated with ifp.
+ */
+static void
+in_purgemaddrs(struct ifnet *ifp)
+{
+	INIT_VNET_INET(ifp->if_vnet);
+	struct in_multi *inm;
+	struct in_multi *oinm;
+
+	IFF_LOCKGIANT(ifp);
+	IN_MULTI_LOCK();
+	LIST_FOREACH_SAFE(inm, &V_in_multihead, inm_link, oinm) {
+		if (inm->inm_ifp == ifp)
+			in_delmulti_locked(inm);
+	}
+	IN_MULTI_UNLOCK();
+	IFF_UNLOCKGIANT(ifp);
+}
+
+/*
  * On interface removal, clean up IPv4 data structures hung off of the ifnet.
  */
 void
@@ -1006,53 +1025,6 @@ in_ifdetach(struct ifnet *ifp)
 	in_pcbpurgeif0(&V_ripcbinfo, ifp);
 	in_pcbpurgeif0(&V_udbinfo, ifp);
 	in_purgemaddrs(ifp);
-}
-
-/*
- * Delete all IPv4 multicast address records, and associated link-layer
- * multicast address records, associated with ifp.
- * XXX It looks like domifdetach runs AFTER the link layer cleanup.
- * XXX This should not race with ifma_protospec being set during
- * a new allocation, if it does, we have bigger problems.
- */
-static void
-in_purgemaddrs(struct ifnet *ifp)
-{
-	INIT_VNET_INET(ifp->if_vnet);
-	LIST_HEAD(,in_multi) purgeinms;
-	struct in_multi		*inm, *tinm;
-	struct ifmultiaddr	*ifma;
-
-	LIST_INIT(&purgeinms);
-	IN_MULTI_LOCK();
-
-	/*
-	 * Extract list of in_multi associated with the detaching ifp
-	 * which the PF_INET layer is about to release.
-	 * We need to do this as IF_ADDR_LOCK() may be re-acquired
-	 * by code further down.
-	 */
-	IF_ADDR_LOCK(ifp);
-	TAILQ_FOREACH(ifma, &ifp->if_multiaddrs, ifma_link) {
-		if (ifma->ifma_addr->sa_family != AF_INET ||
-		    ifma->ifma_protospec == NULL)
-			continue;
-#if 0
-		KASSERT(ifma->ifma_protospec != NULL,
-		    ("%s: ifma_protospec is NULL", __func__));
-#endif
-		inm = (struct in_multi *)ifma->ifma_protospec;
-		LIST_INSERT_HEAD(&purgeinms, inm, inm_link);
-	}
-	IF_ADDR_UNLOCK(ifp);
-
-	LIST_FOREACH_SAFE(inm, &purgeinms, inm_link, tinm) {
-		inm_release_locked(inm);
-		LIST_REMOVE(inm, inm_link);
-	}
-	igmp_ifdetach(ifp);
-
-	IN_MULTI_UNLOCK();
 }
 
 #include <sys/syslog.h>
@@ -1279,13 +1251,9 @@ in_lltable_dump(struct lltable *llt, struct sysctl_req *wr)
 
 void *
 in_domifattach(struct ifnet *ifp)
-{
-	struct in_ifinfo *ii;
-	struct lltable *llt;
-
-	ii = malloc(sizeof(struct in_ifinfo), M_IFADDR, M_WAITOK|M_ZERO);
-
-	llt = lltable_init(ifp, AF_INET);
+{   
+	struct lltable *llt = lltable_init(ifp, AF_INET);
+ 
 	if (llt != NULL) {
 		llt->llt_new = in_lltable_new;
 		llt->llt_free = in_lltable_free;
@@ -1293,19 +1261,13 @@ in_domifattach(struct ifnet *ifp)
 		llt->llt_lookup = in_lltable_lookup;
 		llt->llt_dump = in_lltable_dump;
 	}
-	ii->ii_llt = llt;
-
-	ii->ii_igmp = igmp_domifattach(ifp);
-
-	return ii;
+	return (llt);
 }
 
 void
-in_domifdetach(struct ifnet *ifp, void *aux)
+in_domifdetach(struct ifnet *ifp __unused, void *aux)
 {
-	struct in_ifinfo *ii = (struct in_ifinfo *)aux;
+	struct lltable *llt = (struct lltable *)aux;
 
-	igmp_domifdetach(ifp);
-	lltable_free(ii->ii_llt);
-	free(ii, M_IFADDR);
+	lltable_free(llt);
 }

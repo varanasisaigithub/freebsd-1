@@ -392,14 +392,21 @@ cmd_register(struct cmd *p)
 }
 
 static const struct cmd *
-cmd_lookup(const char *name)
+cmd_lookup(const char *name, int iscreate)
 {
 #define	N(a)	(sizeof(a)/sizeof(a[0]))
 	const struct cmd *p;
 
 	for (p = cmds; p != NULL; p = p->c_next)
-		if (strcmp(name, p->c_name) == 0)
-			return p;
+		if (strcmp(name, p->c_name) == 0) {
+			if (iscreate) {
+				if (p->c_iscloneop)
+					return p;
+			} else {
+				if (!p->c_iscloneop)
+					return p;
+			}
+		}
 	return NULL;
 #undef N
 }
@@ -434,27 +441,58 @@ static const struct cmd setifdstaddr_cmd =
 	DEF_CMD("ifdstaddr", 0, setifdstaddr);
 
 static int
-ifconfig(int argc, char *const *argv, int iscreate, const struct afswtch *afp)
+ifconfig(int argc, char *const *argv, int iscreate, const struct afswtch *uafp)
 {
-	const struct afswtch *nafp;
+	const struct afswtch *afp, *nafp;
+	const struct cmd *p;
 	struct callback *cb;
 	int s;
 
 	strncpy(ifr.ifr_name, name, sizeof ifr.ifr_name);
+	afp = uafp != NULL ? uafp : af_getbyname("inet");
 top:
-	if (afp == NULL)
-		afp = af_getbyname("inet");
 	ifr.ifr_addr.sa_family =
 		afp->af_af == AF_LINK || afp->af_af == AF_UNSPEC ?
-		AF_INET : afp->af_af;
+		AF_LOCAL : afp->af_af;
 
-	if ((s = socket(ifr.ifr_addr.sa_family, SOCK_DGRAM, 0)) < 0)
+	if ((s = socket(ifr.ifr_addr.sa_family, SOCK_DGRAM, 0)) < 0 &&
+	    (uafp != NULL || errno != EPROTONOSUPPORT ||
+	     (s = socket(AF_LOCAL, SOCK_DGRAM, 0)) < 0))
 		err(1, "socket(family %u,SOCK_DGRAM", ifr.ifr_addr.sa_family);
 
 	while (argc > 0) {
-		const struct cmd *p;
-
-		p = cmd_lookup(*argv);
+		p = cmd_lookup(*argv, iscreate);
+		if (iscreate && p == NULL) {
+			/*
+			 * Push the clone create callback so the new
+			 * device is created and can be used for any
+			 * remaining arguments.
+			 */
+			cb = callbacks;
+			if (cb == NULL)
+				errx(1, "internal error, no callback");
+			callbacks = cb->cb_next;
+			cb->cb_func(s, cb->cb_arg);
+			iscreate = 0;
+			/*
+			 * Handle any address family spec that
+			 * immediately follows and potentially
+			 * recreate the socket.
+			 */
+			nafp = af_getbyname(*argv);
+			if (nafp != NULL) {
+				argc--, argv++;
+				if (nafp != afp) {
+					close(s);
+					afp = nafp;
+					goto top;
+				}
+			}
+			/*
+			 * Look for a normal parameter.
+			 */
+			continue;
+		}
 		if (p == NULL) {
 			/*
 			 * Not a recognized command, choose between setting
@@ -463,33 +501,6 @@ top:
 			p = (setaddr ? &setifdstaddr_cmd : &setifaddr_cmd);
 		}
 		if (p->c_u.c_func || p->c_u.c_func2) {
-			if (iscreate && !p->c_iscloneop) { 
-				/*
-				 * Push the clone create callback so the new
-				 * device is created and can be used for any
-				 * remaining arguments.
-				 */
-				cb = callbacks;
-				if (cb == NULL)
-					errx(1, "internal error, no callback");
-				callbacks = cb->cb_next;
-				cb->cb_func(s, cb->cb_arg);
-				iscreate = 0;
-				/*
-				 * Handle any address family spec that
-				 * immediately follows and potentially
-				 * recreate the socket.
-				 */
-				nafp = af_getbyname(*argv);
-				if (nafp != NULL) {
-					argc--, argv++;
-					if (nafp != afp) {
-						close(s);
-						afp = nafp;
-						goto top;
-					}
-				}
-			}
 			if (p->c_parameter == NEXTARG) {
 				if (argv[1] == NULL)
 					errx(1, "'%s' requires argument",
@@ -687,13 +698,13 @@ setifflags(const char *vname, int value, int s, const struct afswtch *afp)
 	struct ifreq		my_ifr;
 	int flags;
 
-	bcopy((char *)&ifr, (char *)&my_ifr, sizeof(struct ifreq));
+	memset(&my_ifr, 0, sizeof(my_ifr));
+	(void) strlcpy(my_ifr.ifr_name, name, sizeof(my_ifr.ifr_name));
 
  	if (ioctl(s, SIOCGIFFLAGS, (caddr_t)&my_ifr) < 0) {
  		Perror("ioctl (SIOCGIFFLAGS)");
  		exit(1);
  	}
-	strncpy(my_ifr.ifr_name, name, sizeof (my_ifr.ifr_name));
 	flags = (my_ifr.ifr_flags & 0xffff) | (my_ifr.ifr_flagshigh << 16);
 
 	if (value < 0) {
@@ -776,7 +787,8 @@ setifname(const char *val, int dummy __unused, int s,
 
 #define	IFCAPBITS \
 "\020\1RXCSUM\2TXCSUM\3NETCONS\4VLAN_MTU\5VLAN_HWTAGGING\6JUMBO_MTU\7POLLING" \
-"\10VLAN_HWCSUM\11TSO4\12TSO6\13LRO\14WOL_UCAST\15WOL_MCAST\16WOL_MAGIC"
+"\10VLAN_HWCSUM\11TSO4\12TSO6\13LRO\14WOL_UCAST\15WOL_MCAST\16WOL_MAGIC" \
+"\21VLAN_HWFILTER"
 
 /*
  * Print the status of the interface.  If an address family was
@@ -792,11 +804,12 @@ status(const struct afswtch *afp, const struct sockaddr_dl *sdl,
 
 	if (afp == NULL) {
 		allfamilies = 1;
-		afp = af_getbyname("inet");
-	} else
+		ifr.ifr_addr.sa_family = AF_LOCAL;
+	} else {
 		allfamilies = 0;
-
-	ifr.ifr_addr.sa_family = afp->af_af == AF_LINK ? AF_INET : afp->af_af;
+		ifr.ifr_addr.sa_family =
+		    afp->af_af == AF_LINK ? AF_LOCAL : afp->af_af;
+	}
 	strncpy(ifr.ifr_name, name, sizeof(ifr.ifr_name));
 
 	s = socket(ifr.ifr_addr.sa_family, SOCK_DGRAM, 0);
