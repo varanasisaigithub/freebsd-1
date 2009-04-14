@@ -562,7 +562,16 @@ ieee80211_vap_detach(struct ieee80211vap *vap)
 	 * while we cleanup internal state but that is hard.
 	 */
 	ieee80211_stop_locked(vap);
+	IEEE80211_UNLOCK(ic);
 
+	/*
+	 * Flush any deferred vap tasks.
+	 * NB: must be before ether_ifdetach() and removal from ic_vaps list
+	 */
+	taskqueue_drain(ic->ic_tq, &vap->iv_nstate_task);
+
+	IEEE80211_LOCK(ic);
+	KASSERT(vap->iv_state == IEEE80211_S_INIT , ("vap still running"));
 	TAILQ_REMOVE(&ic->ic_vaps, vap, iv_next);
 	ieee80211_syncflag_locked(ic, IEEE80211_F_WME);
 #ifdef IEEE80211_SUPPORT_SUPERG
@@ -575,12 +584,6 @@ ieee80211_vap_detach(struct ieee80211vap *vap)
 	ieee80211_syncifflag_locked(ic, IFF_PROMISC);
 	ieee80211_syncifflag_locked(ic, IFF_ALLMULTI);
 	IEEE80211_UNLOCK(ic);
-
-	/*
-	 * Flush any deferred vap tasks.
-	 * NB: must be before ether_ifdetach();
-	 */
-	taskqueue_drain(ic->ic_tq, &vap->iv_nstate_task);
 
 	/* XXX can't hold com lock */
 	/* NB: bpfattach is called by ether_ifdetach and claims all taps */
