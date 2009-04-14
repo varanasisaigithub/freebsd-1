@@ -809,12 +809,12 @@ scan_curchan(struct ieee80211_scan_state *ss, unsigned long maxdwell)
 {
 	struct ieee80211vap *vap  = ss->ss_vap;
 
-	IEEE80211_LOCK_ASSERT(vap->iv_ic);
-
+	IEEE80211_LOCK(vap->iv_ic);
 	if (ss->ss_flags & IEEE80211_SCAN_ACTIVE)
 		ieee80211_probe_curchan(vap, 0);
 	callout_reset(&SCAN_PRIVATE(ss)->ss_scan_timer,
 	    maxdwell, scan_signal, ss);
+	IEEE80211_UNLOCK(vap->iv_ic);
 }
 
 static void
