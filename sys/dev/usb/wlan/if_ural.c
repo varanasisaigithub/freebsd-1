@@ -97,8 +97,6 @@ static usb2_callback_t ural_bulk_write_callback;
 
 static usb2_proc_callback_t ural_command_wrapper;
 static usb2_proc_callback_t ural_attach_post;
-static usb2_proc_callback_t ural_task;
-static usb2_proc_callback_t ural_scantask;
 static usb2_proc_callback_t ural_promisctask;
 static usb2_proc_callback_t ural_amrr_task;
 static usb2_proc_callback_t ural_init_task;
@@ -714,25 +712,27 @@ ural_unsetup_tx_list(struct ural_softc *sc)
 	}
 }
 
-static void
-ural_task(struct usb2_proc_msg *pm)
+static int
+ural_newstate(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
 {
-	struct ural_task *task = (struct ural_task *)pm;
-	struct ural_softc *sc = task->sc;
-	struct ifnet *ifp = sc->sc_ifp;
-	struct ieee80211com *ic = ifp->if_l2com;
-	struct ieee80211vap *vap = TAILQ_FIRST(&ic->ic_vaps);
 	struct ural_vap *uvp = URAL_VAP(vap);
+	struct ieee80211com *ic = vap->iv_ic;
+	struct ural_softc *sc = ic->ic_ifp->if_softc;
 	const struct ieee80211_txparam *tp;
-	enum ieee80211_state ostate;
 	struct ieee80211_node *ni;
 	struct mbuf *m;
 
-	ostate = vap->iv_state;
+	DPRINTF("%s -> %s\n",
+		ieee80211_state_name[vap->iv_state],
+		ieee80211_state_name[nstate]);
 
-	switch (sc->sc_state) {
+	IEEE80211_UNLOCK(ic);
+	RAL_LOCK(sc);
+	usb2_callout_stop(&uvp->amrr_ch);
+
+	switch (nstate) {
 	case IEEE80211_S_INIT:
-		if (ostate == IEEE80211_S_RUN) {
+		if (vap->iv_state == IEEE80211_S_RUN) {
 			/* abort TSF synchronization */
 			ural_write(sc, RAL_TXRX_CSR19, 0);
 
@@ -758,13 +758,17 @@ ural_task(struct usb2_proc_msg *pm)
 			if (m == NULL) {
 				device_printf(sc->sc_dev,
 				    "could not allocate beacon\n");
-				return;
+				RAL_UNLOCK(sc);
+				IEEE80211_LOCK(ic);
+				return (-1);
 			}
 
 			if (ural_tx_bcn(sc, m, ni) != 0) {
 				device_printf(sc->sc_dev,
 				    "could not send beacon\n");
-				return;
+				RAL_UNLOCK(sc);
+				IEEE80211_LOCK(ic);
+				return (-1);
 			}
 		}
 
@@ -784,75 +788,9 @@ ural_task(struct usb2_proc_msg *pm)
 	default:
 		break;
 	}
-
 	RAL_UNLOCK(sc);
 	IEEE80211_LOCK(ic);
-	uvp->newstate(vap, sc->sc_state, sc->sc_arg);
-	if (vap->iv_newstate_cb != NULL)
-		vap->iv_newstate_cb(vap, sc->sc_state, sc->sc_arg);
-	IEEE80211_UNLOCK(ic);
-	RAL_LOCK(sc);
-}
-
-static void
-ural_scantask(struct usb2_proc_msg *pm)
-{
-	struct ural_task *task = (struct ural_task *)pm;
-	struct ural_softc *sc = task->sc;
-	struct ifnet *ifp = sc->sc_ifp;
-	struct ieee80211com *ic = ifp->if_l2com;
-
-	RAL_LOCK_ASSERT(sc, MA_OWNED);
-
-	switch (sc->sc_scan_action) {
-	case URAL_SCAN_START:
-		/* abort TSF synchronization */
-		DPRINTF("starting scan\n");
-		ural_write(sc, RAL_TXRX_CSR19, 0);
-		ural_set_bssid(sc, ifp->if_broadcastaddr);
-		break;
-
-	case URAL_SET_CHANNEL:
-		ural_set_chan(sc, ic->ic_curchan);
-		break;
-
-	default: /* URAL_SCAN_END */
-		DPRINTF("stopping scan\n");
-		ural_enable_tsf_sync(sc);
-		ural_set_bssid(sc, sc->sc_bssid);
-		break;
-	}
-}
-
-static int
-ural_newstate(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
-{
-	struct ural_vap *uvp = URAL_VAP(vap);
-	struct ieee80211com *ic = vap->iv_ic;
-	struct ural_softc *sc = ic->ic_ifp->if_softc;
-
-	DPRINTF("%s -> %s\n",
-		ieee80211_state_name[vap->iv_state],
-		ieee80211_state_name[nstate]);
-
-	RAL_LOCK(sc);
-	usb2_callout_stop(&uvp->amrr_ch);
-
-	/* do it in a process context */
-	sc->sc_state = nstate;
-	sc->sc_arg = arg;
-	RAL_UNLOCK(sc);
-
-	if (nstate == IEEE80211_S_INIT) {
-		uvp->newstate(vap, nstate, arg);
-		return 0;
-	} else {
-		RAL_LOCK(sc);
-		ural_queue_command(sc, ural_task, &sc->sc_task[0].hdr,
-		    &sc->sc_task[1].hdr);
-		RAL_UNLOCK(sc);
-		return EINPROGRESS;
-	}
+	return (uvp->newstate(vap, nstate, arg));
 }
 
 
@@ -1700,14 +1638,12 @@ static void
 ural_scan_start(struct ieee80211com *ic)
 {
 	struct ural_softc *sc = ic->ic_ifp->if_softc;
+	struct ifnet *ifp = ic->ic_ifp;
 
 	RAL_LOCK(sc);
-	/* do it in a process context */
-	sc->sc_scan_action = URAL_SCAN_START;
-	ural_queue_command(sc, ural_scantask,
-	    &sc->sc_scantask[0].hdr, &sc->sc_scantask[1].hdr);
+	ural_write(sc, RAL_TXRX_CSR19, 0);
+	ural_set_bssid(sc, ifp->if_broadcastaddr);
 	RAL_UNLOCK(sc);
-
 }
 
 static void
@@ -1716,10 +1652,8 @@ ural_scan_end(struct ieee80211com *ic)
 	struct ural_softc *sc = ic->ic_ifp->if_softc;
 
 	RAL_LOCK(sc);
-	/* do it in a process context */
-	sc->sc_scan_action = URAL_SCAN_END;
-	ural_queue_command(sc, ural_scantask,
-	    &sc->sc_scantask[0].hdr, &sc->sc_scantask[1].hdr);
+	ural_enable_tsf_sync(sc);
+	ural_set_bssid(sc, sc->sc_bssid);
 	RAL_UNLOCK(sc);
 
 }
@@ -1729,12 +1663,11 @@ ural_set_channel(struct ieee80211com *ic)
 {
 	struct ural_softc *sc = ic->ic_ifp->if_softc;
 
+	IEEE80211_UNLOCK(ic);
 	RAL_LOCK(sc);
-	/* do it in a process context */
-	sc->sc_scan_action = URAL_SET_CHANNEL;
-	ural_queue_command(sc, ural_scantask,
-	    &sc->sc_scantask[0].hdr, &sc->sc_scantask[1].hdr);
+	ural_set_chan(sc, ic->ic_curchan);
 	RAL_UNLOCK(sc);
+	IEEE80211_LOCK(ic);
 }
 
 static void
