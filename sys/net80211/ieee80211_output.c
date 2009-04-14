@@ -207,6 +207,7 @@ ieee80211_start(struct ifnet *ifp)
 		}
 		if (ni->ni_associd == 0 &&
 		    (ni->ni_flags & IEEE80211_NODE_ASSOCID)) {
+			printf("%x %x\n", ni->ni_associd, ni->ni_flags);
 			IEEE80211_DISCARD_MAC(vap, IEEE80211_MSG_OUTPUT,
 			    eh->ether_dhost, NULL,
 			    "sta not associated (type 0x%04x)",
@@ -253,14 +254,16 @@ ieee80211_start(struct ifnet *ifp)
 			}
 		}
 #endif /* IEEE80211_SUPPORT_SUPERG */
-		/*
-		 * Encapsulate the packet in prep for transmission.
-		 */
-		m = ieee80211_encap(vap, ni, m);
-		if (m == NULL) {
-			/* NB: stat+msg handled in ieee80211_encap */
-			ieee80211_free_node(ni);
-			continue;
+		if (__predict_true((vap->iv_caps & IEEE80211_C_8023ENCAP) == 0)) {
+			/*
+			 * Encapsulate the packet in prep for transmission.
+			 */
+			m = ieee80211_encap(vap, ni, m);
+			if (m == NULL) {
+				/* NB: stat+msg handled in ieee80211_encap */
+				ieee80211_free_node(ni);
+				continue;
+			}
 		}
 
 		/*
@@ -919,12 +922,11 @@ ieee80211_encap(struct ieee80211vap *vap, struct ieee80211_node *ni,
 		hdrsize = sizeof(struct ieee80211_frame);
 	/*
 	 * 4-address frames need to be generated for:
-	 * o packets sent through a WDS vap (M_WDS || IEEE80211_M_WDS)
+	 * o packets sent through a WDS vap (IEEE80211_M_WDS)
 	 * o packets relayed by a station operating with dynamic WDS
 	 *   (IEEE80211_M_STA+IEEE80211_F_DWDS and src address)
 	 */
-	is4addr = (m->m_flags & M_WDS) ||
-	    vap->iv_opmode == IEEE80211_M_WDS ||	/* XXX redundant? */
+	is4addr = vap->iv_opmode == IEEE80211_M_WDS ||
 	    (vap->iv_opmode == IEEE80211_M_STA &&
 	     (vap->iv_flags & IEEE80211_F_DWDS) &&
 	     !IEEE80211_ADDR_EQ(eh.ether_shost, vap->iv_myaddr));
@@ -1010,7 +1012,7 @@ ieee80211_encap(struct ieee80211vap *vap, struct ieee80211_node *ni,
 	case IEEE80211_M_WDS:		/* NB: is4addr should always be true */
 		goto bad;
 	}
-		if (m->m_flags & M_MORE_DATA)
+	if (m->m_flags & M_MORE_DATA)
 		wh->i_fc[1] |= IEEE80211_FC1_MORE_DATA;
 	if (addqos) {
 		uint8_t *qos;

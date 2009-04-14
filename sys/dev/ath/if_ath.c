@@ -4773,8 +4773,8 @@ ath_tx_start(struct ath_softc *sc, struct ieee80211_node *ni, struct ath_buf *bf
 	m0->m_nextpkt = NULL;
 
 	if (IFF_DUMPPKTS(sc, ATH_DEBUG_XMIT))
-		ieee80211_dump_pkt(ic, mtod(m0, caddr_t), m0->m_len,
-			sc->sc_hwmap[rix].ieeerate, -1);
+		ieee80211_dump_pkt(ic, mtod(m0, const uint8_t *), m0->m_len,
+		    sc->sc_hwmap[rix].ieeerate, -1);
 
 	if (bpf_peers_present(ifp->if_bpf)) {
 		u_int64_t tsf = ath_hal_gettsf64(ah);
@@ -5118,8 +5118,8 @@ ath_tx_draintxq(struct ath_softc *sc, struct ath_txq *txq)
 			ath_printtxbuf(sc, bf, txq->axq_qnum, ix,
 				ath_hal_txprocdesc(ah, bf->bf_desc,
 				    &bf->bf_status.ds_txstat) == HAL_OK);
-			ieee80211_dump_pkt(ic, mtod(bf->bf_m, caddr_t),
-				bf->bf_m->m_len, 0, -1);
+			ieee80211_dump_pkt(ic, mtod(bf->bf_m, const uint8_t *),
+			    bf->bf_m->m_len, 0, -1);
 		}
 #endif /* ATH_DEBUG */
 		bus_dmamap_unload(sc->sc_dmat, bf->bf_dmamap);
@@ -5187,8 +5187,9 @@ ath_draintxq(struct ath_softc *sc)
 			ath_printtxbuf(sc, bf, sc->sc_bhalq, 0,
 				ath_hal_txprocdesc(ah, bf->bf_desc,
 				    &bf->bf_status.ds_txstat) == HAL_OK);
-			ieee80211_dump_pkt(ifp->if_l2com, mtod(bf->bf_m, caddr_t),
-				bf->bf_m->m_len, 0, -1);
+			ieee80211_dump_pkt(ifp->if_l2com,
+			    mtod(bf->bf_m, const uint8_t *), bf->bf_m->m_len,
+			    0, -1);
 		}
 	}
 #endif /* ATH_DEBUG */
@@ -6783,7 +6784,7 @@ ath_tx_raw_start(struct ath_softc *sc, struct ieee80211_node *ni,
 
 	if (IFF_DUMPPKTS(sc, ATH_DEBUG_XMIT))
 		ieee80211_dump_pkt(ic, mtod(m0, caddr_t), m0->m_len,
-			sc->sc_hwmap[rix].ieeerate, -1);
+		    sc->sc_hwmap[rix].ieeerate, -1);
 	
 	if (bpf_peers_present(ifp->if_bpf)) {
 		u_int64_t tsf = ath_hal_gettsf64(ah);
@@ -6987,7 +6988,6 @@ ath_tdma_bintvalsetup(struct ath_softc *sc,
 {
 	/* copy from vap state (XXX check all vaps have same value?) */
 	sc->sc_tdmaslotlen = tdma->tdma_slotlen;
-	sc->sc_tdmabintcnt = tdma->tdma_bintval;
 
 	sc->sc_tdmabintval = roundup((sc->sc_tdmaslotlen+sc->sc_tdmaguard) *
 		tdma->tdma_slotcnt, 1024);
@@ -7121,6 +7121,8 @@ ath_tdma_update(struct ieee80211_node *ni,
 		const struct ieee80211_tdma_state *ts = vap->iv_tdma;
 
 		ath_tdma_bintvalsetup(sc, ts);
+		if (changed & TDMA_UPDATE_SLOTLEN)
+			ath_wme_update(ic);
 
 		DPRINTF(sc, ATH_DEBUG_TDMA,
 		    "%s: adopt slot %u slotcnt %u slotlen %u us "
@@ -7128,7 +7130,6 @@ ath_tdma_update(struct ieee80211_node *ni,
 		    ts->tdma_slot, ts->tdma_slotcnt, ts->tdma_slotlen,
 		    sc->sc_tdmabintval);
 
-		ath_beaconq_config(sc);
 		/* XXX right? */
 		ath_hal_intrset(ah, sc->sc_imask);
 		/* NB: beacon timers programmed below */
