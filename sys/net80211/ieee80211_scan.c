@@ -33,7 +33,10 @@ __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/systm.h> 
+#include <sys/proc.h>
 #include <sys/kernel.h>
+#include <sys/taskqueue.h>
+#include <sys/condvar.h>
  
 #include <sys/socket.h>
 
@@ -52,10 +55,12 @@ struct scan_state {
 #define	ISCAN_MINDWELL 	0x0001		/* min dwell time reached */
 #define	ISCAN_DISCARD	0x0002		/* discard rx'd frames */
 #define	ISCAN_CANCEL	0x0004		/* cancel current scan */
-#define	ISCAN_START	0x0008		/* 1st time through next_scan */
+#define	ISCAN_ABORT	0x0008		/* end the scan immediately */
 	unsigned long	ss_chanmindwell;	/* min dwell on curchan */
 	unsigned long	ss_scanend;		/* time scan must stop */
 	u_int		ss_duration;		/* duration for next scan */
+	struct task	ss_scan_task;		/* scan execution */
+	struct cv	ss_scan_cv;		/* scan signal */
 	struct callout	ss_scan_timer;		/* scan timer */
 };
 #define	SCAN_PRIVATE(ss)	((struct scan_state *) ss)
@@ -88,10 +93,10 @@ struct scan_state {
 #define	ROAM_RATE_QUARTER_DEFAULT	2*3	/* quarter-width 11a/g bss */
 #define	ROAM_MCS_11N_DEFAULT		(1 | IEEE80211_RATE_MCS) /* 11n bss */
 
-static	void scan_restart_pwrsav(void *);
 static	void scan_curchan(struct ieee80211_scan_state *, unsigned long);
 static	void scan_mindwell(struct ieee80211_scan_state *);
-static	void scan_next(void *);
+static	void scan_signal(void *);
+static	void scan_task(void *, int);
 
 MALLOC_DEFINE(M_80211_SCAN, "80211scan", "802.11 scan state");
 
@@ -107,6 +112,8 @@ ieee80211_scan_attach(struct ieee80211com *ic)
 		return;
 	}
 	callout_init_mtx(&ss->ss_scan_timer, IEEE80211_LOCK_OBJ(ic), 0);
+	cv_init(&ss->ss_scan_cv, "scan");
+	TASK_INIT(&ss->ss_scan_task, 0, scan_task, ss);
 	ic->ic_scan = &ss->base;
 
 	ic->ic_scan_curchan = scan_curchan;
@@ -119,12 +126,15 @@ ieee80211_scan_detach(struct ieee80211com *ic)
 	struct ieee80211_scan_state *ss = ic->ic_scan;
 
 	if (ss != NULL) {
-		callout_drain(&SCAN_PRIVATE(ss)->ss_scan_timer);
+		IEEE80211_LOCK(ic);
+		SCAN_PRIVATE(ss)->ss_iflags |= ISCAN_ABORT;
+		scan_signal(ss);
+		IEEE80211_UNLOCK(ic);
+		taskqueue_drain(ic->ic_tq, &SCAN_PRIVATE(ss)->ss_scan_task);
 		if (ss->ss_ops != NULL) {
 			ss->ss_ops->scan_detach(ss);
 			ss->ss_ops = NULL;
 		}
-		ic->ic_flags &= ~IEEE80211_F_SCAN;
 		ic->ic_scan = NULL;
 		free(SCAN_PRIVATE(ss), M_80211_SCAN);
 	}
@@ -174,9 +184,8 @@ ieee80211_scan_vdetach(struct ieee80211vap *vap)
 	ss = ic->ic_scan;
 	if (ss != NULL && ss->ss_vap == vap) {
 		if (ic->ic_flags & IEEE80211_F_SCAN) {
-			/* XXX callout_drain */
-			callout_stop(&SCAN_PRIVATE(ss)->ss_scan_timer);
-			ic->ic_flags &= ~IEEE80211_F_SCAN;
+			SCAN_PRIVATE(ss)->ss_iflags |= ISCAN_ABORT;
+			scan_signal(ss);
 		}
 		if (ss->ss_ops != NULL) {
 			ss->ss_ops->scan_detach(ss);
@@ -352,76 +361,6 @@ scan_dump(struct ieee80211_scan_state *ss)
 }
 #endif /* IEEE80211_DEBUG */
 
-/*
- * Enable station power save mode and start/restart the scanning thread.
- */
-static void
-scan_restart_pwrsav(void *arg)
-{
-	struct scan_state *ss = (struct scan_state *) arg;
-	struct ieee80211vap *vap = ss->base.ss_vap;
-	struct ieee80211com *ic = vap->iv_ic;
-	int ticksdelay;
-
-	ieee80211_sta_pwrsave(vap, 1);
-	/*
-	 * Use an initial 1ms delay so the null
-	 * data frame has a chance to go out.
-	 * XXX 1ms is a lot, better to trigger scan
-	 * on tx complete.
-	 */
-	ticksdelay = msecs_to_ticks(1);
-	if (ticksdelay < 1)
-		ticksdelay = 1;
-	ic->ic_scan_start(ic);			/* notify driver */
-	ss->ss_scanend = ticks + ticksdelay + ss->ss_duration;
-	ss->ss_iflags |= ISCAN_START;
-	callout_reset(&ss->ss_scan_timer, ticksdelay, scan_next, ss);
-}
-
-/*
- * Start/restart scanning.  If we're operating in station mode
- * and associated notify the ap we're going into power save mode
- * and schedule a callback to initiate the work (where there's a
- * better context for doing the work).  Otherwise, start the scan
- * directly.
- */
-static int
-scan_restart(struct scan_state *ss, u_int duration)
-{
-	struct ieee80211vap *vap = ss->base.ss_vap;
-	struct ieee80211com *ic = vap->iv_ic;
-	int defer = 0;
-
-	if (ss->base.ss_next == ss->base.ss_last) {
-		IEEE80211_DPRINTF(vap, IEEE80211_MSG_SCAN,
-			"%s: no channels to scan\n", __func__);
-		return 0;
-	}
-	if (vap->iv_opmode == IEEE80211_M_STA &&
-	    vap->iv_state == IEEE80211_S_RUN) {
-		if ((vap->iv_bss->ni_flags & IEEE80211_NODE_PWR_MGT) == 0) {
-			/*
-			 * Initiate power save before going off-channel.
-			 * Note that we cannot do this directly because
-			 * of locking issues; instead we defer it to a
-			 * tasklet.
-			 */
-			ss->ss_duration = duration;
-			defer = 1;
-		}
-	}
-
-	if (!defer) {
-		ic->ic_scan_start(ic);		/* notify driver */
-		ss->ss_scanend = ticks + duration;
-		ss->ss_iflags |= ISCAN_START;
-		callout_reset(&ss->ss_scan_timer, 0, scan_next, ss);
-	} else
-		scan_restart_pwrsav(ss);
-	return 1;
-}
-
 static void
 copy_ssid(struct ieee80211vap *vap, struct ieee80211_scan_state *ss,
 	int nssid, const struct ieee80211_scan_ssid ssids[])
@@ -485,6 +424,7 @@ start_scan_locked(const struct ieee80211_scanner *scan,
 
 			/* NB: flush frames rx'd before 1st channel change */
 			SCAN_PRIVATE(ss)->ss_iflags |= ISCAN_DISCARD;
+			SCAN_PRIVATE(ss)->ss_duration = duration;
 			ss->ss_next = 0;
 			ss->ss_mindwell = mindwell;
 			ss->ss_maxdwell = maxdwell;
@@ -493,8 +433,9 @@ start_scan_locked(const struct ieee80211_scanner *scan,
 			if (ieee80211_msg_scan(vap))
 				scan_dump(ss);
 #endif /* IEEE80211_DEBUG */
-			if (scan_restart(SCAN_PRIVATE(ss), duration))
-				ic->ic_flags |= IEEE80211_F_SCAN;
+			ic->ic_flags |= IEEE80211_F_SCAN;
+			taskqueue_enqueue(ic->ic_tq,
+			    &SCAN_PRIVATE(ss)->ss_scan_task);
 		}
 	} else {
 		IEEE80211_DPRINTF(vap, IEEE80211_MSG_SCAN,
@@ -716,11 +657,12 @@ ieee80211_bg_scan(struct ieee80211vap *vap, int flags)
 			}
 			/* NB: flush frames rx'd before 1st channel change */
 			SCAN_PRIVATE(ss)->ss_iflags |= ISCAN_DISCARD;
+			SCAN_PRIVATE(ss)->ss_duration = duration;
 			ss->ss_maxdwell = duration;
-			if (scan_restart(SCAN_PRIVATE(ss), duration)) {
-				ic->ic_flags |= IEEE80211_F_SCAN;
-				ic->ic_flags_ext |= IEEE80211_FEXT_BGSCAN;
-			}
+			ic->ic_flags |= IEEE80211_F_SCAN;
+			ic->ic_flags_ext |= IEEE80211_FEXT_BGSCAN;
+			taskqueue_enqueue(ic->ic_tq,
+			    &SCAN_PRIVATE(ss)->ss_scan_task);
 		} else {
 			/* XXX msg+stat */
 		}
@@ -756,9 +698,8 @@ ieee80211_cancel_scan(struct ieee80211vap *vap)
 		/* clear bg scan NOPICK and mark cancel request */
 		ss->ss_flags &= ~IEEE80211_SCAN_NOPICK;
 		SCAN_PRIVATE(ss)->ss_iflags |= ISCAN_CANCEL;
-		/* force it to fire asap */
-		callout_reset(&SCAN_PRIVATE(ss)->ss_scan_timer,
-			0, scan_next, ss);
+		/* wake up the scan task */
+		scan_signal(ss);
 	}
 	IEEE80211_UNLOCK(ic);
 }
@@ -783,9 +724,8 @@ ieee80211_cancel_anyscan(struct ieee80211vap *vap)
 		/* clear bg scan NOPICK and mark cancel request */
 		ss->ss_flags &= ~IEEE80211_SCAN_NOPICK;
 		SCAN_PRIVATE(ss)->ss_iflags |= ISCAN_CANCEL;
-		/* force it to fire asap */
-		callout_reset(&SCAN_PRIVATE(ss)->ss_scan_timer,
-			0, scan_next, ss);
+		/* wake up the scan task */
+		scan_signal(ss);
 	}
 	IEEE80211_UNLOCK(ic);
 }
@@ -800,7 +740,10 @@ ieee80211_scan_next(struct ieee80211vap *vap)
 	struct ieee80211com *ic = vap->iv_ic;
 	struct ieee80211_scan_state *ss = ic->ic_scan;
 
-	callout_reset(&SCAN_PRIVATE(ss)->ss_scan_timer, 0, scan_next, ss);
+	/* wake up the scan task */
+	IEEE80211_LOCK(ic);
+	scan_signal(ss);
+	IEEE80211_UNLOCK(ic);
 }
 
 /*
@@ -816,7 +759,7 @@ ieee80211_scan_done(struct ieee80211vap *vap)
 	IEEE80211_LOCK(ic);
 	ss = ic->ic_scan;
 	ss->ss_next = ss->ss_last; /* all channels are complete */
-	scan_next(ss);
+	ieee80211_scan_next(vap);
 	IEEE80211_UNLOCK(ic);
 }
 
@@ -871,7 +814,17 @@ scan_curchan(struct ieee80211_scan_state *ss, unsigned long maxdwell)
 	if (ss->ss_flags & IEEE80211_SCAN_ACTIVE)
 		ieee80211_probe_curchan(vap, 0);
 	callout_reset(&SCAN_PRIVATE(ss)->ss_scan_timer,
-	    maxdwell, scan_next, ss);
+	    maxdwell, scan_signal, ss);
+}
+
+static void
+scan_signal(void *arg)
+{
+	struct ieee80211_scan_state *ss = (struct ieee80211_scan_state *) arg;
+
+	IEEE80211_LOCK_ASSERT(ss->ss_vap->iv_ic);
+
+	cv_signal(&SCAN_PRIVATE(ss)->ss_scan_cv);
 }
 
 /*
@@ -881,35 +834,66 @@ scan_curchan(struct ieee80211_scan_state *ss, unsigned long maxdwell)
 static void
 scan_mindwell(struct ieee80211_scan_state *ss)
 {
-	callout_reset(&SCAN_PRIVATE(ss)->ss_scan_timer, 0, scan_next, ss);
+	struct ieee80211vap *vap = ss->ss_vap;
+	struct ieee80211com *ic = vap->iv_ic;
+
+	IEEE80211_LOCK(ic);
+	scan_signal(ss);
+	IEEE80211_UNLOCK(ic);
 }
 
-/*
- * Switch to the next channel marked for scanning.
- */
 static void
-scan_next(void *arg)
+scan_task(void *arg, int pending)
 {
-#define	ISCAN_REP	(ISCAN_MINDWELL | ISCAN_START | ISCAN_DISCARD)
+#define	ISCAN_REP	(ISCAN_MINDWELL | ISCAN_DISCARD)
 	struct ieee80211_scan_state *ss = (struct ieee80211_scan_state *) arg;
 	struct ieee80211vap *vap = ss->ss_vap;
 	struct ieee80211com *ic = vap->iv_ic;
 	struct ieee80211_channel *chan;
 	unsigned long maxdwell, scanend;
-	int scandone;
+	int scandone = 0;
 
-	IEEE80211_LOCK_ASSERT(ic);
+	IEEE80211_LOCK(ic);
+	if ((ic->ic_flags & IEEE80211_F_SCAN) == 0 ||
+	    (SCAN_PRIVATE(ss)->ss_iflags & ISCAN_ABORT)) {
+		/* Cancelled before we started */
+		goto done;
+	}
 
-	if ((ic->ic_flags & IEEE80211_F_SCAN) == 0)
-		return;
-again:
-	scandone = (ss->ss_next >= ss->ss_last) ||
-		(SCAN_PRIVATE(ss)->ss_iflags & ISCAN_CANCEL) != 0;
-	scanend = SCAN_PRIVATE(ss)->ss_scanend;
-	if (!scandone &&
-	    (ss->ss_flags & IEEE80211_SCAN_GOTPICK) == 0 &&
-	    ((SCAN_PRIVATE(ss)->ss_iflags & ISCAN_START) ||
-	     time_before(ticks + ss->ss_mindwell, scanend))) {
+	if (ss->ss_next == ss->ss_last) {
+		IEEE80211_DPRINTF(vap, IEEE80211_MSG_SCAN,
+			"%s: no channels to scan\n", __func__);
+		goto done;
+	}
+
+	if (vap->iv_opmode == IEEE80211_M_STA &&
+	    vap->iv_state == IEEE80211_S_RUN) {
+		if ((vap->iv_bss->ni_flags & IEEE80211_NODE_PWR_MGT) == 0) {
+			/* Enable station power save mode */
+			printf("ieee80211_sta_pwrsave(vap, 1)\n");
+			ieee80211_sta_pwrsave(vap, 1);
+			/*
+			 * Use an 1ms delay so the null data frame has a chance
+			 * to go out.
+			 */
+			cv_timedwait(&SCAN_PRIVATE(ss)->ss_scan_cv,
+			    IEEE80211_LOCK_OBJ(ic), hz / 1000);
+			if (SCAN_PRIVATE(ss)->ss_iflags & ISCAN_ABORT)
+				goto done;
+		}
+	}
+
+	printf("%s: starting scan loop\n", __func__);
+	scanend = ticks + SCAN_PRIVATE(ss)->ss_duration;
+	ic->ic_scan_start(ic);		/* notify driver */
+
+	for (;;) {
+		scandone = (ss->ss_next >= ss->ss_last) ||
+		    (SCAN_PRIVATE(ss)->ss_iflags & ISCAN_CANCEL) != 0;
+		if (scandone || (ss->ss_flags & IEEE80211_SCAN_GOTPICK) ||
+		     time_after(ticks + ss->ss_mindwell, scanend))
+			break;
+
 		chan = ss->ss_chans[ss->ss_next++];
 
 		/*
@@ -948,87 +932,96 @@ again:
 		SCAN_PRIVATE(ss)->ss_chanmindwell = ticks + ss->ss_mindwell;
 		/* clear mindwell lock and initial channel change flush */
 		SCAN_PRIVATE(ss)->ss_iflags &= ~ISCAN_REP;
-	} else {
-		ic->ic_scan_end(ic);		/* notify driver */
-		/*
-		 * Record scan complete time.  Note that we also do
-		 * this when canceled so any background scan will
-		 * not be restarted for a while.
-		 */
-		if (scandone)
-			ic->ic_lastscan = ticks;
-		/* return to the bss channel */
-		if (ic->ic_bsschan != IEEE80211_CHAN_ANYC &&
-		    ic->ic_curchan != ic->ic_bsschan)
-			ieee80211_setcurchan(ic, ic->ic_bsschan);
-		/* clear internal flags and any indication of a pick */
-		SCAN_PRIVATE(ss)->ss_iflags &= ~ISCAN_REP;
-		ss->ss_flags &= ~IEEE80211_SCAN_GOTPICK;
 
-		/*
-		 * If not canceled and scan completed, do post-processing.
-		 * If the callback function returns 0, then it wants to
-		 * continue/restart scanning.  Unfortunately we needed to
-		 * notify the driver to end the scan above to avoid having
-		 * rx frames alter the scan candidate list.
-		 */
-		if ((SCAN_PRIVATE(ss)->ss_iflags & ISCAN_CANCEL) == 0 &&
-		    !ss->ss_ops->scan_end(ss, vap) &&
-		    (ss->ss_flags & IEEE80211_SCAN_ONCE) == 0 &&
-		    time_before(ticks + ss->ss_mindwell, scanend)) {
-			IEEE80211_DPRINTF(vap, IEEE80211_MSG_SCAN,
-			    "%s: done, restart "
-			    "[ticks %u, dwell min %lu scanend %lu]\n",
-			    __func__,
-			    ticks, ss->ss_mindwell, scanend);
-			ss->ss_next = 0;	/* reset to begining */
-			if (ss->ss_flags & IEEE80211_SCAN_ACTIVE)
-				vap->iv_stats.is_scan_active++;
-			else
-				vap->iv_stats.is_scan_passive++;
+		/* Wait to be signalled to scan the next channel */
+		cv_wait(&SCAN_PRIVATE(ss)->ss_scan_cv, IEEE80211_LOCK_OBJ(ic));
+		if (SCAN_PRIVATE(ss)->ss_iflags & ISCAN_ABORT)
+			goto done;
+	}
+	ic->ic_scan_end(ic);		/* notify driver */
 
-			ss->ss_ops->scan_restart(ss, vap);	/* XXX? */
-			ic->ic_scan_start(ic);	/* notify driver */
-			goto again;
-		} else {
-			/* past here, scandone is ``true'' if not in bg mode */
-			if ((ss->ss_flags & IEEE80211_SCAN_BGSCAN) == 0)
-				scandone = 1;
+	/*
+	 * Record scan complete time.  Note that we also do
+	 * this when canceled so any background scan will
+	 * not be restarted for a while.
+	 */
+	if (scandone)
+		ic->ic_lastscan = ticks;
+	/* return to the bss channel */
+	if (ic->ic_bsschan != IEEE80211_CHAN_ANYC &&
+	    ic->ic_curchan != ic->ic_bsschan)
+		ieee80211_setcurchan(ic, ic->ic_bsschan);
+	/* clear internal flags and any indication of a pick */
+	SCAN_PRIVATE(ss)->ss_iflags &= ~ISCAN_REP;
+	ss->ss_flags &= ~IEEE80211_SCAN_GOTPICK;
 
-			IEEE80211_DPRINTF(vap, IEEE80211_MSG_SCAN,
-			    "%s: %s, "
-			    "[ticks %u, dwell min %lu scanend %lu]\n",
-			    __func__, scandone ? "done" : "stopped",
-			    ticks, ss->ss_mindwell, scanend);
+	/*
+	 * If not canceled and scan completed, do post-processing.
+	 * If the callback function returns 0, then it wants to
+	 * continue/restart scanning.  Unfortunately we needed to
+	 * notify the driver to end the scan above to avoid having
+	 * rx frames alter the scan candidate list.
+	 */
+	if ((SCAN_PRIVATE(ss)->ss_iflags & ISCAN_CANCEL) == 0 &&
+	    !ss->ss_ops->scan_end(ss, vap) &&
+	    (ss->ss_flags & IEEE80211_SCAN_ONCE) == 0 &&
+	    time_before(ticks + ss->ss_mindwell, scanend)) {
+		IEEE80211_DPRINTF(vap, IEEE80211_MSG_SCAN,
+		    "%s: done, restart "
+		    "[ticks %u, dwell min %lu scanend %lu]\n",
+		    __func__,
+		    ticks, ss->ss_mindwell, scanend);
+		ss->ss_next = 0;	/* reset to begining */
+		if (ss->ss_flags & IEEE80211_SCAN_ACTIVE)
+			vap->iv_stats.is_scan_active++;
+		else
+			vap->iv_stats.is_scan_passive++;
 
-			/*
-			 * Clear the SCAN bit first in case frames are
-			 * pending on the station power save queue.  If
-			 * we defer this then the dispatch of the frames
-			 * may generate a request to cancel scanning.
-			 */
-			ic->ic_flags &= ~IEEE80211_F_SCAN;
-			/*
-			 * Drop out of power save mode when a scan has
-			 * completed.  If this scan was prematurely terminated
-			 * because it is a background scan then don't notify
-			 * the ap; we'll either return to scanning after we
-			 * receive the beacon frame or we'll drop out of power
-			 * save mode because the beacon indicates we have frames
-			 * waiting for us.
-			 */
-			if (scandone) {
-				ieee80211_sta_pwrsave(vap, 0);
-				if (ss->ss_next >= ss->ss_last) {
-					ieee80211_notify_scan_done(vap);
-					ic->ic_flags_ext &= ~IEEE80211_FEXT_BGSCAN;
-				}
-			}
-			SCAN_PRIVATE(ss)->ss_iflags &= ~ISCAN_CANCEL;
-			ss->ss_flags &=
-			    ~(IEEE80211_SCAN_ONCE | IEEE80211_SCAN_PICK1ST);
+		ss->ss_ops->scan_restart(ss, vap);	/* XXX? */
+		taskqueue_enqueue(ic->ic_tq, &SCAN_PRIVATE(ss)->ss_scan_task);
+		IEEE80211_UNLOCK(ic);
+		return;
+	}
+
+	/* past here, scandone is ``true'' if not in bg mode */
+	if ((ss->ss_flags & IEEE80211_SCAN_BGSCAN) == 0)
+		scandone = 1;
+
+	IEEE80211_DPRINTF(vap, IEEE80211_MSG_SCAN,
+	    "%s: %s, [ticks %u, dwell min %lu scanend %lu]\n",
+	    __func__, scandone ? "done" : "stopped",
+	    ticks, ss->ss_mindwell, scanend);
+
+	/*
+	 * Clear the SCAN bit first in case frames are
+	 * pending on the station power save queue.  If
+	 * we defer this then the dispatch of the frames
+	 * may generate a request to cancel scanning.
+	 */
+done:
+	printf("%s: finished, cancel=%d abort=%d\n", __func__,
+	    (SCAN_PRIVATE(ss)->ss_iflags & ISCAN_CANCEL) != 0,
+	    (SCAN_PRIVATE(ss)->ss_iflags & ISCAN_ABORT) != 0);
+	ic->ic_flags &= ~IEEE80211_F_SCAN;
+	/*
+	 * Drop out of power save mode when a scan has
+	 * completed.  If this scan was prematurely terminated
+	 * because it is a background scan then don't notify
+	 * the ap; we'll either return to scanning after we
+	 * receive the beacon frame or we'll drop out of power
+	 * save mode because the beacon indicates we have frames
+	 * waiting for us.
+	 */
+	if (scandone) {
+		ieee80211_sta_pwrsave(vap, 0);
+		if (ss->ss_next >= ss->ss_last) {
+			ieee80211_notify_scan_done(vap);
+			ic->ic_flags_ext &= ~IEEE80211_FEXT_BGSCAN;
 		}
 	}
+	SCAN_PRIVATE(ss)->ss_iflags &= ~(ISCAN_CANCEL|ISCAN_ABORT);
+	ss->ss_flags &= ~(IEEE80211_SCAN_ONCE | IEEE80211_SCAN_PICK1ST);
+	IEEE80211_UNLOCK(ic);
 #undef ISCAN_REP
 }
 
