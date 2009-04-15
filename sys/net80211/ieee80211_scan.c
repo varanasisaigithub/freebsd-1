@@ -761,7 +761,7 @@ ieee80211_scan_done(struct ieee80211vap *vap)
 	IEEE80211_LOCK(ic);
 	ss = ic->ic_scan;
 	ss->ss_next = ss->ss_last; /* all channels are complete */
-	ieee80211_scan_next(vap);
+	scan_signal(ss);
 	IEEE80211_UNLOCK(ic);
 }
 
