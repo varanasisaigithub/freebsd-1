@@ -308,7 +308,9 @@ change_channel(struct ieee80211com *ic,
 {
 	ic->ic_curchan = chan;
 	ic->ic_rt = ieee80211_get_ratetable(chan);
+	IEEE80211_UNLOCK(ic);
 	ic->ic_set_channel(ic);
+	IEEE80211_LOCK(ic);
 }
 
 static char
@@ -961,7 +963,7 @@ scan_task(void *arg, int pending)
 	/* return to the bss channel */
 	if (ic->ic_bsschan != IEEE80211_CHAN_ANYC &&
 	    ic->ic_curchan != ic->ic_bsschan)
-		ieee80211_setcurchan(ic, ic->ic_bsschan);
+		ieee80211_setcurchan(ic, ic->ic_bsschan); /* XXX */
 	/* clear internal flags and any indication of a pick */
 	SCAN_PRIVATE(ss)->ss_iflags &= ~ISCAN_REP;
 	ss->ss_flags &= ~IEEE80211_SCAN_GOTPICK;
