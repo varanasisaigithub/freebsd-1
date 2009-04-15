@@ -120,7 +120,6 @@ static uint16_t	ipw_read_prom_word(struct ipw_softc *, uint8_t);
 static void	ipw_rx_cmd_intr(struct ipw_softc *, struct ipw_soft_buf *);
 static void	ipw_assocsuccess(void *, int);
 static void	ipw_assocfailed(void *, int);
-static void	ipw_scandone(void *, int);
 static void	ipw_bmiss(void *, int);
 static void	ipw_rx_newstate_intr(struct ipw_softc *, struct ipw_soft_buf *);
 static void	ipw_rx_data_intr(struct ipw_softc *, struct ipw_status *,
@@ -166,7 +165,6 @@ static void	ipw_read_mem_1(struct ipw_softc *, bus_size_t, uint8_t *,
 #endif
 static void	ipw_write_mem_1(struct ipw_softc *, bus_size_t,
 		    const uint8_t *, bus_size_t);
-static void	ipw_scan_task(void *, int);
 static int	ipw_scan(struct ipw_softc *);
 static void	ipw_scan_start(struct ieee80211com *);
 static void	ipw_scan_end(struct ieee80211com *);
@@ -239,7 +237,6 @@ ipw_attach(device_t dev)
 	    MTX_DEF | MTX_RECURSE);
 
 	TASK_INIT(&sc->sc_init_task, 0, ipw_init_task, sc);
-	TASK_INIT(&sc->sc_scan_task, 0, ipw_scan_task, sc);
 	TASK_INIT(&sc->sc_bmiss_task, 0, ipw_bmiss, sc);
 	callout_init_mtx(&sc->sc_wdtimer, &sc->sc_mtx, 0);
 
@@ -418,7 +415,6 @@ ipw_detach(device_t dev)
 
 	callout_drain(&sc->sc_wdtimer);
 	taskqueue_drain(taskqueue_fast, &sc->sc_init_task);
-	taskqueue_drain(taskqueue_fast, &sc->sc_scan_task);
 	taskqueue_drain(taskqueue_fast, &sc->sc_bmiss_task);
 
 	ipw_release(sc);
@@ -513,7 +509,6 @@ ipw_vap_create(struct ieee80211com *ic,
 
 	TASK_INIT(&ivp->assoc_success_task, 0, ipw_assocsuccess, vap);
 	TASK_INIT(&ivp->assoc_failed_task, 0, ipw_assocfailed, vap);
-	TASK_INIT(&ivp->scandone_task, 0, ipw_scandone, vap);
 
 	ieee80211_vap_setup(ic, vap, name, unit, opmode, flags, bssid, mac);
 	/* override with driver methods */
@@ -1032,14 +1027,6 @@ ipw_assocfailed(void *arg, int npending)
 }
 
 static void
-ipw_scandone(void *arg, int npending)
-{
-	struct ieee80211vap *vap = arg;
-
-	ieee80211_scan_done(vap);
-}
-
-static void
 ipw_bmiss(void *arg, int npending)
 {
 	struct ieee80211com *ic = arg;
@@ -1106,8 +1093,7 @@ ipw_rx_newstate_intr(struct ipw_softc *sc, struct ipw_soft_buf *sbuf)
 			break;
 		}
 		if (sc->flags & IPW_FLAG_SCANNING) {
-			taskqueue_enqueue(taskqueue_swi,
-			    &IPW_VAP(vap)->scandone_task);
+			ieee80211_scan_done(vap);
 			sc->flags &= ~IPW_FLAG_SCANNING;
 			sc->sc_scan_timer = 0;
 		}
@@ -2177,20 +2163,6 @@ ipw_setscanopts(struct ipw_softc *sc, uint32_t chanmask, uint32_t flags)
 	return ipw_cmd(sc, IPW_CMD_SET_SCAN_OPTIONS, &opts, sizeof(opts));
 }
 
-/*
- * Handler for sc_scan_task.  This is a simple wrapper around ipw_scan().
- */
-static void
-ipw_scan_task(void *context, int pending)
-{
-	struct ipw_softc *sc = context;
-	IPW_LOCK_DECL;
-
-	IPW_LOCK(sc);
-	ipw_scan(sc);
-	IPW_UNLOCK(sc);
-}
-
 static int
 ipw_scan(struct ipw_softc *sc)
 {
@@ -2722,8 +2694,7 @@ ipw_scan_start(struct ieee80211com *ic)
 	IPW_LOCK_DECL;
 
 	IPW_LOCK(sc);
-	if (!(sc->flags & IPW_FLAG_SCANNING))
-		taskqueue_enqueue(taskqueue_swi, &sc->sc_scan_task);
+	ipw_scan(sc);
 	IPW_UNLOCK(sc);
 }
 

@@ -80,7 +80,6 @@ struct ipw_vap {
 	struct ieee80211vap	vap;
 	struct task		assoc_success_task;
 	struct task		assoc_failed_task;
-	struct task		scandone_task;
 
 	int			(*newstate)(struct ieee80211vap *,
 				    enum ieee80211_state, int);
@@ -93,8 +92,6 @@ struct ipw_softc {
 
 	struct mtx			sc_mtx;
 	struct task			sc_init_task;
-	struct task			sc_scan_task;
-	struct task			sc_chan_task;
 	struct task			sc_bmiss_task;
 	struct callout			sc_wdtimer;	/* watchdog timer */
 

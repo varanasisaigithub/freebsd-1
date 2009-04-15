@@ -1774,7 +1774,7 @@ iwn_notif_intr(struct iwn_softc *sc)
 			    "scan finished nchan=%d status=%d chan=%d\n",
 			    scan->nchan, scan->status, scan->chan);
 
-			iwn_queue_cmd(sc, IWN_SCAN_NEXT, 0, IWN_QUEUE_NORMAL);
+			ieee80211_scan_next(vap);
 			break;
 		}
 		}
@@ -4300,7 +4300,10 @@ iwn_scan_start(struct ieee80211com *ic)
 	struct ifnet *ifp = ic->ic_ifp;
 	struct iwn_softc *sc = ifp->if_softc;
 
-	iwn_queue_cmd(sc, IWN_SCAN_START, 0, IWN_QUEUE_NORMAL);
+	IWN_LOCK(sc);
+	/* make the link LED blink while we're scanning */
+	iwn_set_led(sc, IWN_LED_LINK, 20, 2);
+	IWN_UNLOCK(sc);
 }
 
 /*
@@ -4309,10 +4312,7 @@ iwn_scan_start(struct ieee80211com *ic)
 static void
 iwn_scan_end(struct ieee80211com *ic)
 {
-	struct ifnet *ifp = ic->ic_ifp;
-	struct iwn_softc *sc = ifp->if_softc;
-
-	iwn_queue_cmd(sc, IWN_SCAN_STOP, 0, IWN_QUEUE_NORMAL);
+	/* ignore */
 }
 
 /*
@@ -4323,15 +4323,29 @@ iwn_set_channel(struct ieee80211com *ic)
 {
 	struct ifnet *ifp = ic->ic_ifp;
 	struct iwn_softc *sc = ifp->if_softc;
+	struct ieee80211vap *vap;
 	const struct ieee80211_channel *c = ic->ic_curchan;
+	int error;
 
+	vap = TAILQ_FIRST(&ic->ic_vaps);	/* XXX */
+
+	IWN_LOCK(sc);
 	if (c != sc->sc_curchan) {
 		sc->sc_rxtap.wr_chan_freq = htole16(c->ic_freq);
 		sc->sc_rxtap.wr_chan_flags = htole16(c->ic_flags);
 		sc->sc_txtap.wt_chan_freq = htole16(c->ic_freq);
 		sc->sc_txtap.wt_chan_flags = htole16(c->ic_flags);
-		iwn_queue_cmd(sc, IWN_SET_CHAN, 0, IWN_QUEUE_NORMAL);
+
+		error = iwn_config(sc);
+		if (error != 0) {
+			DPRINTF(sc, IWN_DEBUG_STATE,
+			    "%s: set chan failed, cancel scan\n",
+			    __func__);
+			//XXX Handle failed scan correctly
+			ieee80211_cancel_scan(vap);
+		}
 	}
+	IWN_UNLOCK(sc);
 }
 
 /*
@@ -4342,8 +4356,13 @@ iwn_scan_curchan(struct ieee80211_scan_state *ss, unsigned long maxdwell)
 {
 	struct ieee80211vap *vap = ss->ss_vap;
 	struct iwn_softc *sc = vap->iv_ic->ic_ifp->if_softc;
+	int error;
 
-	iwn_queue_cmd(sc, IWN_SCAN_CURCHAN, 0, IWN_QUEUE_NORMAL);
+	IWN_LOCK(sc);
+	error = iwn_scan(sc);
+	IWN_UNLOCK(sc);
+	if (error != 0)
+		ieee80211_cancel_scan(vap);
 }
 
 /*
@@ -4367,7 +4386,7 @@ iwn_ops(void *arg0, int pending)
 	struct ifnet *ifp = sc->sc_ifp;
 	struct ieee80211com *ic = ifp->if_l2com;
 	struct ieee80211vap *vap;
-	int cmd, arg, error;
+	int cmd, arg;
 
 	for (;;) {
 		IWN_CMD_LOCK(sc);
@@ -4393,36 +4412,6 @@ iwn_ops(void *arg0, int pending)
 
 		vap = TAILQ_FIRST(&ic->ic_vaps);	/* XXX */
 		switch (cmd) {
-		case IWN_SCAN_START:
-			/* make the link LED blink while we're scanning */
-			iwn_set_led(sc, IWN_LED_LINK, 20, 2);
-			break;
-		case IWN_SCAN_STOP:
-			break;
-		case IWN_SCAN_NEXT:
-			ieee80211_scan_next(vap);
-			break;
-		case IWN_SCAN_CURCHAN:
-			error = iwn_scan(sc);
-			if (error != 0) {
-				IWN_UNLOCK(sc);
-				ieee80211_cancel_scan(vap);
-				IWN_LOCK(sc);
-				return;
-			}
-			break;
-		case IWN_SET_CHAN:
-			error = iwn_config(sc);
-			if (error != 0) {
-				DPRINTF(sc, IWN_DEBUG_STATE,
-				    "%s: set chan failed, cancel scan\n",
-				    __func__);
-				IWN_UNLOCK(sc);
-				//XXX Handle failed scan correctly
-				ieee80211_cancel_scan(vap);
-				return;
-			}
-			break;
 		case IWN_REINIT:
 			IWN_UNLOCK(sc);
 			iwn_init(sc);
@@ -4512,11 +4501,6 @@ static const char *
 iwn_ops_str(int cmd)
 {
 	switch (cmd) {
-	case IWN_SCAN_START:	return "SCAN_START";
-	case IWN_SCAN_CURCHAN:	return "SCAN_CURCHAN";
-	case IWN_SCAN_STOP:	return "SCAN_STOP";
-	case IWN_SET_CHAN:	return "SET_CHAN";
-	case IWN_SCAN_NEXT:	return "SCAN_NEXT";
 	case IWN_RADIO_ENABLE:	return "RADIO_ENABLE";
 	case IWN_RADIO_DISABLE:	return "RADIO_DISABLE";
 	case IWN_REINIT:	return "REINIT";

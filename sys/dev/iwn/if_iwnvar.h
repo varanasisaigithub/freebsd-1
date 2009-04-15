@@ -181,22 +181,17 @@ struct iwn_softc {
 	bus_size_t		sc_sz;
 
         /* command queue related variables */
-#define IWN_SCAN_START		(1<<0)
-#define IWN_SCAN_CURCHAN	(1<<1)
-#define IWN_SCAN_STOP		(1<<2)
-#define IWN_SET_CHAN		(1<<3)
-#define IWN_SCAN_NEXT		(1<<4)
-#define IWN_RADIO_ENABLE	(1<<5)
-#define IWN_RADIO_DISABLE	(1<<6)
-#define IWN_REINIT		(1<<7)
+#define IWN_RADIO_ENABLE	(1<<0)
+#define IWN_RADIO_DISABLE	(1<<1)
+#define IWN_REINIT		(1<<2)
 #define IWN_CMD_MAXOPS		10
 	/* command queuing request type */
 #define IWN_QUEUE_NORMAL	0
 #define IWN_QUEUE_CLEAR		1
         int                     sc_cmd[IWN_CMD_MAXOPS];
         int                     sc_cmd_arg[IWN_CMD_MAXOPS];
-        int                     sc_cmd_cur;    /* current queued scan task */
-        int                     sc_cmd_next;   /* last queued scan task */
+        int                     sc_cmd_cur;    /* current queued task */
+        int                     sc_cmd_next;   /* last queued task */
         struct mtx              sc_cmdlock;
 
 	/* Task queues used to control the driver */

@@ -195,7 +195,6 @@ struct iwi_softc {
 
 	struct task		sc_radiontask;	/* radio on processing */
 	struct task		sc_radiofftask;	/* radio off processing */
-	struct task		sc_scanaborttask;	/* cancel active scan */
 	struct task		sc_restarttask;	/* restart adapter processing */
 	struct task		sc_opstask;	/* scan / auth processing */
 
@@ -225,12 +224,8 @@ struct iwi_softc {
 	int			sc_cmd_cur;	/* current queued scan task */
 	int			sc_cmd_next;	/* last queued scan task */
 #define	IWI_CMD_FREE		0		/* for marking slots unused */
-#define IWI_SCAN_START		1
-#define IWI_SET_CHANNEL	        2
-#define	IWI_DISASSOC		3
-#define	IWI_SCAN_CURCHAN	4
-#define	IWI_SCAN_ALLCHAN	5
-#define	IWI_SET_WME		6
+#define	IWI_DISASSOC		1
+#define	IWI_SET_WME		2
 
 	struct iwi_rx_radiotap_header sc_rxtap;
 	int			sc_rxtap_len;

@@ -186,12 +186,8 @@ static void	iwi_put_firmware(struct iwi_softc *);
 static int	iwi_scanchan(struct iwi_softc *, unsigned long, int);
 static void	iwi_scan_start(struct ieee80211com *);
 static void	iwi_scan_end(struct ieee80211com *);
-static void	iwi_scanabort(void *, int);
 static void	iwi_set_channel(struct ieee80211com *);
 static void	iwi_scan_curchan(struct ieee80211_scan_state *, unsigned long maxdwell);
-#if 0
-static void	iwi_scan_allchan(struct ieee80211com *, unsigned long maxdwell);
-#endif
 static void	iwi_scan_mindwell(struct ieee80211_scan_state *);
 static void	iwi_ops(void *, int);
 static int	iwi_queue_cmd(struct iwi_softc *, int, unsigned long);
@@ -309,7 +305,6 @@ iwi_attach(device_t dev)
 	TASK_INIT(&sc->sc_radiofftask, 0, iwi_radio_off, sc);
 	TASK_INIT(&sc->sc_restarttask, 0, iwi_restart, sc);
 	TASK_INIT(&sc->sc_opstask, 0, iwi_ops, sc);
-	TASK_INIT(&sc->sc_scanaborttask, 0, iwi_scanabort, sc);
 	callout_init_mtx(&sc->sc_wdtimer, &sc->sc_mtx, 0);
 	callout_init_mtx(&sc->sc_rftimer, &sc->sc_mtx, 0);
 
@@ -2666,7 +2661,7 @@ scan_band(const struct ieee80211_channel *c)
  * Start a scan on the current channel or all channels.
  */
 static int
-iwi_scanchan(struct iwi_softc *sc, unsigned long maxdwell, int mode)
+iwi_scanchan(struct iwi_softc *sc, unsigned long maxdwell, int allchan)
 {
 	struct ieee80211com *ic;
 	struct ieee80211_channel *chan;
@@ -2713,7 +2708,7 @@ iwi_scanchan(struct iwi_softc *sc, unsigned long maxdwell, int mode)
 			return (error);
 	}
 
-	if (mode == IWI_SCAN_ALLCHAN) {
+	if (allchan) {
 		int i, next, band, b, bstart;
 		/*
 		 * Convert scan list to run-length encoded channel list
@@ -2780,20 +2775,6 @@ iwi_scanchan(struct iwi_softc *sc, unsigned long maxdwell, int mode)
 #endif
 
 	return (iwi_cmd(sc, IWI_CMD_SCAN_EXT, &scan, sizeof scan));
-}
-
-static void
-iwi_scanabort(void *arg, int npending)
-{
-	struct iwi_softc *sc = arg;
-	IWI_LOCK_DECL;
-
-	IWI_LOCK(sc);
-	sc->flags &= ~IWI_FLAG_CHANNEL_SCAN;
-	/* NB: make sure we're still scanning */
-	if (sc->fw_state == IWI_FW_SCANNING)
-		iwi_cmd(sc, IWI_CMD_ABORT_SCAN, NULL, 0);
-	IWI_UNLOCK(sc);
 }
 
 static int
@@ -3538,11 +3519,7 @@ iwi_ops(void *arg0, int npending)
 {
 	static const char *opnames[] = {
 		[IWI_CMD_FREE]		= "FREE",
-		[IWI_SCAN_START]	= "SCAN_START",
-		[IWI_SET_CHANNEL]	= "SET_CHANNEL",
 		[IWI_DISASSOC]		= "DISASSOC",
-		[IWI_SCAN_CURCHAN]	= "SCAN_CURCHAN",
-		[IWI_SCAN_ALLCHAN]	= "SCAN_ALLCHAN",
 		[IWI_SET_WME]		= "SET_WME",
 	};
 	struct iwi_softc *sc = arg0;
@@ -3585,21 +3562,7 @@ again:
 		if (vap->iv_state == IEEE80211_S_RUN)
 			(void) iwi_wme_setparams(sc, ic);
 		break;
-	case IWI_SCAN_START:
-		sc->flags |= IWI_FLAG_CHANNEL_SCAN;
-		break;
-	case IWI_SCAN_CURCHAN:
-	case IWI_SCAN_ALLCHAN:
-		if (!(sc->flags & IWI_FLAG_CHANNEL_SCAN)) {
-			DPRINTF(("%s: ic_scan_curchan while not scanning\n",
-			    __func__));
-			goto done;
-		}
-		if (iwi_scanchan(sc, arg, cmd))
-			ieee80211_cancel_scan(vap);
-		break;
 	}
-done:
 	IWI_UNLOCK(sc);
 
 	/* Take another pass */
@@ -3627,10 +3590,7 @@ iwi_queue_cmd(struct iwi_softc *sc, int cmd, unsigned long arg)
 static void
 iwi_scan_start(struct ieee80211com *ic)
 {
-	struct ifnet *ifp = ic->ic_ifp;
-	struct iwi_softc *sc = ifp->if_softc;
-
-	iwi_queue_cmd(sc, IWI_SCAN_START, 0);
+	/* ignore */
 }
 
 static void
@@ -3648,20 +3608,13 @@ iwi_scan_curchan(struct ieee80211_scan_state *ss, unsigned long maxdwell)
 	struct ieee80211vap *vap = ss->ss_vap;
 	struct ifnet *ifp = vap->iv_ic->ic_ifp;
 	struct iwi_softc *sc = ifp->if_softc;
+	IWI_LOCK_DECL;
 
-	iwi_queue_cmd(sc, IWI_SCAN_CURCHAN, maxdwell);
+	IWI_LOCK(sc);
+	if (iwi_scanchan(sc, maxdwell, 0))
+		ieee80211_cancel_scan(vap);
+	IWI_UNLOCK(sc);
 }
-
-#if 0
-static void
-iwi_scan_allchan(struct ieee80211com *ic, unsigned long maxdwell)
-{
-	struct ifnet *ifp = ic->ic_ifp;
-	struct iwi_softc *sc = ifp->if_softc;
-
-	iwi_queue_cmd(sc, IWI_SCAN_ALLCHAN, maxdwell);
-}
-#endif
 
 static void
 iwi_scan_mindwell(struct ieee80211_scan_state *ss)
@@ -3674,6 +3627,12 @@ iwi_scan_end(struct ieee80211com *ic)
 {
 	struct ifnet *ifp = ic->ic_ifp;
 	struct iwi_softc *sc = ifp->if_softc;
+	IWI_LOCK_DECL;
 
-	taskqueue_enqueue(sc->sc_tq2, &sc->sc_scanaborttask);
+	IWI_LOCK(sc);
+	sc->flags &= ~IWI_FLAG_CHANNEL_SCAN;
+	/* NB: make sure we're still scanning */
+	if (sc->fw_state == IWI_FW_SCANNING)
+		iwi_cmd(sc, IWI_CMD_ABORT_SCAN, NULL, 0);
+	IWI_UNLOCK(sc);
 }
