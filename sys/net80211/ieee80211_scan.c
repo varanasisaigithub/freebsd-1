@@ -872,7 +872,6 @@ scan_task(void *arg, int pending)
 	    vap->iv_state == IEEE80211_S_RUN) {
 		if ((vap->iv_bss->ni_flags & IEEE80211_NODE_PWR_MGT) == 0) {
 			/* Enable station power save mode */
-			printf("ieee80211_sta_pwrsave(vap, 1)\n");
 			ieee80211_sta_pwrsave(vap, 1);
 			/*
 			 * Use an 1ms delay so the null data frame has a chance
@@ -885,7 +884,6 @@ scan_task(void *arg, int pending)
 		}
 	}
 
-	printf("%s: starting scan loop\n", __func__);
 	scanend = ticks + SCAN_PRIVATE(ss)->ss_duration;
 	IEEE80211_UNLOCK(ic);
 	ic->ic_scan_start(ic);		/* notify driver */
@@ -1012,9 +1010,6 @@ scan_task(void *arg, int pending)
 	 * may generate a request to cancel scanning.
 	 */
 done:
-	printf("%s: finished, cancel=%d abort=%d\n", __func__,
-	    (SCAN_PRIVATE(ss)->ss_iflags & ISCAN_CANCEL) != 0,
-	    (SCAN_PRIVATE(ss)->ss_iflags & ISCAN_ABORT) != 0);
 	ic->ic_flags &= ~IEEE80211_F_SCAN;
 	/*
 	 * Drop out of power save mode when a scan has
