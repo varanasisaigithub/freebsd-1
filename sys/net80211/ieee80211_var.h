@@ -128,6 +128,7 @@ struct ieee80211com {
 	struct task		ic_parent_task;	/* deferred parent processing */
 	struct task		ic_promisc_task;/* deferred promisc update */
 	struct task		ic_mcast_task;	/* deferred mcast update */
+	struct task		ic_chan_task;	/* deferred channel change */
 
 	uint32_t		ic_flags;	/* state flags */
 	uint32_t		ic_flags_ext;	/* extended state flags */

@@ -99,6 +99,7 @@ const char *ieee80211_wme_acnames[] = {
 static void parent_updown(void *, int);
 static void update_mcast(void *, int);
 static void update_promisc(void *, int);
+static void update_channel(void *, int);
 static void ieee80211_newstate_cb(void *, int);
 static int ieee80211_newstate_cb_locked(struct ieee80211vap *,
 	enum ieee80211_state, int);
@@ -138,6 +139,7 @@ ieee80211_proto_attach(struct ieee80211com *ic)
 	TASK_INIT(&ic->ic_parent_task, 0, parent_updown, ifp);
 	TASK_INIT(&ic->ic_mcast_task, 0, update_mcast, ic);
 	TASK_INIT(&ic->ic_promisc_task, 0, update_promisc, ic);
+	TASK_INIT(&ic->ic_chan_task, 0, update_channel, ic);
 
 	ic->ic_wme.wme_hipri_switch_hysteresis =
 		AGGRESSIVE_MODE_SWITCH_HYSTERESIS;
@@ -1098,6 +1100,14 @@ update_promisc(void *arg, int npending)
 	ic->ic_update_promisc(parent);
 }
 
+static void
+update_channel(void *arg, int npending)
+{
+	struct ieee80211com *ic = arg;
+
+	ic->ic_set_channel(ic);
+}
+
 /*
  * Block until the parent is in a known state.  This is
  * used after any operations that dispatch a task (e.g.
@@ -1109,6 +1119,7 @@ ieee80211_waitfor_parent(struct ieee80211com *ic)
 	taskqueue_drain(ic->ic_tq, &ic->ic_parent_task);
 	taskqueue_drain(ic->ic_tq, &ic->ic_mcast_task);
 	taskqueue_drain(ic->ic_tq, &ic->ic_promisc_task);
+	taskqueue_drain(ic->ic_tq, &ic->ic_chan_task);
 }
 
 /*

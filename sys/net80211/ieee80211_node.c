@@ -34,6 +34,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/mbuf.h>   
 #include <sys/malloc.h>
 #include <sys/kernel.h>
+#include <sys/taskqueue.h>
 
 #include <sys/socket.h>
  
@@ -653,7 +654,11 @@ ieee80211_setcurchan(struct ieee80211com *ic, struct ieee80211_channel *c)
 	ic->ic_bsschan = ic->ic_curchan = c;
 	ic->ic_curmode = ieee80211_chan2mode(ic->ic_curchan);
 	ic->ic_rt = ieee80211_get_ratetable(ic->ic_curchan);
-	ic->ic_set_channel(ic);
+	/*
+	 * The channel change is guaranteed to have happened before the next
+	 * state change
+	 */
+	taskqueue_enqueue(ic->ic_tq, &ic->ic_chan_task);
 }
 
 /*
