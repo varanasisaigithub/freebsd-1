@@ -216,6 +216,7 @@ uint64_t	ifmedia_baudrate(int);
 #define	IFM_IEEE80211_WDS	0x00000800	/* Operate in WDS mode */
 #define	IFM_IEEE80211_TURBO	0x00001000	/* Operate in turbo mode */
 #define	IFM_IEEE80211_MONITOR	0x00002000	/* Operate in monitor mode */
+#define	IFM_IEEE80211_MBSS	0x00004000	/* Operate in MBSS mode */
 
 /* operating mode for multi-mode devices */
 #define	IFM_IEEE80211_11A	0x00010000	/* 5Ghz, OFDM mode */
@@ -507,6 +508,7 @@ struct ifmedia_description {
 	{ IFM_IEEE80211_WDS, "wds" },					\
 	{ IFM_IEEE80211_TURBO, "turbo" },				\
 	{ IFM_IEEE80211_MONITOR, "monitor" },				\
+	{ IFM_IEEE80211_MBSS, "meshpoint" },				\
 	{ 0, NULL },							\
 }
 
