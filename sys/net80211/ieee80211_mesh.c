@@ -29,7 +29,7 @@ __FBSDID("$FreeBSD$");
 #endif
 
 /*
- * IEEE 802.11s Mesh support.
+ * IEEE 802.11s Mesh Point (MBSS) support.
  */
 #include "opt_inet.h"
 #include "opt_wlan.h"
@@ -55,6 +55,49 @@ __FBSDID("$FreeBSD$");
 #include <net/bpf.h>
 
 #include <net80211/ieee80211_var.h>
-#include <net80211/ieee80211_sta.h>
+#include <net80211/ieee80211_mesh.h>
 #include <net80211/ieee80211_input.h>
+
+static void	mesh_vattach(struct ieee80211vap *);
+static int	mesh_newstate(struct ieee80211vap *, enum ieee80211_state, int);
+static int	mesh_input(struct ieee80211_node *, struct mbuf *, int, int,
+		    uint32_t);
+
+void
+ieee80211_mesh_attach(struct ieee80211com *ic)
+{
+	ic->ic_vattach[IEEE80211_M_MBSS] = mesh_vattach;
+}
+
+void
+ieee80211_mesh_detach(struct ieee80211com *ic)
+{
+}
+
+static void
+mesh_vattach(struct ieee80211vap *vap)
+{
+	vap->iv_newstate = mesh_newstate;
+	vap->iv_input = mesh_input;
+	vap->iv_opdetach = mesh_vdetach;
+}
+
+static int
+mesh_newstate(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
+{
+	struct ieee80211com *ic = vap->iv_ic;
+	enum ieee80211_state ostate;
+
+	IEEE80211_LOCK_ASSERT(ic);
+
+        ostate = vap->iv_state;
+        IEEE80211_DPRINTF(vap, IEEE80211_MSG_STATE, "%s: %s -> %s (%d)\n",
+            __func__, ieee80211_state_name[ostate],
+            ieee80211_state_name[nstate], arg);
+        vap->iv_state = nstate;                 /* state transition */
+        if (ostate != IEEE80211_S_SCAN)
+                ieee80211_cancel_scan(vap);     /* background scan */
+        switch (nstate) {
+	}
+}
 

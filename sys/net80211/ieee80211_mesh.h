@@ -27,4 +27,7 @@
 #ifndef _NET80211_IEEE80211_MESH_H_
 #define _NET80211_IEEE80211_MESH_H_
 
+void	ieee80211_mesh_attach(struct ieee80211com *);
+void	ieee80211_mesh_detach(struct ieee80211com *);
+
 #endif /* !_NET80211_IEEE80211_MESH_H_ */
