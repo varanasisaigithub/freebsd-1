@@ -786,9 +786,20 @@ struct ieee80211_meshconf_ie {
 	uint32_t	conf_apspi;	/* Active Path Sel. Proto. ID */
 	uint32_t	conf_apsmi;	/* APS Metric Identifier */
 	uint32_t	conf_ccmi;	/* Congestion Control Mode ID  */
-	uint8_t		conf_meshinfo;
-	uint8_t		conf_meshcap;
+	uint8_t		conf_finfo;	/* Formation Information */
+	uint8_t		conf_cap;
 } __packed;
+
+#define	IEEE80211_MESHCONF_APSPI_HWMP_OUI	0x000fac
+#define	IEEE80211_MESHCONF_APSPI_HWMP_VALUE	0xff	/* XXX Linux */
+#define	IEEE80211_MESHCONF_APSMI_AIRTIME_OUI	0x000fac
+#define	IEEE80211_MESHCONF_APSMI_AIRTIME_VALUE	0xff	/* XXX Linux */
+#define	IEEE80211_MESHCONF_CCMI_DEFAULT_OUI	0x000fac
+#define	IEEE80211_MESHCONF_CCMI_DEFAULT_VALUE	0xff	/* XXX Linux */
+#define	IEEE80211_MESHCONF_CCMI_NULL_OUI	0x000fac
+#define	IEEE80211_MESHCONF_CCMI_NULL_VALUE	255
+#define	IEEE80211_MESHCONF_FORM_MP		(1 << 1) /* connected to portal */
+#define	IEEE80211_MESHCONF_FORM_NEIGH		(1 << 4) /* no of neighbours */
 
 /* Mesh Identifier */
 struct ieee80211_meshid_ie {
@@ -797,7 +808,7 @@ struct ieee80211_meshid_ie {
 } __packed;
 
 #define	IEEE80211_MESHID_MAX_SIZE \
-	(sizeof(struct ieee80211_meshid_ie) + 32)
+	(sizeof(struct ieee80211_meshid_ie) + IEEE80211_NWID_LEN)
 
 /* Link Metric Report */
 struct ieee80211_meshlink_ie {
