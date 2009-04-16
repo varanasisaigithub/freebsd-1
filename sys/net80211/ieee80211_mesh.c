@@ -75,6 +75,11 @@ ieee80211_mesh_detach(struct ieee80211com *ic)
 }
 
 static void
+mesh_vdetach(struct ieee80211vap *vap)
+{
+}
+
+static void
 mesh_vattach(struct ieee80211vap *vap)
 {
 	vap->iv_newstate = mesh_newstate;
@@ -98,6 +103,25 @@ mesh_newstate(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
         if (ostate != IEEE80211_S_SCAN)
                 ieee80211_cancel_scan(vap);     /* background scan */
         switch (nstate) {
+	case IEEE80211_S_INIT:
+	case IEEE80211_S_SCAN:
+	case IEEE80211_S_AUTH:
+	case IEEE80211_S_ASSOC:
+	case IEEE80211_S_CAC:
+	case IEEE80211_S_RUN:
+	case IEEE80211_S_CSA:
+	case IEEE80211_S_SLEEP:
+	default:
+		break;
 	}
+
+	return 0;
 }
 
+static int
+mesh_input(struct ieee80211_node *ni, struct mbuf *m, int rssi, int noise,
+    uint32_t rstamp)
+{
+
+	return 0;
+}

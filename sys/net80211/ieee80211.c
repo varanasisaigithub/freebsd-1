@@ -74,6 +74,7 @@ const int ieee80211_opcap[IEEE80211_OPMODE_MAX] = {
 	[IEEE80211_M_AHDEMO]	= IEEE80211_C_AHDEMO,
 	[IEEE80211_M_HOSTAP]	= IEEE80211_C_HOSTAP,
 	[IEEE80211_M_MONITOR]	= IEEE80211_C_MONITOR,
+	[IEEE80211_M_MBSS]	= IEEE80211_C_MBSS,
 };
 
 static const uint8_t ieee80211broadcastaddr[IEEE80211_ADDR_LEN] =
@@ -912,6 +913,8 @@ addmedia(struct ifmedia *media, int caps, int addsta, int mode, int mword)
 		ADD(media, mword, mopt | IFM_IEEE80211_MONITOR);
 	if (caps & IEEE80211_C_WDS)
 		ADD(media, mword, mopt | IFM_IEEE80211_WDS);
+	if (caps & IEEE80211_C_MBSS)
+		ADD(media, mword, mopt | IFM_IEEE80211_MBSS);
 #undef ADD
 }
 
@@ -1215,6 +1218,9 @@ media_status(enum ieee80211_opmode opmode, const struct ieee80211_channel *chan)
 		break;
 	case IEEE80211_M_WDS:
 		status |= IFM_IEEE80211_WDS;
+		break;
+	case IEEE80211_M_MBSS:
+		status |= IFM_IEEE80211_MBSS;
 		break;
 	}
 	if (IEEE80211_IS_CHAN_HTA(chan)) {

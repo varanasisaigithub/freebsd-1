@@ -453,6 +453,9 @@ ieee80211_send_setup(
 			break;
 		case IEEE80211_M_MONITOR:	/* NB: to quiet compiler */
 			break;
+		case IEEE80211_M_MBSS:
+			/* XXXRP TBD */
+			break;
 		}
 	} else {
 		wh->i_fc[1] = IEEE80211_FC1_DIR_NODS;
@@ -1009,6 +1012,7 @@ ieee80211_encap(struct ieee80211vap *vap, struct ieee80211_node *ni,
 		break;
 	case IEEE80211_M_MONITOR:
 	case IEEE80211_M_WDS:		/* NB: is4addr should always be true */
+	case IEEE80211_M_MBSS:
 		goto bad;
 	}
 	if (m->m_flags & M_MORE_DATA)
