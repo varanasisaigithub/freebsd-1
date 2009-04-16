@@ -83,7 +83,7 @@ enum ieee80211_opmode {
 	IEEE80211_M_AHDEMO	= 3,	/* Old lucent compatible adhoc demo */
 	IEEE80211_M_HOSTAP	= 4,	/* Software Access Point */
 	IEEE80211_M_MONITOR	= 5,	/* Monitor mode */
-	IEEE80211_M_MBSS	= 6,	/* Mesh Point link */
+	IEEE80211_M_MBSS	= 6,	/* MBSS (Mesh Point) link */
 };
 #define	IEEE80211_OPMODE_MAX	(IEEE80211_M_MBSS+1)
 
