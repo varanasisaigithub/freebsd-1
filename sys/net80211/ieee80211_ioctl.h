@@ -716,7 +716,9 @@ struct ieee80211req_scan_result {
 	uint8_t		isr_nrates;
 	uint8_t		isr_rates[IEEE80211_RATE_MAXSIZE];
 	uint8_t		isr_ssid_len;		/* SSID length */
-	/* variable length SSID followed by IE data */
+	uint8_t		isr_meshid_len;		/* MESH ID length */
+	/* variable length SSID, followed by variable length MESH ID,
+	  followed by IE data */
 };
 
 /*

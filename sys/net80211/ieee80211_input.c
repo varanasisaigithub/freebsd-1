@@ -479,6 +479,9 @@ ieee80211_parse_beacon(struct ieee80211_node *ni, struct mbuf *m,
 	 *	[tlv] HT capabilities
 	 *	[tlv] HT information
 	 *	[tlv] Atheros capabilities
+	 *	[tlv] Mesh ID
+	 *	[tlv] Mesh Configuration
+	 *	[tlv] Mesh TIM
 	 */
 	IEEE80211_VERIFY_LENGTH(efrm - frm, 12,
 	    return (scan->status = IEEE80211_BPARSE_BADIELEN));
@@ -550,6 +553,15 @@ ieee80211_parse_beacon(struct ieee80211_node *ni, struct mbuf *m,
 			break;
 		case IEEE80211_ELEMID_HTINFO:
 			scan->htinfo = frm;
+			break;
+		case IEEE80211_ELEMID_MESHID:
+			scan->meshid = frm;
+			break;
+		case IEEE80211_ELEMID_MESHCONF:
+			scan->meshconf = frm;
+			break;
+		case IEEE80211_ELEMID_MESHTIM:
+			/* XXXRP TBD */
 			break;
 		case IEEE80211_ELEMID_VENDOR:
 			if (iswpaoui(frm))

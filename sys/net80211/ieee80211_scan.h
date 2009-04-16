@@ -210,6 +210,9 @@ struct ieee80211_scanparams {
 	uint8_t		*htinfo;
 	uint8_t		*ath;
 	uint8_t		*tdma;
+	uint8_t		*meshid;
+	uint8_t		*meshconf;
+	uint8_t		*meshtim;
 };
 
 /*
@@ -239,6 +242,7 @@ struct ieee80211_scan_entry {
 	int8_t		se_rssi;	/* avg'd recv ssi */
 	int8_t		se_noise;	/* noise floor */
 	uint8_t		se_cc[2];	/* captured country code */
+	uint8_t		se_meshid[2+IEEE80211_NWID_LEN];
 	struct ieee80211_ies se_ies;	/* captured ie's */
 	u_int		se_age;		/* age of entry (0 on create) */
 };

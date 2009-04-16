@@ -242,7 +242,8 @@ scan_space(const struct ieee80211_scan_entry *se, int *ielen)
 	 * packet is <3Kbytes so we are sure this doesn't overflow
 	 * 16-bits; if this is a concern we can drop the ie's.
 	 */
-	len = sizeof(struct ieee80211req_scan_result) + se->se_ssid[1] + *ielen;
+	len = sizeof(struct ieee80211req_scan_result) + se->se_ssid[1] +
+	    se->se_meshid[1] + *ielen;
 	return roundup(len, sizeof(uint32_t));
 }
 
@@ -287,14 +288,19 @@ get_scan_result(void *arg, const struct ieee80211_scan_entry *se)
 	memcpy(sr->isr_rates+nr, se->se_xrates+2, nxr);
 	sr->isr_nrates = nr + nxr;
 
+	/* copy SSID */
 	sr->isr_ssid_len = se->se_ssid[1];
 	cp = ((uint8_t *)sr) + sr->isr_ie_off;
 	memcpy(cp, se->se_ssid+2, sr->isr_ssid_len);
 
-	if (ielen) {
-		cp += sr->isr_ssid_len;
+	/* copy mesh id */
+	cp += sr->isr_ssid_len;
+	sr->isr_meshid_len = se->se_meshid[1];
+	memcpy(cp, se->se_meshid+2, sr->isr_meshid_len);
+	cp += sr->isr_meshid_len;
+
+	if (ielen)
 		memcpy(cp, se->se_ies.data, ielen);
-	}
 
 	req->space -= len;
 	req->sr = (struct ieee80211req_scan_result *)(((uint8_t *)sr) + len);

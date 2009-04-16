@@ -77,6 +77,8 @@
 #include <net/if_media.h>
 #include <net/route.h>
 
+#include <arpa/inet.h>
+
 #include <net80211/ieee80211_ioctl.h>
 #include <net80211/ieee80211_freebsd.h>
 #include <net80211/ieee80211_superg.h>
@@ -2482,6 +2484,40 @@ printathie(const char *tag, const u_int8_t *ie, size_t ielen, int maxlen)
 	}
 }
 
+
+static void
+printmeshconf(const char *tag, const uint8_t *ie, size_t ielen, int maxlen)
+{
+#define MATCHOUI(bitfield, oui, value, string)				\
+do {									\
+	if (((htonl(bitfield)) >> 8) == oui && 				\
+	    ((htonl(bitfield)) & 0xff) == value)			\
+		printf("%s", string);					\
+} while (0)
+
+	printf("%s", tag);
+	if (verbose) {
+		const struct ieee80211_meshconf_ie *mconf =
+			(const struct ieee80211_meshconf_ie *)ie;
+		printf("<v%d APSPI:", mconf->conf_ver);
+		MATCHOUI(mconf->conf_apspi, IEEE80211_MESHCONF_APSPI_HWMP_OUI,
+			IEEE80211_MESHCONF_APSPI_HWMP_VALUE, "HWMP");
+		printf(" APSMI:");
+		MATCHOUI(mconf->conf_apsmi,
+		    IEEE80211_MESHCONF_APSMI_AIRTIME_OUI,
+		    IEEE80211_MESHCONF_APSMI_AIRTIME_VALUE, "AIRTIME");
+		printf(" CCMI:");
+		MATCHOUI(mconf->conf_ccmi, IEEE80211_MESHCONF_CCMI_DEFAULT_OUI,
+		    IEEE80211_MESHCONF_CCMI_DEFAULT_VALUE, "DEFAULT");
+		MATCHOUI(mconf->conf_ccmi, IEEE80211_MESHCONF_CCMI_NULL_OUI,
+		    IEEE80211_MESHCONF_CCMI_NULL_VALUE, "NULL");
+		printf(" FORM:0x%x CAPS:0x%x", mconf->conf_finfo,
+		    mconf->conf_cap);
+		printf(">");
+	}
+#undef MATCHOUI
+}
+
 static const char *
 wpa_cipher(const u_int8_t *sel)
 {
@@ -2952,6 +2988,15 @@ printies(const u_int8_t *vp, int ielen, int maxcols)
 			if (verbose)
 				printhtinfo(" HTINFO", vp, 2+vp[1], maxcols);
 			break;
+		case IEEE80211_ELEMID_MESHID:
+			if (verbose)
+				printssid(" MESHID", vp, 2+vp[1], maxcols);
+			break;
+		case IEEE80211_ELEMID_MESHCONF:
+			if (verbose)
+				printmeshconf(" MESHCONF", vp, 2+vp[1],
+				    maxcols);
+			break;
 		default:
 			if (verbose)
 				printie(iename(vp[0]), vp, 2+vp[1], maxcols);
@@ -2980,7 +3025,7 @@ list_scan(int s)
 	uint8_t buf[24*1024];
 	char ssid[IEEE80211_NWID_LEN+1];
 	const uint8_t *cp;
-	int len, ssidmax;
+	int len, ssidmax, idlen;
 
 	if (get80211len(s, IEEE80211_IOC_SCAN_RESULTS, buf, sizeof(buf), &len) < 0)
 		errx(1, "unable to get scan results");
@@ -2989,9 +3034,9 @@ list_scan(int s)
 
 	getchaninfo(s);
 
-	ssidmax = verbose ? IEEE80211_NWID_LEN : 14;
+	ssidmax = verbose ? IEEE80211_NWID_LEN - 1 : 14;
 	printf("%-*.*s  %-17.17s  %4s %4s  %-7s  %3s %4s\n"
-		, ssidmax, ssidmax, "SSID"
+		, ssidmax, ssidmax, "SSID/MESH ID"
 		, "BSSID"
 		, "CHAN"
 		, "RATE"
@@ -3002,13 +3047,20 @@ list_scan(int s)
 	cp = buf;
 	do {
 		const struct ieee80211req_scan_result *sr;
-		const uint8_t *vp;
+		const uint8_t *vp, *idp;
 
 		sr = (const struct ieee80211req_scan_result *) cp;
 		vp = cp + sr->isr_ie_off;
+		if (sr->isr_meshid_len) {
+			idp = vp + sr->isr_ssid_len;
+			idlen = sr->isr_meshid_len;
+		} else {
+			idp = vp;
+			idlen = sr->isr_ssid_len;
+		}
 		printf("%-*.*s  %s  %3d  %3dM %3d:%-3d  %3d %-4.4s"
 			, ssidmax
-			  , copy_essid(ssid, ssidmax, vp, sr->isr_ssid_len)
+			  , copy_essid(ssid, ssidmax, idp, idlen)
 			  , ssid
 			, ether_ntoa((const struct ether_addr *) sr->isr_bssid)
 			, ieee80211_mhz2ieee(sr->isr_freq, sr->isr_flags)
@@ -3017,7 +3069,8 @@ list_scan(int s)
 			, sr->isr_intval
 			, getcaps(sr->isr_capinfo)
 		);
-		printies(vp + sr->isr_ssid_len, sr->isr_ie_len, 24);
+		printies(vp + sr->isr_ssid_len + sr->isr_meshid_len,
+		    sr->isr_ie_len, 24);
 		printf("\n");
 		cp += sr->isr_len, len -= sr->isr_len;
 	} while (len >= sizeof(struct ieee80211req_scan_result));

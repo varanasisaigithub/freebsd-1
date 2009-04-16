@@ -282,6 +282,8 @@ found:
 	memcpy(ise->se_tstamp.data, sp->tstamp, sizeof(ise->se_tstamp));
 	ise->se_intval = sp->bintval;
 	ise->se_capinfo = sp->capinfo;
+	if (sp->meshid != NULL && sp->meshid[1] != 0)
+		memcpy(ise->se_meshid, sp->meshid, 2+sp->meshid[1]);
 	/*
 	 * Beware of overriding se_chan for frames seen
 	 * off-channel; this can cause us to attempt an
