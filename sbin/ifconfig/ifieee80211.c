@@ -4774,7 +4774,9 @@ DECL_CMD_FUNC(set80211clone_wlanmode, arg, d)
 	else if (iseq(arg, "tdma")) {
 		params.icp_opmode = IEEE80211_M_AHDEMO;
 		params.icp_flags |= IEEE80211_CLONE_TDMA;
-	} else
+	} else if (iseq(arg, "meshpoint") || iseq(arg, "mp"))
+		params.icp_opmode = IEEE80211_M_MBSS;
+	else
 		errx(1, "Don't know to create %s for %s", arg, name);
 #undef iseq
 }
