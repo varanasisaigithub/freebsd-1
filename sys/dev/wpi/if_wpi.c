@@ -3536,7 +3536,9 @@ wpi_scan_start(struct ieee80211com *ic)
 	struct ifnet *ifp = ic->ic_ifp;
 	struct wpi_softc *sc = ifp->if_softc;
 
-	wpi_queue_cmd(sc, WPI_SCAN_START, 0, WPI_QUEUE_NORMAL);
+	WPI_LOCK(sc);
+	wpi_set_led(sc, WPI_LED_LINK, 20, 2);
+	WPI_UNLOCK(sc);
 }
 
 /**
@@ -3547,10 +3549,7 @@ wpi_scan_start(struct ieee80211com *ic)
 static void
 wpi_scan_end(struct ieee80211com *ic)
 {
-	struct ifnet *ifp = ic->ic_ifp;
-	struct wpi_softc *sc = ifp->if_softc;
-
-	wpi_queue_cmd(sc, WPI_SCAN_STOP, 0, WPI_QUEUE_NORMAL);
+	/* XXX ignore */
 }
 
 /**
@@ -3567,8 +3566,12 @@ wpi_set_channel(struct ieee80211com *ic)
 	 * Only need to set the channel in Monitor mode. AP scanning and auth
 	 * are already taken care of by their respective firmware commands.
 	 */
-	if (ic->ic_opmode == IEEE80211_M_MONITOR)
-		wpi_queue_cmd(sc, WPI_SET_CHAN, 0, WPI_QUEUE_NORMAL);
+	if (ic->ic_opmode == IEEE80211_M_MONITOR) {
+		error = wpi_config(sc);
+		if (error != 0)
+			device_printf(sc->sc_dev,
+			    "error %d settting channel\n", error);
+	}
 }
 
 /**
@@ -3583,7 +3586,10 @@ wpi_scan_curchan(struct ieee80211_scan_state *ss, unsigned long maxdwell)
 	struct ifnet *ifp = vap->iv_ic->ic_ifp;
 	struct wpi_softc *sc = ifp->if_softc;
 
-	wpi_queue_cmd(sc, WPI_SCAN_CURCHAN, 0, WPI_QUEUE_NORMAL);
+	WPI_LOCK(sc);
+	if (wpi_scan(sc))
+		ieee80211_cancel_scan(vap);
+	WPI_UNLOCK(sc);
 }
 
 /**
@@ -3634,47 +3640,11 @@ again:
 	switch (cmd) {
 	case WPI_RESTART:
 		wpi_init_locked(sc, 0);
-		WPI_UNLOCK(sc);
-		return;
 
 	case WPI_RF_RESTART:
 		wpi_rfkill_resume(sc);
-		WPI_UNLOCK(sc);
-		return;
-	}
-
-	if (!(sc->sc_ifp->if_drv_flags & IFF_DRV_RUNNING)) {
-		WPI_UNLOCK(sc);
-		return;
-	}
-
-	switch (cmd) {
-	case WPI_SCAN_START:
-		/* make the link LED blink while we're scanning */
-		wpi_set_led(sc, WPI_LED_LINK, 20, 2);
-		sc->flags |= WPI_FLAG_SCANNING;
-		break;
-
-	case WPI_SCAN_STOP:
-		sc->flags &= ~WPI_FLAG_SCANNING;
-		break;
-
-	case WPI_SCAN_CURCHAN:
-		if (wpi_scan(sc))
-			ieee80211_cancel_scan(vap);
-		break;
-
-	case WPI_SET_CHAN:
-		error = wpi_config(sc);
-		if (error != 0)
-			device_printf(sc->sc_dev,
-			    "error %d settting channel\n", error);
-		break;
 	}
 	WPI_UNLOCK(sc);
-
-	/* Take another pass */
-	goto again;
 }
 
 /**

@@ -194,12 +194,8 @@ struct wpi_softc {
 	struct wpi_dma_info	fw_dma;
 
 	/* command queue related variables */
-#define WPI_SCAN_START		(1<<0)
-#define WPI_SCAN_CURCHAN	(1<<1)
-#define WPI_SCAN_STOP		(1<<2)
-#define WPI_SET_CHAN		(1<<3)
-#define WPI_RESTART		(1<<4)
-#define WPI_RF_RESTART		(1<<5)
+#define WPI_RESTART		(1<<0)
+#define WPI_RF_RESTART		(1<<1)
 #define WPI_CMD_MAXOPS		10
 	/* command queuing request type */
 #define WPI_QUEUE_NORMAL	0
