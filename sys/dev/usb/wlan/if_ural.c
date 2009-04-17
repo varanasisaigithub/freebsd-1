@@ -2258,6 +2258,7 @@ ural_amrr_task(void *arg, int pending)
 	struct ieee80211_node *ni = vap->iv_bss;
 	int ok, fail;
 
+	RAL_LOCK(sc);
 	/* read and clear statistic registers (STA_CSR0 to STA_CSR10) */
 	ural_read_multi(sc, RAL_STA_CSR0, sc->sta, sizeof(sc->sta));
 
@@ -2272,6 +2273,7 @@ ural_amrr_task(void *arg, int pending)
 	ifp->if_oerrors += fail;	/* count TX retry-fail as Tx errors */
 
 	usb2_callout_reset(&uvp->amrr_ch, hz, ural_amrr_timeout, uvp);
+	RAL_UNLOCK(sc);
 }
 
 static int

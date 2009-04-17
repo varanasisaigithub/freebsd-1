@@ -2213,6 +2213,7 @@ rum_amrr_task(void *arg, int pending)
 	struct ieee80211_node *ni = vap->iv_bss;
 	int ok, fail;
 
+	RUM_LOCK(sc);
 	/* read and clear statistic registers (STA_CSR0 to STA_CSR10) */
 	rum_read_multi(sc, RT2573_STA_CSR0, sc->sta, sizeof(sc->sta));
 
@@ -2227,6 +2228,7 @@ rum_amrr_task(void *arg, int pending)
 	ifp->if_oerrors += fail;	/* count TX retry-fail as Tx errors */
 
 	usb2_callout_reset(&rvp->amrr_ch, hz, rum_amrr_timeout, rvp);
+	RUM_UNLOCK(sc);
 }
 
 /* ARGUSED */
