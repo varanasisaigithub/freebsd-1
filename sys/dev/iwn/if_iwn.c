@@ -129,7 +129,6 @@ void		iwn_rx_intr(struct iwn_softc *, struct iwn_rx_desc *,
 void		iwn_rx_statistics(struct iwn_softc *, struct iwn_rx_desc *);
 void		iwn_tx_intr(struct iwn_softc *, struct iwn_rx_desc *);
 void		iwn_cmd_intr(struct iwn_softc *, struct iwn_rx_desc *);
-static void	iwn_bmiss(void *, int);
 void		iwn_notif_intr(struct iwn_softc *);
 void		iwn_intr(void *);
 void		iwn_read_eeprom(struct iwn_softc *,
@@ -309,7 +308,6 @@ iwn_attach(device_t dev)
                 device_get_nameunit(dev));
 
         TASK_INIT(&sc->sc_ops_task, 0, iwn_ops, sc );
-	TASK_INIT(&sc->sc_bmiss_task, 0, iwn_bmiss, sc);
 
 	/*
 	 * Put adapter into a known state.
@@ -1651,15 +1649,6 @@ iwn_cmd_intr(struct iwn_softc *sc, struct iwn_rx_desc *desc)
 	wakeup(&ring->cmd[desc->idx]);
 }
 
-static void
-iwn_bmiss(void *arg, int npending)
-{
-	struct iwn_softc *sc = arg;
-	struct ieee80211com *ic = sc->sc_ifp->if_l2com;
-
-	ieee80211_beacon_miss(ic);
-}
-
 void
 iwn_notif_intr(struct iwn_softc *sc)
 {
@@ -1720,8 +1709,7 @@ iwn_notif_intr(struct iwn_softc *sc)
 			if (vap->iv_state == IEEE80211_S_RUN && misses > 5)
 				(void) iwn_init_sensitivity(sc);
 			if (misses >= vap->iv_bmissthreshold)
-				taskqueue_enqueue(taskqueue_swi,
-				    &sc->sc_bmiss_task);
+				ieee80211_beacon_miss(ic);
 			break;
 		}
 		case IWN_UC_READY: {

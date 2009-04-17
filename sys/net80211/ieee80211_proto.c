@@ -96,6 +96,7 @@ const char *ieee80211_wme_acnames[] = {
 	"WME_UPSD",
 };
 
+static void beacon_miss(void *, int);
 static void parent_updown(void *, int);
 static void update_mcast(void *, int);
 static void update_promisc(void *, int);
@@ -140,6 +141,7 @@ ieee80211_proto_attach(struct ieee80211com *ic)
 	TASK_INIT(&ic->ic_mcast_task, 0, update_mcast, ic);
 	TASK_INIT(&ic->ic_promisc_task, 0, update_promisc, ic);
 	TASK_INIT(&ic->ic_chan_task, 0, update_channel, ic);
+	TASK_INIT(&ic->ic_bmiss_task, 0, beacon_miss, ic);
 
 	ic->ic_wme.wme_hipri_switch_hysteresis =
 		AGGRESSIVE_MODE_SWITCH_HYSTERESIS;
@@ -1120,6 +1122,7 @@ ieee80211_waitfor_parent(struct ieee80211com *ic)
 	taskqueue_drain(ic->ic_tq, &ic->ic_mcast_task);
 	taskqueue_drain(ic->ic_tq, &ic->ic_promisc_task);
 	taskqueue_drain(ic->ic_tq, &ic->ic_chan_task);
+	taskqueue_drain(ic->ic_tq, &ic->ic_bmiss_task);
 }
 
 /*
@@ -1358,6 +1361,14 @@ ieee80211_resume_all(struct ieee80211com *ic)
 void
 ieee80211_beacon_miss(struct ieee80211com *ic)
 {
+	/* Process in a taskq, the bmiss handler may reenter the driver */
+	taskqueue_enqueue(ic->ic_tq, &ic->ic_bmiss_task);
+}
+
+static void
+beacon_miss(void *arg, int npending)
+{
+	struct ieee80211com *ic = arg;
 	struct ieee80211vap *vap;
 
 	if (ic->ic_flags & IEEE80211_F_SCAN)

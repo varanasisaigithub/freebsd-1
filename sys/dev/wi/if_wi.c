@@ -78,7 +78,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/random.h>
 #include <sys/syslog.h>
 #include <sys/sysctl.h>
-#include <sys/taskqueue.h>
 
 #include <machine/bus.h>
 #include <machine/resource.h>
@@ -134,7 +133,6 @@ static void wi_rx_intr(struct wi_softc *);
 static void wi_tx_intr(struct wi_softc *);
 static void wi_tx_ex_intr(struct wi_softc *);
 
-static void wi_status_oor(void *, int);
 static void wi_info_intr(struct wi_softc *);
 
 static int  wi_write_txrate(struct wi_softc *, struct ieee80211vap *);
@@ -448,7 +446,6 @@ wi_attach(device_t dev)
 	}
 
 	sc->sc_portnum = WI_DEFAULT_PORT;
-	TASK_INIT(&sc->sc_oor_task, 0, wi_status_oor, ic);
 
 	ieee80211_ifattach(ic, macaddr);
 	ic->ic_raw_xmit = wi_raw_xmit;
@@ -1505,14 +1502,6 @@ wi_tx_intr(struct wi_softc *sc)
 	}
 }
 
-static void
-wi_status_oor(void *arg, int pending)
-{
-	struct ieee80211com *ic = arg;
-
-	ieee80211_beacon_miss(ic);
-}
-
 static __noinline void
 wi_info_intr(struct wi_softc *sc)
 {
@@ -1555,7 +1544,7 @@ wi_info_intr(struct wi_softc *sc)
 			break;
 		case WI_INFO_LINK_STAT_AP_OOR:
 			/* XXX does this need to be per-vap? */
-			taskqueue_enqueue(taskqueue_swi, &sc->sc_oor_task);
+			ieee80211_beacon_miss(ic);
 			break;
 		case WI_INFO_LINK_STAT_ASSOC_FAILED:
 			if (vap->iv_opmode == IEEE80211_M_STA)

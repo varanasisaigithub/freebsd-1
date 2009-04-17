@@ -120,7 +120,6 @@ static uint16_t	ipw_read_prom_word(struct ipw_softc *, uint8_t);
 static void	ipw_rx_cmd_intr(struct ipw_softc *, struct ipw_soft_buf *);
 static void	ipw_assocsuccess(void *, int);
 static void	ipw_assocfailed(void *, int);
-static void	ipw_bmiss(void *, int);
 static void	ipw_rx_newstate_intr(struct ipw_softc *, struct ipw_soft_buf *);
 static void	ipw_rx_data_intr(struct ipw_softc *, struct ipw_status *,
 		    struct ipw_soft_bd *, struct ipw_soft_buf *);
@@ -237,7 +236,6 @@ ipw_attach(device_t dev)
 	    MTX_DEF | MTX_RECURSE);
 
 	TASK_INIT(&sc->sc_init_task, 0, ipw_init_task, sc);
-	TASK_INIT(&sc->sc_bmiss_task, 0, ipw_bmiss, sc);
 	callout_init_mtx(&sc->sc_wdtimer, &sc->sc_mtx, 0);
 
 	if (pci_get_powerstate(dev) != PCI_POWERSTATE_D0) {
@@ -415,7 +413,6 @@ ipw_detach(device_t dev)
 
 	callout_drain(&sc->sc_wdtimer);
 	taskqueue_drain(taskqueue_fast, &sc->sc_init_task);
-	taskqueue_drain(taskqueue_fast, &sc->sc_bmiss_task);
 
 	ipw_release(sc);
 
@@ -1027,14 +1024,6 @@ ipw_assocfailed(void *arg, int npending)
 }
 
 static void
-ipw_bmiss(void *arg, int npending)
-{
-	struct ieee80211com *ic = arg;
-
-	ieee80211_beacon_miss(ic);
-}
-
-static void
 ipw_rx_newstate_intr(struct ipw_softc *sc, struct ipw_soft_buf *sbuf)
 {
 #define	IEEESTATE(vap)	ieee80211_state_name[vap->iv_state]
@@ -1074,7 +1063,7 @@ ipw_rx_newstate_intr(struct ipw_softc *sc, struct ipw_soft_buf *sbuf)
 		 */
 		if (sc->flags & IPW_FLAG_ASSOCIATED) {
 			/* XXX probably need to issue disassoc to fw */
-			taskqueue_enqueue(taskqueue_swi, &sc->sc_bmiss_task);
+			ieee80211_beacon_miss(ic);
 		}
 		break;
 
