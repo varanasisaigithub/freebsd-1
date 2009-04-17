@@ -182,8 +182,9 @@ static void 	iwn_scan_end(struct ieee80211com *);
 static void 	iwn_set_channel(struct ieee80211com *);
 static void 	iwn_scan_curchan(struct ieee80211_scan_state *, unsigned long);
 static void 	iwn_scan_mindwell(struct ieee80211_scan_state *);
-static void 	iwn_ops(void *, int);
-static int 	iwn_queue_cmd( struct iwn_softc *, int, int, int);
+static void	iwn_hwreset(void *, int);
+static void	iwn_radioon(void *, int);
+static void	iwn_radiooff(void *, int);
 static void	iwn_bpfattach(struct iwn_softc *);
 static void	iwn_sysctlattach(struct iwn_softc *);
 
@@ -212,7 +213,6 @@ enum {
 		printf(fmt, __VA_ARGS__);		\
 } while (0)
 
-static const char *iwn_ops_str(int);
 static const char *iwn_intr_str(uint8_t);
 #else
 #define DPRINTF(sc, m, fmt, ...) do { (void) sc; } while (0)
@@ -295,19 +295,10 @@ iwn_attach(device_t dev)
 	}
 
 	IWN_LOCK_INIT(sc);
-	IWN_CMD_LOCK_INIT(sc);
 	callout_init_mtx(&sc->sc_timer_to, &sc->sc_mtx, 0);
-
-        /*
-         * Create the taskqueues used by the driver. Primarily
-         * sc_tq handles most the task
-         */
-        sc->sc_tq = taskqueue_create("iwn_taskq", M_NOWAIT | M_ZERO,
-                taskqueue_thread_enqueue, &sc->sc_tq);
-        taskqueue_start_threads(&sc->sc_tq, 1, PI_NET, "%s taskq",
-                device_get_nameunit(dev));
-
-        TASK_INIT(&sc->sc_ops_task, 0, iwn_ops, sc );
+        TASK_INIT(&sc->sc_reinit_task, 0, iwn_hwreset, sc );
+        TASK_INIT(&sc->sc_radioon_task, 0, iwn_radioon, sc );
+        TASK_INIT(&sc->sc_radiooff_task, 0, iwn_radiooff, sc );
 
 	/*
 	 * Put adapter into a known state.
@@ -473,6 +464,10 @@ iwn_cleanup(device_t dev)
 	struct ieee80211com *ic = ifp->if_l2com;
 	int i;
 
+	taskqueue_drain(taskqueue_swi, &sc->sc_reinit_task);
+	taskqueue_drain(taskqueue_swi, &sc->sc_radioon_task);
+	taskqueue_drain(taskqueue_swi, &sc->sc_radiooff_task);
+
 	if (ifp != NULL) {
 		iwn_stop(sc);
 		callout_drain(&sc->sc_timer_to);
@@ -497,8 +492,6 @@ iwn_cleanup(device_t dev)
 		bus_release_resource(dev, SYS_RES_MEMORY, sc->mem_rid, sc->mem);
 	if (ifp != NULL)
 		if_free(ifp);
-	taskqueue_free(sc->sc_tq);
-	IWN_CMD_LOCK_DESTROY(sc);
 	IWN_LOCK_DESTROY(sc);
 	return 0;
 }
@@ -1807,16 +1800,16 @@ iwn_intr(void *arg)
 		device_printf(sc->sc_dev, "RF switch: radio %s\n",
 		    (tmp & IWN_GPIO_RF_ENABLED) ? "enabled" : "disabled");
 		if (tmp & IWN_GPIO_RF_ENABLED)
-			iwn_queue_cmd(sc, IWN_RADIO_ENABLE, 0, IWN_QUEUE_CLEAR);
+			taskqueue_enqueue(taskqueue_swi, &sc->sc_radioon_task);
 		else
-			iwn_queue_cmd(sc, IWN_RADIO_DISABLE, 0, IWN_QUEUE_CLEAR);
+			taskqueue_enqueue(taskqueue_swi, &sc->sc_radiooff_task);
 	}
 	if (r1 & IWN_CT_REACHED)
 		device_printf(sc->sc_dev, "critical temperature reached!\n");
 	if (r1 & (IWN_SW_ERROR | IWN_HW_ERROR)) {
 		device_printf(sc->sc_dev, "error, INTR=%b STATUS=0x%x\n",
 		    r1, IWN_INTR_BITS, r2);
-		iwn_queue_cmd(sc, IWN_REINIT, 0, IWN_QUEUE_CLEAR);
+		taskqueue_enqueue(taskqueue_swi, &sc->sc_reinit_task);
 		goto done;
 	}
 	if ((r1 & (IWN_RX_INTR | IWN_SW_RX_INTR)) || (r2 & IWN_RX_STATUS_INTR))
@@ -2345,7 +2338,7 @@ iwn_watchdog(struct iwn_softc *sc)
 		struct ifnet *ifp = sc->sc_ifp;
 
 		if_printf(ifp, "device timeout\n");
-		iwn_queue_cmd(sc, IWN_REINIT, 0, IWN_QUEUE_CLEAR);
+		taskqueue_enqueue(taskqueue_swi, &sc->sc_reinit_task);
 	}
 }
 
@@ -4250,9 +4243,6 @@ iwn_stop_locked(struct iwn_softc *sc)
 	IWN_WRITE(sc, IWN_INTR, 0xffffffff);
 	IWN_WRITE(sc, IWN_INTR_STATUS, 0xffffffff);
 
-	/* Clear any commands left in the taskq command buffer */
-	memset(sc->sc_cmd, 0, sizeof(sc->sc_cmd));
-
 	/* reset all Tx rings */
 	for (i = 0; i < IWN_NTXQUEUES; i++)
 		iwn_reset_tx_ring(sc, &sc->txq[i]);
@@ -4364,94 +4354,36 @@ iwn_scan_mindwell(struct ieee80211_scan_state *ss)
 	/* NB: don't try to abort scan; wait for firmware to finish */
 }
 
-/*
- * Carry out work in the taskq context.
- */
 static void
-iwn_ops(void *arg0, int pending)
+iwn_hwreset(void *arg0, int pending)
 {
 	struct iwn_softc *sc = arg0;
 	struct ifnet *ifp = sc->sc_ifp;
 	struct ieee80211com *ic = ifp->if_l2com;
-	struct ieee80211vap *vap;
-	int cmd, arg;
 
-	for (;;) {
-		IWN_CMD_LOCK(sc);
-		cmd = sc->sc_cmd[sc->sc_cmd_cur];
-		if (cmd == 0) {
-			/* No more commands to process */
-			IWN_CMD_UNLOCK(sc);
-			return;
-		}
-		if ((sc->sc_ifp->if_drv_flags & IFF_DRV_RUNNING) == 0 &&
-		    cmd != IWN_RADIO_ENABLE ) {
-			IWN_CMD_UNLOCK(sc);
-			return;
-		}
-		arg = sc->sc_cmd_arg[sc->sc_cmd_cur];
-		sc->sc_cmd[sc->sc_cmd_cur] = 0;		/* free the slot */
-		sc->sc_cmd_cur = (sc->sc_cmd_cur + 1) % IWN_CMD_MAXOPS;
-		IWN_CMD_UNLOCK(sc);
-
-		IWN_LOCK(sc);		/* NB: sync debug printfs on smp */
-		DPRINTF(sc, IWN_DEBUG_OPS, "%s: %s (cmd 0x%x)\n",
-		    __func__, iwn_ops_str(cmd), cmd);
-
-		vap = TAILQ_FIRST(&ic->ic_vaps);	/* XXX */
-		switch (cmd) {
-		case IWN_REINIT:
-			IWN_UNLOCK(sc);
-			iwn_init(sc);
-			IWN_LOCK(sc);
-			ieee80211_notify_radio(ic, 1);
-			break;
-		case IWN_RADIO_ENABLE:
-			KASSERT(sc->fw_fp != NULL,
-			    ("Fware Not Loaded, can't load from tq"));
-			IWN_UNLOCK(sc);
-			iwn_init(sc);
-			IWN_LOCK(sc);
-			break;
-		case IWN_RADIO_DISABLE:
-			ieee80211_notify_radio(ic, 0);
-			iwn_stop_locked(sc);
-			break;
-		}
-		IWN_UNLOCK(sc);
-	}
+	iwn_init(sc);
+	ieee80211_notify_radio(ic, 1);
 }
 
-/*
- * Queue a command for execution in the taskq thread.
- * This is needed as the net80211 callbacks do not allow
- * sleeping, since we need to sleep to confirm commands have
- * been processed by the firmware, we must defer execution to 
- * a sleep enabled thread.
- */
-static int
-iwn_queue_cmd(struct iwn_softc *sc, int cmd, int arg, int clear)
+static void
+iwn_radioon(void *arg0, int pending)
 {
-	IWN_CMD_LOCK(sc);
-	if (clear) {
-		sc->sc_cmd[0] = cmd;
-		sc->sc_cmd_arg[0] = arg;
-		sc->sc_cmd_cur = 0;
-		sc->sc_cmd_next = 1;
-	} else {
-		if (sc->sc_cmd[sc->sc_cmd_next] != 0) {
-			IWN_CMD_UNLOCK(sc);
-			DPRINTF(sc, IWN_DEBUG_ANY, "%s: command %d dropped\n",
-			    __func__, cmd);
-			return EBUSY;
-		}
-		sc->sc_cmd[sc->sc_cmd_next] = cmd;
-		sc->sc_cmd_arg[sc->sc_cmd_next] = arg;
-		sc->sc_cmd_next = (sc->sc_cmd_next + 1) % IWN_CMD_MAXOPS;
-	}
-	taskqueue_enqueue(sc->sc_tq, &sc->sc_ops_task);
-	IWN_CMD_UNLOCK(sc);
-	return 0;
+	struct iwn_softc *sc = arg0;
+
+	iwn_init(sc);
+}
+
+static void
+iwn_radiooff(void *arg0, int pending)
+{
+	struct iwn_softc *sc = arg0;
+	struct ifnet *ifp = sc->sc_ifp;
+	struct ieee80211com *ic = ifp->if_l2com;
+
+	IWN_LOCK(sc);
+	ieee80211_notify_radio(ic, 0);
+	iwn_stop_locked(sc);
+	IWN_UNLOCK(sc);
 }
 
 static void
@@ -4485,17 +4417,6 @@ iwn_sysctlattach(struct iwn_softc *sc)
 }
 
 #ifdef IWN_DEBUG
-static const char *
-iwn_ops_str(int cmd)
-{
-	switch (cmd) {
-	case IWN_RADIO_ENABLE:	return "RADIO_ENABLE";
-	case IWN_RADIO_DISABLE:	return "RADIO_DISABLE";
-	case IWN_REINIT:	return "REINIT";
-	}
-	return "UNKNOWN COMMAND";
-}
-
 static const char *
 iwn_intr_str(uint8_t cmd)
 {

@@ -189,8 +189,6 @@ static void	iwi_scan_end(struct ieee80211com *);
 static void	iwi_set_channel(struct ieee80211com *);
 static void	iwi_scan_curchan(struct ieee80211_scan_state *, unsigned long maxdwell);
 static void	iwi_scan_mindwell(struct ieee80211_scan_state *);
-static void	iwi_ops(void *, int);
-static int	iwi_queue_cmd(struct iwi_softc *, int, unsigned long);
 static int	iwi_auth_and_assoc(struct iwi_softc *, struct ieee80211vap *);
 static int	iwi_disassociate(struct iwi_softc *, int quiet);
 static void	iwi_init_locked(struct iwi_softc *);
@@ -288,23 +286,12 @@ iwi_attach(device_t dev)
 	ic = ifp->if_l2com;
 
 	IWI_LOCK_INIT(sc);
-	IWI_CMD_LOCK_INIT(sc);
 
 	sc->sc_unr = new_unrhdr(1, IWI_MAX_IBSSNODE-1, &sc->sc_mtx);
-
-	sc->sc_tq = taskqueue_create("iwi_taskq", M_NOWAIT | M_ZERO,
-		taskqueue_thread_enqueue, &sc->sc_tq);
-	taskqueue_start_threads(&sc->sc_tq, 1, PI_NET, "%s taskq",
-		device_get_nameunit(dev));
-	sc->sc_tq2 = taskqueue_create("iwi_taskq2", M_NOWAIT | M_ZERO,
-		taskqueue_thread_enqueue, &sc->sc_tq2);
-	taskqueue_start_threads(&sc->sc_tq2, 1, PI_NET, "%s taskq2",
-		device_get_nameunit(dev));
 
 	TASK_INIT(&sc->sc_radiontask, 0, iwi_radio_on, sc);
 	TASK_INIT(&sc->sc_radiofftask, 0, iwi_radio_off, sc);
 	TASK_INIT(&sc->sc_restarttask, 0, iwi_restart, sc);
-	TASK_INIT(&sc->sc_opstask, 0, iwi_ops, sc);
 	callout_init_mtx(&sc->sc_wdtimer, &sc->sc_mtx, 0);
 	callout_init_mtx(&sc->sc_rftimer, &sc->sc_mtx, 0);
 
@@ -478,8 +465,9 @@ iwi_detach(device_t dev)
 	ieee80211_ifdetach(ic);
 
 	/* NB: do early to drain any pending tasks */
-	taskqueue_free(sc->sc_tq);
-	taskqueue_free(sc->sc_tq2);
+	taskqueue_drain(taskqueue_swi, &sc->sc_radiontask);
+	taskqueue_drain(taskqueue_swi, &sc->sc_radiofftask);
+	taskqueue_drain(taskqueue_swi, &sc->sc_restarttask);
 
 	iwi_put_firmware(sc);
 	iwi_release_fw_dma(sc);
@@ -1102,6 +1090,7 @@ static int
 iwi_wme_update(struct ieee80211com *ic)
 {
 	struct iwi_softc *sc = ic->ic_ifp->if_softc;
+	struct ieee80211vap *vap = TAILQ_FIRST(&ic->ic_vaps);
 
 	/*
 	 * We may be called to update the WME parameters in
@@ -1111,7 +1100,9 @@ iwi_wme_update(struct ieee80211com *ic)
 	 * will get sent down to the adapter as part of the
 	 * work iwi_auth_and_assoc does.
 	 */
-	return iwi_queue_cmd(sc, IWI_SET_WME, 0);
+	if (vap->iv_state == IEEE80211_S_RUN)
+		(void) iwi_wme_setparams(sc, ic);
+	return (0);
 }
 
 static int
@@ -1559,7 +1550,7 @@ iwi_notification_intr(struct iwi_softc *sc, struct iwi_notif *notif)
 				 * to disassociate and then on completion we'll
 				 * kick the state machine to scan.
 				 */
-				iwi_queue_cmd(sc, IWI_DISASSOC, 1);
+				//iwi_disassociate(sc, 0);
 			}
 		}
 		break;
@@ -1678,7 +1669,7 @@ iwi_intr(void *arg)
 
 	if (r & IWI_INTR_FATAL_ERROR) {
 		device_printf(sc->sc_dev, "firmware error\n");
-		taskqueue_enqueue(sc->sc_tq2, &sc->sc_restarttask);
+		taskqueue_enqueue(taskqueue_swi, &sc->sc_restarttask);
 
 		sc->flags &= ~IWI_FLAG_BUSY;
 		sc->sc_busy_timer = 0;
@@ -1691,7 +1682,7 @@ iwi_intr(void *arg)
 	}
 
 	if (r & IWI_INTR_RADIO_OFF)
-		taskqueue_enqueue(sc->sc_tq, &sc->sc_radiofftask);
+		taskqueue_enqueue(taskqueue_swi, &sc->sc_radiofftask);
 
 	if (r & IWI_INTR_CMD_DONE) {
 		sc->flags &= ~IWI_FLAG_BUSY;
@@ -2011,14 +2002,14 @@ iwi_watchdog(void *arg)
 		if (--sc->sc_tx_timer == 0) {
 			if_printf(ifp, "device timeout\n");
 			ifp->if_oerrors++;
-			taskqueue_enqueue(sc->sc_tq2, &sc->sc_restarttask);
+			taskqueue_enqueue(taskqueue_swi, &sc->sc_restarttask);
 		}
 	}
 	if (sc->sc_state_timer > 0) {
 		if (--sc->sc_state_timer == 0) {
 			if_printf(ifp, "firmware stuck in state %d, resetting\n",
 			    sc->fw_state);
-			taskqueue_enqueue(sc->sc_tq2, &sc->sc_restarttask);
+			taskqueue_enqueue(taskqueue_swi, &sc->sc_restarttask);
 			if (sc->fw_state == IWI_FW_SCANNING) {
 				struct ieee80211com *ic = ifp->if_l2com;
 				ieee80211_cancel_scan(TAILQ_FIRST(&ic->ic_vaps));
@@ -2029,7 +2020,7 @@ iwi_watchdog(void *arg)
 	if (sc->sc_busy_timer > 0) {
 		if (--sc->sc_busy_timer == 0) {
 			if_printf(ifp, "firmware command timeout, resetting\n");
-			taskqueue_enqueue(sc->sc_tq2, &sc->sc_restarttask);
+			taskqueue_enqueue(taskqueue_swi, &sc->sc_restarttask);
 		}
 	}
 	callout_reset(&sc->sc_wdtimer, hz, iwi_watchdog, sc);
@@ -3068,9 +3059,6 @@ iwi_init_locked(struct iwi_softc *sc)
 
 	IWI_STATE_BEGIN(sc, IWI_FW_LOADING);
 
-	taskqueue_unblock(sc->sc_tq);
-	taskqueue_unblock(sc->sc_tq2);
-
 	if (iwi_reset(sc) != 0) {
 		device_printf(sc->sc_dev, "could not reset adapter\n");
 		goto fail;
@@ -3165,8 +3153,6 @@ iwi_stop_locked(void *priv)
 
 	ifp->if_drv_flags &= ~(IFF_DRV_RUNNING | IFF_DRV_OACTIVE);
 
-	taskqueue_block(sc->sc_tq);
-	taskqueue_block(sc->sc_tq2);
 	if (sc->sc_softled) {
 		callout_stop(&sc->sc_ledtimer);
 		sc->sc_blinking = 0;
@@ -3249,7 +3235,7 @@ iwi_rfkill_poll(void *arg)
 	 */
 	if (!iwi_getrfkill(sc)) {
 		taskqueue_unblock(sc->sc_tq);
-		taskqueue_enqueue(sc->sc_tq, &sc->sc_radiontask);
+		taskqueue_enqueue(taskqueue_swi, &sc->sc_radiontask);
 		return;
 	}
 	callout_reset(&sc->sc_rftimer, 2*hz, iwi_rfkill_poll, sc);
@@ -3512,79 +3498,6 @@ iwi_ledattach(struct iwi_softc *sc)
 		 */
 		sc->sc_ledpin = IWI_RST_LED_ASSOCIATED;
 	}
-}
-
-static void
-iwi_ops(void *arg0, int npending)
-{
-	static const char *opnames[] = {
-		[IWI_CMD_FREE]		= "FREE",
-		[IWI_DISASSOC]		= "DISASSOC",
-		[IWI_SET_WME]		= "SET_WME",
-	};
-	struct iwi_softc *sc = arg0;
-	struct ifnet *ifp = sc->sc_ifp;
-	struct ieee80211com *ic = ifp->if_l2com;
-	struct ieee80211vap *vap = TAILQ_FIRST(&ic->ic_vaps);
-	IWI_LOCK_DECL;
-	int cmd;
-	unsigned long arg;
-
-again:
-	IWI_CMD_LOCK(sc);
-	cmd = sc->sc_cmd[sc->sc_cmd_cur];
-	if (cmd == IWI_CMD_FREE) {
-		/* No more commands to process */
-		IWI_CMD_UNLOCK(sc);
-		return;
-	}
-	arg = sc->sc_arg[sc->sc_cmd_cur];
-	sc->sc_cmd[sc->sc_cmd_cur] = IWI_CMD_FREE;	/* free the slot */
-	sc->sc_cmd_cur = (sc->sc_cmd_cur + 1) % IWI_CMD_MAXOPS;
-	IWI_CMD_UNLOCK(sc);
-
-	IWI_LOCK(sc);
-	while  (sc->fw_state != IWI_FW_IDLE || (sc->flags & IWI_FLAG_BUSY)) {
-		msleep(sc, &sc->sc_mtx, 0, "iwicmd", hz/10);
-	}
-
-	if (!(ifp->if_drv_flags & IFF_DRV_RUNNING)) {
-		IWI_UNLOCK(sc);
-		return;
-	}
-
-	DPRINTF(("%s: %s arg %lu\n", __func__, opnames[cmd], arg));
-	switch (cmd) {
-	case IWI_DISASSOC:
-		iwi_disassociate(sc, 0);
-		break;
-	case IWI_SET_WME:
-		if (vap->iv_state == IEEE80211_S_RUN)
-			(void) iwi_wme_setparams(sc, ic);
-		break;
-	}
-	IWI_UNLOCK(sc);
-
-	/* Take another pass */
-	goto again;
-}
-
-static int
-iwi_queue_cmd(struct iwi_softc *sc, int cmd, unsigned long arg)
-{
-	IWI_CMD_LOCK(sc);
-	if (sc->sc_cmd[sc->sc_cmd_next] != 0) {
-		IWI_CMD_UNLOCK(sc);
-		DPRINTF(("%s: command %d dropped\n", __func__, cmd));
-		return (EBUSY);
-	}
-
-	sc->sc_cmd[sc->sc_cmd_next] = cmd;
-	sc->sc_arg[sc->sc_cmd_next] = arg;
-	sc->sc_cmd_next = (sc->sc_cmd_next + 1) % IWI_CMD_MAXOPS;
-	taskqueue_enqueue(sc->sc_tq, &sc->sc_opstask);
-	IWI_CMD_UNLOCK(sc);
-	return (0);
 }
 
 static void

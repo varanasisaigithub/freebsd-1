@@ -180,26 +180,10 @@ struct iwn_softc {
 	void 			*sc_ih;
 	bus_size_t		sc_sz;
 
-        /* command queue related variables */
-#define IWN_RADIO_ENABLE	(1<<0)
-#define IWN_RADIO_DISABLE	(1<<1)
-#define IWN_REINIT		(1<<2)
-#define IWN_CMD_MAXOPS		10
-	/* command queuing request type */
-#define IWN_QUEUE_NORMAL	0
-#define IWN_QUEUE_CLEAR		1
-        int                     sc_cmd[IWN_CMD_MAXOPS];
-        int                     sc_cmd_arg[IWN_CMD_MAXOPS];
-        int                     sc_cmd_cur;    /* current queued task */
-        int                     sc_cmd_next;   /* last queued task */
-        struct mtx              sc_cmdlock;
-
-	/* Task queues used to control the driver */
-	struct taskqueue         *sc_tq; /* Main command task queue */
-
 	/* Tasks used by the driver */
-	struct task             sc_ops_task;	/* deferred ops */
-	struct task		sc_bmiss_task;	/* beacon miss */
+	struct task             sc_reinit_task;
+	struct task		sc_radioon_task;
+	struct task		sc_radiooff_task;
 
 	/* Thermal calibration */
 	int			calib_cnt;
@@ -227,9 +211,3 @@ struct iwn_softc {
 #define IWN_LOCK_ASSERT(_sc)		mtx_assert(&(_sc)->sc_mtx, MA_OWNED)
 #define IWN_UNLOCK(_sc)			mtx_unlock(&(_sc)->sc_mtx)
 #define IWN_LOCK_DESTROY(_sc)		mtx_destroy(&(_sc)->sc_mtx)
-#define IWN_CMD_LOCK_INIT(_sc) \
-	mtx_init(&(_sc)->sc_cmdlock, device_get_nameunit((_sc)->sc_dev), \
-	     NULL, MTX_DEF);
-#define IWN_CMD_LOCK_DESTROY(_sc)	mtx_destroy(&(_sc)->sc_cmdlock)
-#define IWN_CMD_LOCK(_sc)		mtx_lock(&(_sc)->sc_cmdlock)
-#define IWN_CMD_UNLOCK(_sc)		mtx_unlock(&(_sc)->sc_cmdlock)
