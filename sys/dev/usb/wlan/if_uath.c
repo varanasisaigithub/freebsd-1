@@ -1602,6 +1602,7 @@ uath_tx_start(struct uath_softc *sc, struct mbuf *m0, struct ieee80211_node *ni,
 {
 	struct ifnet *ifp = sc->sc_ifp;
 	struct ieee80211com *ic = ifp->if_l2com;
+	struct ieee80211vap *vap = ni->ni_vap;
 	struct uath_chunk *chunk;
 	struct uath_tx_desc *desc;
 	const struct ieee80211_frame *wh;
@@ -1677,9 +1678,9 @@ uath_tx_start(struct uath_softc *sc, struct mbuf *m0, struct ieee80211_node *ni,
 		m_freem(m0);
 		return (EIO);
 	}
-	if (sc->sc_state == IEEE80211_S_AUTH ||
-	    sc->sc_state == IEEE80211_S_ASSOC ||
-	    sc->sc_state == IEEE80211_S_RUN)
+	if (vap->iv_state == IEEE80211_S_AUTH ||
+	    vap->iv_state == IEEE80211_S_ASSOC ||
+	    vap->iv_state == IEEE80211_S_RUN)
 		desc->connid = htobe32(UATH_ID_BSS);
 	else
 		desc->connid = htobe32(UATH_ID_INVALID);
@@ -2065,7 +2066,6 @@ uath_newstate(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
 
 	callout_stop(&sc->stat_ch);
 	callout_stop(&sc->watchdog_ch);
-	sc->sc_state = nstate;
 
 	switch (nstate) {
 	case IEEE80211_S_INIT:
