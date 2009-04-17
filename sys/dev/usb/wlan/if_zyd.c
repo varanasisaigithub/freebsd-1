@@ -26,11 +26,48 @@ __FBSDID("$FreeBSD$");
  * ZyDAS ZD1211/ZD1211B USB WLAN driver.
  */
 
-#include "usbdevs.h"
-#include <dev/usb/usb.h>
-#include <dev/usb/usb_mfunc.h>
-#include <dev/usb/usb_error.h>
+#include <sys/param.h>
+#include <sys/sockio.h>
+#include <sys/sysctl.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
+#include <sys/mbuf.h>
+#include <sys/kernel.h>
+#include <sys/socket.h>
+#include <sys/systm.h>
+#include <sys/malloc.h>
+#include <sys/module.h>
+#include <sys/bus.h>
+#include <sys/endian.h>
+#include <sys/kdb.h>
 
+#include <machine/bus.h>
+#include <machine/resource.h>
+#include <sys/rman.h>
+
+#include <net/bpf.h>
+#include <net/if.h>
+#include <net/if_arp.h>
+#include <net/ethernet.h>
+#include <net/if_dl.h>
+#include <net/if_media.h>
+#include <net/if_types.h>
+
+#ifdef INET
+#include <netinet/in.h>
+#include <netinet/in_systm.h>
+#include <netinet/in_var.h>
+#include <netinet/if_ether.h>
+#include <netinet/ip.h>
+#endif
+
+#include <net80211/ieee80211_var.h>
+#include <net80211/ieee80211_regdomain.h>
+#include <net80211/ieee80211_radiotap.h>
+#include <net80211/ieee80211_amrr.h>
+
+#include <dev/usb/usb.h>
+#include <dev/usb/usb_error.h>
 #include <dev/usb/usb_core.h>
 #include <dev/usb/usb_lookup.h>
 #include <dev/usb/usb_process.h>
@@ -38,8 +75,8 @@ __FBSDID("$FreeBSD$");
 #include <dev/usb/usb_request.h>
 #include <dev/usb/usb_busdma.h>
 #include <dev/usb/usb_util.h>
+#include "usbdevs.h"
 
-#include <dev/usb/wlan/usb_wlan.h>
 #include <dev/usb/wlan/if_zydreg.h>
 #include <dev/usb/wlan/if_zydfw.h>
 
