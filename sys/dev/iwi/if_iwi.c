@@ -487,7 +487,6 @@ iwi_detach(device_t dev)
 	delete_unrhdr(sc->sc_unr);
 
 	IWI_LOCK_DESTROY(sc);
-	IWI_CMD_LOCK_DESTROY(sc);
 
 	if_free(ifp);
 
@@ -3172,7 +3171,6 @@ iwi_stop_locked(void *priv)
 	iwi_reset_tx_ring(sc, &sc->txq[3]);
 	iwi_reset_rx_ring(sc, &sc->rxq);
 
-	memset(sc->sc_cmd, 0, sizeof(sc->sc_cmd));
 	sc->sc_tx_timer = 0;
 	sc->sc_state_timer = 0;
 	sc->sc_busy_timer = 0;
@@ -3234,7 +3232,6 @@ iwi_rfkill_poll(void *arg)
 	 * it is enabled so we must poll for the latter.
 	 */
 	if (!iwi_getrfkill(sc)) {
-		taskqueue_unblock(sc->sc_tq);
 		taskqueue_enqueue(taskqueue_swi, &sc->sc_radiontask);
 		return;
 	}
