@@ -2062,8 +2062,8 @@ uath_newstate(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
 	    "%s: %s -> %s\n", __func__, ieee80211_state_name[vap->iv_state],
 	    ieee80211_state_name[nstate]);
 
+	IEEE80211_UNLOCK(ic);
 	UATH_LOCK(sc);
-
 	callout_stop(&sc->stat_ch);
 	callout_stop(&sc->watchdog_ch);
 
@@ -2139,14 +2139,8 @@ uath_newstate(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
 		break;
 	}
 	UATH_UNLOCK(sc);
-
 	IEEE80211_LOCK(ic);
-	uvp->newstate(vap, nstate, arg);
-	if (vap->iv_newstate_cb != NULL)
-		vap->iv_newstate_cb(vap, nstate, arg);
-	IEEE80211_UNLOCK(ic);
-
-	return (0);
+	return (uvp->newstate(vap, nstate, arg));
 }
 
 static int
