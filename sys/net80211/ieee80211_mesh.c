@@ -65,6 +65,8 @@ static void	mesh_vattach(struct ieee80211vap *);
 static int	mesh_newstate(struct ieee80211vap *, enum ieee80211_state, int);
 static int	mesh_input(struct ieee80211_node *, struct mbuf *, int, int,
 		    uint32_t);
+static void	mesh_recv_mgmt(struct ieee80211_node *, struct mbuf *, int,
+		    int, int, uint32_t);
 
 void
 ieee80211_mesh_attach(struct ieee80211com *ic)
@@ -88,8 +90,12 @@ mesh_vattach(struct ieee80211vap *vap)
 	vap->iv_newstate = mesh_newstate;
 	vap->iv_input = mesh_input;
 	vap->iv_opdetach = mesh_vdetach;
+	vap->iv_recv_mgmt = mesh_recv_mgmt;
 }
 
+/*
+ * IEEE80211_M_MBSS vap state machine handler.
+ */
 static int
 mesh_newstate(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
 {
@@ -127,4 +133,34 @@ mesh_input(struct ieee80211_node *ni, struct mbuf *m, int rssi, int noise,
 {
 
 	return 0;
+}
+
+
+static void
+mesh_recv_mgmt(struct ieee80211_node *ni, struct mbuf *m0, int subtype,
+    int rssi, int noise, uint32_t rstamp)
+{
+
+	struct ieee80211vap *vap = ni->ni_vap;
+	struct ieee80211com *ic = ni->ni_ic;
+	struct ieee80211_frame *wh;
+
+	wh = mtod(m0, struct ieee80211_frame *);
+	frm = (uint8_t *)&wh[1];
+	efrm = mtod(m0, uint8_t *) + m0->m_len;
+	switch (subtype) {
+	case IEEE80211_FC0_SUBTYPE_PROBE_RESP:
+	case IEEE80211_FC0_SUBTYPE_BEACON:
+	{
+		struct ieee80211_scanparams scan;
+
+		/* NB: accept off-channel frames */
+		if (ieee80211_parse_beacon(ni, m0, &scan) &~ IEEE80211_BPARSE_OF
+			return;
+		break;
+	}
+	default:
+		break;
+	}
+
 }
