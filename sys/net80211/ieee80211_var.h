@@ -371,6 +371,8 @@ struct ieee80211vap {
 	uint8_t			iv_dtim_count;	/* DTIM count from last bcn */
 						/* set/unset aid pwrsav state */
 	int			iv_csa_count;	/* count for doing CSA */
+	int			iv_meshidlen;
+	uint8_t			iv_meshid[IEEE80211_NWID_LEN];
 
 	struct ieee80211_node	*iv_bss;	/* information for this node */
 	struct ieee80211_txparam iv_txparms[IEEE80211_MODE_MAX];
