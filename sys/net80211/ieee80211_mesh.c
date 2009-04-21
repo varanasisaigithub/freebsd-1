@@ -111,9 +111,20 @@ mesh_newstate(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
         vap->iv_state = nstate;                 /* state transition */
         if (ostate != IEEE80211_S_SCAN)
                 ieee80211_cancel_scan(vap);     /* background scan */
-        switch (nstate) {
+	ni = vap->iv_bss;			/* NB: no reference held */
+	switch (nstate) {
 	case IEEE80211_S_INIT:
+		if (ostate == IEEE80211_S_SCAN)
+			ieee80211_cancel_scan(vap);
+		if (ostate != IEEE80211_S_INIT) {
+			/* NB: optimize INIT -> INIT case */
+			ieee80211_reset_bss(vap);
+		}
+		break;
 	case IEEE80211_S_SCAN:
+		switch (ostate) {
+		case IEEE80211_S_INIT:
+		}
 	case IEEE80211_S_AUTH:
 	case IEEE80211_S_ASSOC:
 	case IEEE80211_S_CAC:
@@ -164,3 +175,53 @@ mesh_recv_mgmt(struct ieee80211_node *ni, struct mbuf *m0, int subtype,
 	}
 
 }
+
+
+static int
+mesh_ioctl_get80211(struct ieee80211vap *vap, struct ieee80211req *ireq)
+{
+	int error;
+	uint8_t tmpmeshid[IEEE80211_NWID_LEN];
+
+	error = 0;
+	switch (ireq->i_type) {
+	case IEEE80211_IOC_MESH_ID:
+		if (vap->iv_opmode != IEEE80211_M_MBSS)
+			return EINVAL;
+		ireq->i_len = vap->iv_meshidlen;
+		memcpy(meshid, vap->iv_meshid, ireq->i_len);
+		error = copyout(tmpmeshid, ireq->i_data, ireq->i_len);
+		break;
+	default:
+		return ENOSYS;
+	}
+
+	return error;
+}
+IEEE80211_IOCTL_GET(mesh, mesh_ioctl_get80211);
+
+static int
+mesh_ioctl_set80211(struct ieee80211vap *vap, struct ieee80211req *ireq)
+{
+	int error;
+	uint8_t tmpmeshid[IEEE80211_NWID_LEN];
+
+	error = 0;
+	switch (ireq->i_type) {
+	case IEEE80211_IOC_MESH_ID:
+		if (ireq->i_val != 0 || ireq->i_len > IEEE80211_NWID_LEN)
+			return EINVAL;
+		error = copyin(ireq->i_data, tmpmeshid, ireq->i_len);
+		if (error)
+			break;
+		memset(vap->iv_meshid, 0, IEEE80211_NWID_LEN);
+		vap->iv_meshidlen = ireq->i_len;
+		memcpy(vap->iv_meshid, tmpmeshid, ireq->i_len);
+		break;
+	default:
+		return ENOSYS;
+	}
+
+	return error;
+}
+IEEE80211_IOCTL_SET(mesh, mesh_ioctl_set80211);

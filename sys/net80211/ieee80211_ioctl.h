@@ -628,7 +628,8 @@ struct ieee80211req {
 #define	IEEE80211_IOC_STA_VLAN		109	/* per-station vlan tag */
 #define	IEEE80211_IOC_SMPS		110	/* MIMO power save */
 #define	IEEE80211_IOC_RIFS		111	/* RIFS config (on, off) */
-#define	IEEE80211_IOC_MESHID		112	/* Mesh identifier */
+
+#define	IEEE80211_IOC_MESH_ID		190	/* Mesh identifier */
 
 #define	IEEE80211_IOC_TDMA_SLOT		201	/* TDMA: assigned slot */
 #define	IEEE80211_IOC_TDMA_SLOTCNT	202	/* TDMA: slots in bss */

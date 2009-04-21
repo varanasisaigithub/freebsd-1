@@ -1110,14 +1110,6 @@ ieee80211_ioctl_get80211(struct ieee80211vap *vap, u_long cmd,
 			ireq->i_val =
 			    (vap->iv_flags_ext & IEEE80211_FEXT_RIFS) != 0;
 		break;
-	case IEEE80211_IOC_MESHID:
-		if (vap->iv_opmode != IEEE80211_M_MBSS)
-			return EINVAL;
-
-		ireq->i_len = vap->iv_meshidlen;
-		memcpy(tmpssid, vap->iv_meshid, ireq->i_len);
-		error = copyout(tmpssid, ireq->i_data, ireq->i_len);
-		break;
 	default:
 		error = ieee80211_ioctl_getdefault(vap, ireq);
 		break;
@@ -3144,17 +3136,6 @@ ieee80211_ioctl_set80211(struct ieee80211vap *vap, u_long cmd, struct ieee80211r
 		/* NB: if not operating in 11n this can wait */
 		if (isvapht(vap))
 			error = ERESTART;
-		break;
-	case IEEE80211_IOC_MESHID:
-		if (ireq->i_val != 0 ||
-		    ireq->i_len > IEEE80211_NWID_LEN)
-			return EINVAL;
-		error = copyin(ireq->i_data, tmpssid, ireq->i_len);
-		if (error)
-			break;
-		memset(vap->iv_meshid, 0, IEEE80211_NWID_LEN);
-		vap->iv_meshidlen = ireq->i_len;
-		memcpy(vap->iv_meshid, tmpssid, ireq->i_len);
 		break;
 	default:
 		error = ieee80211_ioctl_setdefault(vap, ireq);
