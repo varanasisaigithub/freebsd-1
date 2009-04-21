@@ -581,7 +581,7 @@ set80211meshid(const char *val, int d, int s, const struct afswtch *rafp)
 	if (get_string(val, NULL, data, &len) == NULL)
 		exit(1);
 
-	set80211(s, IEEE80211_IOC_MESHID, 0, len, data);
+	set80211(s, IEEE80211_IOC_MESH_ID, 0, len, data);
 }	
 
 static void
@@ -3974,7 +3974,7 @@ getid(int s, int ix, void *data, size_t len, int *plen, int mesh)
 
 	(void) memset(&ireq, 0, sizeof(ireq));
 	(void) strncpy(ireq.i_name, name, sizeof(ireq.i_name));
-	ireq.i_type = (!mesh) ? IEEE80211_IOC_SSID : IEEE80211_IOC_MESHID;
+	ireq.i_type = (!mesh) ? IEEE80211_IOC_SSID : IEEE80211_IOC_MESH_ID;
 	ireq.i_val = ix;
 	ireq.i_data = data;
 	ireq.i_len = len;
@@ -4012,7 +4012,7 @@ ieee80211_status(int s)
 
 	if (opmode == IEEE80211_M_MBSS) {
 		printf("\tmeshid ");
-		getid(s, i, data, sizeof(data), &len, 1);
+		getid(s, 0, data, sizeof(data), &len, 1);
 		print_string(data, len);
 	} else {
 		if (get80211val(s, IEEE80211_IOC_NUMSSIDS, &num) < 0)
