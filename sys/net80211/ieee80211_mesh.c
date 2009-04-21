@@ -140,10 +140,10 @@ static void
 mesh_recv_mgmt(struct ieee80211_node *ni, struct mbuf *m0, int subtype,
     int rssi, int noise, uint32_t rstamp)
 {
-
-	struct ieee80211vap *vap = ni->ni_vap;
-	struct ieee80211com *ic = ni->ni_ic;
+	/*struct ieee80211vap *vap = ni->ni_vap;
+	struct ieee80211com *ic = ni->ni_ic;*/
 	struct ieee80211_frame *wh;
+	uint8_t *frm, *efrm;
 
 	wh = mtod(m0, struct ieee80211_frame *);
 	frm = (uint8_t *)&wh[1];
@@ -154,8 +154,8 @@ mesh_recv_mgmt(struct ieee80211_node *ni, struct mbuf *m0, int subtype,
 	{
 		struct ieee80211_scanparams scan;
 
-		/* NB: accept off-channel frames */
-		if (ieee80211_parse_beacon(ni, m0, &scan) &~ IEEE80211_BPARSE_OF
+		/* Parse beacons to discover mesh neighbours */
+		if (ieee80211_parse_beacon(ni, m0, &scan) != 0)
 			return;
 		break;
 	}
