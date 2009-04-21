@@ -2540,6 +2540,9 @@ ieee80211_getrssi(struct ieee80211vap *vap)
 	case IEEE80211_M_HOSTAP:	/* average of all associated stations */
 		ieee80211_iterate_nodes(&ic->ic_sta, get_hostap_rssi, &info);
 		break;
+	case IEEE80211_M_MBSS:		/* average of all mesh neighbors */
+		/* XXX ieee80211_iterate_nodes(&ic->ic_sta, get_mesh_rssi, &info);*/
+		break;
 	case IEEE80211_M_MONITOR:	/* XXX */
 	case IEEE80211_M_STA:		/* use stats from associated ap */
 	default:
