@@ -571,6 +571,20 @@ set80211ssid(const char *val, int d, int s, const struct afswtch *rafp)
 }
 
 static void
+set80211meshid(const char *val, int d, int s, const struct afswtch *rafp)
+{
+	int		len;
+	u_int8_t	data[IEEE80211_NWID_LEN];
+
+	memset(data, 0, sizeof(data));
+	len = sizeof(data);
+	if (get_string(val, NULL, data, &len) == NULL)
+		exit(1);
+
+	set80211(s, IEEE80211_IOC_MESHID, 0, len, data);
+}	
+
+static void
 set80211stationname(const char *val, int d, int s, const struct afswtch *rafp)
 {
 	int			len;
@@ -3954,13 +3968,13 @@ printrate(const char *tag, int v, int defrate, int defmcs)
 }
 
 static int
-getssid(int s, int ix, void *data, size_t len, int *plen)
+getid(int s, int ix, void *data, size_t len, int *plen, int mesh)
 {
 	struct ieee80211req ireq;
 
 	(void) memset(&ireq, 0, sizeof(ireq));
 	(void) strncpy(ireq.i_name, name, sizeof(ireq.i_name));
-	ireq.i_type = IEEE80211_IOC_SSID;
+	ireq.i_type = (!mesh) ? IEEE80211_IOC_SSID : IEEE80211_IOC_MESHID;
 	ireq.i_val = ix;
 	ireq.i_data = data;
 	ireq.i_len = len;
@@ -3981,7 +3995,7 @@ ieee80211_status(int s)
 	const struct ieee80211_roamparam *rp;
 	const struct ieee80211_txparam *tp;
 
-	if (getssid(s, -1, data, sizeof(data), &len) < 0) {
+	if (getid(s, -1, data, sizeof(data), &len, 0) < 0) {
 		/* If we can't get the SSID, this isn't an 802.11 device. */
 		return;
 	}
@@ -3996,18 +4010,24 @@ ieee80211_status(int s)
 	gothtconf = 0;
 	gotregdomain = 0;
 
-	if (get80211val(s, IEEE80211_IOC_NUMSSIDS, &num) < 0)
-		num = 0;
-	printf("\tssid ");
-	if (num > 1) {
-		for (i = 0; i < num; i++) {
-			if (getssid(s, i, data, sizeof(data), &len) >= 0 && len > 0) {
-				printf(" %d:", i + 1);
-				print_string(data, len);
-			}
-		}
-	} else
+	if (opmode == IEEE80211_M_MBSS) {
+		printf("\tmeshid ");
+		getid(s, i, data, sizeof(data), &len, 1);
 		print_string(data, len);
+	} else {
+		if (get80211val(s, IEEE80211_IOC_NUMSSIDS, &num) < 0)
+			num = 0;
+		printf("\tssid ");
+		if (num > 1) {
+			for (i = 0; i < num; i++) {
+				if (getid(s, i, data, sizeof(data), &len, 0) >= 0 && len > 0) {
+					printf(" %d:", i + 1);
+					print_string(data, len);
+				}
+			}
+		} else
+			print_string(data, len);
+	}
 
 	c = getcurchan(s);
 	if (c->ic_freq != IEEE80211_CHAN_ANY) {
@@ -4812,6 +4832,7 @@ set80211clone_wdslegacy(const char *val, int d, int s, const struct afswtch *raf
 static struct cmd ieee80211_cmds[] = {
 	DEF_CMD_ARG("ssid",		set80211ssid),
 	DEF_CMD_ARG("nwid",		set80211ssid),
+	DEF_CMD_ARG("meshid",		set80211meshid),
 	DEF_CMD_ARG("stationname",	set80211stationname),
 	DEF_CMD_ARG("station",		set80211stationname),	/* BSD/OS */
 	DEF_CMD_ARG("channel",		set80211channel),
