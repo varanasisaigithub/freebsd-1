@@ -579,6 +579,7 @@ ath_attach(u_int16_t devid, struct ath_softc *sc)
 		| IEEE80211_C_MONITOR		/* monitor mode */
 		| IEEE80211_C_AHDEMO		/* adhoc demo mode */
 		| IEEE80211_C_WDS		/* 4-address traffic works */
+		| IEEE80211_C_MBSS		/* mesh point link mode */
 		| IEEE80211_C_SHPREAMBLE	/* short preamble supported */
 		| IEEE80211_C_SHSLOT		/* short slot time supported */
 		| IEEE80211_C_WPA		/* capable of WPA1+WPA2 */
@@ -923,6 +924,9 @@ ath_vap_create(struct ieee80211com *ic,
 			flags &= ~IEEE80211_CLONE_BSSID;
 		}
 		ic_opmode = IEEE80211_M_HOSTAP;
+		break;
+	case IEEE80211_M_MBSS:
+		/* XXXRP TBD */
 		break;
 	default:
 		device_printf(sc->sc_dev, "unknown opmode %d\n", opmode);
