@@ -33,7 +33,6 @@
 /*
  * Routines to build and maintain radix trees for routing lookups.
  */
-#ifndef _RADIX_H_
 #include <sys/param.h>
 #ifdef	_KERNEL
 #include <sys/lock.h>
@@ -41,20 +40,21 @@
 #include <sys/rwlock.h>
 #include <sys/systm.h>
 #include <sys/malloc.h>
-#include <sys/domain.h>
-#else
-#include <stdlib.h>
-#endif
 #include <sys/syslog.h>
 #include <net/radix.h>
-#endif
-
 #include "opt_mpath.h"
-
 #ifdef RADIX_MPATH
 #include <net/radix_mpath.h>
 #endif
-
+#else /* !_KERNEL */
+#include <stdio.h>
+#include <strings.h>
+#include <stdlib.h>
+#define log(x, arg...)  fprintf(stderr, ## arg)
+#define panic(x)        fprintf(stderr, "PANIC: %s", x), exit(1)
+#define min(a, b) ((a) < (b) ? (a) : (b) )
+#include <net/radix.h>
+#endif /* !_KERNEL */
 
 static int	rn_walktree_from(struct radix_node_head *h, void *a, void *m,
 		    walktree_f_t *f, void *w);
@@ -1162,16 +1162,11 @@ rn_inithead(head, off)
 }
 
 void
-rn_init()
+rn_init(int maxk)
 {
 	char *cp, *cplim;
-#ifdef _KERNEL
-	struct domain *dom;
 
-	for (dom = domains; dom; dom = dom->dom_next)
-		if (dom->dom_maxrtkey > max_keylen)
-			max_keylen = dom->dom_maxrtkey;
-#endif
+	max_keylen = maxk;
 	if (max_keylen == 0) {
 		log(LOG_ERR,
 		    "rn_init: radix functions require max_keylen be set\n");
