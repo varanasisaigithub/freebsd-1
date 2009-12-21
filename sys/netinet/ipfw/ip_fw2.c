@@ -630,50 +630,27 @@ send_reject(struct ip_fw_args *args, int code, int ip_len, struct ip *ip)
 }
 
 /**
- * Given an ip_fw *, lookup_next_rule will return a pointer
- * to the next rule, which can be either the jump
- * target (for skipto instructions) or the next one in the list (in
- * all other cases including a missing jump target).
- * The result is also written in the "next_rule" field of the rule.
- * Backward jumps are not allowed, so we start the search from the
- * rule following the current one.
+ * Return the pointer to the skipto target.
+ *
+ * IMPORTANT: this should only be called on SKIPTO rules, and the
+ * jump target is taken from the 'rulenum' argument, which may come
+ * from the rule itself (direct skipto) or not (tablearg)
  *
  * The function never returns NULL: if the requested rule is not
  * present, it returns the next rule in the chain.
- * As a side effect, the rule pointer is also set so next time
- * the jump will not require a scan of the list.
+ * This also happens in case of a bogus argument > 65535
  */
-
 static struct ip_fw *
-lookup_next_rule(struct ip_fw *me, u_int32_t tablearg)
+lookup_next_rule(struct ip_fw *me, uint32_t rulenum)
 {
-	struct ip_fw *rule = NULL;
-	ipfw_insn *cmd;
-	u_int16_t	rulenum;
+	struct ip_fw *rule;
 
-	/* look for action, in case it is a skipto */
-	cmd = ACTION_PTR(me);
-	if (cmd->opcode == O_LOG)
-		cmd += F_LEN(cmd);
-	if (cmd->opcode == O_ALTQ)
-		cmd += F_LEN(cmd);
-	if (cmd->opcode == O_TAG)
-		cmd += F_LEN(cmd);
-	if (cmd->opcode == O_SKIPTO ) {
-		if (tablearg != 0) {
-			rulenum = (u_int16_t)tablearg;
-		} else {
-			rulenum = cmd->arg1;
-		}
-		for (rule = me->next; rule ; rule = rule->next) {
-			if (rule->rulenum >= rulenum) {
-				break;
-			}
-		}
+	for (rule = me->next; rule ; rule = rule->next) {
+		if (rule->rulenum >= rulenum)
+			break;
 	}
 	if (rule == NULL)	/* failure or not a skipto */
-		rule = me->next;
-	me->next_rule = rule;
+		rule = me->next ? me->next : me;
 	return rule;
 }
 
@@ -1183,31 +1160,29 @@ do {								\
 	mtag = m_tag_find(m, PACKET_TAG_DIVERT, NULL);
 	if (args->rule) {
 		/*
-		 * Packet has already been tagged. Look for the next rule
-		 * to restart processing. Make sure that args->rule still
-		 * exists and not changed.
-		 * If fw_one_pass != 0 then just accept it.
-		 * XXX should not happen here, but optimized out in
-		 * the caller.
+		 * Packet has already been tagged as a result of a previous
+		 * match on rule args->rule aka args->rule_id (PIPE, QUEUE,
+		 * REASS, NETGRAPH and similar, never a skipto).
+		 * Validate the pointer and continue from args->rule->next
+		 * if still present, otherwise use the default rule.
+		 * XXX If fw_one_pass != 0 then just accept it, though
+		 * the caller should never pass us such packets.
 		 */
 		if (V_fw_one_pass) {
 			IPFW_RUNLOCK(chain);
 			return (IP_FW_PASS);
 		}
-		if (chain->id != args->chain_id) {
+		if (chain->id == args->chain_id) { /* pointer still valid */
+			f = args->rule->next;
+		} else { /* must revalidate the pointer */
 			for (f = chain->rules; f != NULL; f = f->next)
-				if (f == args->rule && f->id == args->rule_id)
+				if (f == args->rule && f->id == args->rule_id) {
+					f = args->rule->next;
 					break;
-
-			if (f != NULL)
-				f = f->next_rule;
-			else
-				f = V_layer3_chain.default_rule;
-		} else 
-			f = args->rule->next_rule;
-
-		if (f == NULL)
-			f = lookup_next_rule(args->rule, 0);
+				}
+		}
+		if (f == NULL) /* in case of errors, use default; */
+			f = chain->default_rule;
 	} else {
 		/*
 		 * Find the starting rule. It can be either the first
@@ -1676,8 +1651,7 @@ do {								\
 			}
 
 			case O_LOG:
-				if (V_fw_verbose)
-					ipfw_log(f, hlen, args, m,
+				ipfw_log(f, hlen, args, m,
 					    oif, offset, tablearg, ip);
 				match = 1;
 				break;
@@ -2015,13 +1989,15 @@ do {								\
 					l = 0;		/* exit inner loop */
 					break;
 				}
-				/* handle skipto */
+				/* skipto: */
 				if (cmd->arg1 == IP_FW_TABLEARG) {
-					f = lookup_next_rule(f, tablearg);
-				} else {
-					if (f->next_rule == NULL)
-						lookup_next_rule(f, 0);
-					f = f->next_rule;
+				    f = lookup_next_rule(f, tablearg);
+				} else { /* direct skipto */
+				    /* update f->next_rule if not set */
+				    if (f->next_rule == NULL)
+					f->next_rule =
+					    lookup_next_rule(f, cmd->arg1);
+				    f = f->next_rule;
 				}
 				/*
 				 * Skip disabled rules, and
@@ -2034,7 +2010,7 @@ do {								\
 				if (f) { /* found a valid rule */
 					l = f->cmd_len;
 					cmd = f->cmd;
-				} else {
+				} else { /* should not happen */
 					l = 0;  /* exit inner loop */
 				}
 				match = 1;
@@ -2310,6 +2286,7 @@ ipfw_init(void)
 		printf("limited to %d packets/entry by default\n",
 		    V_verbose_limit);
 
+	ipfw_log_bpf(1); /* init */
 	return (error);
 }
 
@@ -2320,6 +2297,7 @@ static void
 ipfw_destroy(void)
 {
 
+	ipfw_log_bpf(0); /* uninit */
 	ipfw_dyn_detach();
 	printf("IP firewall unloaded\n");
 }

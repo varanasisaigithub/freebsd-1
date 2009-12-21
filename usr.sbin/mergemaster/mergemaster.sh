@@ -840,32 +840,39 @@ mm_install () {
       DONT_INSTALL=yes
       ;;
     /.cshrc | /.profile)
-    case "${AUTO_INSTALL}" in
-    '')
-      case "${LINK_EXPLAINED}" in
-      '')
-        echo "   *** Historically BSD derived systems have had a"
-        echo "       hard link from /.cshrc and /.profile to"
-        echo "       their namesakes in /root.  Please indicate"
-        echo "       your preference below for bringing your"
-        echo "       installed files up to date."
-        echo ''
-        LINK_EXPLAINED=yes
-        ;;
-      esac
+      local st_nlink
 
-      echo "   Use 'd' to delete the temporary ${COMPFILE}"
-      echo "   Use 'l' to delete the existing ${DESTDIR}${COMPFILE#.} and create the link"
-      echo ''
-      echo "   Default is to leave the temporary file to deal with by hand"
-      echo ''
-      echo -n "  How should I handle ${COMPFILE}? [Leave it to install later] "
-      read HANDLE_LINK
-      ;;
-    *)  # Part of AUTO_INSTALL
-      HANDLE_LINK=l
-      ;;
-    esac
+      # install will unlink the file before it installs the new one,
+      # so we have to restore/create the link afterwards.
+      #
+      st_nlink=0		# In case the file does not yet exist
+      eval $(stat -s ${DESTDIR}${COMPFILE#.} 2>/dev/null)
+
+      do_install_and_rm "${FILE_MODE}" "${1}" "${DESTDIR}${INSTALL_DIR}"
+
+      if [ -n "${AUTO_INSTALL}" -a $st_nlink -gt 1 ]; then
+        HANDLE_LINK=l
+      else
+        case "${LINK_EXPLAINED}" in
+        '')
+          echo "   *** Historically BSD derived systems have had a"
+          echo "       hard link from /.cshrc and /.profile to"
+          echo "       their namesakes in /root.  Please indicate"
+          echo "       your preference below for bringing your"
+          echo "       installed files up to date."
+          echo ''
+          LINK_EXPLAINED=yes
+          ;;
+        esac
+
+        echo "   Use 'd' to delete the temporary ${COMPFILE}"
+        echo "   Use 'l' to delete the existing ${DESTDIR}/root/${COMPFILE##*/} and create the link"
+        echo ''
+        echo "   Default is to leave the temporary file to deal with by hand"
+        echo ''
+        echo -n "  How should I handle ${COMPFILE}? [Leave it to install later] "
+        read HANDLE_LINK
+      fi
 
       case "${HANDLE_LINK}" in
       [dD]*)
@@ -875,19 +882,19 @@ mm_install () {
         ;;
       [lL]*)
         echo ''
-        rm -f "${DESTDIR}${COMPFILE#.}"
-        if ln "${DESTDIR}/root/${COMPFILE##*/}" "${DESTDIR}${COMPFILE#.}"; then
+        unlink ${DESTDIR}/root/${COMPFILE##*/}
+        if ln ${DESTDIR}${COMPFILE#.} ${DESTDIR}/root/${COMPFILE##*/}; then
           echo "   *** Link from ${DESTDIR}${COMPFILE#.} to ${DESTDIR}/root/${COMPFILE##*/} installed successfully"
-          rm "${COMPFILE}"
         else
-          echo "   *** Error linking ${DESTDIR}${COMPFILE#.} to ${DESTDIR}/root/${COMPFILE##*/}, ${COMPFILE} will remain to install by hand"
+          echo "   *** Error linking ${DESTDIR}${COMPFILE#.} to ${DESTDIR}/root/${COMPFILE##*/}"
+          echo "   *** ${COMPFILE} will remain for your consideration"
         fi
         ;;
       *)
         echo "   *** ${COMPFILE} will remain for your consideration"
         ;;
       esac
-      DONT_INSTALL=yes
+      return
       ;;
     esac
 
@@ -974,7 +981,7 @@ fi
 # change to something else in a newer version.  So we need to explicitly
 # test for this, and warn the user if what we find does not match.
 #
-for COMPFILE in `find .` ; do
+for COMPFILE in `find . | sort` ; do
   if [ -e "${DESTDIR}${COMPFILE#.}" ]; then
     INSTALLED_TYPE=`stat -f '%HT' ${DESTDIR}${COMPFILE#.}`
   else
@@ -1021,7 +1028,7 @@ for COMPFILE in `find .` ; do
   fi
 done
 
-for COMPFILE in `find . -type f`; do
+for COMPFILE in `find . -type f | sort`; do
 
   # First, check to see if the file exists in DESTDIR.  If not, the
   # diff_loop function knows how to handle it.
@@ -1124,7 +1131,7 @@ echo ''
 TEST_FOR_FILES=`find ${TEMPROOT} -type f -size +0 2>/dev/null`
 if [ -n "${TEST_FOR_FILES}" ]; then
   echo "*** Files that remain for you to merge by hand:"
-  find "${TEMPROOT}" -type f -size +0
+  find "${TEMPROOT}" -type f -size +0 | sort
   echo ''
 fi
 

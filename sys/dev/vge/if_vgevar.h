@@ -39,7 +39,7 @@
 #define VGE_TX_RING_ALIGN	64
 #define VGE_RX_RING_ALIGN	64
 #define VGE_MAXTXSEGS		6
-#define VGE_RX_BUF_ALIGN	sizeof(uint32_t)
+#define VGE_RX_BUF_ALIGN	sizeof(uint64_t)
 
 /*
  * VIA Velocity allows 64bit DMA addressing but high 16bits
@@ -65,11 +65,19 @@
 #define VGE_RXBYTES(x)		(((x) & VGE_RDSTS_BUFSIZ) >> 16)
 #define VGE_MIN_FRAMELEN	60
 
-#ifdef VGE_FIXUP_RX
-#define VGE_ETHER_ALIGN		sizeof(uint32_t)
-#else
-#define VGE_ETHER_ALIGN		0
-#endif
+#define	VGE_INT_HOLDOFF_TICK	20
+#define	VGE_INT_HOLDOFF_USEC(x)	((x) / VGE_INT_HOLDOFF_TICK)
+#define	VGE_INT_HOLDOFF_MIN	0
+#define	VGE_INT_HOLDOFF_MAX	(255 * VGE_INT_HOLDOFF_TICK)
+#define	VGE_INT_HOLDOFF_DEFAULT	150
+
+#define	VGE_RX_COAL_PKT_MIN	1
+#define	VGE_RX_COAL_PKT_MAX	VGE_RX_DESC_CNT
+#define	VGE_RX_COAL_PKT_DEFAULT	64
+
+#define	VGE_TX_COAL_PKT_MIN	1
+#define	VGE_TX_COAL_PKT_MAX	VGE_TX_DESC_CNT
+#define	VGE_TX_COAL_PKT_DEFAULT	128
 
 struct vge_type {
 	uint16_t		vge_vid;
@@ -130,6 +138,42 @@ struct vge_ring_data {
 	bus_addr_t		vge_rx_ring_paddr;
 };
 
+struct vge_hw_stats {
+	uint32_t		rx_frames;
+	uint32_t		rx_good_frames;
+	uint32_t		rx_fifo_oflows;
+	uint32_t		rx_runts;
+	uint32_t		rx_runts_errs;
+	uint32_t		rx_pkts_64;
+	uint32_t		rx_pkts_65_127;
+	uint32_t		rx_pkts_128_255;
+	uint32_t		rx_pkts_256_511;
+	uint32_t		rx_pkts_512_1023;
+	uint32_t		rx_pkts_1024_1518;
+	uint32_t		rx_pkts_1519_max;
+	uint32_t		rx_pkts_1519_max_errs;
+	uint32_t		rx_jumbos;
+	uint32_t		rx_crcerrs;
+	uint32_t		rx_pause_frames;
+	uint32_t		rx_alignerrs;
+	uint32_t		rx_nobufs;
+	uint32_t		rx_symerrs;
+	uint32_t		rx_lenerrs;
+
+	uint32_t		tx_good_frames;
+	uint32_t		tx_pkts_64;
+	uint32_t		tx_pkts_65_127;
+	uint32_t		tx_pkts_128_255;
+	uint32_t		tx_pkts_256_511;
+	uint32_t		tx_pkts_512_1023;
+	uint32_t		tx_pkts_1024_1518;
+	uint32_t		tx_jumbos;
+	uint32_t		tx_colls;
+	uint32_t		tx_pause;
+	uint32_t		tx_sqeerrs;
+	uint32_t		tx_latecolls;
+};
+
 struct vge_softc {
 	struct ifnet		*vge_ifp;	/* interface info */
 	device_t		vge_dev;
@@ -137,23 +181,28 @@ struct vge_softc {
 	struct resource		*vge_irq;
 	void			*vge_intrhand;
 	device_t		vge_miibus;
-	uint8_t			vge_type;
 	int			vge_if_flags;
 	int			vge_phyaddr;
 	int			vge_flags;
 #define	VGE_FLAG_PCIE		0x0001
 #define	VGE_FLAG_MSI		0x0002
+#define	VGE_FLAG_PMCAP		0x0004
+#define	VGE_FLAG_JUMBO		0x0008
+#define	VGE_FLAG_SUSPENDED	0x4000
 #define	VGE_FLAG_LINK		0x8000
 	int			vge_expcap;
+	int			vge_pmcap;
 	int			vge_camidx;
+	int			vge_int_holdoff;
+	int			vge_rx_coal_pkt;
+	int			vge_tx_coal_pkt;
 	struct mtx		vge_mtx;
 	struct callout		vge_watchdog;
 	int			vge_timer;
 
 	struct vge_chain_data	vge_cdata;
 	struct vge_ring_data	vge_rdata;
-
-	int			suspended;	/* 0 = normal  1 = suspended */
+	struct vge_hw_stats	vge_stats;
 };
 
 #define	VGE_LOCK(_sc)		mtx_lock(&(_sc)->vge_mtx)

@@ -93,6 +93,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/module.h>
 #include <sys/kernel.h>
 #include <sys/socket.h>
+#include <sys/sysctl.h>
 
 #include <net/if.h>
 #include <net/if_arp.h>
@@ -132,11 +133,18 @@ static int msi_disable = 0;
 TUNABLE_INT("hw.vge.msi_disable", &msi_disable);
 
 /*
+ * The SQE error counter of MIB seems to report bogus value.
+ * Vendor's workaround does not seem to work on PCIe based
+ * controllers. Disable it until we find better workaround.
+ */
+#undef VGE_ENABLE_SQEERR
+
+/*
  * Various supported device vendors/types and their names.
  */
 static struct vge_type vge_devs[] = {
 	{ VIA_VENDORID, VIA_DEVICEID_61XX,
-		"VIA Networking Gigabit Ethernet" },
+		"VIA Networking Velocity Gigabit Ethernet" },
 	{ 0, 0, NULL }
 };
 
@@ -149,6 +157,7 @@ static int	vge_suspend(device_t);
 
 static void	vge_cam_clear(struct vge_softc *);
 static int	vge_cam_set(struct vge_softc *, uint8_t *);
+static void	vge_clrwol(struct vge_softc *);
 static void	vge_discard_rxbuf(struct vge_softc *, int);
 static int	vge_dma_alloc(struct vge_softc *);
 static void	vge_dma_free(struct vge_softc *);
@@ -167,6 +176,7 @@ static int	vge_ifmedia_upd(struct ifnet *);
 static void	vge_init(void *);
 static void	vge_init_locked(struct vge_softc *);
 static void	vge_intr(void *);
+static void	vge_intr_holdoff(struct vge_softc *);
 static int	vge_ioctl(struct ifnet *, u_long, caddr_t);
 static void	vge_link_statchg(void *);
 static int	vge_miibus_readreg(device_t, int, int);
@@ -179,10 +189,15 @@ static void	vge_read_eeprom(struct vge_softc *, caddr_t, int, int, int);
 static void	vge_reset(struct vge_softc *);
 static int	vge_rx_list_init(struct vge_softc *);
 static int	vge_rxeof(struct vge_softc *, int);
-static void	vge_setmulti(struct vge_softc *);
+static void	vge_rxfilter(struct vge_softc *);
+static void	vge_setvlan(struct vge_softc *);
+static void	vge_setwol(struct vge_softc *);
 static void	vge_start(struct ifnet *);
 static void	vge_start_locked(struct ifnet *);
+static void	vge_stats_clear(struct vge_softc *);
+static void	vge_stats_update(struct vge_softc *);
 static void	vge_stop(struct vge_softc *);
+static void	vge_sysctl_node(struct vge_softc *);
 static int	vge_tx_list_init(struct vge_softc *);
 static void	vge_txeof(struct vge_softc *);
 static void	vge_watchdog(void *);
@@ -504,38 +519,66 @@ fail:
 	return (error);
 }
 
+static void
+vge_setvlan(struct vge_softc *sc)
+{
+	struct ifnet *ifp;
+	uint8_t cfg;
+
+	VGE_LOCK_ASSERT(sc);
+
+	ifp = sc->vge_ifp;
+	cfg = CSR_READ_1(sc, VGE_RXCFG);
+	if ((ifp->if_capenable & IFCAP_VLAN_HWTAGGING) != 0)
+		cfg |= VGE_VTAG_OPT2;
+	else
+		cfg &= ~VGE_VTAG_OPT2;
+	CSR_WRITE_1(sc, VGE_RXCFG, cfg);
+}
+
 /*
  * Program the multicast filter. We use the 64-entry CAM filter
  * for perfect filtering. If there's more than 64 multicast addresses,
  * we use the hash filter instead.
  */
 static void
-vge_setmulti(struct vge_softc *sc)
+vge_rxfilter(struct vge_softc *sc)
 {
 	struct ifnet *ifp;
-	int error = 0/*, h = 0*/;
 	struct ifmultiaddr *ifma;
-	uint32_t h, hashes[2] = { 0, 0 };
+	uint32_t h, hashes[2];
+	uint8_t rxcfg;
+	int error = 0;
 
 	VGE_LOCK_ASSERT(sc);
 
-	ifp = sc->vge_ifp;
-
 	/* First, zot all the multicast entries. */
-	vge_cam_clear(sc);
-	CSR_WRITE_4(sc, VGE_MAR0, 0);
-	CSR_WRITE_4(sc, VGE_MAR1, 0);
+	hashes[0] = 0;
+	hashes[1] = 0;
 
+	rxcfg = CSR_READ_1(sc, VGE_RXCTL);
+	rxcfg &= ~(VGE_RXCTL_RX_MCAST | VGE_RXCTL_RX_BCAST |
+	    VGE_RXCTL_RX_PROMISC);
 	/*
-	 * If the user wants allmulti or promisc mode, enable reception
-	 * of all multicast frames.
+	 * Always allow VLAN oversized frames and frames for
+	 * this host.
 	 */
-	if (ifp->if_flags & IFF_ALLMULTI || ifp->if_flags & IFF_PROMISC) {
-		CSR_WRITE_4(sc, VGE_MAR0, 0xFFFFFFFF);
-		CSR_WRITE_4(sc, VGE_MAR1, 0xFFFFFFFF);
-		return;
+	rxcfg |= VGE_RXCTL_RX_GIANT | VGE_RXCTL_RX_UCAST;
+
+	ifp = sc->vge_ifp;
+	if ((ifp->if_flags & IFF_BROADCAST) != 0)
+		rxcfg |= VGE_RXCTL_RX_BCAST;
+	if ((ifp->if_flags & (IFF_PROMISC | IFF_ALLMULTI)) != 0) {
+		if ((ifp->if_flags & IFF_PROMISC) != 0)
+			rxcfg |= VGE_RXCTL_RX_PROMISC;
+		if ((ifp->if_flags & IFF_ALLMULTI) != 0) {
+			hashes[0] = 0xFFFFFFFF;
+			hashes[1] = 0xFFFFFFFF;
+		}
+		goto done;
 	}
 
+	vge_cam_clear(sc);
 	/* Now program new ones */
 	if_maddr_rlock(ifp);
 	TAILQ_FOREACH(ifma, &ifp->if_multiaddrs, ifma_link) {
@@ -561,11 +604,15 @@ vge_setmulti(struct vge_softc *sc)
 			else
 				hashes[1] |= (1 << (h - 32));
 		}
-
-		CSR_WRITE_4(sc, VGE_MAR0, hashes[0]);
-		CSR_WRITE_4(sc, VGE_MAR1, hashes[1]);
 	}
 	if_maddr_runlock(ifp);
+
+done:
+	if (hashes[0] != 0 || hashes[1] != 0)
+		rxcfg |= VGE_RXCTL_RX_MCAST;
+	CSR_WRITE_4(sc, VGE_MAR0, hashes[0]);
+	CSR_WRITE_4(sc, VGE_MAR1, hashes[1]);
+	CSR_WRITE_1(sc, VGE_RXCTL, rxcfg);
 }
 
 static void
@@ -966,6 +1013,11 @@ vge_attach(device_t dev)
 	if (pci_find_extcap(dev, PCIY_EXPRESS, &cap) == 0) {
 		sc->vge_flags |= VGE_FLAG_PCIE;
 		sc->vge_expcap = cap;
+	} else
+		sc->vge_flags |= VGE_FLAG_JUMBO;
+	if (pci_find_extcap(dev, PCIY_PMG, &cap) == 0) {
+		sc->vge_flags |= VGE_FLAG_PMCAP;
+		sc->vge_pmcap = cap;
 	}
 	rid = 0;
 	msic = pci_msi_count(dev);
@@ -1024,6 +1076,9 @@ vge_attach(device_t dev)
 	else
 		sc->vge_phyaddr = CSR_READ_1(sc, VGE_MIICFG) &
 		    VGE_MIICFG_PHYADDR;
+	/* Clear WOL and take hardware from powerdown. */
+	vge_clrwol(sc);
+	vge_sysctl_node(sc);
 	error = vge_dma_alloc(sc);
 	if (error)
 		goto fail;
@@ -1051,7 +1106,10 @@ vge_attach(device_t dev)
 	ifp->if_capabilities = IFCAP_VLAN_MTU;
 	ifp->if_start = vge_start;
 	ifp->if_hwassist = VGE_CSUM_FEATURES;
-	ifp->if_capabilities |= IFCAP_HWCSUM|IFCAP_VLAN_HWTAGGING;
+	ifp->if_capabilities |= IFCAP_HWCSUM | IFCAP_VLAN_HWCSUM |
+	    IFCAP_VLAN_HWTAGGING;
+	if ((sc->vge_flags & VGE_FLAG_PMCAP) != 0)
+		ifp->if_capabilities |= IFCAP_WOL;
 	ifp->if_capenable = ifp->if_capabilities;
 #ifdef DEVICE_POLLING
 	ifp->if_capabilities |= IFCAP_POLLING;
@@ -1583,15 +1641,6 @@ vge_txeof(struct vge_softc *sc)
 	sc->vge_cdata.vge_tx_considx = cons;
 	if (sc->vge_cdata.vge_tx_cnt == 0)
 		sc->vge_timer = 0;
-	else {
-		/*
-		 * If not all descriptors have been released reaped yet,
-		 * reload the timer so that we will eventually get another
-		 * interrupt that will cause us to re-enter this routine.
-		 * This is done in case the transmitter has gone idle.
-		 */
-		CSR_WRITE_1(sc, VGE_CRS1, VGE_CR1_TIMER0_ENABLE);
-	}
 }
 
 static void
@@ -1662,7 +1711,6 @@ vge_poll (struct ifnet *ifp, enum poll_cmd cmd, int count)
 
 		if (status & (VGE_ISR_RXOFLOW|VGE_ISR_RXNODESC)) {
 			vge_rxeof(sc, count);
-			ifp->if_ierrors++;
 			CSR_WRITE_1(sc, VGE_RXQCSRS, VGE_RXQCSR_RUN);
 			CSR_WRITE_1(sc, VGE_RXQCSRS, VGE_RXQCSR_WAK);
 		}
@@ -1681,15 +1729,11 @@ vge_intr(void *arg)
 	uint32_t status;
 
 	sc = arg;
-
-	if (sc->suspended) {
-		return;
-	}
-
 	VGE_LOCK(sc);
-	ifp = sc->vge_ifp;
 
-	if (!(ifp->if_flags & IFF_UP)) {
+	ifp = sc->vge_ifp;
+	if ((sc->vge_flags & VGE_FLAG_SUSPENDED) != 0 ||
+	    (ifp->if_flags & IFF_UP) == 0) {
 		VGE_UNLOCK(sc);
 		return;
 	}
@@ -1703,30 +1747,21 @@ vge_intr(void *arg)
 
 	/* Disable interrupts */
 	CSR_WRITE_1(sc, VGE_CRC3, VGE_CR3_INT_GMSK);
-
-	for (;;) {
-
-		status = CSR_READ_4(sc, VGE_ISR);
-		/* If the card has gone away the read returns 0xffff. */
-		if (status == 0xFFFFFFFF)
-			break;
-
-		if (status)
-			CSR_WRITE_4(sc, VGE_ISR, status);
-
-		if ((status & VGE_INTRS) == 0)
-			break;
-
+	status = CSR_READ_4(sc, VGE_ISR);
+	CSR_WRITE_4(sc, VGE_ISR, status | VGE_ISR_HOLDOFF_RELOAD);
+	/* If the card has gone away the read returns 0xffff. */
+	if (status == 0xFFFFFFFF || (status & VGE_INTRS) == 0)
+		goto done;
+	if ((ifp->if_drv_flags & IFF_DRV_RUNNING) != 0) {
 		if (status & (VGE_ISR_RXOK|VGE_ISR_RXOK_HIPRIO))
 			vge_rxeof(sc, VGE_RX_DESC_CNT);
-
 		if (status & (VGE_ISR_RXOFLOW|VGE_ISR_RXNODESC)) {
 			vge_rxeof(sc, VGE_RX_DESC_CNT);
 			CSR_WRITE_1(sc, VGE_RXQCSRS, VGE_RXQCSR_RUN);
 			CSR_WRITE_1(sc, VGE_RXQCSRS, VGE_RXQCSR_WAK);
 		}
 
-		if (status & (VGE_ISR_TXOK0|VGE_ISR_TIMER0))
+		if (status & (VGE_ISR_TXOK0|VGE_ISR_TXOK_HIPRIO))
 			vge_txeof(sc);
 
 		if (status & (VGE_ISR_TXDMA_STALL|VGE_ISR_RXDMA_STALL)) {
@@ -1737,13 +1772,14 @@ vge_intr(void *arg)
 		if (status & VGE_ISR_LINKSTS)
 			vge_link_statchg(sc);
 	}
+done:
+	if ((ifp->if_drv_flags & IFF_DRV_RUNNING) != 0) {
+		/* Re-enable interrupts */
+		CSR_WRITE_1(sc, VGE_CRS3, VGE_CR3_INT_GMSK);
 
-	/* Re-enable interrupts */
-	CSR_WRITE_1(sc, VGE_CRS3, VGE_CR3_INT_GMSK);
-
-	if (!IFQ_DRV_IS_EMPTY(&ifp->if_snd))
-		vge_start_locked(ifp);
-
+		if (!IFQ_DRV_IS_EMPTY(&ifp->if_snd))
+			vge_start_locked(ifp);
+	}
 	VGE_UNLOCK(sc);
 }
 
@@ -1942,17 +1978,6 @@ vge_start_locked(struct ifnet *ifp)
 		/* Issue a transmit command. */
 		CSR_WRITE_2(sc, VGE_TXQCSRS, VGE_TXQCSR_WAK0);
 		/*
-		 * Use the countdown timer for interrupt moderation.
-		 * 'TX done' interrupts are disabled. Instead, we reset the
-		 * countdown timer, which will begin counting until it hits
-		 * the value in the SSTIMER register, and then trigger an
-		 * interrupt. Each time we set the TIMER0_ENABLE bit, the
-		 * the timer count is reloaded. Only when the transmitter
-		 * is idle will the timer hit 0 and an interrupt fire.
-		 */
-		CSR_WRITE_1(sc, VGE_CRS1, VGE_CR1_TIMER0_ENABLE);
-
-		/*
 		 * Set a timeout in case the chip goes out to lunch.
 		 */
 		sc->vge_timer = 5;
@@ -1998,7 +2023,8 @@ vge_init_locked(struct vge_softc *sc)
                 return;
 	}
 	vge_tx_list_init(sc);
-
+	/* Clear MAC statistics. */
+	vge_stats_clear(sc);
 	/* Set our station address */
 	for (i = 0; i < ETHER_ADDR_LEN; i++)
 		CSR_WRITE_1(sc, VGE_PAR0 + i, IF_LLADDR(sc->vge_ifp)[i]);
@@ -2008,7 +2034,7 @@ vge_init_locked(struct vge_softc *sc)
 	 * reception of VLAN tagged frames.
 	 */
 	CSR_CLRBIT_1(sc, VGE_RXCFG, VGE_RXCFG_FIFO_THR|VGE_RXCFG_VTAGOPT);
-	CSR_SETBIT_1(sc, VGE_RXCFG, VGE_RXFIFOTHR_128BYTES|VGE_VTAG_OPT2);
+	CSR_SETBIT_1(sc, VGE_RXCFG, VGE_RXFIFOTHR_128BYTES);
 
 	/* Set DMA burst length */
 	CSR_CLRBIT_1(sc, VGE_DMACFG0, VGE_DMACFG0_BURSTLEN);
@@ -2040,6 +2066,9 @@ vge_init_locked(struct vge_softc *sc)
 	CSR_WRITE_2(sc, VGE_RXDESCNUM, VGE_RX_DESC_CNT - 1);
 	CSR_WRITE_2(sc, VGE_RXDESC_RESIDUECNT, VGE_RX_DESC_CNT);
 
+	/* Configure interrupt moderation. */
+	vge_intr_holdoff(sc);
+
 	/* Enable and wake up the RX descriptor queue */
 	CSR_WRITE_1(sc, VGE_RXQCSRS, VGE_RXQCSR_RUN);
 	CSR_WRITE_1(sc, VGE_RXQCSRS, VGE_RXQCSR_WAK);
@@ -2047,29 +2076,12 @@ vge_init_locked(struct vge_softc *sc)
 	/* Enable the TX descriptor queue */
 	CSR_WRITE_2(sc, VGE_TXQCSRS, VGE_TXQCSR_RUN0);
 
-	/* Set up the receive filter -- allow large frames for VLANs. */
-	CSR_WRITE_1(sc, VGE_RXCTL, VGE_RXCTL_RX_UCAST|VGE_RXCTL_RX_GIANT);
-
-	/* If we want promiscuous mode, set the allframes bit. */
-	if (ifp->if_flags & IFF_PROMISC) {
-		CSR_SETBIT_1(sc, VGE_RXCTL, VGE_RXCTL_RX_PROMISC);
-	}
-
-	/* Set capture broadcast bit to capture broadcast frames. */
-	if (ifp->if_flags & IFF_BROADCAST) {
-		CSR_SETBIT_1(sc, VGE_RXCTL, VGE_RXCTL_RX_BCAST);
-	}
-
-	/* Set multicast bit to capture multicast frames. */
-	if (ifp->if_flags & IFF_MULTICAST) {
-		CSR_SETBIT_1(sc, VGE_RXCTL, VGE_RXCTL_RX_MCAST);
-	}
-
 	/* Init the cam filter. */
 	vge_cam_clear(sc);
 
-	/* Init the multicast filter. */
-	vge_setmulti(sc);
+	/* Set up receiver filter. */
+	vge_rxfilter(sc);
+	vge_setvlan(sc);
 
 	/* Enable flow control */
 
@@ -2082,42 +2094,6 @@ vge_init_locked(struct vge_softc *sc)
 	CSR_WRITE_1(sc, VGE_CRS1, VGE_CR1_NOPOLL);
 	CSR_WRITE_1(sc, VGE_CRS0,
 	    VGE_CR0_TX_ENABLE|VGE_CR0_RX_ENABLE|VGE_CR0_START);
-
-	/*
-	 * Configure one-shot timer for microsecond
-	 * resolution and load it for 500 usecs.
-	 */
-	CSR_SETBIT_1(sc, VGE_DIAGCTL, VGE_DIAGCTL_TIMER0_RES);
-	CSR_WRITE_2(sc, VGE_SSTIMER, 400);
-
-	/*
-	 * Configure interrupt moderation for receive. Enable
-	 * the holdoff counter and load it, and set the RX
-	 * suppression count to the number of descriptors we
-	 * want to allow before triggering an interrupt.
-	 * The holdoff timer is in units of 20 usecs.
-	 */
-
-#ifdef notyet
-	CSR_WRITE_1(sc, VGE_INTCTL1, VGE_INTCTL_TXINTSUP_DISABLE);
-	/* Select the interrupt holdoff timer page. */
-	CSR_CLRBIT_1(sc, VGE_CAMCTL, VGE_CAMCTL_PAGESEL);
-	CSR_SETBIT_1(sc, VGE_CAMCTL, VGE_PAGESEL_INTHLDOFF);
-	CSR_WRITE_1(sc, VGE_INTHOLDOFF, 10); /* ~200 usecs */
-
-	/* Enable use of the holdoff timer. */
-	CSR_WRITE_1(sc, VGE_CRS3, VGE_CR3_INT_HOLDOFF);
-	CSR_WRITE_1(sc, VGE_INTCTL1, VGE_INTCTL_SC_RELOAD);
-
-	/* Select the RX suppression threshold page. */
-	CSR_CLRBIT_1(sc, VGE_CAMCTL, VGE_CAMCTL_PAGESEL);
-	CSR_SETBIT_1(sc, VGE_CAMCTL, VGE_PAGESEL_RXSUPPTHR);
-	CSR_WRITE_1(sc, VGE_RXSUPPTHR, 64); /* interrupt after 64 packets */
-
-	/* Restore the page select bits. */
-	CSR_CLRBIT_1(sc, VGE_CAMCTL, VGE_CAMCTL_PAGESEL);
-	CSR_SETBIT_1(sc, VGE_CAMCTL, VGE_PAGESEL_MAR);
-#endif
 
 #ifdef DEVICE_POLLING
 	/*
@@ -2133,7 +2109,7 @@ vge_init_locked(struct vge_softc *sc)
 	 * Enable interrupts.
 	 */
 		CSR_WRITE_4(sc, VGE_IMR, VGE_INTRS);
-		CSR_WRITE_4(sc, VGE_ISR, 0);
+		CSR_WRITE_4(sc, VGE_ISR, 0xFFFFFFFF);
 		CSR_WRITE_1(sc, VGE_CRS3, VGE_CR3_INT_GMSK);
 	}
 
@@ -2240,35 +2216,33 @@ vge_ioctl(struct ifnet *ifp, u_long command, caddr_t data)
 	struct vge_softc *sc = ifp->if_softc;
 	struct ifreq *ifr = (struct ifreq *) data;
 	struct mii_data *mii;
-	int error = 0;
+	int error = 0, mask;
 
 	switch (command) {
 	case SIOCSIFMTU:
-		if (ifr->ifr_mtu > VGE_JUMBO_MTU)
+		VGE_LOCK(sc);
+		if (ifr->ifr_mtu < ETHERMIN || ifr->ifr_mtu > VGE_JUMBO_MTU)
 			error = EINVAL;
-		ifp->if_mtu = ifr->ifr_mtu;
+		else if (ifp->if_mtu != ifr->ifr_mtu) {
+			if (ifr->ifr_mtu > ETHERMTU &&
+			    (sc->vge_flags & VGE_FLAG_JUMBO) == 0)
+				error = EINVAL;
+			else
+				ifp->if_mtu = ifr->ifr_mtu;
+		}
+		VGE_UNLOCK(sc);
 		break;
 	case SIOCSIFFLAGS:
 		VGE_LOCK(sc);
-		if (ifp->if_flags & IFF_UP) {
-			if (ifp->if_drv_flags & IFF_DRV_RUNNING &&
-			    ifp->if_flags & IFF_PROMISC &&
-			    !(sc->vge_if_flags & IFF_PROMISC)) {
-				CSR_SETBIT_1(sc, VGE_RXCTL,
-				    VGE_RXCTL_RX_PROMISC);
-				vge_setmulti(sc);
-			} else if (ifp->if_drv_flags & IFF_DRV_RUNNING &&
-			    !(ifp->if_flags & IFF_PROMISC) &&
-			    sc->vge_if_flags & IFF_PROMISC) {
-				CSR_CLRBIT_1(sc, VGE_RXCTL,
-				    VGE_RXCTL_RX_PROMISC);
-				vge_setmulti(sc);
-                        } else
+		if ((ifp->if_flags & IFF_UP) != 0) {
+			if ((ifp->if_drv_flags & IFF_DRV_RUNNING) != 0 &&
+			    ((ifp->if_flags ^ sc->vge_if_flags) &
+			    (IFF_PROMISC | IFF_ALLMULTI)) != 0)
+				vge_rxfilter(sc);
+			else
 				vge_init_locked(sc);
-		} else {
-			if (ifp->if_drv_flags & IFF_DRV_RUNNING)
-				vge_stop(sc);
-		}
+		} else if ((ifp->if_drv_flags & IFF_DRV_RUNNING) != 0)
+			vge_stop(sc);
 		sc->vge_if_flags = ifp->if_flags;
 		VGE_UNLOCK(sc);
 		break;
@@ -2276,7 +2250,7 @@ vge_ioctl(struct ifnet *ifp, u_long command, caddr_t data)
 	case SIOCDELMULTI:
 		VGE_LOCK(sc);
 		if (ifp->if_drv_flags & IFF_DRV_RUNNING)
-			vge_setmulti(sc);
+			vge_rxfilter(sc);
 		VGE_UNLOCK(sc);
 		break;
 	case SIOCGIFMEDIA:
@@ -2285,8 +2259,7 @@ vge_ioctl(struct ifnet *ifp, u_long command, caddr_t data)
 		error = ifmedia_ioctl(ifp, ifr, &mii->mii_media, command);
 		break;
 	case SIOCSIFCAP:
-	    {
-		int mask = ifr->ifr_reqcap ^ ifp->if_capenable;
+		mask = ifr->ifr_reqcap ^ ifp->if_capenable;
 #ifdef DEVICE_POLLING
 		if (mask & IFCAP_POLLING) {
 			if (ifr->ifr_reqcap & IFCAP_POLLING) {
@@ -2323,8 +2296,25 @@ vge_ioctl(struct ifnet *ifp, u_long command, caddr_t data)
 		if ((mask & IFCAP_RXCSUM) != 0 &&
 		    (ifp->if_capabilities & IFCAP_RXCSUM) != 0)
 			ifp->if_capenable ^= IFCAP_RXCSUM;
+		if ((mask & IFCAP_WOL_UCAST) != 0 &&
+		    (ifp->if_capabilities & IFCAP_WOL_UCAST) != 0)
+			ifp->if_capenable ^= IFCAP_WOL_UCAST;
+		if ((mask & IFCAP_WOL_MCAST) != 0 &&
+		    (ifp->if_capabilities & IFCAP_WOL_MCAST) != 0)
+			ifp->if_capenable ^= IFCAP_WOL_MCAST;
+		if ((mask & IFCAP_WOL_MAGIC) != 0 &&
+		    (ifp->if_capabilities & IFCAP_WOL_MAGIC) != 0)
+			ifp->if_capenable ^= IFCAP_WOL_MAGIC;
+		if ((mask & IFCAP_VLAN_HWCSUM) != 0 &&
+		    (ifp->if_capabilities & IFCAP_VLAN_HWCSUM) != 0)
+			ifp->if_capenable ^= IFCAP_VLAN_HWCSUM;
+		if ((mask & IFCAP_VLAN_HWTAGGING) != 0 &&
+		    (IFCAP_VLAN_HWTAGGING & ifp->if_capabilities) != 0) {
+			ifp->if_capenable ^= IFCAP_VLAN_HWTAGGING;
+			vge_setvlan(sc);
+		}
 		VGE_UNLOCK(sc);
-	    }
+		VLAN_CAPABILITIES(ifp);
 		break;
 	default:
 		error = ether_ioctl(ifp, command, data);
@@ -2342,6 +2332,7 @@ vge_watchdog(void *arg)
 
 	sc = arg;
 	VGE_LOCK_ASSERT(sc);
+	vge_stats_update(sc);
 	callout_reset(&sc->vge_watchdog, hz, vge_watchdog, sc);
 	if (sc->vge_timer == 0 || --sc->vge_timer > 0)
 		return;
@@ -2380,6 +2371,7 @@ vge_stop(struct vge_softc *sc)
 	CSR_WRITE_1(sc, VGE_RXQCSRC, 0xFF);
 	CSR_WRITE_4(sc, VGE_RXDESC_ADDR_LO, 0);
 
+	vge_stats_update(sc);
 	VGE_CHAIN_RESET(sc);
 	vge_txeof(sc);
 	vge_freebufs(sc);
@@ -2399,8 +2391,8 @@ vge_suspend(device_t dev)
 
 	VGE_LOCK(sc);
 	vge_stop(sc);
-
-	sc->suspended = 1;
+	vge_setwol(sc);
+	sc->vge_flags |= VGE_FLAG_SUSPENDED;
 	VGE_UNLOCK(sc);
 
 	return (0);
@@ -2416,21 +2408,30 @@ vge_resume(device_t dev)
 {
 	struct vge_softc *sc;
 	struct ifnet *ifp;
+	uint16_t pmstat;
 
 	sc = device_get_softc(dev);
-	ifp = sc->vge_ifp;
-
-	/* reenable busmastering */
-	pci_enable_busmaster(dev);
-	pci_enable_io(dev, SYS_RES_MEMORY);
-
-	/* reinitialize interface if necessary */
 	VGE_LOCK(sc);
-	if (ifp->if_flags & IFF_UP) {
+	if ((sc->vge_flags & VGE_FLAG_PMCAP) != 0) {
+		/* Disable PME and clear PME status. */
+		pmstat = pci_read_config(sc->vge_dev,
+		    sc->vge_pmcap + PCIR_POWER_STATUS, 2);
+		if ((pmstat & PCIM_PSTAT_PMEENABLE) != 0) {
+			pmstat &= ~PCIM_PSTAT_PMEENABLE;
+			pci_write_config(sc->vge_dev,
+			    sc->vge_pmcap + PCIR_POWER_STATUS, pmstat, 2);
+		}
+	}
+	vge_clrwol(sc);
+	/* Restart MII auto-polling. */
+	vge_miipoll_start(sc);
+	ifp = sc->vge_ifp;
+	/* Reinitialize interface if necessary. */
+	if ((ifp->if_flags & IFF_UP) != 0) {
 		ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
 		vge_init_locked(sc);
 	}
-	sc->suspended = 0;
+	sc->vge_flags &= ~VGE_FLAG_SUSPENDED;
 	VGE_UNLOCK(sc);
 
 	return (0);
@@ -2443,13 +2444,444 @@ vge_resume(device_t dev)
 static int
 vge_shutdown(device_t dev)
 {
-	struct vge_softc *sc;
 
-	sc = device_get_softc(dev);
+	return (vge_suspend(dev));
+}
 
-	VGE_LOCK(sc);
-	vge_stop(sc);
-	VGE_UNLOCK(sc);
+#define	VGE_SYSCTL_STAT_ADD32(c, h, n, p, d)	\
+	    SYSCTL_ADD_UINT(c, h, OID_AUTO, n, CTLFLAG_RD, p, 0, d)
 
-	return (0);
+static void
+vge_sysctl_node(struct vge_softc *sc)
+{
+	struct sysctl_ctx_list *ctx;
+	struct sysctl_oid_list *child, *parent;
+	struct sysctl_oid *tree;
+	struct vge_hw_stats *stats;
+
+	stats = &sc->vge_stats;
+	ctx = device_get_sysctl_ctx(sc->vge_dev);
+	child = SYSCTL_CHILDREN(device_get_sysctl_tree(sc->vge_dev));
+
+	SYSCTL_ADD_INT(ctx, child, OID_AUTO, "int_holdoff",
+	    CTLFLAG_RW, &sc->vge_int_holdoff, 0, "interrupt holdoff");
+	SYSCTL_ADD_INT(ctx, child, OID_AUTO, "rx_coal_pkt",
+	    CTLFLAG_RW, &sc->vge_rx_coal_pkt, 0, "rx coalescing packet");
+	SYSCTL_ADD_INT(ctx, child, OID_AUTO, "tx_coal_pkt",
+	    CTLFLAG_RW, &sc->vge_tx_coal_pkt, 0, "tx coalescing packet");
+
+	/* Pull in device tunables. */
+	sc->vge_int_holdoff = VGE_INT_HOLDOFF_DEFAULT;
+	resource_int_value(device_get_name(sc->vge_dev),
+	    device_get_unit(sc->vge_dev), "int_holdoff", &sc->vge_int_holdoff);
+	sc->vge_rx_coal_pkt = VGE_RX_COAL_PKT_DEFAULT;
+	resource_int_value(device_get_name(sc->vge_dev),
+	    device_get_unit(sc->vge_dev), "rx_coal_pkt", &sc->vge_rx_coal_pkt);
+	sc->vge_tx_coal_pkt = VGE_TX_COAL_PKT_DEFAULT;
+	resource_int_value(device_get_name(sc->vge_dev),
+	    device_get_unit(sc->vge_dev), "tx_coal_pkt", &sc->vge_tx_coal_pkt);
+
+	tree = SYSCTL_ADD_NODE(ctx, child, OID_AUTO, "stats", CTLFLAG_RD,
+	    NULL, "VGE statistics");
+	parent = SYSCTL_CHILDREN(tree);
+
+	/* Rx statistics. */
+	tree = SYSCTL_ADD_NODE(ctx, parent, OID_AUTO, "rx", CTLFLAG_RD,
+	    NULL, "RX MAC statistics");
+	child = SYSCTL_CHILDREN(tree);
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "frames",
+	    &stats->rx_frames, "frames");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "good_frames",
+	    &stats->rx_good_frames, "Good frames");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "fifo_oflows",
+	    &stats->rx_fifo_oflows, "FIFO overflows");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "runts",
+	    &stats->rx_runts, "Too short frames");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "runts_errs",
+	    &stats->rx_runts_errs, "Too short frames with errors");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "frames_64",
+	    &stats->rx_pkts_64, "64 bytes frames");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "frames_65_127",
+	    &stats->rx_pkts_65_127, "65 to 127 bytes frames");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "frames_128_255",
+	    &stats->rx_pkts_128_255, "128 to 255 bytes frames");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "frames_256_511",
+	    &stats->rx_pkts_256_511, "256 to 511 bytes frames");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "frames_512_1023",
+	    &stats->rx_pkts_512_1023, "512 to 1023 bytes frames");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "frames_1024_1518",
+	    &stats->rx_pkts_1024_1518, "1024 to 1518 bytes frames");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "frames_1519_max",
+	    &stats->rx_pkts_1519_max, "1519 to max frames");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "frames_1519_max_errs",
+	    &stats->rx_pkts_1519_max_errs, "1519 to max frames with error");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "frames_jumbo",
+	    &stats->rx_jumbos, "Jumbo frames");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "crcerrs",
+	    &stats->rx_crcerrs, "CRC errors");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "pause_frames",
+	    &stats->rx_pause_frames, "CRC errors");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "align_errs",
+	    &stats->rx_alignerrs, "Alignment errors");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "nobufs",
+	    &stats->rx_nobufs, "Frames with no buffer event");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "sym_errs",
+	    &stats->rx_symerrs, "Frames with symbol errors");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "len_errs",
+	    &stats->rx_lenerrs, "Frames with length mismatched");
+
+	/* Tx statistics. */
+	tree = SYSCTL_ADD_NODE(ctx, parent, OID_AUTO, "tx", CTLFLAG_RD,
+	    NULL, "TX MAC statistics");
+	child = SYSCTL_CHILDREN(tree);
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "good_frames",
+	    &stats->tx_good_frames, "Good frames");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "frames_64",
+	    &stats->tx_pkts_64, "64 bytes frames");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "frames_65_127",
+	    &stats->tx_pkts_65_127, "65 to 127 bytes frames");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "frames_128_255",
+	    &stats->tx_pkts_128_255, "128 to 255 bytes frames");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "frames_256_511",
+	    &stats->tx_pkts_256_511, "256 to 511 bytes frames");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "frames_512_1023",
+	    &stats->tx_pkts_512_1023, "512 to 1023 bytes frames");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "frames_1024_1518",
+	    &stats->tx_pkts_1024_1518, "1024 to 1518 bytes frames");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "frames_jumbo",
+	    &stats->tx_jumbos, "Jumbo frames");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "colls",
+	    &stats->tx_colls, "Collisions");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "late_colls",
+	    &stats->tx_latecolls, "Late collisions");
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "pause_frames",
+	    &stats->tx_pause, "Pause frames");
+#ifdef VGE_ENABLE_SQEERR
+	VGE_SYSCTL_STAT_ADD32(ctx, child, "sqeerrs",
+	    &stats->tx_sqeerrs, "SQE errors");
+#endif
+	/* Clear MAC statistics. */
+	vge_stats_clear(sc);
+}
+
+#undef	VGE_SYSCTL_STAT_ADD32
+
+static void
+vge_stats_clear(struct vge_softc *sc)
+{
+	int i;
+
+	VGE_LOCK_ASSERT(sc);
+
+	CSR_WRITE_1(sc, VGE_MIBCSR,
+	    CSR_READ_1(sc, VGE_MIBCSR) | VGE_MIBCSR_FREEZE);
+	CSR_WRITE_1(sc, VGE_MIBCSR,
+	    CSR_READ_1(sc, VGE_MIBCSR) | VGE_MIBCSR_CLR);
+	for (i = VGE_TIMEOUT; i > 0; i--) {
+		DELAY(1);
+		if ((CSR_READ_1(sc, VGE_MIBCSR) & VGE_MIBCSR_CLR) == 0)
+			break;
+	}
+	if (i == 0)
+		device_printf(sc->vge_dev, "MIB clear timed out!\n");
+	CSR_WRITE_1(sc, VGE_MIBCSR, CSR_READ_1(sc, VGE_MIBCSR) &
+	    ~VGE_MIBCSR_FREEZE);
+}
+
+static void
+vge_stats_update(struct vge_softc *sc)
+{
+	struct vge_hw_stats *stats;
+	struct ifnet *ifp;
+	uint32_t mib[VGE_MIB_CNT], val;
+	int i;
+
+	VGE_LOCK_ASSERT(sc);
+
+	stats = &sc->vge_stats;
+	ifp = sc->vge_ifp;
+
+	CSR_WRITE_1(sc, VGE_MIBCSR,
+	    CSR_READ_1(sc, VGE_MIBCSR) | VGE_MIBCSR_FLUSH);
+	for (i = VGE_TIMEOUT; i > 0; i--) {
+		DELAY(1);
+		if ((CSR_READ_1(sc, VGE_MIBCSR) & VGE_MIBCSR_FLUSH) == 0)
+			break;
+	}
+	if (i == 0) {
+		device_printf(sc->vge_dev, "MIB counter dump timed out!\n");
+		vge_stats_clear(sc);
+		return;
+	}
+
+	bzero(mib, sizeof(mib));
+reset_idx:
+	/* Set MIB read index to 0. */
+	CSR_WRITE_1(sc, VGE_MIBCSR,
+	    CSR_READ_1(sc, VGE_MIBCSR) | VGE_MIBCSR_RINI);
+	for (i = 0; i < VGE_MIB_CNT; i++) {
+		val = CSR_READ_4(sc, VGE_MIBDATA);
+		if (i != VGE_MIB_DATA_IDX(val)) {
+			/* Reading interrupted. */
+			goto reset_idx;
+		}
+		mib[i] = val & VGE_MIB_DATA_MASK;
+	}
+
+	/* Rx stats. */
+	stats->rx_frames += mib[VGE_MIB_RX_FRAMES];
+	stats->rx_good_frames += mib[VGE_MIB_RX_GOOD_FRAMES];
+	stats->rx_fifo_oflows += mib[VGE_MIB_RX_FIFO_OVERRUNS];
+	stats->rx_runts += mib[VGE_MIB_RX_RUNTS];
+	stats->rx_runts_errs += mib[VGE_MIB_RX_RUNTS_ERRS];
+	stats->rx_pkts_64 += mib[VGE_MIB_RX_PKTS_64];
+	stats->rx_pkts_65_127 += mib[VGE_MIB_RX_PKTS_65_127];
+	stats->rx_pkts_128_255 += mib[VGE_MIB_RX_PKTS_128_255];
+	stats->rx_pkts_256_511 += mib[VGE_MIB_RX_PKTS_256_511];
+	stats->rx_pkts_512_1023 += mib[VGE_MIB_RX_PKTS_512_1023];
+	stats->rx_pkts_1024_1518 += mib[VGE_MIB_RX_PKTS_1024_1518];
+	stats->rx_pkts_1519_max += mib[VGE_MIB_RX_PKTS_1519_MAX];
+	stats->rx_pkts_1519_max_errs += mib[VGE_MIB_RX_PKTS_1519_MAX_ERRS];
+	stats->rx_jumbos += mib[VGE_MIB_RX_JUMBOS];
+	stats->rx_crcerrs += mib[VGE_MIB_RX_CRCERRS];
+	stats->rx_pause_frames += mib[VGE_MIB_RX_PAUSE];
+	stats->rx_alignerrs += mib[VGE_MIB_RX_ALIGNERRS];
+	stats->rx_nobufs += mib[VGE_MIB_RX_NOBUFS];
+	stats->rx_symerrs += mib[VGE_MIB_RX_SYMERRS];
+	stats->rx_lenerrs += mib[VGE_MIB_RX_LENERRS];
+
+	/* Tx stats. */
+	stats->tx_good_frames += mib[VGE_MIB_TX_GOOD_FRAMES];
+	stats->tx_pkts_64 += mib[VGE_MIB_TX_PKTS_64];
+	stats->tx_pkts_65_127 += mib[VGE_MIB_TX_PKTS_65_127];
+	stats->tx_pkts_128_255 += mib[VGE_MIB_TX_PKTS_128_255];
+	stats->tx_pkts_256_511 += mib[VGE_MIB_TX_PKTS_256_511];
+	stats->tx_pkts_512_1023 += mib[VGE_MIB_TX_PKTS_512_1023];
+	stats->tx_pkts_1024_1518 += mib[VGE_MIB_TX_PKTS_1024_1518];
+	stats->tx_jumbos += mib[VGE_MIB_TX_JUMBOS];
+	stats->tx_colls += mib[VGE_MIB_TX_COLLS];
+	stats->tx_pause += mib[VGE_MIB_TX_PAUSE];
+#ifdef VGE_ENABLE_SQEERR
+	stats->tx_sqeerrs += mib[VGE_MIB_TX_SQEERRS];
+#endif
+	stats->tx_latecolls += mib[VGE_MIB_TX_LATECOLLS];
+
+	/* Update counters in ifnet. */
+	ifp->if_opackets += mib[VGE_MIB_TX_GOOD_FRAMES];
+
+	ifp->if_collisions += mib[VGE_MIB_TX_COLLS] +
+	    mib[VGE_MIB_TX_LATECOLLS];
+
+	ifp->if_oerrors += mib[VGE_MIB_TX_COLLS] +
+	    mib[VGE_MIB_TX_LATECOLLS];
+
+	ifp->if_ipackets += mib[VGE_MIB_RX_GOOD_FRAMES];
+
+	ifp->if_ierrors += mib[VGE_MIB_RX_FIFO_OVERRUNS] +
+	    mib[VGE_MIB_RX_RUNTS] +
+	    mib[VGE_MIB_RX_RUNTS_ERRS] +
+	    mib[VGE_MIB_RX_CRCERRS] +
+	    mib[VGE_MIB_RX_ALIGNERRS] +
+	    mib[VGE_MIB_RX_NOBUFS] +
+	    mib[VGE_MIB_RX_SYMERRS] +
+	    mib[VGE_MIB_RX_LENERRS];
+}
+
+static void
+vge_intr_holdoff(struct vge_softc *sc)
+{
+	uint8_t intctl;
+
+	VGE_LOCK_ASSERT(sc);
+
+	/*
+	 * Set Tx interrupt supression threshold.
+	 * It's possible to use single-shot timer in VGE_CRS1 register
+	 * in Tx path such that driver can remove most of Tx completion
+	 * interrupts. However this requires additional access to
+	 * VGE_CRS1 register to reload the timer in addintion to
+	 * activating Tx kick command. Another downside is we don't know
+	 * what single-shot timer value should be used in advance so
+	 * reclaiming transmitted mbufs could be delayed a lot which in
+	 * turn slows down Tx operation.
+	 */
+	CSR_WRITE_1(sc, VGE_CAMCTL, VGE_PAGESEL_TXSUPPTHR);
+	CSR_WRITE_1(sc, VGE_TXSUPPTHR, sc->vge_tx_coal_pkt);
+
+	/* Set Rx interrupt suppresion threshold. */
+	CSR_WRITE_1(sc, VGE_CAMCTL, VGE_PAGESEL_RXSUPPTHR);
+	CSR_WRITE_1(sc, VGE_RXSUPPTHR, sc->vge_rx_coal_pkt);
+
+	intctl = CSR_READ_1(sc, VGE_INTCTL1);
+	intctl &= ~VGE_INTCTL_SC_RELOAD;
+	intctl |= VGE_INTCTL_HC_RELOAD;
+	if (sc->vge_tx_coal_pkt <= 0)
+		intctl |= VGE_INTCTL_TXINTSUP_DISABLE;
+	else
+		intctl &= ~VGE_INTCTL_TXINTSUP_DISABLE;
+	if (sc->vge_rx_coal_pkt <= 0)
+		intctl |= VGE_INTCTL_RXINTSUP_DISABLE;
+	else
+		intctl &= ~VGE_INTCTL_RXINTSUP_DISABLE;
+	CSR_WRITE_1(sc, VGE_INTCTL1, intctl);
+	CSR_WRITE_1(sc, VGE_CRC3, VGE_CR3_INT_HOLDOFF);
+	if (sc->vge_int_holdoff > 0) {
+		/* Set interrupt holdoff timer. */
+		CSR_WRITE_1(sc, VGE_CAMCTL, VGE_PAGESEL_INTHLDOFF);
+		CSR_WRITE_1(sc, VGE_INTHOLDOFF,
+		    VGE_INT_HOLDOFF_USEC(sc->vge_int_holdoff));
+		/* Enable holdoff timer. */
+		CSR_WRITE_1(sc, VGE_CRS3, VGE_CR3_INT_HOLDOFF);
+	}
+}
+
+static void
+vge_setlinkspeed(struct vge_softc *sc)
+{
+	struct mii_data *mii;
+	int aneg, i;
+
+	VGE_LOCK_ASSERT(sc);
+
+	mii = device_get_softc(sc->vge_miibus);
+	mii_pollstat(mii);
+	aneg = 0;
+	if ((mii->mii_media_status & (IFM_ACTIVE | IFM_AVALID)) ==
+	    (IFM_ACTIVE | IFM_AVALID)) {
+		switch IFM_SUBTYPE(mii->mii_media_active) {
+		case IFM_10_T:
+		case IFM_100_TX:
+			return;
+		case IFM_1000_T:
+			aneg++;
+		default:
+			break;
+		}
+	}
+	vge_miibus_writereg(sc->vge_dev, sc->vge_phyaddr, MII_100T2CR, 0);
+	vge_miibus_writereg(sc->vge_dev, sc->vge_phyaddr, MII_ANAR,
+	    ANAR_TX_FD | ANAR_TX | ANAR_10_FD | ANAR_10 | ANAR_CSMA);
+	vge_miibus_writereg(sc->vge_dev, sc->vge_phyaddr, MII_BMCR,
+	    BMCR_AUTOEN | BMCR_STARTNEG);
+	DELAY(1000);
+	if (aneg != 0) {
+		/* Poll link state until vge(4) get a 10/100 link. */
+		for (i = 0; i < MII_ANEGTICKS_GIGE; i++) {
+			mii_pollstat(mii);
+			if ((mii->mii_media_status & (IFM_ACTIVE | IFM_AVALID))
+			    == (IFM_ACTIVE | IFM_AVALID)) {
+				switch (IFM_SUBTYPE(mii->mii_media_active)) {
+				case IFM_10_T:
+				case IFM_100_TX:
+					return;
+				default:
+					break;
+				}
+			}
+			VGE_UNLOCK(sc);
+			pause("vgelnk", hz);
+			VGE_LOCK(sc);
+		}
+		if (i == MII_ANEGTICKS_GIGE)
+			device_printf(sc->vge_dev, "establishing link failed, "
+			    "WOL may not work!");
+	}
+	/*
+	 * No link, force MAC to have 100Mbps, full-duplex link.
+	 * This is the last resort and may/may not work.
+	 */
+	mii->mii_media_status = IFM_AVALID | IFM_ACTIVE;
+	mii->mii_media_active = IFM_ETHER | IFM_100_TX | IFM_FDX;
+}
+
+static void
+vge_setwol(struct vge_softc *sc)
+{
+	struct ifnet *ifp;
+	uint16_t pmstat;
+	uint8_t val;
+
+	VGE_LOCK_ASSERT(sc);
+
+	if ((sc->vge_flags & VGE_FLAG_PMCAP) == 0) {
+		/* No PME capability, PHY power down. */
+		vge_miibus_writereg(sc->vge_dev, sc->vge_phyaddr, MII_BMCR,
+		    BMCR_PDOWN);
+		vge_miipoll_stop(sc);
+		return;
+	}
+
+	ifp = sc->vge_ifp;
+
+	/* Clear WOL on pattern match. */
+	CSR_WRITE_1(sc, VGE_WOLCR0C, VGE_WOLCR0_PATTERN_ALL);
+	/* Disable WOL on magic/unicast packet. */
+	CSR_WRITE_1(sc, VGE_WOLCR1C, 0x0F);
+	CSR_WRITE_1(sc, VGE_WOLCFGC, VGE_WOLCFG_SAB | VGE_WOLCFG_SAM |
+	    VGE_WOLCFG_PMEOVR);
+	if ((ifp->if_capenable & IFCAP_WOL) != 0) {
+		vge_setlinkspeed(sc);
+		val = 0;
+		if ((ifp->if_capenable & IFCAP_WOL_UCAST) != 0)
+			val |= VGE_WOLCR1_UCAST;
+		if ((ifp->if_capenable & IFCAP_WOL_MAGIC) != 0)
+			val |= VGE_WOLCR1_MAGIC;
+		CSR_WRITE_1(sc, VGE_WOLCR1S, val);
+		val = 0;
+		if ((ifp->if_capenable & IFCAP_WOL_MCAST) != 0)
+			val |= VGE_WOLCFG_SAM | VGE_WOLCFG_SAB;
+		CSR_WRITE_1(sc, VGE_WOLCFGS, val | VGE_WOLCFG_PMEOVR);
+		/* Disable MII auto-polling. */
+		vge_miipoll_stop(sc);
+	}
+	CSR_SETBIT_1(sc, VGE_DIAGCTL,
+	    VGE_DIAGCTL_MACFORCE | VGE_DIAGCTL_FDXFORCE);
+	CSR_CLRBIT_1(sc, VGE_DIAGCTL, VGE_DIAGCTL_GMII);
+
+	/* Clear WOL status on pattern match. */
+	CSR_WRITE_1(sc, VGE_WOLSR0C, 0xFF);
+	CSR_WRITE_1(sc, VGE_WOLSR1C, 0xFF);
+
+	val = CSR_READ_1(sc, VGE_PWRSTAT);
+	val |= VGE_STICKHW_SWPTAG;
+	CSR_WRITE_1(sc, VGE_PWRSTAT, val);
+	/* Put hardware into sleep. */
+	val = CSR_READ_1(sc, VGE_PWRSTAT);
+	val |= VGE_STICKHW_DS0 | VGE_STICKHW_DS1;
+	CSR_WRITE_1(sc, VGE_PWRSTAT, val);
+	/* Request PME if WOL is requested. */
+	pmstat = pci_read_config(sc->vge_dev, sc->vge_pmcap +
+	    PCIR_POWER_STATUS, 2);
+	pmstat &= ~(PCIM_PSTAT_PME | PCIM_PSTAT_PMEENABLE);
+	if ((ifp->if_capenable & IFCAP_WOL) != 0)
+		pmstat |= PCIM_PSTAT_PME | PCIM_PSTAT_PMEENABLE;
+	pci_write_config(sc->vge_dev, sc->vge_pmcap + PCIR_POWER_STATUS,
+	    pmstat, 2);
+}
+
+static void
+vge_clrwol(struct vge_softc *sc)
+{
+	uint8_t val;
+
+	val = CSR_READ_1(sc, VGE_PWRSTAT);
+	val &= ~VGE_STICKHW_SWPTAG;
+	CSR_WRITE_1(sc, VGE_PWRSTAT, val);
+	/* Disable WOL and clear power state indicator. */
+	val = CSR_READ_1(sc, VGE_PWRSTAT);
+	val &= ~(VGE_STICKHW_DS0 | VGE_STICKHW_DS1);
+	CSR_WRITE_1(sc, VGE_PWRSTAT, val);
+
+	CSR_CLRBIT_1(sc, VGE_DIAGCTL, VGE_DIAGCTL_GMII);
+	CSR_CLRBIT_1(sc, VGE_DIAGCTL, VGE_DIAGCTL_MACFORCE);
+
+	/* Clear WOL on pattern match. */
+	CSR_WRITE_1(sc, VGE_WOLCR0C, VGE_WOLCR0_PATTERN_ALL);
+	/* Disable WOL on magic/unicast packet. */
+	CSR_WRITE_1(sc, VGE_WOLCR1C, 0x0F);
+	CSR_WRITE_1(sc, VGE_WOLCFGC, VGE_WOLCFG_SAB | VGE_WOLCFG_SAM |
+	    VGE_WOLCFG_PMEOVR);
+	/* Clear WOL status on pattern match. */
+	CSR_WRITE_1(sc, VGE_WOLSR0C, 0xFF);
+	CSR_WRITE_1(sc, VGE_WOLSR1C, 0xFF);
 }
