@@ -174,9 +174,13 @@ struct ip_fw_chain {
 	struct ip_fw	*rules;		/* list of rules */
 	struct ip_fw	*reap;		/* list of rules to reap */
 	struct ip_fw	*default_rule;
+	int		n_rules;	/* number of static rules */
+	int		static_len;	/* total len of static rules */
+	struct ip_fw    **map;	/* array of rule ptrs to ease lookup */
 	LIST_HEAD(nat_list, cfg_nat) nat;       /* list of nat entries */
 	struct radix_node_head *tables[IPFW_TABLES_MAX];
 	struct rwlock	rwmtx;
+	struct rwlock	uh_lock;	/* lock for upper half */
 	uint32_t	id;		/* ruleset id */
 };
 
@@ -187,9 +191,16 @@ struct sockopt;	/* used by tcp_var.h */
  * so the variable and the macros must be here.
  */
 
-#define	IPFW_LOCK_INIT(_chain) \
-	rw_init(&(_chain)->rwmtx, "IPFW static rules")
-#define	IPFW_LOCK_DESTROY(_chain)	rw_destroy(&(_chain)->rwmtx)
+#define	IPFW_LOCK_INIT(_chain) do {			\
+	rw_init(&(_chain)->rwmtx, "IPFW static rules");	\
+	rw_init(&(_chain)->uh_lock, "IPFW UH lock");	\
+	} while (0)
+
+#define	IPFW_LOCK_DESTROY(_chain) do {			\
+	rw_destroy(&(_chain)->rwmtx);			\
+	rw_destroy(&(_chain)->uh_lock);			\
+	} while (0)
+
 #define	IPFW_WLOCK_ASSERT(_chain)	rw_assert(&(_chain)->rwmtx, RA_WLOCKED)
 
 #define IPFW_RLOCK(p) rw_rlock(&(p)->rwmtx)
@@ -197,7 +208,12 @@ struct sockopt;	/* used by tcp_var.h */
 #define IPFW_WLOCK(p) rw_wlock(&(p)->rwmtx)
 #define IPFW_WUNLOCK(p) rw_wunlock(&(p)->rwmtx)
 
+#define IPFW_UH_RLOCK(p) rw_rlock(&(p)->uh_lock)
+#define IPFW_UH_RUNLOCK(p) rw_runlock(&(p)->uh_lock)
+#define IPFW_UH_WLOCK(p) rw_wlock(&(p)->uh_lock)
+#define IPFW_UH_WUNLOCK(p) rw_wunlock(&(p)->uh_lock)
 /* In ip_fw_sockopt.c */
+int ipfw_find_rule(struct ip_fw_chain *chain, uint32_t key, uint32_t id);
 int ipfw_add_rule(struct ip_fw_chain *chain, struct ip_fw *input_rule);
 int ipfw_ctl(struct sockopt *sopt);
 int ipfw_chk(struct ip_fw_args *args);

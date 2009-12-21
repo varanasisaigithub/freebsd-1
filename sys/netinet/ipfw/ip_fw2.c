@@ -629,31 +629,6 @@ send_reject(struct ip_fw_args *args, int code, int ip_len, struct ip *ip)
 	args->m = NULL;
 }
 
-/**
- * Return the pointer to the skipto target.
- *
- * IMPORTANT: this should only be called on SKIPTO rules, and the
- * jump target is taken from the 'rulenum' argument, which may come
- * from the rule itself (direct skipto) or not (tablearg)
- *
- * The function never returns NULL: if the requested rule is not
- * present, it returns the next rule in the chain.
- * This also happens in case of a bogus argument > 65535
- */
-static struct ip_fw *
-lookup_next_rule(struct ip_fw *me, uint32_t rulenum)
-{
-	struct ip_fw *rule;
-
-	for (rule = me->next; rule ; rule = rule->next) {
-		if (rule->rulenum >= rulenum)
-			break;
-	}
-	if (rule == NULL)	/* failure or not a skipto */
-		rule = me->next ? me->next : me;
-	return rule;
-}
-
 /*
  * Support for uid/gid/jail lookup. These tests are expensive
  * (because we may need to look into the list of active sockets)
@@ -736,6 +711,14 @@ check_uidgid(ipfw_insn_u32 *insn, int proto, struct ifnet *oif,
 	else if (insn->o.opcode == O_JAIL)
 		match = ((*uc)->cr_prison->pr_id == (int)insn->d[0]);
 	return match;
+}
+
+static inline void
+set_match(struct ip_fw_args *args, struct ip_fw *f, struct ip_fw_chain *chain)
+{
+	args->rule = (void *)(uintptr_t)f->rulenum;
+	args->rule_id = f->id;
+	args->chain_id = chain->id;
 }
 
 /*
@@ -830,6 +813,7 @@ ipfw_chk(struct ip_fw_args *args)
 	struct ifnet *oif = args->oif;
 
 	struct ip_fw *f = NULL;		/* matching rule */
+	int f_pos = 0;			/* index of f in the array */
 	int retval = 0;
 
 	/*
@@ -1167,22 +1151,14 @@ do {								\
 		 * if still present, otherwise use the default rule.
 		 * XXX If fw_one_pass != 0 then just accept it, though
 		 * the caller should never pass us such packets.
+		 * XXX rule is now the rule number so we can do a lookup
 		 */
 		if (V_fw_one_pass) {
 			IPFW_RUNLOCK(chain);
 			return (IP_FW_PASS);
 		}
-		if (chain->id == args->chain_id) { /* pointer still valid */
-			f = args->rule->next;
-		} else { /* must revalidate the pointer */
-			for (f = chain->rules; f != NULL; f = f->next)
-				if (f == args->rule && f->id == args->rule_id) {
-					f = args->rule->next;
-					break;
-				}
-		}
-		if (f == NULL) /* in case of errors, use default; */
-			f = chain->default_rule;
+		f_pos = ipfw_find_rule(chain, (uint32_t)(args->rule), args->rule_id+1);
+		f = chain->map[f_pos];
 	} else {
 		/*
 		 * Find the starting rule. It can be either the first
@@ -1191,17 +1167,14 @@ do {								\
 		int skipto = mtag ? divert_cookie(mtag) : 0;
 
 		f = chain->rules;
+		f_pos = 0;
 		if (args->eh == NULL && skipto != 0) {
 			if (skipto >= IPFW_DEFAULT_RULE) {
 				IPFW_RUNLOCK(chain);
 				return (IP_FW_DENY); /* invalid */
 			}
-			while (f && f->rulenum <= skipto)
-				f = f->next;
-			if (f == NULL) {	/* drop packet */
-				IPFW_RUNLOCK(chain);
-				return (IP_FW_DENY);
-			}
+			f_pos = ipfw_find_rule(chain, skipto, 0);
+			f = chain->map[f_pos];
 		}
 	}
 	/* reset divert rule to avoid confusion later */
@@ -1229,12 +1202,13 @@ do {								\
 	 * We can restart the inner loop by setting l>0 and f, cmd
 	 * as needed.
 	 */
-	for (; f; f = f->next) {
+	for (; f_pos < chain->n_rules; f_pos++) {
 		ipfw_insn *cmd;
 		uint32_t tablearg = 0;
 		int l, cmdlen, skip_or; /* skip rest of OR block */
 
 /* again: */
+		f = chain->map[f_pos];
 		if (V_set_disable & (1 << f->set) )
 			continue;
 
@@ -1917,6 +1891,8 @@ do {								\
 					q->pcnt++;
 					q->bcnt += pktlen;
 					f = q->rule;
+					/* the pointer is valid so we can do a lookup */
+					f_pos = ipfw_find_rule(chain, f->rulenum, f->id);
 					cmd = ACTION_PTR(f);
 					l = f->cmd_len - f->act_ofs;
 					ipfw_dyn_unlock();
@@ -1942,9 +1918,7 @@ do {								\
 
 			case O_PIPE:
 			case O_QUEUE:
-				args->rule = f; /* report matching rule */
-				args->rule_id = f->id;
-				args->chain_id = chain->id;
+				set_match(args, f, chain);
 				if (cmd->arg1 == IP_FW_TABLEARG)
 					args->cookie = tablearg;
 				else
@@ -1990,14 +1964,11 @@ do {								\
 					break;
 				}
 				/* skipto: */
-				if (cmd->arg1 == IP_FW_TABLEARG) {
-				    f = lookup_next_rule(f, tablearg);
-				} else { /* direct skipto */
-				    /* update f->next_rule if not set */
-				    if (f->next_rule == NULL)
-					f->next_rule =
-					    lookup_next_rule(f, cmd->arg1);
-				    f = f->next_rule;
+				{
+					int i = (cmd->arg1 == IP_FW_TABLEARG) ? tablearg : cmd->arg1;
+					if (i <= f->rulenum)
+						i = f->rulenum + 1;	/* no backward jumps */
+					f_pos = ipfw_find_rule(chain, i, 0);
 				}
 				/*
 				 * Skip disabled rules, and
@@ -2005,14 +1976,11 @@ do {								\
 				 * with the correct f, l and cmd.
 				 * Also clear cmdlen and skip_or
 				 */
-				while (f && (V_set_disable & (1 << f->set)))
-					f = f->next;
-				if (f) { /* found a valid rule */
-					l = f->cmd_len;
-					cmd = f->cmd;
-				} else { /* should not happen */
-					l = 0;  /* exit inner loop */
-				}
+				for (; f_pos < chain->n_rules - 1 && (V_set_disable & (1 << chain->map[f_pos]->set)); f_pos++)
+					;
+				f = chain->map[f_pos];
+				l = f->cmd_len;
+				cmd = f->cmd;
 				match = 1;
 				cmdlen = 0;
 				skip_or = 0;
@@ -2077,9 +2045,7 @@ do {								\
 
 			case O_NETGRAPH:
 			case O_NGTEE:
-				args->rule = f;	/* report matching rule */
-				args->rule_id = f->id;
-				args->chain_id = chain->id;
+				set_match(args, f, chain);
 				if (cmd->arg1 == IP_FW_TABLEARG)
 					args->cookie = tablearg;
 				else
@@ -2106,14 +2072,12 @@ do {								\
 				    struct cfg_nat *t;
 				    int nat_id;
 
-				    args->rule = f; /* Report matching rule. */
-				    args->rule_id = f->id;
-				    args->chain_id = chain->id;
+				    set_match(args, f, chain);
 				    t = ((ipfw_insn_nat *)cmd)->nat;
 				    if (t == NULL) {
 					nat_id = (cmd->arg1 == IP_FW_TABLEARG) ?
 						tablearg : cmd->arg1;
-					t = (*lookup_nat_ptr)(&V_layer3_chain.nat, nat_id);
+					t = (*lookup_nat_ptr)(&chain->nat, nat_id);
 
 					if (t == NULL) {
 					    retval = IP_FW_DENY;
@@ -2175,9 +2139,7 @@ do {								\
 				    else
 					ip->ip_sum = in_cksum(m, hlen);
 				    retval = IP_FW_REASS;
-				    args->rule = f;
-				    args->rule_id = f->id;
-				    args->chain_id = chain->id;
+				    set_match(args, f, chain);
 				}
 				done = 1;	/* exit outer loop */
 				break;
@@ -2310,50 +2272,53 @@ static int
 vnet_ipfw_init(const void *unused)
 {
 	int error;
-	struct ip_fw default_rule;
+	struct ip_fw *rule = NULL;
+	struct ip_fw_chain *chain;
+
+	chain = &V_layer3_chain;
 
 	/* First set up some values that are compile time options */
+	V_autoinc_step = 100;	/* bounded to 1..1000 in add_rule() */
+	V_fw_deny_unknown_exthdrs = 1;
 #ifdef IPFIREWALL_VERBOSE
 	V_fw_verbose = 1;
 #endif
 #ifdef IPFIREWALL_VERBOSE_LIMIT
 	V_verbose_limit = IPFIREWALL_VERBOSE_LIMIT;
 #endif
+#ifdef IPFIREWALL_NAT
+	LIST_INIT(chain->nat);
+#endif
 
-	error = ipfw_init_tables(&V_layer3_chain);
+	/* insert the default rule and create the initial map */
+	chain->n_rules = 1;
+	chain->static_len = sizeof(struct ip_fw);
+	chain->map = malloc(sizeof(struct ip_fw *), M_IPFW, M_NOWAIT | M_ZERO);
+	if (chain->map)
+		rule = malloc(chain->static_len, M_IPFW, M_NOWAIT | M_ZERO);
+	if (rule == NULL) {
+		if (chain->map)
+			free(chain->map, M_IPFW);
+		printf("ipfw2: ENOSPC initializing default rule "
+			"(support disabled)\n");
+		return (ENOSPC);
+	}
+	error = ipfw_init_tables(chain);
 	if (error) {
 		panic("init_tables"); /* XXX Marko fix this ! */
 	}
-#ifdef IPFIREWALL_NAT
-	LIST_INIT(&V_layer3_chain.nat);
-#endif
 
-	V_autoinc_step = 100;	/* bounded to 1..1000 in add_rule() */
+	/* fill and insert the default rule */
+	rule->act_ofs = 0;
+	rule->rulenum = IPFW_DEFAULT_RULE;
+	rule->cmd_len = 1;
+	rule->set = RESVD_SET;
+	rule->cmd[0].len = 1;
+	rule->cmd[0].opcode = default_to_accept ? O_ACCEPT : O_DENY;
+	chain->rules = chain->default_rule = chain->map[0] = rule;
+	chain->id = rule->id = 1;
 
-	V_fw_deny_unknown_exthdrs = 1;
-
-	V_layer3_chain.rules = NULL;
-	IPFW_LOCK_INIT(&V_layer3_chain);
-
-	bzero(&default_rule, sizeof default_rule);
-	default_rule.act_ofs = 0;
-	default_rule.rulenum = IPFW_DEFAULT_RULE;
-	default_rule.cmd_len = 1;
-	default_rule.set = RESVD_SET;
-	default_rule.cmd[0].len = 1;
-	default_rule.cmd[0].opcode = default_to_accept ? O_ACCEPT : O_DENY;
-	error = ipfw_add_rule(&V_layer3_chain, &default_rule);
-
-	if (error != 0) {
-		printf("ipfw2: error %u initializing default rule "
-			"(support disabled)\n", error);
-		IPFW_LOCK_DESTROY(&V_layer3_chain);
-		printf("leaving ipfw_iattach (1) with error %d\n", error);
-		return (error);
-	}
-
-	V_layer3_chain.default_rule = V_layer3_chain.rules;
-
+	IPFW_LOCK_INIT(chain);
 	ipfw_dyn_init();
 
 	/* First set up some values that are compile time options */
