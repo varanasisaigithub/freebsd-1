@@ -140,7 +140,6 @@ again:
 		args.rule = dt->rule;
 		args.rule_id = dt->rule_id;
 		args.chain_id = dt->chain_id;
-
 		m_tag_delete(*m0, dn_tag);
 	}
 
@@ -273,7 +272,6 @@ again:
 		args.rule = dt->rule;
 		args.rule_id = dt->rule_id;
 		args.chain_id = dt->chain_id;
-
 		m_tag_delete(*m0, dn_tag);
 	}
 
