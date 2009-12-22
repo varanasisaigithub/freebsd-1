@@ -1189,7 +1189,7 @@ do {								\
 	 * need to break out of one or both loops, or re-enter one of
 	 * the loops with updated variables. Loop variables are:
 	 *
-	 *	f (outer loop) points to the current rule.
+	 *	f_pos (outer loop) points to the current rule.
 	 *		On output it points to the matching rule.
 	 *	done (outer loop) is used as a flag to break the loop.
 	 *	l (inner loop)	residual length of current rule.
@@ -1198,7 +1198,7 @@ do {								\
 	 * We break the inner loop by setting l=0 and possibly
 	 * cmdlen=0 if we don't want to advance cmd.
 	 * We break the outer loop by setting done=1
-	 * We can restart the inner loop by setting l>0 and f, cmd
+	 * We can restart the inner loop by setting l>0 and f_pos, f, cmd
 	 * as needed.
 	 */
 	for (; f_pos < chain->n_rules; f_pos++) {
@@ -1827,8 +1827,8 @@ do {								\
 			 * Exceptions:
 			 * O_COUNT and O_SKIPTO actions:
 			 *   instead of terminating, we jump to the next rule
-			 *   (setting l=0), or to the SKIPTO target (by
-			 *   setting f, cmd and l as needed), respectively.
+			 *   (setting l=0), or to the SKIPTO target (setting
+			 *   f/f_len, cmd and l as needed), respectively.
 			 *
 			 * O_TAG, O_LOG and O_ALTQ action parameters:
 			 *   perform some action and set match = 1;
@@ -1892,7 +1892,7 @@ do {								\
 					/* XXX we would like to have f_pos
 					 * readily accessible in the dynamic
 				         * rule, instead of having to
-					 * looku q->rule.
+					 * lookup q->rule.
 					 */
 					f = q->rule;
 					f_pos = ipfw_find_rule(chain,
@@ -1959,39 +1959,57 @@ do {								\
 				break;
 
 			case O_COUNT:
-			case O_SKIPTO:
-			    {
-				int i;
-
 				f->pcnt++;	/* update stats */
 				f->bcnt += pktlen;
 				f->timestamp = time_uptime;
-				if (cmd->opcode == O_COUNT) {
-					l = 0;		/* exit inner loop */
-					break;
-				}
-				/* skipto: */
-				i = (cmd->arg1 == IP_FW_TABLEARG) ?
+				l = 0;		/* exit inner loop */
+				break;
+
+			case O_SKIPTO:
+			    f->pcnt++;	/* update stats */
+			    f->bcnt += pktlen;
+			    f->timestamp = time_uptime;
+			    /* If possible use cached f_pos (in f->next_rule),
+			     * whose version is written in f->next_rule
+			     * (horrible hacks to avoid changing the ABI).
+			     */
+			    if (cmd->arg1 != IP_FW_TABLEARG &&
+				    (uint32_t)f->x_next == chain->id) {
+				f_pos = (uint32_t)f->next_rule;
+			    } else {
+				int i = (cmd->arg1 == IP_FW_TABLEARG) ?
 					tablearg : cmd->arg1;
 				/* make sure we do not jump backward */
 				if (i <= f->rulenum)
-					i = f->rulenum + 1;
+				    i = f->rulenum + 1;
 				f_pos = ipfw_find_rule(chain, i, 0);
+				/* update the cache */
+				if (cmd->arg1 != IP_FW_TABLEARG) {
+				    f->next_rule =
+					(void *)(uintptr_t)f_pos;
+				    f->x_next =
+					(void *)(uintptr_t)chain->id;
+				}
 			    }
-				/*
-				 * Skip disabled rules, and
-				 * re-enter the inner loop
-				 * with the correct f, l and cmd.
-				 * Also clear cmdlen and skip_or
-				 */
-				for (; f_pos < chain->n_rules - 1 && (V_set_disable & (1 << chain->map[f_pos]->set)); f_pos++)
-					;
-				l = f->cmd_len;
-				cmd = f->cmd;
-				match = 1;
-				cmdlen = 0;
-				skip_or = 0;
-				break;
+			    /*
+			     * Skip disabled rules, and re-enter
+			     * the inner loop with the correct
+			     * f_pos, f, l and cmd.
+			     * Also clear cmdlen and skip_or
+			     */
+			    for (; f_pos < chain->n_rules - 1 &&
+				    (V_set_disable &
+				     (1 << chain->map[f_pos]->set));
+				    f_pos++)
+				;
+			    /* prepare to enter the inner loop */
+			    f = chain->map[f_pos];
+			    l = f->cmd_len;
+			    cmd = f->cmd;
+			    match = 1;
+			    cmdlen = 0;
+			    skip_or = 0;
+			    break;
 
 			case O_REJECT:
 				/*

@@ -180,9 +180,9 @@ ipfw_add_rule(struct ip_fw_chain *chain, struct ip_fw *input_rule)
 	}
 
 	bcopy(input_rule, rule, l);
+	/* clear fields not settable from userland */
 	rule->x_next = NULL;
-	//rule->next_rule = NULL;
-
+	rule->next_rule = NULL;
 	rule->pcnt = 0;
 	rule->bcnt = 0;
 	rule->timestamp = 0;
