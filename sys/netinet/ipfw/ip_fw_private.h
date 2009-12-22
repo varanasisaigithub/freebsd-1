@@ -78,9 +78,16 @@ struct ip_fw_args {
 	struct mbuf	*m;		/* the mbuf chain		*/
 	struct ifnet	*oif;		/* output interface		*/
 	struct sockaddr_in *next_hop;	/* forward address		*/
-	struct ip_fw	*rule;		/* matching rule		*/
-	uint32_t	rule_id;	/* matching rule id */
-	uint32_t	chain_id;	/* ruleset id */
+
+	/* chain_id validates 'slot', the location of the pointer to
+	 * a matching rule.
+	 * If invalid, we can lookup the rule using rule_id and rulenum
+	 */
+	uint32_t	slot;		/* slot for matching rule	*/
+	uint32_t	rulenum;	/* matching rule number		*/
+	uint32_t	rule_id;	/* matching rule id		*/
+	uint32_t	chain_id;	/* ruleset id			*/
+
 	struct ether_header *eh;	/* for bridged packets		*/
 
 	struct ipfw_flow_id f_id;	/* grabbed from IP header	*/
@@ -212,13 +219,13 @@ struct sockopt;	/* used by tcp_var.h */
 #define IPFW_UH_RUNLOCK(p) rw_runlock(&(p)->uh_lock)
 #define IPFW_UH_WLOCK(p) rw_wlock(&(p)->uh_lock)
 #define IPFW_UH_WUNLOCK(p) rw_wunlock(&(p)->uh_lock)
+
 /* In ip_fw_sockopt.c */
 int ipfw_find_rule(struct ip_fw_chain *chain, uint32_t key, uint32_t id);
 int ipfw_add_rule(struct ip_fw_chain *chain, struct ip_fw *input_rule);
 int ipfw_ctl(struct sockopt *sopt);
 int ipfw_chk(struct ip_fw_args *args);
 void ipfw_reap_rules(struct ip_fw *head);
-void ipfw_free_chain(struct ip_fw_chain *chain, int kill_default);
 
 /* In ip_fw_table.c */
 struct radix_node;

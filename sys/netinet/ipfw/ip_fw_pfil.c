@@ -125,7 +125,8 @@ ipfw_check_in(void *arg, struct mbuf **m0, struct ifnet *ifp, int dir,
 	if (ng_tag != NULL) {
 		KASSERT(ng_tag->dir == NG_IPFW_IN,
 		    ("ng_ipfw tag with wrong direction"));
-		args.rule = ng_tag->rule;
+		args.slot = ng_tag->slot;
+		args.rulenum = ng_tag->rulenum;
 		args.rule_id = ng_tag->rule_id;
 		args.chain_id = ng_tag->chain_id;
 		m_tag_delete(*m0, (struct m_tag *)ng_tag);
@@ -137,7 +138,8 @@ again:
 		struct dn_pkt_tag *dt;
 
 		dt = (struct dn_pkt_tag *)(dn_tag+1);
-		args.rule = dt->rule;
+		args.slot = dt->slot;
+		args.rulenum = dt->rulenum;
 		args.rule_id = dt->rule_id;
 		args.chain_id = dt->chain_id;
 		m_tag_delete(*m0, dn_tag);
@@ -147,7 +149,7 @@ again:
 	args.inp = inp;
 	tee = 0;
 
-	if (V_fw_one_pass == 0 || args.rule == NULL) {
+	if (V_fw_one_pass == 0 || args.slot == 0) {
 		ipfw = ipfw_chk(&args);
 		*m0 = args.m;
 	} else
@@ -200,7 +202,7 @@ again:
 			*m0 = NULL;
 			return 0;	/* packet consumed */
 		} else {
-			args.rule = NULL;
+			args.slot = 0;
 			goto again;	/* continue with packet */
 		}
 
@@ -257,7 +259,8 @@ ipfw_check_out(void *arg, struct mbuf **m0, struct ifnet *ifp, int dir,
 	if (ng_tag != NULL) {
 		KASSERT(ng_tag->dir == NG_IPFW_OUT,
 		    ("ng_ipfw tag with wrong direction"));
-		args.rule = ng_tag->rule;
+		args.slot = ng_tag->slot;
+		args.rulenum = ng_tag->rulenum;
 		args.rule_id = ng_tag->rule_id;
 		args.chain_id = ng_tag->chain_id;
 		m_tag_delete(*m0, (struct m_tag *)ng_tag);
@@ -269,7 +272,8 @@ again:
 		struct dn_pkt_tag *dt;
 
 		dt = (struct dn_pkt_tag *)(dn_tag+1);
-		args.rule = dt->rule;
+		args.slot = dt->slot;
+		args.rulenum = dt->rulenum;
 		args.rule_id = dt->rule_id;
 		args.chain_id = dt->chain_id;
 		m_tag_delete(*m0, dn_tag);
@@ -280,7 +284,7 @@ again:
 	args.inp = inp;
 	tee = 0;
 
-	if (V_fw_one_pass == 0 || args.rule == NULL) {
+	if (V_fw_one_pass == 0 || args.slot == 0) {
 		ipfw = ipfw_chk(&args);
 		*m0 = args.m;
 	} else
@@ -339,7 +343,7 @@ again:
 			*m0 = NULL;
 			return 0;	/* packet consumed */
 		} else {
-			args.rule = NULL;
+			args.slot = 0;
 			goto again;	/* continue with packet */
 		}
 
