@@ -717,12 +717,12 @@ check_uidgid(ipfw_insn_u32 *insn, int proto, struct ifnet *oif,
  */
 static inline void
 set_match(struct ip_fw_args *args, int slot,
-	struct ip_fw *f, struct ip_fw_chain *chain)
+	struct ip_fw_chain *chain)
 {
 	args->chain_id = chain->id;
 	args->slot = slot + 1; /* we use 0 as a marker */
-	args->rule_id = f->id;
-	args->rulenum = f->rulenum;
+	args->rule_id = chain->map[slot]->id;
+	args->rulenum = chain->map[slot]->rulenum;
 }
 
 /*
@@ -1922,7 +1922,7 @@ do {								\
 
 			case O_PIPE:
 			case O_QUEUE:
-				set_match(args, f_pos, f, chain);
+				set_match(args, f_pos, chain);
 				args->cookie = (cmd->arg1 == IP_FW_TABLEARG) ?
 					tablearg : cmd->arg1;
 				if (cmd->opcode == O_QUEUE)
@@ -2070,7 +2070,7 @@ do {								\
 
 			case O_NETGRAPH:
 			case O_NGTEE:
-				set_match(args, f_pos, f, chain);
+				set_match(args, f_pos, chain);
 				args->cookie = (cmd->arg1 == IP_FW_TABLEARG) ?
 					tablearg : cmd->arg1;
 				retval = (cmd->opcode == O_NETGRAPH) ?
@@ -2095,7 +2095,7 @@ do {								\
 				    struct cfg_nat *t;
 				    int nat_id;
 
-				    set_match(args, f_pos, f, chain);
+				    set_match(args, f_pos, chain);
 				    t = ((ipfw_insn_nat *)cmd)->nat;
 				    if (t == NULL) {
 					nat_id = (cmd->arg1 == IP_FW_TABLEARG) ?
@@ -2162,7 +2162,7 @@ do {								\
 				    else
 					ip->ip_sum = in_cksum(m, hlen);
 				    retval = IP_FW_REASS;
-				    set_match(args, f_pos, f, chain);
+				    set_match(args, f_pos, chain);
 				}
 				done = 1;	/* exit outer loop */
 				break;
