@@ -425,8 +425,10 @@ ipfw_divert(struct mbuf **m, int incoming, int tee)
 		if (reass != NULL) {
 			ip = mtod(reass, struct ip *);
 			hlen = ip->ip_hl << 2;
+#ifndef HAVE_NET_IPLEN
 			ip->ip_len = htons(ip->ip_len);
 			ip->ip_off = htons(ip->ip_off);
+#endif /* !HAVE_NET_IPLEN */
 			ip->ip_sum = 0;
 			if (hlen == sizeof(struct ip))
 				ip->ip_sum = in_cksum_hdr(ip);
@@ -436,9 +438,11 @@ ipfw_divert(struct mbuf **m, int incoming, int tee)
 		} else
 			clone = NULL;
 	} else {
+#ifndef HAVE_NET_IPLEN
 		/* Convert header to network byte order. */
 		ip->ip_len = htons(ip->ip_len);
 		ip->ip_off = htons(ip->ip_off);
+#endif /* !HAVE_NET_IPLEN */
 	}
 
 	/* Do the dirty job... */

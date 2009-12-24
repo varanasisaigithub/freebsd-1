@@ -607,8 +607,10 @@ send_reject(struct ip_fw_args *args, int code, int ip_len, struct ip *ip)
 	if (code != ICMP_REJECT_RST) { /* Send an ICMP unreach */
 		/* We need the IP header in host order for icmp_error(). */
 		if (args->eh != NULL) {
+#ifndef HAVE_NET_IPLEN
 			ip->ip_len = ntohs(ip->ip_len);
 			ip->ip_off = ntohs(ip->ip_off);
+#endif /* !HAVE_NET_IPLEN */
 		}
 		icmp_error(args->m, ICMP_UNREACH, code, 0L, 0);
 	} else if (args->f_id.proto == IPPROTO_TCP) {
@@ -1094,10 +1096,13 @@ do {								\
 		proto = ip->ip_p;
 		src_ip = ip->ip_src;
 		dst_ip = ip->ip_dst;
+#ifndef HAVE_NET_IPLEN
 		if (args->eh != NULL) { /* layer 2 packets are as on the wire */
 			offset = ntohs(ip->ip_off) & IP_OFFMASK;
 			ip_len = ntohs(ip->ip_len);
-		} else {
+		} else
+#endif /* !HAVE_NET_IPLEN */
+		{
 			offset = ip->ip_off & IP_OFFMASK;
 			ip_len = ip->ip_len;
 		}
@@ -2124,8 +2129,13 @@ do {								\
 				f->bcnt += pktlen;
 				l = 0;	/* in any case exit inner loop */
 
-				ip_off = (args->eh != NULL) ?
-					ntohs(ip->ip_off) : ip->ip_off;
+#ifndef HAVE_NET_IPLEN
+				if (args->eh == NULL)
+					ip_off = ip->ip_off;
+				else
+#endif /* !HAVE_NET_IPLEN */
+				ip_off = ntohs(ip->ip_off);
+
 				/* if not fragmented, go to next rule */
 				if ((ip_off & (IP_MF | IP_OFFMASK)) == 0)
 				    break;
@@ -2134,10 +2144,12 @@ do {								\
 				 * byte order: fix them in case we come
 				 * from layer2.
 				 */
+#ifndef HAVE_NET_IPLEN
 				if (args->eh != NULL) {
 				    ip->ip_len = ntohs(ip->ip_len);
 				    ip->ip_off = ntohs(ip->ip_off);
 				}
+#endif /* !HAVE_NET_IPLEN */
 
 				args->m = m = ip_reass(m);
 
@@ -2153,9 +2165,11 @@ do {								\
 
 				    ip = mtod(m, struct ip *);
 				    hlen = ip->ip_hl << 2;
+#ifndef HAVE_NET_IPLEN
 				    /* revert len & off for layer2 pkts */
 				    if (args->eh != NULL)
 					ip->ip_len = htons(ip->ip_len);
+#endif /* !HAVE_NET_IPLEN */
 				    ip->ip_sum = 0;
 				    if (hlen == sizeof(struct ip))
 					ip->ip_sum = in_cksum_hdr(ip);

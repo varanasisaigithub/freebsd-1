@@ -991,8 +991,10 @@ dummynet_send(struct mbuf *m)
 			break ;
 		case DN_TO_IP_IN :
 			ip = mtod(m, struct ip *);
+#ifndef HAVE_NET_IPLEN
 			ip->ip_len = htons(ip->ip_len);
 			ip->ip_off = htons(ip->ip_off);
+#endif
 			netisr_dispatch(NETISR_IP, m);
 			break;
 #ifdef INET6

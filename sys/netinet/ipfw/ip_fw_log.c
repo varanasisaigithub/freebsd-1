@@ -158,18 +158,22 @@ ipfw_log(struct ip_fw *f, u_int hlen, struct ip_fw_args *args,
 			 * more info in the header
 			 */
 			mh.mh_data = "DDDDDDSSSSSS\x08\x00";
+#ifndef HAVE_NET_IPLEN
 			if (args->f_id.addr_type == 4) {
 				/* restore wire format */
 				ip->ip_off = ntohs(ip->ip_off);
 				ip->ip_len = ntohs(ip->ip_len);
 			}
+#endif /* !HAVE_NET_IPLEN */
 		}
 		BPF_MTAP(log_if, (struct mbuf *)&mh);
+#ifndef HAVE_NET_IPLEN
 		if (args->eh == NULL && args->f_id.addr_type == 4) {
 			/* restore host format */
 			ip->ip_off = htons(ip->ip_off);
 			ip->ip_len = htons(ip->ip_len);
 		}
+#endif /* !HAVE_NET_IPLEN */
 		return;
 	}
 	/* the old 'log' function */
@@ -404,10 +408,13 @@ ipfw_log(struct ip_fw *f, u_int hlen, struct ip_fw_args *args,
 #endif
 		{
 			int ip_off, ip_len;
+#ifndef HAVE_NET_IPLEN
 			if (eh != NULL) { /* layer 2 packets are as on the wire */
 				ip_off = ntohs(ip->ip_off);
 				ip_len = ntohs(ip->ip_len);
-			} else {
+			} else
+#endif /* !HAVE_NET_IPLEN */
+			{
 				ip_off = ip->ip_off;
 				ip_len = ip->ip_len;
 			}

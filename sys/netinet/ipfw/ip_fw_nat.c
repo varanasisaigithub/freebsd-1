@@ -222,10 +222,12 @@ ipfw_nat(struct ip_fw_args *args, struct cfg_nat *t, struct mbuf *m)
 		return (IP_FW_DENY);
 	}
 	ip = mtod(mcl, struct ip *);
+#ifndef HAVE_NET_IPLEN
 	if (args->eh == NULL) {
 		ip->ip_len = htons(ip->ip_len);
 		ip->ip_off = htons(ip->ip_off);
 	}
+#endif /* !HAVE_NET_IPLEN */
 
 	/*
 	 * XXX - Libalias checksum offload 'duct tape':
@@ -335,12 +337,12 @@ ipfw_nat(struct ip_fw_args *args, struct cfg_nat *t, struct mbuf *m)
 		}
 		ip->ip_len = htons(ip->ip_len);
 	}
-
+#ifndef HAVE_NET_IPLEN
 	if (args->eh == NULL) {
 		ip->ip_len = ntohs(ip->ip_len);
 		ip->ip_off = ntohs(ip->ip_off);
 	}
-
+#endif /* !HAVE_NET_IPLEN */
 	args->m = mcl;
 	return (IP_FW_NAT);
 }
