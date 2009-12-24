@@ -409,14 +409,14 @@ ipfw_log(struct ip_fw *f, u_int hlen, struct ip_fw_args *args,
 		{
 			int ip_off, ip_len;
 #ifndef HAVE_NET_IPLEN
-			if (eh != NULL) { /* layer 2 packets are as on the wire */
-				ip_off = ntohs(ip->ip_off);
-				ip_len = ntohs(ip->ip_len);
+			if (eh == NULL) {
+				ip_off = ip->ip_off;
+				ip_len = ip->ip_len;
 			} else
 #endif /* !HAVE_NET_IPLEN */
 			{
-				ip_off = ip->ip_off;
-				ip_len = ip->ip_len;
+				ip_off = ntohs(ip->ip_off);
+				ip_len = ntohs(ip->ip_len);
 			}
 			if (ip_off & (IP_MF | IP_OFFMASK))
 				snprintf(SNPARGS(fragment, 0),

@@ -994,7 +994,7 @@ dummynet_send(struct mbuf *m)
 #ifndef HAVE_NET_IPLEN
 			ip->ip_len = htons(ip->ip_len);
 			ip->ip_off = htons(ip->ip_off);
-#endif
+#endif /* !HAVE_NET_IPLEN */
 			netisr_dispatch(NETISR_IP, m);
 			break;
 #ifdef INET6

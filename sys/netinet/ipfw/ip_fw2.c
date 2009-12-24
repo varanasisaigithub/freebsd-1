@@ -605,14 +605,13 @@ send_reject(struct ip_fw_args *args, int code, int ip_len, struct ip *ip)
 		m_adj(m, args->L3offset);
 #endif
 	if (code != ICMP_REJECT_RST) { /* Send an ICMP unreach */
-		/* We need the IP header in host order for icmp_error(). */
 #ifndef HAVE_NET_IPLEN
-		if (args->eh != NULL)
-#endif /* !HAVE_NET_IPLEN */
-		{
+		/* We need the IP header in host order for icmp_error(). */
+		if (args->eh != NULL) {
 			ip->ip_len = ntohs(ip->ip_len);
 			ip->ip_off = ntohs(ip->ip_off);
 		}
+#endif /* !HAVE_NET_IPLEN */
 		icmp_error(args->m, ICMP_UNREACH, code, 0L, 0);
 	} else if (args->f_id.proto == IPPROTO_TCP) {
 		struct tcphdr *const tcp =
@@ -2140,12 +2139,12 @@ do {								\
 				/* if not fragmented, go to next rule */
 				if ((ip_off & (IP_MF | IP_OFFMASK)) == 0)
 				    break;
+#ifndef HAVE_NET_IPLEN
 				/* 
 				 * ip_reass() expects len & off in host
 				 * byte order: fix them in case we come
 				 * from layer2.
 				 */
-#ifndef HAVE_NET_IPLEN
 				if (args->eh != NULL) {
 				    ip->ip_len = ntohs(ip->ip_len);
 				    ip->ip_off = ntohs(ip->ip_off);
@@ -2168,12 +2167,11 @@ do {								\
 				    hlen = ip->ip_hl << 2;
 #ifndef HAVE_NET_IPLEN
 				    /* revert len. & off to net format if needed */
-				    if (args->eh != NULL)
-#endif /* !HAVE_NET_IPLEN */
-				    {
+				    if (args->eh != NULL) {
 					ip->ip_len = htons(ip->ip_len);
 					ip->ip_off = htons(ip->ip_off);
 				    }
+#endif /* !HAVE_NET_IPLEN */
 				    ip->ip_sum = 0;
 				    if (hlen == sizeof(struct ip))
 					ip->ip_sum = in_cksum_hdr(ip);
