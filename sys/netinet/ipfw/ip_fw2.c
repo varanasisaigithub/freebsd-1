@@ -1974,8 +1974,8 @@ do {								\
 			     * (horrible hacks to avoid changing the ABI).
 			     */
 			    if (cmd->arg1 != IP_FW_TABLEARG &&
-				    (uint32_t)f->x_next == chain->id) {
-				f_pos = (uint32_t)f->next_rule;
+				    (uintptr_t)f->x_next == chain->id) {
+				f_pos = (uintptr_t)f->next_rule;
 			    } else {
 				int i = (cmd->arg1 == IP_FW_TABLEARG) ?
 					tablearg : cmd->arg1;

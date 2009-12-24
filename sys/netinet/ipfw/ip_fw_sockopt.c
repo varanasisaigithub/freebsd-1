@@ -1,5 +1,7 @@
 /*-
- * Copyright (c) 2002 Luigi Rizzo, Universita` di Pisa
+ * Copyright (c) 2002-2009 Luigi Rizzo, Universita` di Pisa
+ *
+ * Supported by: Valeria Paoli
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,9 +27,6 @@
 
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
-
-#define        DEB(x)
-#define        DDB(x) x
 
 /*
  * Sockopt support for ipfw. The routines here implement
@@ -508,7 +507,6 @@ check_ipfw_struct(struct ip_fw *rule, int size)
 			    cmd->opcode);
 			return EINVAL;
 		}
-		DEB(printf("ipfw: opcode %d\n", cmd->opcode);)
 		switch (cmd->opcode) {
 		case O_PROBE_STATE:
 		case O_KEEP_STATE:
@@ -881,6 +879,9 @@ ipfw_ctl(struct sockopt *sopt)
 			if (size >= want)
 				error = sooptcopyout(sopt, buf, len);
 			free(buf, M_TEMP);
+			if (size >= want)
+				break;
+		}
 			if (size >= want)
 				break;
 		}
