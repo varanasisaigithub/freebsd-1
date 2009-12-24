@@ -882,9 +882,6 @@ ipfw_ctl(struct sockopt *sopt)
 			if (size >= want)
 				break;
 		}
-			if (size >= want)
-				break;
-		}
 		break;
 
 	case IP_FW_FLUSH:
