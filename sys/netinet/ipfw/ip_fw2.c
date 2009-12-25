@@ -75,15 +75,12 @@ __FBSDID("$FreeBSD$");
 #include <netinet/ip_fw.h>
 #include <netinet/ipfw/ip_fw_private.h>
 #include <netinet/ip_divert.h>
-#include <netinet/ip_dummynet.h>
 #include <netinet/ip_carp.h>
 #include <netinet/pim.h>
 #include <netinet/tcp_var.h>
 #include <netinet/udp.h>
 #include <netinet/udp_var.h>
 #include <netinet/sctp.h>
-
-#include <netgraph/ng_ipfw.h>
 
 #include <netinet/ip6.h>
 #include <netinet/icmp6.h>
@@ -1149,6 +1146,7 @@ do {								\
 		IPFW_RUNLOCK(chain);
 		return (IP_FW_PASS);	/* accept */
 	}
+	/* XXX divert should be handled same as other tags */
 	mtag = m_tag_find(m, PACKET_TAG_DIVERT, NULL);
 	if (args->slot) {
 		/*
