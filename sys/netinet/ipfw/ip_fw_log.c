@@ -138,7 +138,6 @@ ipfw_log(struct ip_fw *f, u_int hlen, struct ip_fw_args *args,
     struct mbuf *m, struct ifnet *oif, u_short offset, uint32_t tablearg,
     struct ip *ip)
 {
-	struct ether_header *eh = args->eh;
 	char *action;
 	int limit_reached = 0;
 	char action2[40], proto[128], fragment[32];
@@ -409,7 +408,7 @@ ipfw_log(struct ip_fw *f, u_int hlen, struct ip_fw_args *args,
 		{
 			int ip_off, ip_len;
 #ifndef HAVE_NET_IPLEN
-			if (eh == NULL) {
+			if (args->eh == NULL) {
 				ip_off = ip->ip_off;
 				ip_len = ip->ip_len;
 			} else
