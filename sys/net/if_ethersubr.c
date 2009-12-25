@@ -467,13 +467,16 @@ ether_ipfw_chk(struct mbuf **m0, struct ifnet *dst, int shared)
 	struct mbuf *m;
 	int i;
 	struct ip_fw_args args;
-	struct dn_pkt_tag *dn_tag;
+	struct m_tag *mtag;
 
-	dn_tag = ip_dn_claim_tag(*m0);
-
-	if (dn_tag == NULL) {
+	mtag = m_tag_find(*m0, PACKET_TAG_DUMMYNET, NULL);
+	if (mtag == NULL) {
 		args.slot = 0;
 	} else {
+		struct dn_pkt_tag *dn_tag;
+
+		mtag->m_tag_id = PACKET_TAG_NONE;
+		dn_tag = (struct dn_pkt_tag *)(mtag + 1);
 		if (dn_tag->slot != 0 && V_fw_one_pass)
 			/* dummynet packet, already partially processed */
 			return (1);
