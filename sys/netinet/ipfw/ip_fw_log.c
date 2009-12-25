@@ -87,6 +87,12 @@ __FBSDID("$FreeBSD$");
 #define SNPARGS(buf, len) buf + len, sizeof(buf) > len ? sizeof(buf) - len : 0
 #define SNP(buf) buf, sizeof(buf)
 
+#ifdef WITHOUT_BPF
+void
+ipfw_log_bpf(int onoff)
+{
+}
+#else /* !WITHOUT_BPF */
 static struct ifnet *log_if;	/* hook to attach to bpf */
 
 /* we use this dummy function for all ifnet callbacks */
@@ -128,6 +134,7 @@ ipfw_log_bpf(int onoff)
 		log_if = NULL;
 	}
 }
+#endif /* !WITHOUT_BPF */
 
 /*
  * We enter here when we have a rule with O_LOG.
@@ -143,6 +150,7 @@ ipfw_log(struct ip_fw *f, u_int hlen, struct ip_fw_args *args,
 	char action2[40], proto[128], fragment[32];
 
 	if (V_fw_verbose == 0) {
+#ifndef WITHOUT_BPF
 		struct m_hdr mh;
 
 		if (log_if == NULL || log_if->if_bpf == NULL)
@@ -173,6 +181,7 @@ ipfw_log(struct ip_fw *f, u_int hlen, struct ip_fw_args *args,
 			ip->ip_len = htons(ip->ip_len);
 		}
 #endif /* !HAVE_NET_IPLEN */
+#endif /* !WITHOUT_BPF */
 		return;
 	}
 	/* the old 'log' function */
