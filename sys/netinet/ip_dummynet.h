@@ -377,21 +377,4 @@ struct dn_pipe_max {
 
 SLIST_HEAD(dn_pipe_head, dn_pipe);
 
-#ifdef _KERNEL
-
-/*
- * Return the dummynet tag; if any.
- * Make sure that the dummynet tag is not reused by lower layers.
- */
-static __inline struct dn_pkt_tag *
-ip_dn_claim_tag(struct mbuf *m)
-{
-	struct m_tag *mtag = m_tag_find(m, PACKET_TAG_DUMMYNET, NULL);
-	if (mtag != NULL) {
-		mtag->m_tag_id = PACKET_TAG_NONE;
-		return ((struct dn_pkt_tag *)(mtag + 1));
-	} else
-		return (NULL);
-}
-#endif
 #endif /* _IP_DUMMYNET_H */
