@@ -29,14 +29,11 @@ __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/condvar.h>
 #include <sys/eventhandler.h>
 #include <sys/malloc.h>
 #include <sys/kernel.h>
 #include <sys/lock.h>
 #include <sys/module.h>
-#include <sys/priv.h>
-#include <sys/proc.h>
 #include <sys/rwlock.h>
 
 #define        IPFW_INTERNAL   /* Access to protected data structures in ip_fw.h. */
