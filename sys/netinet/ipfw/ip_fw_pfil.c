@@ -46,9 +46,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/lock.h>
 #include <sys/rwlock.h>
 #include <sys/socket.h>
-#include <sys/socketvar.h>
 #include <sys/sysctl.h>
-#include <sys/ucred.h>
 
 #include <net/if.h>
 #include <net/route.h>
@@ -239,7 +237,7 @@ ipfw_check_out(void *arg, struct mbuf **m0, struct ifnet *ifp, int dir,
 	struct ip_fw_args args;
 	struct ng_ipfw_tag *ng_tag;
 	struct m_tag *dn_tag;
-	int ipfw = 0;
+	int ipfw;
 	int divert;
 	int tee;
 #ifdef IPFIREWALL_FORWARD
@@ -392,14 +390,14 @@ ipfw_divert(struct mbuf **m, int incoming, int tee)
 		goto nodivert;
 
 	/* Cloning needed for tee? */
-	if (tee)
+	if (tee) {
 		clone = m_dup(*m, M_DONTWAIT);
-	else
+		/* In case m_dup was unable to allocate mbufs. */
+		if (clone == NULL)
+			return 0;
+	} else
 		clone = *m;
 
-	/* In case m_dup was unable to allocate mbufs. */
-	if (clone == NULL)
-		goto teeout;
 
 	/*
 	 * Divert listeners can only handle non-fragmented packets.
@@ -445,7 +443,6 @@ ipfw_divert(struct mbuf **m, int incoming, int tee)
 	if (clone && ip_divert_ptr != NULL)
 		ip_divert_ptr(clone, incoming);
 
-teeout:
 	/*
 	 * For tee we leave the divert tag attached to original packet.
 	 * It will then continue rule evaluation after the tee rule.
