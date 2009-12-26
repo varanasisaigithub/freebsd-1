@@ -986,10 +986,10 @@ dummynet_send(struct mbuf *m)
 		}
 
 		switch (dst) {
-		case DN_TO_IP_OUT:
+		case DIR_OUT:
 			ip_output(m, NULL, NULL, IP_FORWARDING, NULL, NULL);
 			break ;
-		case DN_TO_IP_IN :
+		case DIR_IN :
 			ip = mtod(m, struct ip *);
 #ifndef HAVE_NET_IPLEN
 			ip->ip_len = htons(ip->ip_len);
@@ -998,22 +998,22 @@ dummynet_send(struct mbuf *m)
 			netisr_dispatch(NETISR_IP, m);
 			break;
 #ifdef INET6
-		case DN_TO_IP6_IN:
+		case DIR_IN | PROTO_IPV6:
 			netisr_dispatch(NETISR_IPV6, m);
 			break;
 
-		case DN_TO_IP6_OUT:
+		case DIR_OUT | PROTO_IPV6:
 			ip6_output(m, NULL, NULL, IPV6_FORWARDING, NULL, NULL, NULL);
 			break;
 #endif
-		case DN_TO_IFB_FWD:
+		case DIR_FWD | PROTO_IFB: /* DN_TO_IFB_FWD: */
 			if (bridge_dn_p != NULL)
 				((*bridge_dn_p)(m, pkt->ifp));
 			else
 				printf("dummynet: if_bridge not loaded\n");
 
 			break;
-		case DN_TO_ETH_DEMUX:
+		case DIR_IN | PROTO_LAYER2: /* DN_TO_ETH_DEMUX: */
 			/*
 			 * The Ethernet code assumes the Ethernet header is
 			 * contiguous in the first mbuf header.
@@ -1027,7 +1027,7 @@ dummynet_send(struct mbuf *m)
 			}
 			ether_demux(m->m_pkthdr.rcvif, m);
 			break;
-		case DN_TO_ETH_OUT:
+		case DIR_OUT | PROTO_LAYER2: /* N_TO_ETH_OUT: */
 			ether_output_frame(pkt->ifp, m);
 			break;
 
@@ -1550,8 +1550,8 @@ dummynet_io(struct mbuf **m0, int dir, struct ip_fw_args *fwa)
 		}
 	}
 done:
-	if (head == m && dir != DN_TO_IFB_FWD && dir != DN_TO_ETH_DEMUX &&
-	    dir != DN_TO_ETH_OUT) {	/* Fast io. */
+	if (head == m && (dir & PROTO_LAYER2) == 0 ) {
+		/* Fast io. */
 		io_pkt_fast++;
 		if (m->m_nextpkt != NULL)
 			printf("dummynet: fast io: pkt chain detected!\n");

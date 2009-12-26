@@ -535,6 +535,7 @@ ether_ipfw_chk(struct mbuf **m0, struct ifnet *dst, int shared)
 		return 1;
 
 	if (ip_dn_io_ptr && (i == IP_FW_DUMMYNET)) {
+		int dir;
 		/*
 		 * Pass the pkt to dummynet, which consumes it.
 		 * If shared, make a copy and keep the original.
@@ -550,7 +551,8 @@ ether_ipfw_chk(struct mbuf **m0, struct ifnet *dst, int shared)
 			 */
 			*m0 = NULL ;
 		}
-		ip_dn_io_ptr(&m, dst ? DN_TO_ETH_OUT: DN_TO_ETH_DEMUX, &args);
+		dir = PROTO_LAYER2 | (dst ? DIR_OUT : DIR_IN);
+		ip_dn_io_ptr(&m, dir, &args);
 		return 0;
 	}
 	/*

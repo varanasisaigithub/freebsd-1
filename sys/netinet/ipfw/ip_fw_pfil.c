@@ -64,8 +64,6 @@ __FBSDID("$FreeBSD$");
 #include <netinet/ip_divert.h>
 #include <netinet/ip_dummynet.h>
 
-#include <netgraph/ng_ipfw.h>
-
 #include <machine/in_cksum.h>
 
 static VNET_DEFINE(int, fw_enable) = 1;
@@ -86,8 +84,6 @@ ng_ipfw_input_t *ng_ipfw_input_p = NULL;
 
 /* Forward declarations. */
 static int	ipfw_divert(struct mbuf **, int, int);
-#define	DIV_DIR_IN	1
-#define	DIV_DIR_OUT	0
 
 #ifdef SYSCTL_NODE
 SYSCTL_DECL(_net_inet_ip_fw);
@@ -123,7 +119,7 @@ ipfw_check_in(void *arg, struct mbuf **m0, struct ifnet *ifp, int dir,
 	ng_tag = (struct ng_ipfw_tag *)m_tag_locate(*m0, NGM_IPFW_COOKIE, 0,
 	    NULL);
 	if (ng_tag != NULL) {
-		KASSERT(ng_tag->dir == NG_IPFW_IN,
+		KASSERT(ng_tag->dir == DIR_IN,
 		    ("ng_ipfw tag with wrong direction"));
 		args.slot = ng_tag->slot;
 		args.rulenum = ng_tag->rulenum;
@@ -185,9 +181,9 @@ again:
 		if (ip_dn_io_ptr == NULL)
 			goto drop;
 		if (mtod(*m0, struct ip *)->ip_v == 4)
-			ip_dn_io_ptr(m0, DN_TO_IP_IN, &args);
+			ip_dn_io_ptr(m0, DIR_IN, &args);
 		else if (mtod(*m0, struct ip *)->ip_v == 6)
-			ip_dn_io_ptr(m0, DN_TO_IP6_IN, &args);
+			ip_dn_io_ptr(m0, DIR_IN | PROTO_IPV6, &args);
 		if (*m0 != NULL)
 			goto again;
 		return 0;		/* packet consumed */
@@ -197,7 +193,7 @@ again:
 		/* fall through */
 
 	case IP_FW_DIVERT:
-		divert = ipfw_divert(m0, DIV_DIR_IN, tee);
+		divert = ipfw_divert(m0, DIR_IN, tee);
 		if (divert) {
 			*m0 = NULL;
 			return 0;	/* packet consumed */
@@ -209,13 +205,13 @@ again:
 	case IP_FW_NGTEE:
 		if (!NG_IPFW_LOADED)
 			goto drop;
-		(void)ng_ipfw_input_p(m0, NG_IPFW_IN, &args, 1);
+		(void)ng_ipfw_input_p(m0, DIR_IN, &args, 1);
 		goto again;		/* continue with packet */
 
 	case IP_FW_NETGRAPH:
 		if (!NG_IPFW_LOADED)
 			goto drop;
-		return ng_ipfw_input_p(m0, NG_IPFW_IN, &args, 0);
+		return ng_ipfw_input_p(m0, DIR_IN, &args, 0);
 		
 	case IP_FW_NAT:
 		goto again;		/* continue with packet */
@@ -257,7 +253,7 @@ ipfw_check_out(void *arg, struct mbuf **m0, struct ifnet *ifp, int dir,
 	ng_tag = (struct ng_ipfw_tag *)m_tag_locate(*m0, NGM_IPFW_COOKIE, 0,
 	    NULL);
 	if (ng_tag != NULL) {
-		KASSERT(ng_tag->dir == NG_IPFW_OUT,
+		KASSERT(ng_tag->dir == DIR_OUT,
 		    ("ng_ipfw tag with wrong direction"));
 		args.slot = ng_tag->slot;
 		args.rulenum = ng_tag->rulenum;
@@ -324,9 +320,9 @@ again:
 		if (ip_dn_io_ptr == NULL)
 			break;
 		if (mtod(*m0, struct ip *)->ip_v == 4)
-			ip_dn_io_ptr(m0, DN_TO_IP_OUT, &args);
+			ip_dn_io_ptr(m0, DIR_OUT, &args);
 		else if (mtod(*m0, struct ip *)->ip_v == 6)
-			ip_dn_io_ptr(m0, DN_TO_IP6_OUT, &args);
+			ip_dn_io_ptr(m0, DIR_OUT | PROTO_IPV6, &args);
 		if (*m0 != NULL)
 			goto again;
 		return 0;		/* packet consumed */
@@ -338,7 +334,7 @@ again:
 		/* fall through */
 
 	case IP_FW_DIVERT:
-		divert = ipfw_divert(m0, DIV_DIR_OUT, tee);
+		divert = ipfw_divert(m0, DIR_OUT, tee);
 		if (divert) {
 			*m0 = NULL;
 			return 0;	/* packet consumed */
@@ -350,13 +346,13 @@ again:
 	case IP_FW_NGTEE:
 		if (!NG_IPFW_LOADED)
 			goto drop;
-		(void)ng_ipfw_input_p(m0, NG_IPFW_OUT, &args, 1);
+		(void)ng_ipfw_input_p(m0, DIR_OUT, &args, 1);
 		goto again;		/* continue with packet */
 
 	case IP_FW_NETGRAPH:
 		if (!NG_IPFW_LOADED)
 			goto drop;
-		return ng_ipfw_input_p(m0, NG_IPFW_OUT, &args, 0);
+		return ng_ipfw_input_p(m0, DIR_OUT, &args, 0);
 
 	case IP_FW_NAT:
 		goto again;		/* continue with packet */
@@ -584,20 +580,14 @@ ipfw_chg_hook(SYSCTL_HANDLER_ARGS)
 		return (0);
 
 	if (arg1 == &VNET_NAME(fw_enable)) {
-		if (enable)
-			error = ipfw_hook();
-		else
-			error = ipfw_unhook();
+		error = (enable) ? ipfw_hook() : ipfw_unhook();
 		if (error)
 			return (error);
 		V_fw_enable = enable;
 	}
 #ifdef INET6
 	else if (arg1 == &VNET_NAME(fw6_enable)) {
-		if (enable)
-			error = ipfw6_hook();
-		else
-			error = ipfw6_unhook();
+		error = (enable) ? ipfw6_hook() : ipfw6_unhook();
 		if (error)
 			return (error);
 		V_fw6_enable = enable;
