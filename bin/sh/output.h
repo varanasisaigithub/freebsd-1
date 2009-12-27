@@ -52,7 +52,6 @@ extern struct output memout;
 extern struct output *out1;
 extern struct output *out2;
 
-void open_mem(char *, int, struct output *);
 void out1str(const char *);
 void out1qstr(const char *);
 void out2str(const char *);
@@ -68,7 +67,7 @@ void out1fmt(const char *, ...) __printflike(1, 2);
 void out2fmt_flush(const char *, ...) __printflike(1, 2);
 void fmtstr(char *, int, const char *, ...) __printflike(3, 4);
 void doformat(struct output *, const char *, va_list) __printflike(2, 0);
-int xwrite(int, char *, int);
+int xwrite(int, const char *, int);
 
 #define outc(c, file)	(--(file)->nleft < 0? (emptyoutbuf(file), *(file)->nextc++ = (c)) : (*(file)->nextc++ = (c)))
 #define out1c(c)	outc(c, out1);

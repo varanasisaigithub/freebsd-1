@@ -75,6 +75,7 @@ __FBSDID("$FreeBSD$");
 
 int rootpid;
 int rootshell;
+struct jmploc main_handler;
 
 STATIC void read_profile(char *);
 STATIC char *find_dot_file(char *);
@@ -90,14 +91,13 @@ STATIC char *find_dot_file(char *);
 int
 main(int argc, char *argv[])
 {
-	struct jmploc jmploc;
 	struct stackmark smark;
 	volatile int state;
 	char *shinit;
 
 	(void) setlocale(LC_ALL, "");
 	state = 0;
-	if (setjmp(jmploc.loc)) {
+	if (setjmp(main_handler.loc)) {
 		/*
 		 * When a shell procedure is executed, we raise the
 		 * exception EXSHELLPROC to clean up before executing
@@ -143,7 +143,7 @@ main(int argc, char *argv[])
 		else
 			goto state4;
 	}
-	handler = &jmploc;
+	handler = &main_handler;
 #ifdef DEBUG
 	opentrace();
 	trputs("Shell args:  ");  trargs(argv);
@@ -269,7 +269,7 @@ read_profile(char *name)
  */
 
 void
-readcmdfile(char *name)
+readcmdfile(const char *name)
 {
 	int fd;
 
@@ -296,7 +296,7 @@ find_dot_file(char *basename)
 {
 	static char localname[FILENAME_MAX+1];
 	char *fullname;
-	char *path = pathval();
+	const char *path = pathval();
 	struct stat statb;
 
 	/* don't try this for absolute or relative paths */
