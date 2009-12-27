@@ -126,12 +126,6 @@ enum {
  * Function definitions.
  */
 
-/* Firewall hooks */
-int ipfw_check_in(void *, struct mbuf **, struct ifnet *,
-	int, struct inpcb *inp);
-int ipfw_check_out(void *, struct mbuf **, struct ifnet *,
-	int, struct inpcb *inp);
-
 /* attach (arg = 1) or detach (arg = 0) hooks */
 int ipfw_attach_hooks(int);
 #ifdef NOTYET
