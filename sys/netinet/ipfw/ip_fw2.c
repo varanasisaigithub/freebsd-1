@@ -588,7 +588,7 @@ send_reject6(struct ip_fw_args *args, int code, u_int hlen, struct ip6_hdr *ip6)
  * sends a reject message, consuming the mbuf passed as an argument.
  */
 static void
-send_reject(struct ip_fw_args *args, int code, int ip_len, struct ip *ip)
+send_reject(struct ip_fw_args *args, int code, int iplen, struct ip *ip)
 {
 
 #if 0
@@ -602,13 +602,10 @@ send_reject(struct ip_fw_args *args, int code, int ip_len, struct ip *ip)
 		m_adj(m, args->L3offset);
 #endif
 	if (code != ICMP_REJECT_RST) { /* Send an ICMP unreach */
-#ifndef HAVE_NET_IPLEN
 		/* We need the IP header in host order for icmp_error(). */
 		if (args->eh != NULL) {
-			ip->ip_len = ntohs(ip->ip_len);
-			ip->ip_off = ntohs(ip->ip_off);
+			SET_HOST_IPLEN(ip);
 		}
-#endif /* !HAVE_NET_IPLEN */
 		icmp_error(args->m, ICMP_UNREACH, code, 0L, 0);
 	} else if (args->f_id.proto == IPPROTO_TCP) {
 		struct tcphdr *const tcp =
@@ -850,12 +847,12 @@ ipfw_chk(struct ip_fw_args *args)
 	 * src_ip, dst_ip	ip addresses, in NETWORK format.
 	 *	Only valid for IPv4 packets.
 	 */
-	u_int8_t proto;
-	u_int16_t src_port = 0, dst_port = 0;	/* NOTE: host format	*/
+	uint8_t proto;
+	uint16_t src_port = 0, dst_port = 0;	/* NOTE: host format	*/
 	struct in_addr src_ip, dst_ip;		/* NOTE: network format	*/
-	u_int16_t ip_len=0;
+	uint16_t iplen=0;
 	int pktlen;
-	u_int16_t	etype = 0;	/* Host order stored ether type */
+	uint16_t	etype = 0;	/* Host order stored ether type */
 
 	/*
 	 * dyn_dir = MATCH_UNKNOWN when rules unchecked,
@@ -1096,14 +1093,14 @@ do {								\
 #ifndef HAVE_NET_IPLEN
 		if (args->eh == NULL) { /* on l3 these are in host format */
 			offset = ip->ip_off & IP_OFFMASK;
-			ip_len = ip->ip_len;
+			iplen = ip->ip_len;
 		} else
 #endif /* !HAVE_NET_IPLEN */
 		{	/* otherwise they are in net format */
 			offset = ntohs(ip->ip_off) & IP_OFFMASK;
-			ip_len = ntohs(ip->ip_len);
+			iplen = ntohs(ip->ip_len);
 		}
-		pktlen = ip_len < pktlen ? ip_len : pktlen;
+		pktlen = iplen < pktlen ? iplen : pktlen;
 
 		if (offset == 0) {
 			switch (proto) {
@@ -1517,7 +1514,7 @@ do {								\
 				    int i;
 
 				    if (cmd->opcode == O_IPLEN)
-					x = ip_len;
+					x = iplen;
 				    else if (cmd->opcode == O_IPTTL)
 					x = ip->ip_ttl;
 				    else /* must be IPID */
@@ -1552,7 +1549,7 @@ do {								\
 				    int i;
 
 				    tcp = TCP(ulp);
-				    x = ip_len -
+				    x = iplen -
 					((ip->ip_hl + tcp->th_off) << 2);
 				    if (cmdlen == 1) {
 					match = (cmd->arg1 == x);
@@ -2025,7 +2022,7 @@ do {								\
 				     is_icmp_query(ICMP(ulp))) &&
 				    !(m->m_flags & (M_BCAST|M_MCAST)) &&
 				    !IN_MULTICAST(ntohl(dst_ip.s_addr))) {
-					send_reject(args, cmd->arg1, ip_len, ip);
+					send_reject(args, cmd->arg1, iplen, ip);
 					m = args->m;
 				}
 				/* FALLTHROUGH */
@@ -2137,17 +2134,14 @@ do {								\
 				/* if not fragmented, go to next rule */
 				if ((ip_off & (IP_MF | IP_OFFMASK)) == 0)
 				    break;
-#ifndef HAVE_NET_IPLEN
 				/* 
 				 * ip_reass() expects len & off in host
 				 * byte order: fix them in case we come
 				 * from layer2.
 				 */
 				if (args->eh != NULL) {
-				    ip->ip_len = ntohs(ip->ip_len);
-				    ip->ip_off = ntohs(ip->ip_off);
+					SET_HOST_IPLEN(ip);
 				}
-#endif /* !HAVE_NET_IPLEN */
 
 				args->m = m = ip_reass(m);
 
@@ -2163,13 +2157,10 @@ do {								\
 
 				    ip = mtod(m, struct ip *);
 				    hlen = ip->ip_hl << 2;
-#ifndef HAVE_NET_IPLEN
 				    /* revert len. & off to net format if needed */
 				    if (args->eh != NULL) {
-					ip->ip_len = htons(ip->ip_len);
-					ip->ip_off = htons(ip->ip_off);
+					SET_NET_IPLEN(ip);
 				    }
-#endif /* !HAVE_NET_IPLEN */
 				    ip->ip_sum = 0;
 				    if (hlen == sizeof(struct ip))
 					ip->ip_sum = in_cksum_hdr(ip);

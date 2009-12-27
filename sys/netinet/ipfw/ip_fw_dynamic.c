@@ -1002,7 +1002,7 @@ ipfw_send_pkt(struct mbuf *replyto, struct ipfw_flow_id *id, u_int32_t seq,
 		h->ip_hl = sizeof(*h) >> 2;
 		h->ip_tos = IPTOS_LOWDELAY;
 		h->ip_off = 0;
-#ifdef HAVE_NET_IPLEN
+#ifdef HAVE_NET_IPLEN /* XXX do we handle layer2 ? */
 		h->ip_len = htons(len);
 #else
 		h->ip_len = len;
