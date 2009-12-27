@@ -329,18 +329,17 @@ ipfw_divert(struct mbuf **m0, int incoming, int tee)
 static int
 ipfw_hook(int onoff, int pf)
 {
+	const int arg = PFIL_IN | PFIL_OUT | PFIL_WAITOK;
 	struct pfil_head *pfh;
-	int (*fn)(int (*pfil_func)(void *, struct mbuf **,
-		    struct ifnet *, int, struct inpcb *),
-		   void *, int, struct pfil_head *);
-
 
 	pfh = pfil_head_get(PFIL_TYPE_AF, pf);
 	if (pfh == NULL)
 		return ENOENT;
 
-	fn = (onoff) ? pfil_add_hook : pfil_remove_hook;
-	(void)fn(ipfw_check_hook, NULL, PFIL_IN | PFIL_OUT | PFIL_WAITOK, pfh);
+	if (onoff)
+		(void)pfil_add_hook(ipfw_check_hook, NULL, arg, pfh);
+	else
+		(void)pfil_remove_hook(ipfw_check_hook, NULL, arg, pfh);
 
 	return 0;
 }
