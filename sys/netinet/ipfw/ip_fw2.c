@@ -1176,7 +1176,7 @@ do {								\
 				IPFW_RUNLOCK(chain);
 				return (IP_FW_DENY); /* invalid */
 			}
-			f_pos = ipfw_find_rule(chain, skipto, 0);
+			f_pos = ipfw_find_rule(chain, skipto+1, 0);
 		}
 	}
 	/* reset divert rule to avoid confusion later */
@@ -2378,7 +2378,7 @@ vnet_ipfw_init(const void *unused)
 	 */
 	V_ip_fw_ctl_ptr = ipfw_ctl;
 	V_ip_fw_chk_ptr = ipfw_chk;
-	error = ipfw_attach_hooks();
+	error = ipfw_attach_hooks(1);
 	return (error);
 }
 
@@ -2398,10 +2398,7 @@ vnet_ipfw_uninit(const void *unused)
 	 * Then grab, release and grab again the WLOCK so we make
 	 * sure the update is propagated and nobody will be in.
 	 */
-	ipfw_unhook();
-#ifdef INET6
-	ipfw6_unhook();
-#endif
+	(void)ipfw_attach_hooks(0 /* detach */);
 	V_ip_fw_chk_ptr = NULL;
 	V_ip_fw_ctl_ptr = NULL;
 	IPFW_UH_WLOCK(chain);

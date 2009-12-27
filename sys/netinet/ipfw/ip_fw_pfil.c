@@ -458,87 +458,44 @@ nodivert:
 	return 1;
 }
 
+/*
+ * attach or detach hooks for a given protocol family
+ */
 static int
-ipfw_hook(void)
+ipfw_hook(int onoff, int pf)
 {
-	struct pfil_head *pfh_inet;
+	struct pfil_head *pfh;
+	int (*fn)(int (*pfil_func)(void *, struct mbuf **,
+		    struct ifnet *, int, struct inpcb *),
+		   void *, int, struct pfil_head *);
 
-	pfh_inet = pfil_head_get(PFIL_TYPE_AF, AF_INET);
-	if (pfh_inet == NULL)
+
+	pfh = pfil_head_get(PFIL_TYPE_AF, pf);
+	if (pfh == NULL)
 		return ENOENT;
 
-	(void)pfil_add_hook(ipfw_check_in, NULL, PFIL_IN | PFIL_WAITOK,
-	    pfh_inet);
-	(void)pfil_add_hook(ipfw_check_out, NULL, PFIL_OUT | PFIL_WAITOK,
-	    pfh_inet);
+	fn = (onoff) ? pfil_add_hook : pfil_remove_hook;
+	(void)fn(ipfw_check_in, NULL, PFIL_IN | PFIL_WAITOK, pfh);
+	(void)fn(ipfw_check_out, NULL, PFIL_OUT | PFIL_WAITOK, pfh);
 
 	return 0;
 }
 
 int
-ipfw_unhook(void)
-{
-	struct pfil_head *pfh_inet;
-
-	pfh_inet = pfil_head_get(PFIL_TYPE_AF, AF_INET);
-	if (pfh_inet == NULL)
-		return ENOENT;
-
-	(void)pfil_remove_hook(ipfw_check_in, NULL, PFIL_IN | PFIL_WAITOK,
-	    pfh_inet);
-	(void)pfil_remove_hook(ipfw_check_out, NULL, PFIL_OUT | PFIL_WAITOK,
-	    pfh_inet);
-
-	return 0;
-}
-
-#ifdef INET6
-static int
-ipfw6_hook(void)
-{
-	struct pfil_head *pfh_inet6;
-
-	pfh_inet6 = pfil_head_get(PFIL_TYPE_AF, AF_INET6);
-	if (pfh_inet6 == NULL)
-		return ENOENT;
-
-	(void)pfil_add_hook(ipfw_check_in, NULL, PFIL_IN | PFIL_WAITOK,
-	    pfh_inet6);
-	(void)pfil_add_hook(ipfw_check_out, NULL, PFIL_OUT | PFIL_WAITOK,
-	    pfh_inet6);
-
-	return 0;
-}
-
-int
-ipfw6_unhook(void)
-{
-	struct pfil_head *pfh_inet6;
-
-	pfh_inet6 = pfil_head_get(PFIL_TYPE_AF, AF_INET6);
-	if (pfh_inet6 == NULL)
-		return ENOENT;
-
-	(void)pfil_remove_hook(ipfw_check_in, NULL, PFIL_IN | PFIL_WAITOK,
-	    pfh_inet6);
-	(void)pfil_remove_hook(ipfw_check_out, NULL, PFIL_OUT | PFIL_WAITOK,
-	    pfh_inet6);
-
-	return 0;
-}
-#endif /* INET6 */
-
-int
-ipfw_attach_hooks(void)
+ipfw_attach_hooks(int arg)
 {
 	int error = 0;
 
-        if (V_fw_enable && ipfw_hook() != 0) {
+	if (arg == 0) /* detach */
+		ipfw_hook(0, AF_INET);
+        else if (V_fw_enable && ipfw_hook(1, AF_INET) != 0) {
                 error = ENOENT; /* see ip_fw_pfil.c::ipfw_hook() */
                 printf("ipfw_hook() error\n");
         }
 #ifdef INET6
-        if (V_fw6_enable && ipfw6_hook() != 0) {
+	if (arg == 0) /* detach */
+		ipfw_hook(0, AF_INET6);
+        else if (V_fw6_enable && ipfw_hook(1, AF_INET6) != 0) {
                 error = ENOENT;
                 printf("ipfw6_hook() error\n");
         }
@@ -552,13 +509,16 @@ ipfw_chg_hook(SYSCTL_HANDLER_ARGS)
 	int enable;
 	int oldenable;
 	int error;
+	int af;
 
 	if (arg1 == &VNET_NAME(fw_enable)) {
 		enable = V_fw_enable;
+		af = AF_INET;
 	}
 #ifdef INET6
 	else if (arg1 == &VNET_NAME(fw6_enable)) {
 		enable = V_fw6_enable;
+		af = AF_INET6;
 	}
 #endif
 	else 
@@ -576,19 +536,14 @@ ipfw_chg_hook(SYSCTL_HANDLER_ARGS)
 	if (enable == oldenable)
 		return (0);
 
-	if (arg1 == &VNET_NAME(fw_enable)) {
-		error = (enable) ? ipfw_hook() : ipfw_unhook();
-		if (error)
-			return (error);
+	error = ipfw_hook(enable, af);
+	if (error)
+		return (error);
+	if (af == AF_INET)
 		V_fw_enable = enable;
-	}
 #ifdef INET6
-	else if (arg1 == &VNET_NAME(fw6_enable)) {
-		error = (enable) ? ipfw6_hook() : ipfw6_unhook();
-		if (error)
-			return (error);
+	else if (af == AF_INET6)
 		V_fw6_enable = enable;
-	}
 #endif
 
 	return (0);
