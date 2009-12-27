@@ -551,7 +551,6 @@ transmit_event(struct dn_pipe *pipe, struct mbuf **head, struct mbuf **tail)
 }
 
 #define div64(a, b)	((int64_t)(a) / (int64_t)(b))
-#define DN_TO_DROP	0xffff
 /*
  * Compute how many ticks we have to wait before being able to send
  * a packet. This is computed as the "wire time" for the packet
@@ -596,7 +595,7 @@ compute_extra_bits(struct mbuf *pkt, struct dn_pipe *p)
 	if (index >= p->loss_level) {
 		struct dn_pkt_tag *dt = dn_tag_get(pkt);
 		if (dt)
-			dt->dn_dir = DN_TO_DROP;
+			dt->dn_dir = DIR_DROP;
 	}
 	return extra_bits;
 }
@@ -979,7 +978,7 @@ dummynet_send(struct mbuf *m)
 		m->m_nextpkt = NULL;
 		if (m_tag_first(m) == NULL) {
 			pkt = NULL; /* probably unnecessary */
-			dst = DN_TO_DROP;
+			dst = DIR_DROP;
 		} else {
 			pkt = dn_tag_get(m);
 			dst = pkt->dn_dir;
@@ -1031,7 +1030,7 @@ dummynet_send(struct mbuf *m)
 			ether_output_frame(pkt->ifp, m);
 			break;
 
-		case DN_TO_DROP:
+		case DIR_DROP:
 			/* drop the packet after some time */
 			dn_free_pkt(m);
 			break;
