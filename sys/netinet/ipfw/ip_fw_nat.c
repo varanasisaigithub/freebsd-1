@@ -298,11 +298,11 @@ ipfw_nat(struct ip_fw_args *args, struct cfg_nat *t, struct mbuf *m)
 		struct udphdr 	*uh;
 		u_short cksum;
 
-		ip->ip_len = ntohs(ip->ip_len);
+		/* XXX check if ip_len can stay in net format */
 		cksum = in_pseudo(
 		    ip->ip_src.s_addr,
 		    ip->ip_dst.s_addr,
-		    htons(ip->ip_p + ip->ip_len - (ip->ip_hl << 2))
+		    htons(ip->ip_p + ntohs(ip->ip_len) - (ip->ip_hl << 2))
 		);
 
 		switch (ip->ip_p) {
@@ -329,7 +329,6 @@ ipfw_nat(struct ip_fw_args *args, struct cfg_nat *t, struct mbuf *m)
 			in_delayed_cksum(mcl);
 			mcl->m_pkthdr.csum_flags &= ~CSUM_DELAY_DATA;
 		}
-		ip->ip_len = htons(ip->ip_len);
 	}
 	if (args->eh == NULL) {
 		SET_HOST_IPLEN(ip);
