@@ -1355,27 +1355,29 @@ do {								\
 			case O_IP_SRC_LOOKUP:
 			case O_IP_DST_LOOKUP:
 				if (is_ipv4) {
-				    uint32_t a =
+				    uint32_t key =
 					(cmd->opcode == O_IP_DST_LOOKUP) ?
 					    dst_ip.s_addr : src_ip.s_addr;
 				    uint32_t v = 0;
 
 				    if (cmdlen > F_INSN_SIZE(ipfw_insn_u32)) {
-					/* generic lookup */
+					/* generic lookup. The key must be
+					 * in 32bit big-endian format.
+					 */
 					v = ((ipfw_insn_u32 *)cmd)->d[1];
 					if (v == 0)
-					    a = dst_ip.s_addr;
+					    key = dst_ip.s_addr;
 					else if (v == 1)
-					    a = src_ip.s_addr;
+					    key = src_ip.s_addr;
 					else if (offset != 0)
 					    break;
 					else if (proto != IPPROTO_TCP &&
 						proto != IPPROTO_UDP)
 					    break;
 					else if (v == 2)
-					    a = dst_port;
+					    key = htonl(dst_port);
 					else if (v == 3)
-					    a = src_port;
+					    key = htons(src_port);
 					else if (v == 4 || v == 5) {
 					    check_uidgid(
 						(ipfw_insn_u32 *)cmd,
@@ -1384,14 +1386,15 @@ do {								\
 						src_ip, src_port, &ucred_cache,
 						&ucred_lookup, args->inp);
 					    if (v == 4 /* O_UID */)
-						a = ucred_cache->cr_uid;
+						key = ucred_cache->cr_uid;
 					    else if (v == 5 /* O_JAIL */)
-						a = ucred_cache->cr_prison->pr_id;
+						key = ucred_cache->cr_prison->pr_id;
+					    key = htonl(key);
 					} else
 					    break;
 				    }
-				    match = ipfw_lookup_table(chain, cmd->arg1, a,
-					&v);
+				    match = ipfw_lookup_table(chain,
+					cmd->arg1, key, &v);
 				    if (!match)
 					break;
 				    if (cmdlen == F_INSN_SIZE(ipfw_insn_u32))
