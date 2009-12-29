@@ -34,6 +34,7 @@ SRCS=	archive_check_magic.c				\
 	archive_entry_stat.c				\
 	archive_entry_strmode.c				\
 	archive_entry_link_resolver.c			\
+	archive_entry_xattr.c				\
 	archive_read.c					\
 	archive_read_data_into_fd.c			\
 	archive_read_disk.c				\
@@ -223,6 +224,7 @@ MLINKS+=	archive_util.3 archive_compression.3
 MLINKS+=	archive_util.3 archive_compression_name.3
 MLINKS+=	archive_util.3 archive_errno.3
 MLINKS+=	archive_util.3 archive_error_string.3
+MLINKS+=	archive_util.3 archive_file_count.3
 MLINKS+=	archive_util.3 archive_format.3
 MLINKS+=	archive_util.3 archive_format_name.3
 MLINKS+=	archive_util.3 archive_set_error.3

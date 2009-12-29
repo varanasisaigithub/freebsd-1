@@ -244,8 +244,7 @@ ng_ipfw_rcvdata(hook_p hook, item_p item)
 
 		ip = mtod(m, struct ip *);
 
-		ip->ip_len = ntohs(ip->ip_len);
-		ip->ip_off = ntohs(ip->ip_off);
+		SET_HOST_IPLEN(ip);
 
 		return ip_output(m, NULL, NULL, IP_FORWARDING, NULL, NULL);
 	    }
@@ -310,8 +309,6 @@ ng_ipfw_input(struct mbuf **m0, int dir, struct ip_fw_args *fwa, int tee)
 		return (EINVAL);
 
 	ip = mtod(m, struct ip *);
-	ip->ip_len = htons(ip->ip_len);
-	ip->ip_off = htons(ip->ip_off);
 
 	NG_SEND_DATA_ONLY(error, hook, m);
 

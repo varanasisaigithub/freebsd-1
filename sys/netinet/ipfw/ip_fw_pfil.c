@@ -61,7 +61,7 @@ __FBSDID("$FreeBSD$");
 #include <netinet/ipfw/ip_fw_private.h>
 #include <netinet/ip_divert.h>
 #include <netinet/ip_dummynet.h>
-
+#include <netgraph/ng_ipfw.h>
 #include <machine/in_cksum.h>
 
 static VNET_DEFINE(int, fw_enable) = 1;
@@ -146,6 +146,9 @@ again:
 	args.m = *m0;
 	args.oif = dir == DIR_OUT ? ifp : NULL;
 	args.inp = inp;
+
+	/* all the processing now uses ip_len in net format */
+	SET_NET_IPLEN(mtod(*m0, struct ip *));
 
 	if (V_fw_one_pass == 0 || args.slot == 0) {
 		ipfw = ipfw_chk(&args);
@@ -257,6 +260,8 @@ again:
 			m_freem(*m0);
 		*m0 = NULL;
 	}
+	if (*m0)
+		SET_HOST_IPLEN(mtod(*m0, struct ip *));
 	return ret;
 }
 
@@ -293,10 +298,11 @@ ipfw_divert(struct mbuf **m0, int incoming, int tee)
 	 * we can do it before a 'tee'.
 	 */
 	ip = mtod(clone, struct ip *);
-	if (!tee && ip->ip_off & (IP_MF | IP_OFFMASK)) {
+	if (!tee && ntohs(ip->ip_off) & (IP_MF | IP_OFFMASK)) {
 		int hlen;
 		struct mbuf *reass;
 
+		SET_HOST_IPLEN(ip); /* ip_reass wants host order */
 		reass = ip_reass(clone); /* Reassemble packet. */
 		if (reass == NULL)
 			return;
@@ -314,9 +320,6 @@ ipfw_divert(struct mbuf **m0, int incoming, int tee)
 		else
 			ip->ip_sum = in_cksum(reass, hlen);
 		clone = reass;
-	} else {
-		/* Convert header to network byte order. */
-		SET_NET_IPLEN(ip);
 	}
 
 	/* Do the dirty job... */

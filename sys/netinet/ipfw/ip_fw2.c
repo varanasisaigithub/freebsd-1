@@ -603,9 +603,7 @@ send_reject(struct ip_fw_args *args, int code, int iplen, struct ip *ip)
 #endif
 	if (code != ICMP_REJECT_RST) { /* Send an ICMP unreach */
 		/* We need the IP header in host order for icmp_error(). */
-		if (args->eh != NULL) {
-			SET_HOST_IPLEN(ip);
-		}
+		SET_HOST_IPLEN(ip);
 		icmp_error(args->m, ICMP_UNREACH, code, 0L, 0);
 	} else if (args->f_id.proto == IPPROTO_TCP) {
 		struct tcphdr *const tcp =
@@ -1090,16 +1088,8 @@ do {								\
 		proto = ip->ip_p;
 		src_ip = ip->ip_src;
 		dst_ip = ip->ip_dst;
-#ifndef HAVE_NET_IPLEN
-		if (args->eh == NULL) { /* on l3 these are in host format */
-			offset = ip->ip_off & IP_OFFMASK;
-			iplen = ip->ip_len;
-		} else
-#endif /* !HAVE_NET_IPLEN */
-		{	/* otherwise they are in net format */
-			offset = ntohs(ip->ip_off) & IP_OFFMASK;
-			iplen = ntohs(ip->ip_len);
-		}
+		offset = ntohs(ip->ip_off) & IP_OFFMASK;
+		iplen = ntohs(ip->ip_len);
 		pktlen = iplen < pktlen ? iplen : pktlen;
 
 		if (offset == 0) {
@@ -2126,12 +2116,6 @@ do {								\
 				f->pcnt++;
 				f->bcnt += pktlen;
 				l = 0;	/* in any case exit inner loop */
-
-#ifndef HAVE_NET_IPLEN
-				if (args->eh == NULL)
-					ip_off = ip->ip_off;
-				else
-#endif /* !HAVE_NET_IPLEN */
 				ip_off = ntohs(ip->ip_off);
 
 				/* if not fragmented, go to next rule */
@@ -2139,19 +2123,14 @@ do {								\
 				    break;
 				/* 
 				 * ip_reass() expects len & off in host
-				 * byte order: fix them in case we come
-				 * from layer2.
+				 * byte order.
 				 */
-				if (args->eh != NULL) {
-					SET_HOST_IPLEN(ip);
-				}
+				SET_HOST_IPLEN(ip);
 
 				args->m = m = ip_reass(m);
 
 				/*
-				 * IP header checksum fixup after 
-				 * reassembly and leave header
-				 * in network byte order.
+				 * do IP header checksum fixup.
 				 */
 				if (m == NULL) { /* fragment got swallowed */
 				    retval = IP_FW_DENY;
@@ -2160,10 +2139,7 @@ do {								\
 
 				    ip = mtod(m, struct ip *);
 				    hlen = ip->ip_hl << 2;
-				    /* revert len. & off to net format if needed */
-				    if (args->eh != NULL) {
-					SET_NET_IPLEN(ip);
-				    }
+				    SET_NET_IPLEN(ip);
 				    ip->ip_sum = 0;
 				    if (hlen == sizeof(struct ip))
 					ip->ip_sum = in_cksum_hdr(ip);
