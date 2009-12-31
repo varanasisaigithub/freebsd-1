@@ -106,8 +106,7 @@ ipfw_check_hook(void *arg, struct mbuf **m0, struct ifnet *ifp, int dir,
     struct inpcb *inp)
 {
 	struct ip_fw_args args;
-	struct ng_ipfw_tag *ng_tag;
-	struct m_tag *dn_tag;
+	struct m_tag *tag;
 	int ipfw;
 	int ret;
 #ifdef IPFIREWALL_FORWARD
@@ -118,29 +117,11 @@ ipfw_check_hook(void *arg, struct mbuf **m0, struct ifnet *ifp, int dir,
 	dir = (dir == PFIL_IN) ? DIR_IN : DIR_OUT;
 	bzero(&args, sizeof(args));
 
-	ng_tag = (struct ng_ipfw_tag *)m_tag_locate(*m0, NGM_IPFW_COOKIE, 0,
-	    NULL);
-	if (ng_tag != NULL) {
-		KASSERT(ng_tag->dir == dir,
-		    ("ng_ipfw tag with wrong direction"));
-		args.slot = ng_tag->slot;
-		args.rulenum = ng_tag->rulenum;
-		args.rule_id = ng_tag->rule_id;
-		args.chain_id = ng_tag->chain_id;
-		m_tag_delete(*m0, (struct m_tag *)ng_tag);
-	}
-
 again:
-	dn_tag = m_tag_find(*m0, PACKET_TAG_DUMMYNET, NULL);
-	if (dn_tag != NULL) {
-		struct dn_pkt_tag *dt;
-
-		dt = (struct dn_pkt_tag *)(dn_tag+1);
-		args.slot = dt->slot;
-		args.rulenum = dt->rulenum;
-		args.rule_id = dt->rule_id;
-		args.chain_id = dt->chain_id;
-		m_tag_delete(*m0, dn_tag);
+	tag = m_tag_locate(*m0, MTAG_IPFW_RULE, 0, NULL);
+	if (tag != NULL) {
+		args.rule = *((struct ipfw_rule_ref *)(tag+1));
+		m_tag_delete(*m0, tag);
 	}
 
 	args.m = *m0;
@@ -150,7 +131,7 @@ again:
 	/* all the processing now uses ip_len in net format */
 	SET_NET_IPLEN(mtod(*m0, struct ip *));
 
-	if (V_fw_one_pass == 0 || args.slot == 0) {
+	if (V_fw_one_pass == 0 || args.rule.slot == 0) {
 		ipfw = ipfw_chk(&args);
 		*m0 = args.m;
 	} else
@@ -224,15 +205,19 @@ again:
 			ret = EACCES;
 			break; /* i.e. drop */
 		}
-		ipfw_divert(m0, dir, (ipfw == IP_FW_TEE) ? 1 : 0);
-		if (*m0) {
-			/* continue processing for this one. We set
-			 * args.slot=0, but the divert tag is processed
-			 * in ipfw_chk to jump to the right place.
-			 */
-			args.slot = 0;
-			goto again;	/* continue with packet */
+		tag = m_tag_alloc(MTAG_IPFW_RULE, 0,
+		    sizeof(struct ipfw_rule_ref), M_NOWAIT);
+		if (tag == NULL) {
+			ret = EACCES;
+			break; /* i.e. drop */
 		}
+		*((struct ipfw_rule_ref *)(tag+1)) = args.rule;
+		m_tag_prepend(*m0, tag);
+
+		ipfw_divert(m0, dir, (ipfw == IP_FW_TEE) ? 1 : 0);
+		/* continue processing for the original packet (tee) */
+		if (*m0)
+			goto again;
 		break;
 
 	case IP_FW_NGTEE:
@@ -257,7 +242,7 @@ again:
 
 	if (ret != 0) {
 		if (*m0)
-			m_freem(*m0);
+			FREE_PKT(*m0);
 		*m0 = NULL;
 	}
 	if (*m0)

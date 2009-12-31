@@ -468,7 +468,7 @@ heap_free(struct dn_heap *h)
  */
 static __inline void *dn_free_pkt(struct mbuf *m)
 {
-	m_freem(m);
+	FREE_PKT(m);
 	return NULL;
 }
 
@@ -975,8 +975,10 @@ dummynet_send(struct mbuf *m)
 			dst = DIR_DROP;
 		} else {
 			struct dn_pkt_tag *pkt = dn_tag_get(m);
+			/* extract the dummynet info, rename the tag */
 			dst = pkt->dn_dir;
 			ifp = pkt->ifp;
+			// XXX rename the tag
 		}
 
 		switch (dst) {
@@ -1364,7 +1366,7 @@ dummynet_io(struct mbuf **m0, int dir, struct ip_fw_args *fwa)
 	struct dn_pipe *pipe;
 	uint64_t len = m->m_pkthdr.len;
 	struct dn_flow_queue *q = NULL;
-	int is_pipe = fwa->cookie & 0x8000000 ? 0 : 1;
+	int is_pipe = fwa->rule.info & 0x8000000 ? 0 : 1;
 
 	KASSERT(m->m_nextpkt == NULL,
 	    ("dummynet_io: mbuf queue passed to dummynet"));
@@ -1378,11 +1380,11 @@ dummynet_io(struct mbuf **m0, int dir, struct ip_fw_args *fwa)
 	 * below can be simplified.
 	 */
 	if (is_pipe) {
-		pipe = locate_pipe(fwa->cookie & 0xffff);
+		pipe = locate_pipe(fwa->rule.info & 0xffff);
 		if (pipe != NULL)
 			fs = &(pipe->fs);
 	} else
-		fs = locate_flowset(fwa->cookie & 0xffff);
+		fs = locate_flowset(fwa->rule.info & 0xffff);
 
 	if (fs == NULL)
 		goto dropit;	/* This queue/pipe does not exist! */
@@ -1428,12 +1430,8 @@ dummynet_io(struct mbuf **m0, int dir, struct ip_fw_args *fwa)
 	 * Ok, i can handle the pkt now...
 	 * Build and enqueue packet + parameters.
 	 */
-	pkt->slot = fwa->slot;
-	pkt->rulenum = fwa->rulenum;
-	pkt->rule_id = fwa->rule_id;
-	pkt->chain_id = fwa->chain_id;
+	pkt->rule = fwa->rule;
 	pkt->dn_dir = dir;
-
 	pkt->ifp = fwa->oif;
 
 	if (q->head == NULL)

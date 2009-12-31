@@ -72,10 +72,10 @@ __FBSDID("$FreeBSD$");
 #include <netinet/in_systm.h>
 #include <netinet/in_var.h>
 #include <netinet/ip.h>
-#include <netinet/ip_divert.h>
 #include <netinet/ip_var.h>
 #include <netinet/ip_fw.h>
 #include <netinet/ipfw/ip_fw_private.h>
+#include <netinet/ip_divert.h>
 #ifdef SCTP
 #include <netinet/sctp_crc32.h>
 #endif
@@ -301,6 +301,9 @@ divert_packet(struct mbuf *m, int incoming)
 	/* Put packet on socket queue, if any */
 	sa = NULL;
 	nport = htons((u_int16_t)divert_info(mtag));
+	printf("divert rule %d %s to port %d\n", divsrc.sin_port,
+		incoming ? "in" : "out",
+		ntohs(nport));
 	INP_INFO_RLOCK(&V_divcbinfo);
 	LIST_FOREACH(inp, &V_divcb, inp_list) {
 		/* XXX why does only one socket match? */
@@ -339,7 +342,7 @@ div_output(struct socket *so, struct mbuf *m, struct sockaddr_in *sin,
     struct mbuf *control)
 {
 	struct m_tag *mtag;
-	struct divert_tag *dt;
+	struct ipfw_rule_ref *dt;
 	int error = 0;
 	struct mbuf *options;
 
@@ -354,23 +357,35 @@ div_output(struct socket *so, struct mbuf *m, struct sockaddr_in *sin,
 	if (control)
 		m_freem(control);		/* XXX */
 
-	if ((mtag = m_tag_find(m, PACKET_TAG_DIVERT, NULL)) == NULL) {
-		mtag = m_tag_get(PACKET_TAG_DIVERT, sizeof(struct divert_tag),
-		    M_NOWAIT | M_ZERO);
+	mtag = m_tag_locate(m, MTAG_IPFW_RULE, 0, NULL);
+	if (mtag == NULL) {
+		/* this should be normal */
+		printf("create divert tag\n");
+		mtag = m_tag_alloc(MTAG_IPFW_RULE, 0,
+		    sizeof(struct ipfw_rule_ref), M_NOWAIT | M_ZERO);
 		if (mtag == NULL) {
 			error = ENOBUFS;
 			goto cantsend;
 		}
-		dt = (struct divert_tag *)(mtag+1);
 		m_tag_prepend(m, mtag);
-	} else
-		dt = (struct divert_tag *)(mtag+1);
+	}
+	dt = (struct ipfw_rule_ref *)(mtag+1);
 
+	printf("%s sin %p dst rule %d addr 0x%x\n", __FUNCTION__,
+		sin, sin? sin->sin_port : -1,
+		sin ? sin->sin_addr.s_addr : 0xdeaddead);
 	/* Loopback avoidance and state recovery */
 	if (sin) {
 		int i;
 
-		dt->cookie = sin->sin_port;
+		/* set the starting point. We provide a non-zero slot,
+		 * but a non_matching chain_id to skip that info and use
+		 * the rulenum/rule_id.
+		 */
+		dt->slot = 1; /* dummy, chain_id is invalid */
+		dt->chain_id = 0;
+		dt->rulenum = sin->sin_port+1; /* host format ? */
+		dt->rule_id = 0;
 		/*
 		 * Find receive interface with the given name, stuffed
 		 * (if it exists) in the sin_zero[] field.
@@ -455,6 +470,7 @@ div_output(struct socket *so, struct mbuf *m, struct sockaddr_in *sin,
 		}
 	} else {
 		dt->info |= IP_FW_DIVERT_LOOPBACK_FLAG;
+		printf("divert to loopback\n");
 		if (m->m_pkthdr.rcvif == NULL) {
 			/*
 			 * No luck with the name, check by IP address.
@@ -467,6 +483,7 @@ div_output(struct socket *so, struct mbuf *m, struct sockaddr_in *sin,
 			sin->sin_port = 0;
 			ifa = ifa_ifwithaddr((struct sockaddr *) sin);
 			if (ifa == NULL) {
+				printf("%s ifa not found ???\n", __FUNCTION__);
 				error = EADDRNOTAVAIL;
 				goto cantsend;
 			}

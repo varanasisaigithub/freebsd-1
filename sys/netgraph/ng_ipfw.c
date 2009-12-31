@@ -221,19 +221,20 @@ ng_ipfw_findhook1(node_p node, u_int16_t rulenum)
 static int
 ng_ipfw_rcvdata(hook_p hook, item_p item)
 {
-	struct ng_ipfw_tag	*ngit;
+	struct ipfw_start_info	*ngit;
 	struct mbuf *m;
 
 	NGI_GET_M(item, m);
 	NG_FREE_ITEM(item);
 
-	if ((ngit = (struct ng_ipfw_tag *)m_tag_locate(m, NGM_IPFW_COOKIE, 0,
-	    NULL)) == NULL) {
+	ngit = (struct ipfw_start_info *)
+		m_tag_locate(m, NGM_IPFW_COOKIE, 0, NULL);
+	if (ngit == NULL) {
 		NG_FREE_M(m);
 		return (EINVAL);	/* XXX: find smth better */
 	};
 
-	switch (ngit->dir) {
+	switch (ngit->info) {
 	case DIR_OUT:
 	    {
 		struct ip *ip;
@@ -263,7 +264,7 @@ static int
 ng_ipfw_input(struct mbuf **m0, int dir, struct ip_fw_args *fwa, int tee)
 {
 	struct mbuf *m;
-	struct ng_ipfw_tag *ngit;
+	struct ipfw_start_info *ngit;
 	struct ip *ip;
 	hook_p	hook;
 	int error = 0;
@@ -284,21 +285,21 @@ ng_ipfw_input(struct mbuf **m0, int dir, struct ip_fw_args *fwa, int tee)
 	 * a copy of a packet and forward it into netgraph without a tag.
 	 */
 	if (tee == 0) {
+		struct m_tag *tag;
+		struct ipfw_start_info *ngit;
 		m = *m0;
 		*m0 = NULL;	/* it belongs now to netgraph */
 
-		if ((ngit = (struct ng_ipfw_tag *)m_tag_alloc(NGM_IPFW_COOKIE,
-		    0, TAGSIZ, M_NOWAIT|M_ZERO)) == NULL) {
+		tag = m_tag_alloc(NGM_IPFW_COOKIE, sizeof(*mt),
+			M_NOWAIT|M_ZERO);
+		if (tagn == NULL) {
 			m_freem(m);
 			return (ENOMEM);
 		}
-		ngit->slot = fwa->slot;
-		ngit->rulenum = fwa->rulenum;
-		ngit->rule_id = fwa->rule_id;
-		ngit->chain_id = fwa->chain_id;
-		ngit->dir = dir;
-//		ngit->ifp = fwa->oif; /* XXX do we use it ? */
-		m_tag_prepend(m, &ngit->mt);
+		ngit = (struct ipfw_start_info *)(tag + 1);
+		*ngit = fwa->start
+		ngit->info = dir;
+		m_tag_prepend(m, tag);
 
 	} else
 		if ((m = m_dup(*m0, M_DONTWAIT)) == NULL)

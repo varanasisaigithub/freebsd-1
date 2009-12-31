@@ -45,10 +45,6 @@ SYSCTL_DECL(_net_inet_divert);
 /*
  * Divert socket definitions.
  */
-struct divert_tag {
-	u_int32_t	info;		/* port & flags */
-	u_int16_t	cookie;		/* ipfw rule number */
-};
 
 /*
  * Return the divert cookie associated with the mbuf; if any.
@@ -56,13 +52,7 @@ struct divert_tag {
 static __inline u_int16_t
 divert_cookie(struct m_tag *mtag)
 {
-	return ((struct divert_tag *)(mtag+1))->cookie;
-}
-static __inline u_int16_t
-divert_find_cookie(struct mbuf *m)
-{
-	struct m_tag *mtag = m_tag_find(m, PACKET_TAG_DIVERT, NULL);
-	return mtag ? divert_cookie(mtag) : 0;
+	return ((struct ipfw_rule_ref *)(mtag+1))->rulenum;
 }
 
 /*
@@ -71,13 +61,7 @@ divert_find_cookie(struct mbuf *m)
 static __inline u_int32_t
 divert_info(struct m_tag *mtag)
 {
-	return ((struct divert_tag *)(mtag+1))->info;
-}
-static __inline u_int32_t
-divert_find_info(struct mbuf *m)
-{
-	struct m_tag *mtag = m_tag_find(m, PACKET_TAG_DIVERT, NULL);
-	return mtag ? divert_info(mtag) : 0;
+	return ((struct ipfw_rule_ref *)(mtag+1))->info;
 }
 
 typedef	void ip_divert_packet_t(struct mbuf *m, int incoming);

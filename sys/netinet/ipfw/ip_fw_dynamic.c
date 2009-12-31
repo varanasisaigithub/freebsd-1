@@ -917,7 +917,7 @@ ipfw_send_pkt(struct mbuf *replyto, struct ipfw_flow_id *id, u_int32_t seq,
 #endif
 	default:
 		/* XXX: log me?!? */
-		m_freem(m);
+		FREE_PKT(m);
 		return (NULL);
 	}
 	dir = ((flags & (TH_SYN | TH_RST)) == TH_SYN);
