@@ -1252,7 +1252,7 @@ ieee80211_parse_wpa(struct ieee80211vap *vap, const uint8_t *frm,
 		return IEEE80211_REASON_IE_INVALID;
 	}
 	frm += 6, len -= 4;		/* NB: len is payload only */
-	/* NB: iswapoui already validated the OUI and type */
+	/* NB: iswpaoui already validated the OUI and type */
 	w = LE_READ_2(frm);
 	if (w != WPA_VERSION) {
 		IEEE80211_DISCARD_IE(vap,
@@ -2189,7 +2189,7 @@ hostap_recv_mgmt(struct ieee80211_node *ni, struct mbuf *m0,
 	case IEEE80211_FC0_SUBTYPE_ACTION:
 		if (vap->iv_state == IEEE80211_S_RUN) {
 			if (ieee80211_parse_action(ni, m0) == 0)
-				ic->ic_recv_action(ni, frm, efrm);
+				ic->ic_recv_action(ni, wh, frm, efrm);
 		} else
 			vap->iv_stats.is_rx_mgtdiscard++;
 		break;

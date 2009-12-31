@@ -27,7 +27,7 @@
 
 # PROVIDE: netif
 # REQUIRE: atm1 cleanvar FILESYSTEMS serial sppp sysctl
-# REQUIRE: ipfilter ipfs pf ipfw
+# REQUIRE: ipfilter ipfs
 # KEYWORD: nojail
 
 . /etc/rc.subr
@@ -40,6 +40,8 @@ cloneup_cmd="clone_up"
 clonedown_cmd="clone_down"
 extra_commands="cloneup clonedown"
 cmdifn=
+
+set_rcvar_obsolete ipv6_enable ipv6_prefer
 
 network_start()
 {
@@ -141,7 +143,7 @@ network_common()
 			;;
 		esac
 		echo "${_str} Network:${_ok}."
-		if [ -z "${rc_quiet}" ]; then
+		if check_startmsgs; then
 			for ifn in ${_ok}; do
 				/sbin/ifconfig ${ifn}
 			done

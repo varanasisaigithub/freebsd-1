@@ -226,6 +226,9 @@ sgasync(void *callback_arg, uint32_t code, struct cam_path *path, void *arg)
 		if (cgd == NULL)
 			break;
 
+		if (cgd->protocol != PROTO_SCSI)
+			break;
+
 		/*
 		 * Allocate a peripheral instance for this device and
 		 * start the probe process.
@@ -507,7 +510,7 @@ sgioctl(struct cdev *dev, u_long cmd, caddr_t arg, int flag, struct thread *td)
 			break;
 		}
 
-		ccb = cam_periph_getccb(periph, /*priority*/5);
+		ccb = cam_periph_getccb(periph, CAM_PRIORITY_NORMAL);
 		csio = &ccb->csio;
 
 		error = copyin(req.cmdp, &csio->cdb_io.cdb_bytes,
@@ -726,7 +729,7 @@ sgwrite(struct cdev *dev, struct uio *uio, int ioflag)
 
 	cam_periph_lock(periph);
 	sc = periph->softc;
-	xpt_setup_ccb(&ccb->ccb_h, periph->path, /*priority*/5);
+	xpt_setup_ccb(&ccb->ccb_h, periph->path, CAM_PRIORITY_NORMAL);
 	cam_fill_csio(csio,
 		      /*retries*/1,
 		      sgdone,

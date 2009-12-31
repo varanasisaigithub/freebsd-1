@@ -84,21 +84,35 @@ __FBSDID("$FreeBSD$");
  * documented in the datasheet.
  */
 
-#include "usbdevs.h"
+#include <sys/stdint.h>
+#include <sys/stddef.h>
+#include <sys/param.h>
+#include <sys/queue.h>
+#include <sys/types.h>
+#include <sys/systm.h>
+#include <sys/kernel.h>
+#include <sys/bus.h>
+#include <sys/linker_set.h>
+#include <sys/module.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
+#include <sys/condvar.h>
+#include <sys/sysctl.h>
+#include <sys/sx.h>
+#include <sys/unistd.h>
+#include <sys/callout.h>
+#include <sys/malloc.h>
+#include <sys/priv.h>
+
 #include <dev/usb/usb.h>
-#include <dev/usb/usb_mfunc.h>
-#include <dev/usb/usb_error.h>
+#include <dev/usb/usbdi.h>
+#include <dev/usb/usbdi_util.h>
 #include <dev/usb/usb_cdc.h>
+#include "usbdevs.h"
 
 #define	USB_DEBUG_VAR uplcom_debug
-
-#include <dev/usb/usb_core.h>
 #include <dev/usb/usb_debug.h>
 #include <dev/usb/usb_process.h>
-#include <dev/usb/usb_request.h>
-#include <dev/usb/usb_lookup.h>
-#include <dev/usb/usb_util.h>
-#include <dev/usb/usb_busdma.h>
 
 #include <dev/usb/serial/usb_serial.h>
 
@@ -172,6 +186,7 @@ static void	uplcom_start_write(struct ucom_softc *);
 static void	uplcom_stop_write(struct ucom_softc *);
 static void	uplcom_cfg_get_status(struct ucom_softc *, uint8_t *,
 		    uint8_t *);
+static void	uplcom_poll(struct ucom_softc *ucom);
 
 static device_probe_t uplcom_probe;
 static device_attach_t uplcom_attach;
@@ -225,59 +240,60 @@ static struct ucom_callback uplcom_callback = {
 	.ucom_stop_read = &uplcom_stop_read,
 	.ucom_start_write = &uplcom_start_write,
 	.ucom_stop_write = &uplcom_stop_write,
+	.ucom_poll = &uplcom_poll,
 };
 
-#define	USB_UPL(v,p,rl,rh,t)				\
-  USB_VENDOR(v), USB_PRODUCT(p), USB_DEV_BCD_GTEQ(rl),	\
-  USB_DEV_BCD_LTEQ(rh), USB_DRIVER_INFO(t)
+#define	UPLCOM_DEV(v,p,rl,rh,t)				\
+  { USB_VENDOR(USB_VENDOR_##v), USB_PRODUCT(USB_PRODUCT_##v##_##p), \
+    USB_DEV_BCD_GTEQ(rl), USB_DEV_BCD_LTEQ(rh), USB_DRIVER_INFO(TYPE_##t) }
 
 static const struct usb_device_id uplcom_devs[] = {
 	/* Belkin F5U257 */
-	{USB_UPL(USB_VENDOR_BELKIN, USB_PRODUCT_BELKIN_F5U257, 0, 0xFFFF, TYPE_PL2303X)},
+	UPLCOM_DEV(BELKIN, F5U257, 0, 0xFFFF, PL2303X),
 	/* I/O DATA USB-RSAQ */
-	{USB_UPL(USB_VENDOR_IODATA, USB_PRODUCT_IODATA_USBRSAQ, 0, 0xFFFF, TYPE_PL2303)},
+	UPLCOM_DEV(IODATA, USBRSAQ, 0, 0xFFFF, PL2303),
 	/* I/O DATA USB-RSAQ2 */
-	{USB_UPL(USB_VENDOR_PROLIFIC, USB_PRODUCT_PROLIFIC_RSAQ2, 0, 0xFFFF, TYPE_PL2303)},
+	UPLCOM_DEV(PROLIFIC, RSAQ2, 0, 0xFFFF, PL2303),
 	/* I/O DATA USB-RSAQ3 */
-	{USB_UPL(USB_VENDOR_PROLIFIC, USB_PRODUCT_PROLIFIC_RSAQ3, 0, 0xFFFF, TYPE_PL2303X)},
+	UPLCOM_DEV(PROLIFIC, RSAQ3, 0, 0xFFFF, PL2303X),
 	/* PLANEX USB-RS232 URS-03 */
-	{USB_UPL(USB_VENDOR_ATEN, USB_PRODUCT_ATEN_UC232A, 0, 0xFFFF, TYPE_PL2303)},
+	UPLCOM_DEV(ATEN, UC232A, 0, 0xFFFF, PL2303),
 	/* TrendNet TU-S9 */
-	{USB_UPL(USB_VENDOR_PROLIFIC, USB_PRODUCT_PROLIFIC_PL2303, 0x0400, 0xFFFF, TYPE_PL2303X)},
+	UPLCOM_DEV(PROLIFIC, PL2303, 0x0400, 0xFFFF, PL2303X),
 	/* ST Lab USB-SERIAL-4 */
-	{USB_UPL(USB_VENDOR_PROLIFIC, USB_PRODUCT_PROLIFIC_PL2303, 0x0300, 0x03FF, TYPE_PL2303X)},
+	UPLCOM_DEV(PROLIFIC, PL2303, 0x0300, 0x03FF, PL2303X),
 	/* IOGEAR/ATEN UC-232A (also ST Lab USB-SERIAL-1) */
-	{USB_UPL(USB_VENDOR_PROLIFIC, USB_PRODUCT_PROLIFIC_PL2303, 0, 0x02FF, TYPE_PL2303)},
+	UPLCOM_DEV(PROLIFIC, PL2303, 0, 0x02FF, PL2303),
 	/* TDK USB-PHS Adapter UHA6400 */
-	{USB_UPL(USB_VENDOR_TDK, USB_PRODUCT_TDK_UHA6400, 0, 0xFFFF, TYPE_PL2303)},
+	UPLCOM_DEV(TDK, UHA6400, 0, 0xFFFF, PL2303),
 	/* RATOC REX-USB60 */
-	{USB_UPL(USB_VENDOR_RATOC, USB_PRODUCT_RATOC_REXUSB60, 0, 0xFFFF, TYPE_PL2303)},
+	UPLCOM_DEV(RATOC, REXUSB60, 0, 0xFFFF, PL2303),
 	/* ELECOM UC-SGT */
-	{USB_UPL(USB_VENDOR_ELECOM, USB_PRODUCT_ELECOM_UCSGT, 0, 0xFFFF, TYPE_PL2303)},
-	{USB_UPL(USB_VENDOR_ELECOM, USB_PRODUCT_ELECOM_UCSGT0, 0, 0xFFFF, TYPE_PL2303)},
+	UPLCOM_DEV(ELECOM, UCSGT, 0, 0xFFFF, PL2303),
+	UPLCOM_DEV(ELECOM, UCSGT0, 0, 0xFFFF, PL2303),
 	/* Sagem USB-Serial Controller */
-	{USB_UPL(USB_VENDOR_SAGEM, USB_PRODUCT_SAGEM_USBSERIAL, 0, 0xFFFF, TYPE_PL2303X)},
+	UPLCOM_DEV(SAGEM, USBSERIAL, 0, 0xFFFF, PL2303X),
 	/* Sony Ericsson USB Cable */
-	{USB_UPL(USB_VENDOR_SONYERICSSON, USB_PRODUCT_SONYERICSSON_DCU10, 0, 0xFFFF, TYPE_PL2303)},
+	UPLCOM_DEV(SONYERICSSON, DCU10, 0, 0xFFFF, PL2303),
 	/* SOURCENEXT KeikaiDenwa 8 */
-	{USB_UPL(USB_VENDOR_SOURCENEXT, USB_PRODUCT_SOURCENEXT_KEIKAI8, 0, 0xFFFF, TYPE_PL2303)},
+	UPLCOM_DEV(SOURCENEXT, KEIKAI8, 0, 0xFFFF, PL2303),
 	/* SOURCENEXT KeikaiDenwa 8 with charger */
-	{USB_UPL(USB_VENDOR_SOURCENEXT, USB_PRODUCT_SOURCENEXT_KEIKAI8_CHG, 0, 0, TYPE_PL2303)},
+	UPLCOM_DEV(SOURCENEXT, KEIKAI8_CHG, 0, 0, PL2303),
 	/* HAL Corporation Crossam2+USB */
-	{USB_UPL(USB_VENDOR_HAL, USB_PRODUCT_HAL_IMR001, 0, 0xFFFF, TYPE_PL2303)},
+	UPLCOM_DEV(HAL, IMR001, 0, 0xFFFF, PL2303),
 	/* Sitecom USB to Serial */
-	{USB_UPL(USB_VENDOR_SITECOM, USB_PRODUCT_SITECOM_SERIAL, 0, 0xFFFF, TYPE_PL2303)},
+	UPLCOM_DEV(SITECOM, SERIAL, 0, 0xFFFF, PL2303),
 	/* Tripp-Lite U209-000-R */
-	{USB_UPL(USB_VENDOR_TRIPPLITE, USB_PRODUCT_TRIPPLITE_U209, 0, 0xFFFF, TYPE_PL2303X)},
-	{USB_UPL(USB_VENDOR_RADIOSHACK, USB_PRODUCT_RADIOSHACK_USBCABLE, 0, 0xFFFF, TYPE_PL2303)},
+	UPLCOM_DEV(TRIPPLITE, U209, 0, 0xFFFF, PL2303X),
+	UPLCOM_DEV(RADIOSHACK, USBCABLE, 0, 0xFFFF, PL2303),
 	/* Prolific Pharos */
-	{USB_UPL(USB_VENDOR_PROLIFIC, USB_PRODUCT_PROLIFIC_PHAROS, 0, 0xFFFF, TYPE_PL2303)},
+	UPLCOM_DEV(PROLIFIC, PHAROS, 0, 0xFFFF, PL2303),
 	/* Willcom W-SIM */
-	{USB_UPL(USB_VENDOR_PROLIFIC2, USB_PRODUCT_PROLIFIC2_WSIM, 0, 0xFFFF, TYPE_PL2303X)},
+	UPLCOM_DEV(PROLIFIC2, WSIM, 0, 0xFFFF, PL2303X),
 	/* Mobile Action MA-620 Infrared Adapter */
-	{USB_UPL(USB_VENDOR_MOBILEACTION, USB_PRODUCT_MOBILEACTION_MA620, 0, 0xFFFF, TYPE_PL2303X)},
-
+	UPLCOM_DEV(MOBILEACTION, MA620, 0, 0xFFFF, PL2303X),
 };
+#undef UPLCOM_DEV
 
 static device_method_t uplcom_methods[] = {
 	DEVMETHOD(device_probe, uplcom_probe),
@@ -361,7 +377,7 @@ uplcom_attach(device_t dev)
 	if (iface) {
 		id = usbd_get_interface_descriptor(iface);
 		if (id == NULL) {
-			device_printf(dev, "no interface descriptor (2)!\n");
+			device_printf(dev, "no interface descriptor (2)\n");
 			goto detach;
 		}
 		sc->sc_data_iface_no = id->bInterfaceNumber;
@@ -389,8 +405,8 @@ uplcom_attach(device_t dev)
 	}
 	/* clear stall at first run */
 	mtx_lock(&sc->sc_mtx);
-	usbd_transfer_set_stall(sc->sc_xfer[UPLCOM_BULK_DT_WR]);
-	usbd_transfer_set_stall(sc->sc_xfer[UPLCOM_BULK_DT_RD]);
+	usbd_xfer_set_stall(sc->sc_xfer[UPLCOM_BULK_DT_WR]);
+	usbd_xfer_set_stall(sc->sc_xfer[UPLCOM_BULK_DT_RD]);
 	mtx_unlock(&sc->sc_mtx);
 
 	error = ucom_attach(&sc->sc_super_ucom, &sc->sc_ucom, 1, sc,
@@ -404,7 +420,7 @@ uplcom_attach(device_t dev)
 	 */
 	if (sc->sc_chiptype == TYPE_PL2303X) {
 		if (uplcom_pl2303x_init(uaa->device)) {
-			device_printf(dev, "init failed!\n");
+			device_printf(dev, "init failed\n");
 			goto detach;
 		}
 	}
@@ -736,19 +752,24 @@ uplcom_cfg_get_status(struct ucom_softc *ucom, uint8_t *lsr, uint8_t *msr)
 }
 
 static void
-uplcom_intr_callback(struct usb_xfer *xfer)
+uplcom_intr_callback(struct usb_xfer *xfer, usb_error_t error)
 {
-	struct uplcom_softc *sc = xfer->priv_sc;
+	struct uplcom_softc *sc = usbd_xfer_softc(xfer);
+	struct usb_page_cache *pc;
 	uint8_t buf[9];
+	int actlen;
+
+	usbd_xfer_status(xfer, &actlen, NULL, NULL, NULL);
 
 	switch (USB_GET_STATE(xfer)) {
 	case USB_ST_TRANSFERRED:
 
-		DPRINTF("actlen = %u\n", xfer->actlen);
+		DPRINTF("actlen = %u\n", actlen);
 
-		if (xfer->actlen >= 9) {
+		if (actlen >= 9) {
 
-			usbd_copy_out(xfer->frbuffers, 0, buf, sizeof(buf));
+			pc = usbd_xfer_get_frame(xfer, 0);
+			usbd_copy_out(pc, 0, buf, sizeof(buf));
 
 			DPRINTF("status = 0x%02x\n", buf[8]);
 
@@ -768,14 +789,14 @@ uplcom_intr_callback(struct usb_xfer *xfer)
 		}
 	case USB_ST_SETUP:
 tr_setup:
-		xfer->frlengths[0] = xfer->max_data_length;
+		usbd_xfer_set_frame_len(xfer, 0, usbd_xfer_max_len(xfer));
 		usbd_transfer_submit(xfer);
 		return;
 
 	default:			/* Error */
-		if (xfer->error != USB_ERR_CANCELLED) {
+		if (error != USB_ERR_CANCELLED) {
 			/* try to clear stall first */
-			xfer->flags.stall_pipe = 1;
+			usbd_xfer_set_stall(xfer);
 			goto tr_setup;
 		}
 		return;
@@ -783,29 +804,31 @@ tr_setup:
 }
 
 static void
-uplcom_write_callback(struct usb_xfer *xfer)
+uplcom_write_callback(struct usb_xfer *xfer, usb_error_t error)
 {
-	struct uplcom_softc *sc = xfer->priv_sc;
+	struct uplcom_softc *sc = usbd_xfer_softc(xfer);
+	struct usb_page_cache *pc;
 	uint32_t actlen;
 
 	switch (USB_GET_STATE(xfer)) {
 	case USB_ST_SETUP:
 	case USB_ST_TRANSFERRED:
 tr_setup:
-		if (ucom_get_data(&sc->sc_ucom, xfer->frbuffers, 0,
+		pc = usbd_xfer_get_frame(xfer, 0);
+		if (ucom_get_data(&sc->sc_ucom, pc, 0,
 		    UPLCOM_BULK_BUF_SIZE, &actlen)) {
 
 			DPRINTF("actlen = %d\n", actlen);
 
-			xfer->frlengths[0] = actlen;
+			usbd_xfer_set_frame_len(xfer, 0, actlen);
 			usbd_transfer_submit(xfer);
 		}
 		return;
 
 	default:			/* Error */
-		if (xfer->error != USB_ERR_CANCELLED) {
+		if (error != USB_ERR_CANCELLED) {
 			/* try to clear stall first */
-			xfer->flags.stall_pipe = 1;
+			usbd_xfer_set_stall(xfer);
 			goto tr_setup;
 		}
 		return;
@@ -813,26 +836,38 @@ tr_setup:
 }
 
 static void
-uplcom_read_callback(struct usb_xfer *xfer)
+uplcom_read_callback(struct usb_xfer *xfer, usb_error_t error)
 {
-	struct uplcom_softc *sc = xfer->priv_sc;
+	struct uplcom_softc *sc = usbd_xfer_softc(xfer);
+	struct usb_page_cache *pc;
+	int actlen;
+
+	usbd_xfer_status(xfer, &actlen, NULL, NULL, NULL);
 
 	switch (USB_GET_STATE(xfer)) {
 	case USB_ST_TRANSFERRED:
-		ucom_put_data(&sc->sc_ucom, xfer->frbuffers, 0, xfer->actlen);
+		pc = usbd_xfer_get_frame(xfer, 0);
+		ucom_put_data(&sc->sc_ucom, pc, 0, actlen);
 
 	case USB_ST_SETUP:
 tr_setup:
-		xfer->frlengths[0] = xfer->max_data_length;
+		usbd_xfer_set_frame_len(xfer, 0, usbd_xfer_max_len(xfer));
 		usbd_transfer_submit(xfer);
 		return;
 
 	default:			/* Error */
-		if (xfer->error != USB_ERR_CANCELLED) {
+		if (error != USB_ERR_CANCELLED) {
 			/* try to clear stall first */
-			xfer->flags.stall_pipe = 1;
+			usbd_xfer_set_stall(xfer);
 			goto tr_setup;
 		}
 		return;
 	}
+}
+
+static void
+uplcom_poll(struct ucom_softc *ucom)
+{
+	struct uplcom_softc *sc = ucom->sc_parent;
+	usbd_transfer_poll(sc->sc_xfer, UPLCOM_N_TRANSFER);
 }

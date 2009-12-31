@@ -213,7 +213,11 @@ s32 e1000_set_mac_type(struct e1000_hw *hw)
 		mac->type = e1000_82573;
 		break;
 	case E1000_DEV_ID_82574L:
+	case E1000_DEV_ID_82574LA:
 		mac->type = e1000_82574;
+		break;
+	case E1000_DEV_ID_82583V:
+		mac->type = e1000_82583;
 		break;
 	case E1000_DEV_ID_80003ES2LAN_COPPER_DPT:
 	case E1000_DEV_ID_80003ES2LAN_SERDES_DPT:
@@ -228,6 +232,7 @@ s32 e1000_set_mac_type(struct e1000_hw *hw)
 	case E1000_DEV_ID_ICH8_IGP_M_AMT:
 	case E1000_DEV_ID_ICH8_IGP_AMT:
 	case E1000_DEV_ID_ICH8_IGP_C:
+	case E1000_DEV_ID_ICH8_82567V_3:
 		mac->type = e1000_ich8lan;
 		break;
 	case E1000_DEV_ID_ICH9_IFE:
@@ -248,6 +253,12 @@ s32 e1000_set_mac_type(struct e1000_hw *hw)
 	case E1000_DEV_ID_ICH10_D_BM_LF:
 		mac->type = e1000_ich10lan;
 		break;
+	case E1000_DEV_ID_PCH_D_HV_DM:
+	case E1000_DEV_ID_PCH_D_HV_DC:
+	case E1000_DEV_ID_PCH_M_HV_LM:
+	case E1000_DEV_ID_PCH_M_HV_LC:
+		mac->type = e1000_pchlan;
+		break;
 	case E1000_DEV_ID_82575EB_COPPER:
 	case E1000_DEV_ID_82575EB_FIBER_SERDES:
 	case E1000_DEV_ID_82575GB_QUAD_COPPER:
@@ -259,7 +270,20 @@ s32 e1000_set_mac_type(struct e1000_hw *hw)
 	case E1000_DEV_ID_82576_SERDES:
 	case E1000_DEV_ID_82576_QUAD_COPPER:
 	case E1000_DEV_ID_82576_NS:
+	case E1000_DEV_ID_82576_NS_SERDES:
+	case E1000_DEV_ID_82576_SERDES_QUAD:
 		mac->type = e1000_82576;
+		break;
+	case E1000_DEV_ID_82580_COPPER:
+	case E1000_DEV_ID_82580_FIBER:
+	case E1000_DEV_ID_82580_SERDES:
+	case E1000_DEV_ID_82580_SGMII:
+	case E1000_DEV_ID_82580_COPPER_DUAL:
+		mac->type = e1000_82580;
+		break;
+	case E1000_DEV_ID_82580_ER:
+	case E1000_DEV_ID_82580_ER_DUAL:
+		mac->type = e1000_82580er;
 		break;
 	default:
 		/* Should never have loaded on this device */
@@ -337,6 +361,7 @@ s32 e1000_setup_init_funcs(struct e1000_hw *hw, bool init_device)
 	case e1000_82572:
 	case e1000_82573:
 	case e1000_82574:
+	case e1000_82583:
 		e1000_init_function_pointers_82571(hw);
 		break;
 	case e1000_80003es2lan:
@@ -345,10 +370,13 @@ s32 e1000_setup_init_funcs(struct e1000_hw *hw, bool init_device)
 	case e1000_ich8lan:
 	case e1000_ich9lan:
 	case e1000_ich10lan:
+	case e1000_pchlan:
 		e1000_init_function_pointers_ich8lan(hw);
 		break;
 	case e1000_82575:
 	case e1000_82576:
+	case e1000_82580:
+	case e1000_82580er:
 		e1000_init_function_pointers_82575(hw);
 		break;
 	default:

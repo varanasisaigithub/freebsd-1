@@ -88,7 +88,7 @@ static Elf32_Brandinfo freebsd_brand_info = {
 	.flags		= BI_CAN_EXEC_DYN | BI_BRAND_NOTE
 };
 
-SYSINIT(elf32, SI_SUB_EXEC, SI_ORDER_ANY,
+SYSINIT(elf32, SI_SUB_EXEC, SI_ORDER_FIRST,
 	(sysinit_cfunc_t) elf32_insert_brand_entry,
 	&freebsd_brand_info);
 
@@ -149,7 +149,7 @@ elf_reloc_internal(linker_file_t lf, Elf_Addr relocbase, const void *data,
 
 	if (local) {
 		if (rtype == R_ARM_RELATIVE) {	/* A + B */
-			addr = relocbase + addend;
+			addr = elf_relocaddr(lf, relocbase + addend);
 			if (*where != addr)
 				*where = addr;
 		}

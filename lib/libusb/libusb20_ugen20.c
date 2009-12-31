@@ -40,10 +40,8 @@
 #include "libusb20_int.h"
 
 #include <dev/usb/usb.h>
+#include <dev/usb/usbdi.h>
 #include <dev/usb/usb_ioctl.h>
-#include <dev/usb/usb_mfunc.h>
-#include <dev/usb/usb_error.h>
-#include <dev/usb/usb_revision.h>
 
 static libusb20_init_backend_t ugen20_init_backend;
 static libusb20_open_device_t ugen20_open_device;
@@ -451,6 +449,8 @@ ugen20_get_config_desc_full(struct libusb20_device *pdev,
 	uint16_t len;
 	int error;
 
+	/* make sure memory is initialised */
+	memset(&cdesc, 0, sizeof(cdesc));
 	memset(&gen_desc, 0, sizeof(gen_desc));
 
 	gen_desc.ugd_data = &cdesc;
@@ -470,6 +470,10 @@ ugen20_get_config_desc_full(struct libusb20_device *pdev,
 	if (!ptr) {
 		return (LIBUSB20_ERROR_NO_MEM);
 	}
+
+	/* make sure memory is initialised */
+	memset(ptr, 0, len);
+
 	gen_desc.ugd_data = ptr;
 	gen_desc.ugd_maxlen = len;
 
@@ -802,7 +806,11 @@ ugen20_tr_submit(struct libusb20_transfer *xfer)
 	if (xfer->flags & LIBUSB20_TRANSFER_DO_CLEAR_STALL) {
 		fsep->flags |= USB_FS_FLAG_CLEAR_STALL;
 	}
-	fsep->timeout = xfer->timeout;
+	/* NOTE: The "fsep->timeout" variable is 16-bit. */
+	if (xfer->timeout > 65535)
+		fsep->timeout = 65535;
+	else
+		fsep->timeout = xfer->timeout;
 
 	temp.ep_index = xfer->trIndex;
 

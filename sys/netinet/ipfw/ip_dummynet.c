@@ -76,6 +76,7 @@ __FBSDID("$FreeBSD$");
 #include <netinet/in.h>
 #include <netinet/ip.h>		/* ip_len, ip_off */
 #include <netinet/ip_fw.h>
+#include <netinet/ipfw/ip_fw_private.h>
 #include <netinet/ip_dummynet.h>
 #include <netinet/ip_var.h>	/* ip_output(), IP_FORWARDING */
 
@@ -242,6 +243,17 @@ static void	dummynet_flush(void);
 static void	dummynet_send(struct mbuf *);
 void		dummynet_drain(void);
 static int	dummynet_io(struct mbuf **, int , struct ip_fw_args *);
+
+/*
+ * Flow queue is idle if:
+ *   1) it's empty for at least 1 tick
+ *   2) it has invalid timestamp (WF2Q case)
+ *   3) parent pipe has no 'exhausted' burst.
+ */
+#define QUEUE_IS_IDLE(q) ((q)->head == NULL && (q)->S == (q)->F + 1 && \
+	curr_time > (q)->idle_time + 1 && \
+	((q)->numbytes + (curr_time - (q)->idle_time - 1) * \
+	(q)->fs->pipe->bandwidth >= (q)->fs->pipe->burst))
 
 /*
  * Heap management functions.
@@ -450,6 +462,27 @@ heap_free(struct dn_heap *h)
  */
 
 /*
+ * Dispose a packet in dummynet. Use an inline functions so if we
+ * need to free extra state associated to a packet, this is a
+ * central point to do it.
+ */
+static __inline void *dn_free_pkt(struct mbuf *m)
+{
+	m_freem(m);
+	return NULL;
+}
+
+static __inline void dn_free_pkts(struct mbuf *mnext)
+{
+	struct mbuf *m;
+
+	while ((m = mnext) != NULL) {
+		mnext = m->m_nextpkt;
+		dn_free_pkt(m);
+	}
+}
+
+/*
  * Return the mbuf tag holding the dummynet state.  As an optimization
  * this is assumed to be the first tag on the list.  If this turns out
  * wrong we'll need to search the list.
@@ -518,7 +551,6 @@ transmit_event(struct dn_pipe *pipe, struct mbuf **head, struct mbuf **tail)
 }
 
 #define div64(a, b)	((int64_t)(a) / (int64_t)(b))
-#define DN_TO_DROP	0xffff
 /*
  * Compute how many ticks we have to wait before being able to send
  * a packet. This is computed as the "wire time" for the packet
@@ -533,13 +565,6 @@ set_ticks(struct mbuf *m, struct dn_flow_queue *q, struct dn_pipe *p)
 
 	ret = div64( (m->m_pkthdr.len * 8 + q->extra_bits) * hz
 		- q->numbytes + p->bandwidth - 1 , p->bandwidth);
-#if 0
-	printf("%s %d extra_bits %d numb %d ret %d\n",
-		__FUNCTION__, __LINE__,
-		(int)(q->extra_bits & 0xffffffff),
-		(int)(q->numbytes & 0xffffffff),
-		(int)(ret & 0xffffffff));
-#endif
 	if (ret < 0)
 		ret = 0;
 	return ret;
@@ -559,11 +584,11 @@ compute_extra_bits(struct mbuf *pkt, struct dn_pipe *p)
 	if (!p->samples || p->samples_no == 0)
 		return 0;
 	index  = random() % p->samples_no;
-	extra_bits = ((dn_key)p->samples[index] * p->bandwidth) / 1000;
+	extra_bits = div64((dn_key)p->samples[index] * p->bandwidth, 1000);
 	if (index >= p->loss_level) {
 		struct dn_pkt_tag *dt = dn_tag_get(pkt);
 		if (dt)
-			dt->dn_dir = DN_TO_DROP;
+			dt->dn_dir = DIR_DROP;
 	}
 	return extra_bits;
 }
@@ -661,7 +686,7 @@ ready_event(struct dn_flow_queue *q, struct mbuf **head, struct mbuf **tail)
 		 * queue on error hoping next time we are luckier.
 		 */
 	} else		/* RED needs to know when the queue becomes empty. */
-		q->q_time = curr_time;
+		q->idle_time = curr_time;
 
 	/*
 	 * If the delay line was empty call transmit_event() now.
@@ -685,11 +710,20 @@ ready_event_wfq(struct dn_pipe *p, struct mbuf **head, struct mbuf **tail)
 	int p_was_empty = (p->head == NULL);
 	struct dn_heap *sch = &(p->scheduler_heap);
 	struct dn_heap *neh = &(p->not_eligible_heap);
+	int64_t p_numbytes = p->numbytes;
+
+	/*
+	 * p->numbytes is only 32bits in FBSD7, but we might need 64 bits.
+	 * Use a local variable for the computations, and write back the
+	 * results when done, saturating if needed.
+	 * The local variable has no impact on performance and helps
+	 * reducing diffs between the various branches.
+	 */
 
 	DUMMYNET_LOCK_ASSERT();
 
 	if (p->if_name[0] == 0)		/* tx clock is simulated */
-		p->numbytes += (curr_time - p->sched_time) * p->bandwidth;
+		p_numbytes += (curr_time - p->sched_time) * p->bandwidth;
 	else {	/*
 		 * tx clock is for real,
 		 * the ifq must be empty or this is a NOP.
@@ -706,7 +740,7 @@ ready_event_wfq(struct dn_pipe *p, struct mbuf **head, struct mbuf **tail)
 	 * While we have backlogged traffic AND credit, we need to do
 	 * something on the queue.
 	 */
-	while (p->numbytes >= 0 && (sch->elements > 0 || neh->elements > 0)) {
+	while (p_numbytes >= 0 && (sch->elements > 0 || neh->elements > 0)) {
 		if (sch->elements > 0) {
 			/* Have some eligible pkts to send out. */
 			struct dn_flow_queue *q = sch->p[0].object;
@@ -716,10 +750,10 @@ ready_event_wfq(struct dn_pipe *p, struct mbuf **head, struct mbuf **tail)
 			int len_scaled = p->bandwidth ? len * 8 * hz : 0;
 
 			heap_extract(sch, NULL); /* Remove queue from heap. */
-			p->numbytes -= len_scaled;
+			p_numbytes -= len_scaled;
 			move_pkt(pkt, q, p, len);
 
-			p->V += (len << MY_M) / p->sum;	/* Update V. */
+			p->V += div64((len << MY_M), p->sum);	/* Update V. */
 			q->S = q->F;			/* Update start time. */
 			if (q->len == 0) {
 				/* Flow not backlogged any more. */
@@ -734,7 +768,7 @@ ready_event_wfq(struct dn_pipe *p, struct mbuf **head, struct mbuf **tail)
 				 * (we will fix this later).
 				 */
 				len = (q->head)->m_pkthdr.len;
-				q->F += (len << MY_M) / (uint64_t)fs->weight;
+				q->F += div64((len << MY_M), fs->weight);
 				if (DN_KEY_LEQ(q->S, p->V))
 					heap_insert(neh, q->S, q);
 				else
@@ -757,38 +791,41 @@ ready_event_wfq(struct dn_pipe *p, struct mbuf **head, struct mbuf **tail)
 		}
 
 		if (p->if_name[0] != '\0') { /* Tx clock is from a real thing */
-			p->numbytes = -1;	/* Mark not ready for I/O. */
+			p_numbytes = -1;	/* Mark not ready for I/O. */
 			break;
 		}
 	}
-	if (sch->elements == 0 && neh->elements == 0 && p->numbytes >= 0 &&
-	    p->idle_heap.elements > 0) {
+	if (sch->elements == 0 && neh->elements == 0 && p_numbytes >= 0) {
+		p->idle_time = curr_time;
 		/*
 		 * No traffic and no events scheduled.
 		 * We can get rid of idle-heap.
 		 */
-		int i;
+		if (p->idle_heap.elements > 0) {
+			int i;
 
-		for (i = 0; i < p->idle_heap.elements; i++) {
-			struct dn_flow_queue *q = p->idle_heap.p[i].object;
-
-			q->F = 0;
-			q->S = q->F + 1;
+			for (i = 0; i < p->idle_heap.elements; i++) {
+				struct dn_flow_queue *q;
+				
+				q = p->idle_heap.p[i].object;
+				q->F = 0;
+				q->S = q->F + 1;
+			}
+			p->sum = 0;
+			p->V = 0;
+			p->idle_heap.elements = 0;
 		}
-		p->sum = 0;
-		p->V = 0;
-		p->idle_heap.elements = 0;
 	}
 	/*
 	 * If we are getting clocks from dummynet (not a real interface) and
 	 * If we are under credit, schedule the next ready event.
 	 * Also fix the delivery time of the last packet.
 	 */
-	if (p->if_name[0]==0 && p->numbytes < 0) { /* This implies bw > 0. */
+	if (p->if_name[0]==0 && p_numbytes < 0) { /* This implies bw > 0. */
 		dn_key t = 0;		/* Number of ticks i have to wait. */
 
 		if (p->bandwidth > 0)
-			t = (p->bandwidth - 1 - p->numbytes) / p->bandwidth;
+			t = div64(p->bandwidth - 1 - p_numbytes, p->bandwidth);
 		dn_tag_get(p->tail)->output_time += t;
 		p->sched_time = curr_time;
 		heap_insert(&wfq_ready_heap, curr_time + t, (void *)p);
@@ -797,6 +834,9 @@ ready_event_wfq(struct dn_pipe *p, struct mbuf **head, struct mbuf **tail)
 		 * queue on error hoping next time we are luckier.
 		 */
 	}
+
+	/* Write back p_numbytes (adjust 64->32bit if necessary). */
+	p->numbytes = p_numbytes;
 
 	/*
 	 * If the delay line was empty call transmit_event() now.
@@ -897,8 +937,8 @@ dummynet_task(void *context, int pending)
 	}
 
 	/* Sweep pipes trying to expire idle flow_queues. */
-	for (i = 0; i < HASHSIZE; i++)
-		SLIST_FOREACH(pipe, &pipehash[i], next)
+	for (i = 0; i < HASHSIZE; i++) {
+		SLIST_FOREACH(pipe, &pipehash[i], next) {
 			if (pipe->idle_heap.elements > 0 &&
 			    DN_KEY_LT(pipe->idle_heap.p[0].key, pipe->V)) {
 				struct dn_flow_queue *q =
@@ -909,6 +949,8 @@ dummynet_task(void *context, int pending)
 				q->S = q->F + 1;
 				pipe->sum -= q->fs->weight;
 			}
+		}
+	}
 
 	DUMMYNET_UNLOCK();
 
@@ -921,41 +963,48 @@ dummynet_task(void *context, int pending)
 static void
 dummynet_send(struct mbuf *m)
 {
-	struct dn_pkt_tag *pkt;
 	struct mbuf *n;
-	struct ip *ip;
 
 	for (; m != NULL; m = n) {
+		struct ifnet *ifp;
+		int dst;
+
 		n = m->m_nextpkt;
 		m->m_nextpkt = NULL;
-		pkt = dn_tag_get(m);
-		switch (pkt->dn_dir) {
-		case DN_TO_IP_OUT:
+		if (m_tag_first(m) == NULL) {
+			dst = DIR_DROP;
+		} else {
+			struct dn_pkt_tag *pkt = dn_tag_get(m);
+			dst = pkt->dn_dir;
+			ifp = pkt->ifp;
+		}
+
+		switch (dst) {
+		case DIR_OUT:
 			ip_output(m, NULL, NULL, IP_FORWARDING, NULL, NULL);
 			break ;
-		case DN_TO_IP_IN :
-			ip = mtod(m, struct ip *);
-			ip->ip_len = htons(ip->ip_len);
-			ip->ip_off = htons(ip->ip_off);
+		case DIR_IN :
+			/* put header in network format for ip_input() */
+			SET_NET_IPLEN(mtod(m, struct ip *));
 			netisr_dispatch(NETISR_IP, m);
 			break;
 #ifdef INET6
-		case DN_TO_IP6_IN:
+		case DIR_IN | PROTO_IPV6:
 			netisr_dispatch(NETISR_IPV6, m);
 			break;
 
-		case DN_TO_IP6_OUT:
+		case DIR_OUT | PROTO_IPV6:
 			ip6_output(m, NULL, NULL, IPV6_FORWARDING, NULL, NULL, NULL);
 			break;
 #endif
-		case DN_TO_IFB_FWD:
+		case DIR_FWD | PROTO_IFB: /* DN_TO_IFB_FWD: */
 			if (bridge_dn_p != NULL)
-				((*bridge_dn_p)(m, pkt->ifp));
+				((*bridge_dn_p)(m, ifp));
 			else
 				printf("dummynet: if_bridge not loaded\n");
 
 			break;
-		case DN_TO_ETH_DEMUX:
+		case DIR_IN | PROTO_LAYER2: /* DN_TO_ETH_DEMUX: */
 			/*
 			 * The Ethernet code assumes the Ethernet header is
 			 * contiguous in the first mbuf header.
@@ -969,18 +1018,18 @@ dummynet_send(struct mbuf *m)
 			}
 			ether_demux(m->m_pkthdr.rcvif, m);
 			break;
-		case DN_TO_ETH_OUT:
-			ether_output_frame(pkt->ifp, m);
+		case DIR_OUT | PROTO_LAYER2: /* N_TO_ETH_OUT: */
+			ether_output_frame(ifp, m);
 			break;
 
-		case DN_TO_DROP:
+		case DIR_DROP:
 			/* drop the packet after some time */
-			m_freem(m);
+			dn_free_pkt(m);
 			break;
 
 		default:
-			printf("dummynet: bad switch %d!\n", pkt->dn_dir);
-			m_freem(m);
+			printf("dummynet: bad switch %d!\n", dst);
+			dn_free_pkt(m);
 			break;
 		}
 	}
@@ -999,9 +1048,9 @@ expire_queues(struct dn_flow_set *fs)
     if (fs->last_expired == time_uptime)
 	return 0 ;
     fs->last_expired = time_uptime ;
-    for (i = 0 ; i <= fs->rq_size ; i++) /* last one is overflow */
-	for (prev=NULL, q = fs->rq[i] ; q != NULL ; )
-	    if (q->head != NULL || q->S != q->F+1) {
+    for (i = 0 ; i <= fs->rq_size ; i++) { /* last one is overflow */
+	for (prev=NULL, q = fs->rq[i] ; q != NULL ; ) {
+	    if (!QUEUE_IS_IDLE(q)) {
   		prev = q ;
   	        q = q->next ;
   	    } else { /* entry is idle, expire it */
@@ -1014,6 +1063,8 @@ expire_queues(struct dn_flow_set *fs)
 		fs->rq_elements-- ;
 		free(old_q, M_DUMMYNET);
 	    }
+	}
+    }
     return initial_elements - fs->rq_elements ;
 }
 
@@ -1042,7 +1093,7 @@ create_queue(struct dn_flow_set *fs, int i)
 	q->hash_slot = i;
 	q->next = fs->rq[i];
 	q->S = q->F + 1;	/* hack - mark timestamp as invalid. */
-	q->numbytes = io_fast ? fs->pipe->bandwidth : 0;
+	q->numbytes = fs->pipe->burst + (io_fast ? fs->pipe->bandwidth : 0);
 	fs->rq[i] = q;
 	fs->rq_elements++;
 	return (q);
@@ -1131,7 +1182,7 @@ find_queue(struct dn_flow_set *fs, struct ipfw_flow_id *id)
 		break ; /* found */
 
 	    /* No match. Check if we can expire the entry */
-	    if (pipe_expire && q->head == NULL && q->S == q->F+1 ) {
+	    if (pipe_expire && QUEUE_IS_IDLE(q)) {
 		/* entry is idle and not in any heap, expire it */
 		struct dn_flow_queue *old_q = q ;
 
@@ -1204,7 +1255,8 @@ red_drops(struct dn_flow_set *fs, struct dn_flow_queue *q, int len)
 		 * XXX check wraps...
 		 */
 		if (q->avg) {
-			u_int t = (curr_time - q->q_time) / fs->lookup_step;
+			u_int t = div64(curr_time - q->idle_time,
+			    fs->lookup_step);
 
 			q->avg = (t < fs->lookup_depth) ?
 			    SCALE_MUL(q->avg, fs->w_q_lookup[t]) : 0;
@@ -1244,7 +1296,7 @@ red_drops(struct dn_flow_set *fs, struct dn_flow_queue *q, int len)
 	}
 
 	if (fs->flags_fs & DN_QSIZE_IS_BYTES)
-		p_b = (p_b * len) / fs->max_pkt_size;
+		p_b = div64(p_b * len, fs->max_pkt_size);
 	if (++q->count == 0)
 		q->random = random() & 0xffff;
 	else {
@@ -1310,19 +1362,10 @@ dummynet_io(struct mbuf **m0, int dir, struct ip_fw_args *fwa)
 	struct dn_pipe *pipe;
 	uint64_t len = m->m_pkthdr.len;
 	struct dn_flow_queue *q = NULL;
-	int is_pipe;
-	ipfw_insn *cmd = ACTION_PTR(fwa->rule);
+	int is_pipe = fwa->cookie & 0x8000000 ? 0 : 1;
 
 	KASSERT(m->m_nextpkt == NULL,
 	    ("dummynet_io: mbuf queue passed to dummynet"));
-
-	if (cmd->opcode == O_LOG)
-		cmd += F_LEN(cmd);
-	if (cmd->opcode == O_ALTQ)
-		cmd += F_LEN(cmd);
-	if (cmd->opcode == O_TAG)
-		cmd += F_LEN(cmd);
-	is_pipe = (cmd->opcode == O_PIPE);
 
 	DUMMYNET_LOCK();
 	io_pkt++;
@@ -1333,11 +1376,11 @@ dummynet_io(struct mbuf **m0, int dir, struct ip_fw_args *fwa)
 	 * below can be simplified.
 	 */
 	if (is_pipe) {
-		pipe = locate_pipe(fwa->cookie);
+		pipe = locate_pipe(fwa->cookie & 0xffff);
 		if (pipe != NULL)
 			fs = &(pipe->fs);
 	} else
-		fs = locate_flowset(fwa->cookie);
+		fs = locate_flowset(fwa->cookie & 0xffff);
 
 	if (fs == NULL)
 		goto dropit;	/* This queue/pipe does not exist! */
@@ -1383,7 +1426,8 @@ dummynet_io(struct mbuf **m0, int dir, struct ip_fw_args *fwa)
 	 * Ok, i can handle the pkt now...
 	 * Build and enqueue packet + parameters.
 	 */
-	pkt->rule = fwa->rule;
+	pkt->slot = fwa->slot;
+	pkt->rulenum = fwa->rulenum;
 	pkt->rule_id = fwa->rule_id;
 	pkt->chain_id = fwa->chain_id;
 	pkt->dn_dir = dir;
@@ -1401,9 +1445,32 @@ dummynet_io(struct mbuf **m0, int dir, struct ip_fw_args *fwa)
 	if (q->head != m)		/* Flow was not idle, we are done. */
 		goto done;
 
-	if (q->q_time < curr_time)
-		q->numbytes = io_fast ? fs->pipe->bandwidth : 0;
-	q->q_time = curr_time;
+	if (is_pipe) {			/* Fixed rate queues. */
+		if (q->idle_time < curr_time) {
+			/* Calculate available burst size. */
+			q->numbytes +=
+			    (curr_time - q->idle_time - 1) * pipe->bandwidth;
+			if (q->numbytes > pipe->burst)
+				q->numbytes = pipe->burst;
+			if (io_fast)
+				q->numbytes += pipe->bandwidth;
+		}
+	} else {			/* WF2Q. */
+		if (pipe->idle_time < curr_time &&
+		    pipe->scheduler_heap.elements == 0 &&
+		    pipe->not_eligible_heap.elements == 0) {
+			/* Calculate available burst size. */
+			pipe->numbytes +=
+			    (curr_time - pipe->idle_time - 1) * pipe->bandwidth;
+			if (pipe->numbytes > 0 && pipe->numbytes > pipe->burst)
+				pipe->numbytes = pipe->burst;
+			if (io_fast)
+				pipe->numbytes += pipe->bandwidth;
+		}
+		pipe->idle_time = curr_time;
+	}
+	/* Necessary for both: fixed rate & WF2Q queues. */
+	q->idle_time = curr_time;
 
 	/*
 	 * If we reach this point the flow was previously idle, so we need
@@ -1440,7 +1507,7 @@ dummynet_io(struct mbuf **m0, int dir, struct ip_fw_args *fwa)
 			heap_extract(&(pipe->idle_heap), q);
 			q->S = MAX64(q->F, pipe->V);
 		}
-		q->F = q->S + (len << MY_M) / (uint64_t)fs->weight;
+		q->F = q->S + div64(len << MY_M, fs->weight);
 
 		if (pipe->not_eligible_heap.elements == 0 &&
 		    pipe->scheduler_heap.elements == 0)
@@ -1476,8 +1543,8 @@ dummynet_io(struct mbuf **m0, int dir, struct ip_fw_args *fwa)
 		}
 	}
 done:
-	if (head == m && dir != DN_TO_IFB_FWD && dir != DN_TO_ETH_DEMUX &&
-	    dir != DN_TO_ETH_OUT) {	/* Fast io. */
+	if (head == m && (dir & PROTO_LAYER2) == 0 ) {
+		/* Fast io. */
 		io_pkt_fast++;
 		if (m->m_nextpkt != NULL)
 			printf("dummynet: fast io: pkt chain detected!\n");
@@ -1495,18 +1562,9 @@ dropit:
 	if (q)
 		q->drops++;
 	DUMMYNET_UNLOCK();
-	m_freem(m);
-	*m0 = NULL;
+	*m0 = dn_free_pkt(m);
 	return ((fs && (fs->flags_fs & DN_NOERROR)) ? 0 : ENOBUFS);
 }
-
-/*
- * Below, the rt_unref is only needed when (pkt->dn_dir == DN_TO_IP_OUT)
- * Doing this would probably save us the initial bzero of dn_pkt
- */
-#define	DN_FREE_PKT(_m) do {				\
-	m_freem(_m);					\
-} while (0)
 
 /*
  * Dispose all packets and flow_queues on a flow_set.
@@ -1524,13 +1582,7 @@ purge_flow_set(struct dn_flow_set *fs, int all)
 
 	for (i = 0; i <= fs->rq_size; i++) {
 		for (q = fs->rq[i]; q != NULL; q = qn) {
-			struct mbuf *m, *mnext;
-
-			mnext = q->head;
-			while ((m = mnext) != NULL) {
-				mnext = m->m_nextpkt;
-				DN_FREE_PKT(m);
-			}
+			dn_free_pkts(q->head);
 			qn = q->next;
 			free(q, M_DUMMYNET);
 		}
@@ -1558,15 +1610,10 @@ purge_flow_set(struct dn_flow_set *fs, int all)
 static void
 purge_pipe(struct dn_pipe *pipe)
 {
-    struct mbuf *m, *mnext;
 
     purge_flow_set( &(pipe->fs), 1 );
 
-    mnext = pipe->head;
-    while ((m = mnext) != NULL) {
-	mnext = m->m_nextpkt;
-	DN_FREE_PKT(m);
-    }
+    dn_free_pkts(pipe->head);
 
     heap_free( &(pipe->scheduler_heap) );
     heap_free( &(pipe->not_eligible_heap) );
@@ -1731,6 +1778,8 @@ config_pipe(struct dn_pipe *p)
 	 * qsize = slots/bytes
 	 */
 	p->delay = (p->delay * hz) / 1000;
+	/* Scale burst size: bytes -> bits * hz */
+	p->burst *= 8 * hz;
 	/* We need either a pipe number or a flow_set number. */
 	if (p->pipe_nr == 0 && pfs->fs_nr == 0)
 		return (EINVAL);
@@ -1759,14 +1808,19 @@ config_pipe(struct dn_pipe *p)
 			pipe->idle_heap.size = pipe->idle_heap.elements = 0;
 			pipe->idle_heap.offset =
 			    offsetof(struct dn_flow_queue, heap_pos);
-		} else
+		} else {
 			/* Flush accumulated credit for all queues. */
-			for (i = 0; i <= pipe->fs.rq_size; i++)
-				for (q = pipe->fs.rq[i]; q; q = q->next)
-					q->numbytes = io_fast ? p->bandwidth : 0;
+			for (i = 0; i <= pipe->fs.rq_size; i++) {
+				for (q = pipe->fs.rq[i]; q; q = q->next) {
+					q->numbytes = p->burst +
+					    (io_fast ? p->bandwidth : 0);
+				}
+			}
+		}
 
 		pipe->bandwidth = p->bandwidth;
-		pipe->numbytes = 0;		/* just in case... */
+		pipe->burst = p->burst;
+		pipe->numbytes = pipe->burst + (io_fast ? pipe->bandwidth : 0);
 		bcopy(p->if_name, pipe->if_name, sizeof(p->if_name));
 		pipe->ifp = NULL;		/* reset interface ptr */
 		pipe->delay = p->delay;
@@ -1872,14 +1926,16 @@ config_pipe(struct dn_pipe *p)
 static void
 fs_remove_from_heap(struct dn_heap *h, struct dn_flow_set *fs)
 {
-    int i = 0, found = 0 ;
-    for (; i < h->elements ;)
+    int i, found;
+
+    for (i = found = 0 ; i < h->elements ;) {
 	if ( ((struct dn_flow_queue *)h->p[i].object)->fs == fs) {
 	    h->elements-- ;
 	    h->p[i] = h->p[h->elements] ;
 	    found++ ;
 	} else
 	    i++ ;
+    }
     if (found)
 	heapify(h);
 }
@@ -1890,17 +1946,16 @@ fs_remove_from_heap(struct dn_heap *h, struct dn_flow_set *fs)
 static void
 pipe_remove_from_heap(struct dn_heap *h, struct dn_pipe *p)
 {
-    if (h->elements > 0) {
-	int i = 0 ;
+	int i;
+
 	for (i=0; i < h->elements ; i++ ) {
-	    if (h->p[i].object == p) { /* found it */
-		h->elements-- ;
-		h->p[i] = h->p[h->elements] ;
-		heapify(h);
-		break ;
-	    }
+		if (h->p[i].object == p) { /* found it */
+			h->elements-- ;
+			h->p[i] = h->p[h->elements] ;
+			heapify(h);
+			break ;
+		}
 	}
-    }
 }
 
 /*
@@ -1911,7 +1966,6 @@ dummynet_drain(void)
 {
     struct dn_flow_set *fs;
     struct dn_pipe *pipe;
-    struct mbuf *m, *mnext;
     int i;
 
     DUMMYNET_LOCK_ASSERT();
@@ -1927,12 +1981,7 @@ dummynet_drain(void)
     for (i = 0; i < HASHSIZE; i++) {
 	SLIST_FOREACH(pipe, &pipehash[i], next) {
 		purge_flow_set(&(pipe->fs), 0);
-
-		mnext = pipe->head;
-		while ((m = mnext) != NULL) {
-			mnext = m->m_nextpkt;
-			DN_FREE_PKT(m);
-		}
+		dn_free_pkts(pipe->head);
 		pipe->head = pipe->tail = NULL;
 	}
     }
@@ -1966,14 +2015,16 @@ delete_pipe(struct dn_pipe *p)
 	SLIST_REMOVE(&pipehash[HASH(pipe->pipe_nr)], pipe, dn_pipe, next);
 
 	/* Remove all references to this pipe from flow_sets. */
-	for (i = 0; i < HASHSIZE; i++)
-	    SLIST_FOREACH(fs, &flowsethash[i], next)
+	for (i = 0; i < HASHSIZE; i++) {
+	    SLIST_FOREACH(fs, &flowsethash[i], next) {
 		if (fs->pipe == pipe) {
 			printf("dummynet: ++ ref to pipe %d from fs %d\n",
 			    p->pipe_nr, fs->fs_nr);
 			fs->pipe = NULL ;
 			purge_flow_set(fs, 0);
 		}
+	    }
+	}
 	fs_remove_from_heap(&ready_heap, &(pipe->fs));
 	purge_pipe(pipe); /* remove all data associated to this pipe */
 	/* remove reference to here from extract_heap and wfq_ready_heap */
@@ -2022,7 +2073,7 @@ dn_copy_set(struct dn_flow_set *set, char *bp)
 
     DUMMYNET_LOCK_ASSERT();
 
-    for (i = 0 ; i <= set->rq_size ; i++)
+    for (i = 0 ; i <= set->rq_size ; i++) {
 	for (q = set->rq[i] ; q ; q = q->next, qp++ ) {
 	    if (q->hash_slot != i)
 		printf("dummynet: ++ at %d: wrong slot (have %d, "
@@ -2037,6 +2088,7 @@ dn_copy_set(struct dn_flow_set *set, char *bp)
 	    qp->head = qp->tail = NULL ;
 	    qp->fs = NULL ;
 	}
+    }
     if (copied != set->rq_elements)
 	printf("dummynet: ++ wrong count, have %d should be %d\n",
 	    copied, set->rq_elements);
@@ -2086,7 +2138,7 @@ dummynet_get(struct sockopt *sopt)
 	DUMMYNET_UNLOCK();
 	buf = malloc(size, M_TEMP, M_WAITOK);
 	DUMMYNET_LOCK();
-	if (size == dn_calc_size())
+	if (size >= dn_calc_size())
 		break;
 	free(buf, M_TEMP);
 	buf = NULL;
@@ -2096,7 +2148,7 @@ dummynet_get(struct sockopt *sopt)
 	return ENOBUFS ;
     }
     bp = buf;
-    for (i = 0; i < HASHSIZE; i++)
+    for (i = 0; i < HASHSIZE; i++) {
 	SLIST_FOREACH(pipe, &pipehash[i], next) {
 		struct dn_pipe *pipe_bp = (struct dn_pipe *)bp;
 
@@ -2107,6 +2159,7 @@ dummynet_get(struct sockopt *sopt)
 		 */
 		bcopy(pipe, bp, sizeof(*pipe));
 		pipe_bp->delay = (pipe_bp->delay * 1000) / hz;
+		pipe_bp->burst = div64(pipe_bp->burst, 8 * hz);
 		/*
 		 * XXX the following is a hack based on ->next being the
 		 * first field in dn_pipe and dn_flow_set. The correct
@@ -2124,8 +2177,9 @@ dummynet_get(struct sockopt *sopt)
 		bp += sizeof(*pipe) ;
 		bp = dn_copy_set(&(pipe->fs), bp);
 	}
+    }
 
-    for (i = 0; i < HASHSIZE; i++)
+    for (i = 0; i < HASHSIZE; i++) {
 	SLIST_FOREACH(fs, &flowsethash[i], next) {
 		struct dn_flow_set *fs_bp = (struct dn_flow_set *)bp;
 
@@ -2137,6 +2191,7 @@ dummynet_get(struct sockopt *sopt)
 		bp += sizeof(*fs);
 		bp = dn_copy_set(fs, bp);
 	}
+    }
 
     DUMMYNET_UNLOCK();
 
@@ -2204,8 +2259,10 @@ ip_dn_ctl(struct sockopt *sopt)
 	error = delete_pipe(p);
 	break ;
     }
+
     if (p != NULL)
 	free(p, M_TEMP);
+
     return error ;
 }
 
@@ -2302,3 +2359,4 @@ static moduledata_t dummynet_mod = {
 DECLARE_MODULE(dummynet, dummynet_mod, SI_SUB_PROTO_IFATTACHDOMAIN, SI_ORDER_ANY);
 MODULE_DEPEND(dummynet, ipfw, 2, 2, 2);
 MODULE_VERSION(dummynet, 1);
+/* end of file */

@@ -48,6 +48,7 @@ __FBSDID("$FreeBSD$");
 
 #include <cam/cam.h>
 #include <cam/cam_ccb.h>
+#include <cam/cam_queue.h>
 #include <cam/cam_xpt_periph.h>
 #include <cam/cam_periph.h>
 #include <cam/cam_debug.h>
@@ -533,13 +534,13 @@ camperiphfree(struct cam_periph *periph)
 		switch (periph->deferred_ac) {
 		case AC_FOUND_DEVICE:
 			ccb.ccb_h.func_code = XPT_GDEV_TYPE;
-			xpt_setup_ccb(&ccb.ccb_h, periph->path, /*priority*/ 1);
+			xpt_setup_ccb(&ccb.ccb_h, periph->path, CAM_PRIORITY_NORMAL);
 			xpt_action(&ccb);
 			arg = &ccb;
 			break;
 		case AC_PATH_REGISTERED:
 			ccb.ccb_h.func_code = XPT_PATH_INQ;
-			xpt_setup_ccb(&ccb.ccb_h, periph->path, /*priority*/ 1);
+			xpt_setup_ccb(&ccb.ccb_h, periph->path, CAM_PRIORITY_NORMAL);
 			xpt_action(&ccb);
 			arg = &ccb;
 			break;
@@ -570,6 +571,8 @@ cam_periph_mapmem(union ccb *ccb, struct cam_periph_map_info *mapinfo)
 	u_int8_t **data_ptrs[CAM_PERIPH_MAXMAPS];
 	u_int32_t lengths[CAM_PERIPH_MAXMAPS];
 	u_int32_t dirs[CAM_PERIPH_MAXMAPS];
+	/* Some controllers may not be able to handle more data. */
+	size_t maxmap = DFLTPHYS;
 
 	switch(ccb->ccb_h.func_code) {
 	case XPT_DEV_MATCH:
@@ -592,6 +595,11 @@ cam_periph_mapmem(union ccb *ccb, struct cam_periph_map_info *mapinfo)
 			dirs[0] = CAM_DIR_IN;
 			numbufs = 1;
 		}
+		/*
+		 * This request will not go to the hardware, no reason
+		 * to be so strict. vmapbuf() is able to map up to MAXPHYS.
+		 */
+		maxmap = MAXPHYS;
 		break;
 	case XPT_SCSI_IO:
 	case XPT_CONT_TARGET_IO:
@@ -600,6 +608,15 @@ cam_periph_mapmem(union ccb *ccb, struct cam_periph_map_info *mapinfo)
 
 		data_ptrs[0] = &ccb->csio.data_ptr;
 		lengths[0] = ccb->csio.dxfer_len;
+		dirs[0] = ccb->ccb_h.flags & CAM_DIR_MASK;
+		numbufs = 1;
+		break;
+	case XPT_ATA_IO:
+		if ((ccb->ccb_h.flags & CAM_DIR_MASK) == CAM_DIR_NONE)
+			return(0);
+
+		data_ptrs[0] = &ccb->ataio.data_ptr;
+		lengths[0] = ccb->ataio.dxfer_len;
 		dirs[0] = ccb->ccb_h.flags & CAM_DIR_MASK;
 		numbufs = 1;
 		break;
@@ -625,12 +642,12 @@ cam_periph_mapmem(union ccb *ccb, struct cam_periph_map_info *mapinfo)
 		 * boundary.
 		 */
 		if ((lengths[i] +
-		    (((vm_offset_t)(*data_ptrs[i])) & PAGE_MASK)) > DFLTPHYS){
+		    (((vm_offset_t)(*data_ptrs[i])) & PAGE_MASK)) > maxmap){
 			printf("cam_periph_mapmem: attempt to map %lu bytes, "
-			       "which is greater than DFLTPHYS(%d)\n",
+			       "which is greater than %lu\n",
 			       (long)(lengths[i] +
 			       (((vm_offset_t)(*data_ptrs[i])) & PAGE_MASK)),
-			       DFLTPHYS);
+			       (u_long)maxmap);
 			return(E2BIG);
 		}
 
@@ -662,7 +679,7 @@ cam_periph_mapmem(union ccb *ccb, struct cam_periph_map_info *mapinfo)
 		/* put our pointer in the data slot */
 		mapinfo->bp[i]->b_data = *data_ptrs[i];
 
-		/* set the transfer length, we know it's < DFLTPHYS */
+		/* set the transfer length, we know it's < MAXPHYS */
 		mapinfo->bp[i]->b_bufsize = lengths[i];
 
 		/* set the direction */
@@ -738,6 +755,10 @@ cam_periph_unmapmem(union ccb *ccb, struct cam_periph_map_info *mapinfo)
 		data_ptrs[0] = &ccb->csio.data_ptr;
 		numbufs = min(mapinfo->num_bufs_used, 1);
 		break;
+	case XPT_ATA_IO:
+		data_ptrs[0] = &ccb->ataio.data_ptr;
+		numbufs = min(mapinfo->num_bufs_used, 1);
+		break;
 	default:
 		/* allow ourselves to be swapped once again */
 		PRELE(curproc);
@@ -797,7 +818,7 @@ cam_periph_ccbwait(union ccb *ccb)
 }
 
 int
-cam_periph_ioctl(struct cam_periph *periph, int cmd, caddr_t addr,
+cam_periph_ioctl(struct cam_periph *periph, u_long cmd, caddr_t addr,
 		 int (*error_routine)(union ccb *ccb, 
 				      cam_flags camflags,
 				      u_int32_t sense_flags))
@@ -810,10 +831,10 @@ cam_periph_ioctl(struct cam_periph *periph, int cmd, caddr_t addr,
 
 	switch(cmd){
 	case CAMGETPASSTHRU:
-		ccb = cam_periph_getccb(periph, /* priority */ 1);
+		ccb = cam_periph_getccb(periph, CAM_PRIORITY_NORMAL);
 		xpt_setup_ccb(&ccb->ccb_h,
 			      ccb->ccb_h.path,
-			      /*priority*/1);
+			      CAM_PRIORITY_NORMAL);
 		ccb->ccb_h.func_code = XPT_GDEVLIST;
 
 		/*
@@ -877,7 +898,8 @@ cam_periph_runccb(union ccb *ccb,
 	 * If the user has supplied a stats structure, and if we understand
 	 * this particular type of ccb, record the transaction start.
 	 */
-	if ((ds != NULL) && (ccb->ccb_h.func_code == XPT_SCSI_IO))
+	if ((ds != NULL) && (ccb->ccb_h.func_code == XPT_SCSI_IO ||
+	    ccb->ccb_h.func_code == XPT_ATA_IO))
 		devstat_start_transaction(ds, NULL);
 
 	xpt_action(ccb);
@@ -900,15 +922,27 @@ cam_periph_runccb(union ccb *ccb,
 				 /* timeout */0,
 				 /* getcount_only */ FALSE);
 
-	if ((ds != NULL) && (ccb->ccb_h.func_code == XPT_SCSI_IO))
-		devstat_end_transaction(ds,
+	if (ds != NULL) {
+		if (ccb->ccb_h.func_code == XPT_SCSI_IO) {
+			devstat_end_transaction(ds,
 					ccb->csio.dxfer_len,
-					ccb->csio.tag_action & 0xf,
+					ccb->csio.tag_action & 0x3,
 					((ccb->ccb_h.flags & CAM_DIR_MASK) ==
 					CAM_DIR_NONE) ?  DEVSTAT_NO_DATA : 
 					(ccb->ccb_h.flags & CAM_DIR_OUT) ?
 					DEVSTAT_WRITE : 
 					DEVSTAT_READ, NULL, NULL);
+		} else if (ccb->ccb_h.func_code == XPT_ATA_IO) {
+			devstat_end_transaction(ds,
+					ccb->ataio.dxfer_len,
+					ccb->ataio.tag_action & 0x3,
+					((ccb->ccb_h.flags & CAM_DIR_MASK) ==
+					CAM_DIR_NONE) ?  DEVSTAT_NO_DATA : 
+					(ccb->ccb_h.flags & CAM_DIR_OUT) ?
+					DEVSTAT_WRITE : 
+					DEVSTAT_READ, NULL, NULL);
+		}
+	}
 
 	return(error);
 }
@@ -918,7 +952,7 @@ cam_freeze_devq(struct cam_path *path)
 {
 	struct ccb_hdr ccb_h;
 
-	xpt_setup_ccb(&ccb_h, path, /*priority*/1);
+	xpt_setup_ccb(&ccb_h, path, CAM_PRIORITY_NORMAL);
 	ccb_h.func_code = XPT_NOOP;
 	ccb_h.flags = CAM_DEV_QFREEZE;
 	xpt_action((union ccb *)&ccb_h);
@@ -931,8 +965,7 @@ cam_release_devq(struct cam_path *path, u_int32_t relsim_flags,
 {
 	struct ccb_relsim crs;
 
-	xpt_setup_ccb(&crs.ccb_h, path,
-		      /*priority*/1);
+	xpt_setup_ccb(&crs.ccb_h, path, CAM_PRIORITY_NORMAL);
 	crs.ccb_h.func_code = XPT_REL_SIMQ;
 	crs.ccb_h.flags = getcount_only ? CAM_DEV_QFREEZE : 0;
 	crs.release_flags = relsim_flags;
@@ -948,33 +981,27 @@ camperiphdone(struct cam_periph *periph, union ccb *done_ccb)
 {
 	union ccb      *saved_ccb;
 	cam_status	status;
-	int		frozen;
+	int		frozen = 0;
 	int		sense;
 	struct scsi_start_stop_unit *scsi_cmd;
 	u_int32_t	relsim_flags, timeout;
-	u_int32_t	qfrozen_cnt;
-	int		xpt_done_ccb;
+	int		xpt_done_ccb = FALSE;
 
-	xpt_done_ccb = FALSE;
 	status = done_ccb->ccb_h.status;
-	frozen = (status & CAM_DEV_QFRZN) != 0;
+	if (status & CAM_DEV_QFRZN) {
+		frozen = 1;
+		/*
+		 * Clear freeze flag now for case of retry,
+		 * freeze will be dropped later.
+		 */
+		done_ccb->ccb_h.status &= ~CAM_DEV_QFRZN;
+	}
 	sense  = (status & CAM_AUTOSNS_VALID) != 0;
 	status &= CAM_STATUS_MASK;
 
 	timeout = 0;
 	relsim_flags = 0;
 	saved_ccb = (union ccb *)done_ccb->ccb_h.saved_ccb_ptr;
-
-	/* 
-	 * Unfreeze the queue once if it is already frozen..
-	 */
-	if (frozen != 0) {
-		qfrozen_cnt = cam_release_devq(done_ccb->ccb_h.path,
-					      /*relsim_flags*/0,
-					      /*openings*/0,
-					      /*timeout*/0,
-					      /*getcount_only*/0);
-	}
 
 	switch (status) {
 	case CAM_REQ_CMP:
@@ -1013,8 +1040,13 @@ camperiphdone(struct cam_periph *periph, union ccb *done_ccb)
 					cam_error_print(saved_ccb, CAM_ESF_ALL,
 							CAM_EPF_ALL);
 #endif
-					xpt_done_ccb = TRUE;
+				} else {
+					saved_ccb->ccb_h.status &=
+					    ~CAM_STATUS_MASK;
+					saved_ccb->ccb_h.status |=
+					    CAM_AUTOSENSE_FAIL;
 				}
+				xpt_done_ccb = TRUE;
 			}
 		}
 		bcopy(done_ccb->ccb_h.saved_ccb_ptr, done_ccb,
@@ -1044,7 +1076,7 @@ camperiphdone(struct cam_periph *periph, union ccb *done_ccb)
 			 * Grab the inquiry data for this device.
 			 */
 			xpt_setup_ccb(&cgd.ccb_h, done_ccb->ccb_h.path,
-				      /*priority*/ 1);
+			    CAM_PRIORITY_NORMAL);
 			cgd.ccb_h.func_code = XPT_GDEV_TYPE;
 			xpt_action((union ccb *)&cgd);
 			err_action = scsi_error_action(&done_ccb->csio,
@@ -1147,14 +1179,33 @@ camperiphdone(struct cam_periph *periph, union ccb *done_ccb)
 	 */
 	if (done_ccb->ccb_h.retry_count > 0)
 		done_ccb->ccb_h.retry_count--;
-
-	qfrozen_cnt = cam_release_devq(done_ccb->ccb_h.path,
-				      /*relsim_flags*/relsim_flags,
-				      /*openings*/0,
-				      /*timeout*/timeout,
-				      /*getcount_only*/0);
-	if (xpt_done_ccb == TRUE)
+	/*
+	 * Drop freeze taken due to CAM_DEV_QFREEZE flag set on recovery
+	 * request.
+	 */
+	cam_release_devq(done_ccb->ccb_h.path,
+			 /*relsim_flags*/relsim_flags,
+			 /*openings*/0,
+			 /*timeout*/timeout,
+			 /*getcount_only*/0);
+	if (xpt_done_ccb == TRUE) {
+		/*
+		 * Copy frozen flag from recovery request if it is set there
+		 * for some reason.
+		 */
+		if (frozen != 0)
+			done_ccb->ccb_h.status |= CAM_DEV_QFRZN;
 		(*done_ccb->ccb_h.cbfcnp)(periph, done_ccb);
+	} else {
+		/* Drop freeze taken, if this recovery request got error. */
+		if (frozen != 0) {
+			cam_release_devq(done_ccb->ccb_h.path,
+				 /*relsim_flags*/0,
+				 /*openings*/0,
+				 /*timeout*/0,
+				 /*getcount_only*/0);
+		}
+	}
 }
 
 /*
@@ -1186,7 +1237,7 @@ cam_periph_bus_settle(struct cam_periph *periph, u_int bus_settle)
 {
 	struct ccb_getdevstats cgds;
 
-	xpt_setup_ccb(&cgds.ccb_h, periph->path, /*priority*/1);
+	xpt_setup_ccb(&cgds.ccb_h, periph->path, CAM_PRIORITY_NORMAL);
 	cgds.ccb_h.func_code = XPT_GDEV_STATS;
 	xpt_action((union ccb *)&cgds);
 	cam_periph_freeze_after_event(periph, &cgds.last_reset, bus_settle);
@@ -1254,7 +1305,7 @@ camperiphscsistatuserror(union ccb *ccb, cam_flags camflags,
 		 */
 		xpt_setup_ccb(&cgds.ccb_h,
 			      ccb->ccb_h.path,
-			      /*priority*/1);
+			      CAM_PRIORITY_NORMAL);
 		cgds.ccb_h.func_code = XPT_GDEV_STATS;
 		xpt_action((union ccb *)&cgds);
 
@@ -1377,7 +1428,7 @@ camperiphscsisenseerror(union ccb *ccb, cam_flags camflags,
 		/*
 		 * Grab the inquiry data for this device.
 		 */
-		xpt_setup_ccb(&cgd.ccb_h, ccb->ccb_h.path, /*priority*/ 1);
+		xpt_setup_ccb(&cgd.ccb_h, ccb->ccb_h.path, CAM_PRIORITY_NORMAL);
 		cgd.ccb_h.func_code = XPT_GDEV_TYPE;
 		xpt_action((union ccb *)&cgd);
 
@@ -1414,6 +1465,11 @@ camperiphscsisenseerror(union ccb *ccb, cam_flags camflags,
 				action_string = "No recovery CCB supplied";
 				goto sense_error_done;
 			}
+			/*
+			 * Clear freeze flag for original request here, as
+			 * this freeze will be dropped as part of ERESTART.
+			 */
+			ccb->ccb_h.status &= ~CAM_DEV_QFRZN;
 			bcopy(ccb, save_ccb, sizeof(*save_ccb));
 			print_ccb = save_ccb;
 			periph->flags |= CAM_PERIPH_RECOVERY_INPROG;
@@ -1517,14 +1573,14 @@ camperiphscsisenseerror(union ccb *ccb, cam_flags camflags,
 		
 		if ((err_action & SS_MASK) >= SS_START) {
 			/*
-			 * Drop the priority to 0 so that the recovery
+			 * Drop the priority, so that the recovery
 			 * CCB is the first to execute.  Freeze the queue
 			 * after this command is sent so that we can
 			 * restore the old csio and have it queued in
 			 * the proper order before we release normal 
 			 * transactions to the device.
 			 */
-			ccb->ccb_h.pinfo.priority = 0;
+			ccb->ccb_h.pinfo.priority = CAM_PRIORITY_DEV;
 			ccb->ccb_h.flags |= CAM_DEV_QFREEZE;
 			ccb->ccb_h.saved_ccb_ptr = save_ccb;
 			error = ERESTART;
@@ -1583,6 +1639,14 @@ cam_periph_error(union ccb *ccb, cam_flags camflags,
 		xpt_print(ccb->ccb_h.path, "AutoSense Failed\n");
 		error = EIO;	/* we have to kill the command */
 		break;
+	case CAM_ATA_STATUS_ERROR:
+		if (bootverbose && printed == 0) {
+			xpt_print(ccb->ccb_h.path,
+			    "Request completed with CAM_ATA_STATUS_ERROR\n");
+			cam_error_print(ccb, CAM_ESF_ALL, CAM_EPF_ALL);
+			printed++;
+		}
+		/* FALLTHROUGH */
 	case CAM_REQ_CMP_ERR:
 		if (bootverbose && printed == 0) {
 			xpt_print(ccb->ccb_h.path,
@@ -1735,38 +1799,33 @@ cam_periph_error(union ccb *ccb, cam_flags camflags,
 		break;
 	}
 
-	/* Attempt a retry */
-	if (error == ERESTART || error == 0) {	
-		if (frozen != 0)
-			ccb->ccb_h.status &= ~CAM_DEV_QFRZN;
-
-		if (error == ERESTART) {
-			action_string = "Retrying Command";
-			xpt_action(ccb);
-		}
-		
-		if (frozen != 0)
-			cam_release_devq(ccb->ccb_h.path,
-					 relsim_flags,
-					 openings,
-					 timeout,
-					 /*getcount_only*/0);
-	}
-
 	/*
 	 * If we have and error and are booting verbosely, whine
 	 * *unless* this was a non-retryable selection timeout.
 	 */
 	if (error != 0 && bootverbose &&
 	    !(status == CAM_SEL_TIMEOUT && (camflags & CAM_RETRY_SELTO) == 0)) {
-
-
-		if (action_string == NULL)
-			action_string = "Unretryable Error";
 		if (error != ERESTART) {
+			if (action_string == NULL)
+				action_string = "Unretryable Error";
 			xpt_print(ccb->ccb_h.path, "error %d\n", error);
-		}
-		xpt_print(ccb->ccb_h.path, "%s\n", action_string);
+			xpt_print(ccb->ccb_h.path, "%s\n", action_string);
+		} else
+			xpt_print(ccb->ccb_h.path, "Retrying Command\n");
+	}
+
+	/* Attempt a retry */
+	if (error == ERESTART || error == 0) {
+		if (frozen != 0)
+			ccb->ccb_h.status &= ~CAM_DEV_QFRZN;
+		if (error == ERESTART)
+			xpt_action(ccb);
+		if (frozen != 0)
+			cam_release_devq(ccb->ccb_h.path,
+					 relsim_flags,
+					 openings,
+					 timeout,
+					 /*getcount_only*/0);
 	}
 
 	return (error);

@@ -45,6 +45,9 @@
 #ifndef MWL_TXBUF
 #define MWL_TXBUF	256		/* number of TX descriptors/buffers */
 #endif
+#ifndef MWL_TXACKBUF
+#define MWL_TXACKBUF	(MWL_TXBUF/2)	/* number of TX ACK desc's/buffers */
+#endif
 #ifndef MWL_RXDESC
 #define MWL_RXDESC	256		/* number of RX descriptors */
 #endif
@@ -252,6 +255,8 @@ struct mwl_softc {
 	bus_space_tag_t		sc_io1t;
 	struct mtx		sc_mtx;		/* master lock (recursive) */
 	struct taskqueue	*sc_tq;		/* private task queue */
+	struct callout	sc_watchdog;
+	int			sc_tx_timer;
 	unsigned int		sc_invalid : 1,	/* disable hardware accesses */
 				sc_recvsetup:1,	/* recv setup */
 				sc_csapending:1,/* 11h channel switch pending */
@@ -274,6 +279,7 @@ struct mwl_softc {
 	uint8_t			sc_napvaps;	/* # ap mode vaps */
 	uint8_t			sc_nwdsvaps;	/* # wds mode vaps */
 	uint8_t			sc_nstavaps;	/* # sta mode vaps */
+	uint8_t			sc_ndwdsvaps;	/* # sta mode dwds vaps */
 	uint8_t			sc_nbssid0;	/* # vap's using base mac */
 	uint32_t		sc_bssidmask;	/* bssid mask */
 
@@ -285,7 +291,8 @@ struct mwl_softc {
 				    enum ieee80211_state, int);
 	void 			(*sc_node_cleanup)(struct ieee80211_node *);
 	void 			(*sc_node_drain)(struct ieee80211_node *);
-	void			(*sc_recv_action)(struct ieee80211_node *,
+	int			(*sc_recv_action)(struct ieee80211_node *,
+				    const struct ieee80211_frame *,
 				    const uint8_t *, const uint8_t *);
 	int			(*sc_addba_request)(struct ieee80211_node *,
 				    struct ieee80211_tx_ampdu *,

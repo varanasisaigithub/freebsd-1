@@ -100,6 +100,10 @@ struct xprison {
 #define	JAIL_SET_MASK	0x0f
 #define	JAIL_GET_MASK	0x08
 
+#define	JAIL_SYS_DISABLE	0
+#define	JAIL_SYS_NEW		1
+#define	JAIL_SYS_INHERIT	2
+
 #ifndef _KERNEL
 
 struct iovec;
@@ -149,29 +153,32 @@ struct prison {
 	int		 pr_ref;			/* (p) refcount */
 	int		 pr_uref;			/* (p) user (alive) refcount */
 	unsigned	 pr_flags;			/* (p) PR_* flags */
-	char		 pr_path[MAXPATHLEN];		/* (c) chroot path */
-	struct cpuset	*pr_cpuset;			/* (p) cpuset */
-	struct vnode	*pr_root;			/* (c) vnode to rdir */
-	char		 pr_hostname[MAXHOSTNAMELEN];	/* (p) jail hostname */
-	char		 pr_name[MAXHOSTNAMELEN];	/* (p) admin jail name */
-	struct prison	*pr_parent;			/* (c) containing jail */
-	int		 pr_securelevel;		/* (p) securelevel */
-	struct task	 pr_task;			/* (d) destroy task */
-	struct mtx	 pr_mtx;
-	struct osd	 pr_osd;			/* (p) additional data */
-	int		 pr_ip4s;			/* (p) number of v4 IPs */
-	struct in_addr	*pr_ip4;			/* (p) v4 IPs of jail */
-	int		 pr_ip6s;			/* (p) number of v6 IPs */
-	struct in6_addr	*pr_ip6;			/* (p) v6 IPs of jail */
 	LIST_HEAD(, prison) pr_children;		/* (a) list of child jails */
 	LIST_ENTRY(prison) pr_sibling;			/* (a) next in parent's list */
-	int		 pr_prisoncount;		/* (a) number of child jails */
+	struct prison	*pr_parent;			/* (c) containing jail */
+	struct mtx	 pr_mtx;
+	struct task	 pr_task;			/* (d) destroy task */
+	struct osd	 pr_osd;			/* (p) additional data */
+	struct cpuset	*pr_cpuset;			/* (p) cpuset */
+	struct vnet	*pr_vnet;			/* (c) network stack */
+	struct vnode	*pr_root;			/* (c) vnode to rdir */
+	int		 pr_ip4s;			/* (p) number of v4 IPs */
+	int		 pr_ip6s;			/* (p) number of v6 IPs */
+	struct in_addr	*pr_ip4;			/* (p) v4 IPs of jail */
+	struct in6_addr	*pr_ip6;			/* (p) v6 IPs of jail */
+	void		*pr_sparep[4];
+	int		 pr_childcount;			/* (a) number of child jails */
+	int		 pr_childmax;			/* (p) maximum child jails */
 	unsigned	 pr_allow;			/* (p) PR_ALLOW_* flags */
+	int		 pr_securelevel;		/* (p) securelevel */
 	int		 pr_enforce_statfs;		/* (p) statfs permission */
+	int		 pr_spare[5];
+	unsigned long	 pr_hostid;			/* (p) jail hostid */
+	char		 pr_name[MAXHOSTNAMELEN];	/* (p) admin jail name */
+	char		 pr_path[MAXPATHLEN];		/* (c) chroot path */
+	char		 pr_hostname[MAXHOSTNAMELEN];	/* (p) jail hostname */
 	char		 pr_domainname[MAXHOSTNAMELEN];	/* (p) jail domainname */
 	char		 pr_hostuuid[HOSTUUIDLEN];	/* (p) jail hostuuid */
-	unsigned long	 pr_hostid;			/* (p) jail hostid */
-	struct vnet	*pr_vnet;			/* (c) network stack */
 };
 #endif /* _KERNEL || _WANT_PRISON */
 
@@ -179,16 +186,18 @@ struct prison {
 /* Flag bits set via options */
 #define	PR_PERSIST	0x00000001	/* Can exist without processes */
 #define	PR_HOST		0x00000002	/* Virtualize hostname et al */
-#define	PR_IP4_USER	0x00000004	/* Virtualize IPv4 addresses */
-#define	PR_IP6_USER	0x00000008	/* Virtualize IPv6 addresses */
+#define	PR_IP4_USER	0x00000004	/* Restrict IPv4 addresses */
+#define	PR_IP6_USER	0x00000008	/* Restrict IPv6 addresses */
 #define	PR_VNET		0x00000010	/* Virtual network stack */
+#define	PR_IP4_DISABLE	0x00000020	/* Disable IPv4 */
+#define	PR_IP6_DISABLE	0x00000040	/* Disable IPv6 */
 
 /* Internal flag bits */
 #define	PR_REMOVE	0x01000000	/* In process of being removed */
-#define	PR_IP4		0x02000000	/* IPv4 virtualized by this jail or */
-					/*  an ancestor			    */
-#define	PR_IP6		0x04000000	/* IPv6 virtualized by this jail or */
-					/*  an ancestor			    */
+#define	PR_IP4		0x02000000	/* IPv4 restricted or disabled */
+					/* by this jail or an ancestor */
+#define	PR_IP6		0x04000000	/* IPv6 restricted or disabled */
+					/* by this jail or an ancestor */
 
 /* Flags for pr_allow */
 #define	PR_ALLOW_SET_HOSTNAME		0x0001
@@ -197,9 +206,8 @@ struct prison {
 #define	PR_ALLOW_CHFLAGS		0x0008
 #define	PR_ALLOW_MOUNT			0x0010
 #define	PR_ALLOW_QUOTAS			0x0020
-#define	PR_ALLOW_JAILS			0x0040
-#define	PR_ALLOW_SOCKET_AF		0x0080
-#define	PR_ALLOW_ALL			0x00ff
+#define	PR_ALLOW_SOCKET_AF		0x0040
+#define	PR_ALLOW_ALL			0x007f
 
 /*
  * OSD methods
@@ -271,6 +279,23 @@ prison_unlock(struct prison *pr)
 		else
 
 /*
+ * As above, but also keep track of the level descended to.
+ */
+#define	FOREACH_PRISON_DESCENDANT_LOCKED_LEVEL(ppr, cpr, descend, level)\
+	for ((cpr) = (ppr), (descend) = 1, (level) = 0;			\
+	    ((cpr) = (((descend) && !LIST_EMPTY(&(cpr)->pr_children))	\
+	      ? (level++, LIST_FIRST(&(cpr)->pr_children))		\
+	      : ((cpr) == (ppr)						\
+		 ? NULL							\
+		 : ((prison_unlock(cpr),				\
+		    (descend) = LIST_NEXT(cpr, pr_sibling) != NULL)	\
+		    ? LIST_NEXT(cpr, pr_sibling)			\
+		    : (level--, (cpr)->pr_parent)))));)			\
+		if ((descend) ? (prison_lock(cpr), 0) : 1)		\
+			;						\
+		else
+
+/*
  * Attributes of the physical system, and the root of the jail tree.
  */
 extern struct	prison prison0;
@@ -296,7 +321,11 @@ SYSCTL_DECL(_security_jail_param);
 	CTLTYPE_STRUCT | CTLFLAG_MPSAFE | (access), NULL, len,		\
 	sysctl_jail_param, fmt, descr)
 #define	SYSCTL_JAIL_PARAM_NODE(module, descr)				\
-    SYSCTL_NODE(_security_jail_param, OID_AUTO, module, CTLFLAG_RW, 0, descr)
+    SYSCTL_NODE(_security_jail_param, OID_AUTO, module, 0, 0, descr)
+#define	SYSCTL_JAIL_PARAM_SYS_NODE(module, access, descr)		\
+    SYSCTL_JAIL_PARAM_NODE(module, descr);				\
+    SYSCTL_JAIL_PARAM(_##module, , CTLTYPE_INT | (access), "E,jailsys",	\
+	descr)
 
 /*
  * Kernel support functions for jail().
@@ -306,12 +335,14 @@ struct mount;
 struct sockaddr;
 struct statfs;
 int jailed(struct ucred *cred);
+int jailed_without_vnet(struct ucred *);
 void getcredhostname(struct ucred *, char *, size_t);
 void getcreddomainname(struct ucred *, char *, size_t);
 void getcredhostuuid(struct ucred *, char *, size_t);
 void getcredhostid(struct ucred *, unsigned long *);
 int prison_allow(struct ucred *, unsigned);
 int prison_check(struct ucred *cred1, struct ucred *cred2);
+int prison_owns_vnet(struct ucred *);
 int prison_canseemount(struct ucred *cred, struct mount *mp);
 void prison_enforce_statfs(struct ucred *cred, struct mount *mp,
     struct statfs *sp);

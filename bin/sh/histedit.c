@@ -92,7 +92,7 @@ histedit(void)
 			if (hist != NULL)
 				sethistsize(histsizeval());
 			else
-				out2str("sh: can't initialize history\n");
+				out2fmt_flush("sh: can't initialize history\n");
 		}
 		if (editing && !el && isatty(0)) { /* && isatty(2) ??? */
 			/*
@@ -114,7 +114,7 @@ histedit(void)
 				el_set(el, EL_PROMPT, getprompt);
 			} else {
 bad:
-				out2str("sh: can't initialize editing\n");
+				out2fmt_flush("sh: can't initialize editing\n");
 			}
 			INTON;
 		} else if (!editing && el) {
@@ -164,34 +164,20 @@ int
 histcmd(int argc, char **argv)
 {
 	int ch;
-	char *editor = NULL;
+	const char *editor = NULL;
 	HistEvent he;
 	int lflg = 0, nflg = 0, rflg = 0, sflg = 0;
 	int i, retval;
-	char *firststr, *laststr;
+	const char *firststr, *laststr;
 	int first, last, direction;
-	char *pat = NULL, *repl;
+	char *pat = NULL, *repl = NULL;
 	static int active = 0;
 	struct jmploc jmploc;
-	struct jmploc *volatile savehandler;
-	char editfile[PATH_MAX];
-	FILE *efp;
+	struct jmploc *savehandler;
+	char editfilestr[PATH_MAX];
+	char *volatile editfile;
+	FILE *efp = NULL;
 	int oldhistnum;
-#ifdef __GNUC__
-	/* Avoid longjmp clobbering */
-	(void) &editor;
-	(void) &lflg;
-	(void) &nflg;
-	(void) &rflg;
-	(void) &sflg;
-	(void) &firststr;
-	(void) &laststr;
-	(void) &pat;
-	(void) &repl;
-	(void) &efp;
-	(void) &argc;
-	(void) &argv;
-#endif
 
 	if (hist == NULL)
 		error("history not active");
@@ -232,19 +218,19 @@ histcmd(int argc, char **argv)
 	 */
 	if (lflg == 0 || editor || sflg) {
 		lflg = 0;	/* ignore */
-		editfile[0] = '\0';
+		editfile = NULL;
 		/*
 		 * Catch interrupts to reset active counter and
 		 * cleanup temp files.
 		 */
+		savehandler = handler;
 		if (setjmp(jmploc.loc)) {
 			active = 0;
-			if (*editfile)
+			if (editfile)
 				unlink(editfile);
 			handler = savehandler;
 			longjmp(handler->loc, 1);
 		}
-		savehandler = handler;
 		handler = &jmploc;
 		if (++active > MAXHISTLOOPS) {
 			active = 0;
@@ -318,9 +304,10 @@ histcmd(int argc, char **argv)
 	if (editor) {
 		int fd;
 		INTOFF;		/* easier */
-		sprintf(editfile, "%s/_shXXXXXX", _PATH_TMP);
-		if ((fd = mkstemp(editfile)) < 0)
+		sprintf(editfilestr, "%s/_shXXXXXX", _PATH_TMP);
+		if ((fd = mkstemp(editfilestr)) < 0)
 			error("can't create temporary file %s", editfile);
+		editfile = editfilestr;
 		if ((efp = fdopen(fd, "w")) == NULL) {
 			close(fd);
 			error("can't allocate stdio buffer for temp");
@@ -349,6 +336,7 @@ histcmd(int argc, char **argv)
 			if (sflg) {
 				if (displayhist) {
 					out2str(s);
+					flushout(out2);
 				}
 				evalstring(s, 0);
 				if (displayhist && hist) {
@@ -418,7 +406,7 @@ fc_replace(const char *s, char *p, char *r)
 }
 
 int
-not_fcnumber(char *s)
+not_fcnumber(const char *s)
 {
 	if (s == NULL)
 		return (0);
@@ -428,10 +416,10 @@ not_fcnumber(char *s)
 }
 
 int
-str_to_event(char *str, int last)
+str_to_event(const char *str, int last)
 {
 	HistEvent he;
-	char *s = str;
+	const char *s = str;
 	int relative = 0;
 	int i, retval;
 

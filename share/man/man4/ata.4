@@ -27,7 +27,7 @@
 .\"
 .\" $FreeBSD$
 .\"
-.Dd October 4, 2008
+.Dd November 23, 2009
 .Dt ATA 4
 .Os
 .Sh NAME
@@ -93,6 +93,24 @@ set to 1 for DMA access, 0 for PIO (default is DMA).
 set to 1 to enable Write Caching, 0 to disable (default is enabled).
 .Em WARNING :
 can cause data loss on power failures and crashes.
+.It Va hint.atapci.X.msi
+set to 1 to allow Message Signalled Interrupts (MSI) to be used by
+specified PCI ATA controller, if supported.
+.It Va hint.ata.X.pm_level
+controls SATA interface Power Management for specified channel,
+allowing to save some power by the cost of additional command latency.
+Possible values:
+.Bl -tag -compact
+.It 0
+interface Power Management is disabled, default value.
+.It 1
+device is allowed to initiate PM state change, host is passive.
+.It 2
+host initiates PARTIAL PM state transition every time port becomes idle.
+.It 3
+host initiates SLUMBER PM state transition every time port becomes idle.
+.El
+Modes 2 and 3 are implemented only for AHCI driver now.
 .El
 .Sh DESCRIPTION
 The
@@ -111,7 +129,7 @@ M5229, M5281, M5287, M5288, M5289.
 .It AMD:
 AMD756, AMD766, AMD768, AMD8111, CS5536.
 .It ATI:
-IXP200, IXP300, IXP400.
+IXP200, IXP300, IXP400, IXP600, IXP700, IXP800.
 .It CMD:
 CMD646, CMD646U2, CMD648, CMD649.
 .It Cypress:
@@ -127,13 +145,15 @@ IT8211F, IT8212F, IT8213F.
 .It JMicron:
 JMB360, JMB361, JMB363, JMB365, JMB366, JMB368.
 .It Marvell
-88SX5040, 88SX5041, 88SX5080, 88SX5081, 88SX6041, 88SX6081, 88SX6101, 88SX6141.
+88SX5040, 88SX5041, 88SX5080, 88SX5081, 88SX6041, 88SX6042, 88SX6081, 88SX6101,
+88SX6102, 88SX6111, 88SX6121, 88SX6141, 88SX6145, 88SX7042.
 .It National:
 SC1100.
 .It NetCell:
 NC3000, NC5000.
 .It nVidia:
-nForce, nForce2, nForce2 MCP, nForce3, nForce3 MCP, nForce3 Pro, nForce4.
+nForce, nForce2, nForce2 MCP, nForce3, nForce3 MCP, nForce3 Pro, nForce4,
+MCP51, MCP55, MCP61, MCP65, MCP67, MCP73, MCP77, MCP79, MCP89.
 .It Promise:
 PDC20246, PDC20262, PDC20263, PDC20265, PDC20267, PDC20268, PDC20269, PDC20270, PDC20271, PDC20275, PDC20276, PDC20277, PDC20318, PDC20319, PDC20371, PDC20375, PDC20376, PDC20377, PDC20378, PDC20379, PDC20571, PDC20575, PDC20579, PDC20580, PDC20617, PDC20618, PDC20619, PDC20620, PDC20621, PDC20622, PDC40518, PDC40519, PDC40718, PDC40719.
 .It ServerWorks:

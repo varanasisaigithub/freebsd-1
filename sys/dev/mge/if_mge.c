@@ -69,7 +69,9 @@ __FBSDID("$FreeBSD$");
 #include <dev/mii/mii.h>
 #include <dev/mii/miivar.h>
 
-#define	MV_PHY_ADDR_BASE	8
+#ifndef MII_ADDR_BASE
+#define MII_ADDR_BASE 8
+#endif
 
 #include <dev/mge/if_mgevar.h>
 #include <arm/mv/mvreg.h>
@@ -609,6 +611,7 @@ static int
 mge_attach(device_t dev)
 {
 	struct mge_softc *sc;
+	struct mii_softc *miisc;
 	struct ifnet *ifp;
 	uint8_t hwaddr[ETHER_ADDR_LEN];
 	int i, error ;
@@ -687,12 +690,14 @@ mge_attach(device_t dev)
 	error = mii_phy_probe(dev, &sc->miibus, mge_ifmedia_upd, mge_ifmedia_sts);
 	if (error) {
 		device_printf(dev, "MII failed to find PHY\n");
-		if_free(ifp);
-		sc->ifp = NULL;
 		mge_detach(dev);
 		return (error);
 	}
 	sc->mii = device_get_softc(sc->miibus);
+
+	/* Tell the MAC where to find the PHY so autoneg works */
+	miisc = LIST_FIRST(&sc->mii->mii_phys);
+	MGE_WRITE(sc, MGE_REG_PHYDEV, miisc->mii_phy);
 
 	/* Attach interrupt handlers */
 	for (i = 0; i < 2; ++i) {
@@ -702,7 +707,7 @@ mge_attach(device_t dev)
 		if (error) {
 			device_printf(dev, "could not setup %s\n",
 			    mge_intrs[i].description);
-			ether_ifdetach(sc->ifp);
+			mge_detach(dev);
 			return (error);
 		}
 	}
@@ -727,6 +732,9 @@ mge_detach(device_t dev)
 
 	/* Stop and release all interrupts */
 	for (i = 0; i < 2; ++i) {
+		if (!sc->ih_cookie[i])
+			continue;
+
 		error = bus_teardown_intr(dev, sc->res[1 + i], sc->ih_cookie[i]);
 		if (error)
 			device_printf(dev, "could not release %s\n",
@@ -1264,14 +1272,15 @@ mge_miibus_readreg(device_t dev, int phy, int reg)
 
 	/*
 	 * We assume static PHY address <=> device unit mapping:
-	 * PHY Address = MV_PHY_ADDR_BASE + devce unit.
+	 * PHY Address = MII_ADDR_BASE + devce unit.
 	 * This is true for most Marvell boards.
 	 * 
 	 * Code below grants proper PHY detection on each device
 	 * unit.
 	 */
 
-	if ((MV_PHY_ADDR_BASE + device_get_unit(dev)) != phy)
+	
+	if ((MII_ADDR_BASE + device_get_unit(dev)) != phy)
 		return (0);
 
 	MGE_WRITE(sc_mge0, MGE_REG_SMI, 0x1fffffff &
@@ -1292,7 +1301,7 @@ mge_miibus_writereg(device_t dev, int phy, int reg, int value)
 {
 	uint32_t retries;
 
-	if ((MV_PHY_ADDR_BASE + device_get_unit(dev)) != phy)
+	if ((MII_ADDR_BASE + device_get_unit(dev)) != phy)
 		return (0);
 
 	MGE_WRITE(sc_mge0, MGE_REG_SMI, 0x1fffffff &
@@ -1731,7 +1740,7 @@ mge_setup_multicast(struct mge_softc *sc)
 		memset(smt, 0, sizeof(smt));
 		memset(omt, 0, sizeof(omt));
 
-		IF_ADDR_LOCK(ifp);
+		if_maddr_rlock(ifp);
 		TAILQ_FOREACH(ifma, &ifp->if_multiaddrs, ifma_link) {
 			if (ifma->ifma_addr->sa_family != AF_LINK)
 				continue;
@@ -1745,7 +1754,7 @@ mge_setup_multicast(struct mge_softc *sc)
 				omt[i >> 2] |= v << ((i & 0x03) << 3);
 			}
 		}
-		IF_ADDR_UNLOCK(ifp);
+		if_maddr_runlock(ifp);
 	}
 
 	for (i = 0; i < MGE_MCAST_REG_NUMBER; i++) {

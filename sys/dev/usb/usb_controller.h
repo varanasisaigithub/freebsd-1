@@ -96,9 +96,12 @@ struct usb_bus_methods {
 	/* USB Device mode only - Mandatory */
 
 	void    (*get_hw_ep_profile) (struct usb_device *udev, const struct usb_hw_ep_profile **ppf, uint8_t ep_addr);
-	void    (*set_stall) (struct usb_device *udev, struct usb_xfer *xfer, struct usb_endpoint *ep);
+	void    (*set_stall) (struct usb_device *udev, struct usb_xfer *xfer, struct usb_endpoint *ep, uint8_t *did_stall);
 	void    (*clear_stall) (struct usb_device *udev, struct usb_endpoint *ep);
 
+	/* Optional transfer polling support */
+
+	void	(*xfer_poll) (struct usb_bus *);
 };
 
 /*
@@ -109,11 +112,11 @@ struct usb_pipe_methods {
 
 	/* Mandatory USB Device and Host mode callbacks: */
 
-	usb_callback_t *open;
-	usb_callback_t *close;
+	void	(*open)(struct usb_xfer *);
+	void	(*close)(struct usb_xfer *);
 
-	usb_callback_t *enter;
-	usb_callback_t *start;
+	void	(*enter)(struct usb_xfer *);
+	void	(*start)(struct usb_xfer *);
 
 	/* Optional */
 

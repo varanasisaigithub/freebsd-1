@@ -49,7 +49,6 @@ extern int	numeric_addr;	/* show addresses numerically */
 extern int	numeric_port;	/* show ports numerically */
 extern int	rflag;	/* show routing tables (or routing stats) */
 extern int	sflag;	/* show protocol statistics */
-extern int	tflag;	/* show i/f watchdog timers */
 extern int	Wflag;	/* wide display */
 extern int	xflag;	/* extended display, includes all socket buffer info */
 extern int	zflag;	/* zero stats */
@@ -75,6 +74,7 @@ void	udp_stats(u_long, const char *, int, int);
 void	sctp_protopr(u_long, const char *, int, int);
 void	sctp_stats(u_long, const char *, int, int);
 #endif
+void	arp_stats(u_long, const char *, int, int);
 void	ip_stats(u_long, const char *, int, int);
 void	icmp_stats(u_long, const char *, int, int);
 void	igmp_stats(u_long, const char *, int, int);
@@ -149,7 +149,7 @@ void	ddp_stats(u_long, const char *, int, int);
 void	netgraphprotopr(u_long, const char *, int, int);
 #endif
 
-void	unixpr(u_long, u_long, u_long, u_long);
+void	unixpr(u_long, u_long, u_long, u_long, u_long);
 
 void	esis_stats(u_long, const char *, int, int);
 void	clnp_stats(u_long, const char *, int, int);

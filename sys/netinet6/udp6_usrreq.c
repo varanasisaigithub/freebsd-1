@@ -84,7 +84,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/sysctl.h>
 #include <sys/syslog.h>
 #include <sys/systm.h>
-#include <sys/vimage.h>
 
 #include <net/if.h>
 #include <net/if_types.h>
@@ -102,14 +101,12 @@ __FBSDID("$FreeBSD$");
 #include <netinet/ip_var.h>
 #include <netinet/udp.h>
 #include <netinet/udp_var.h>
-#include <netinet/vinet.h>
 
 #include <netinet6/ip6protosw.h>
 #include <netinet6/ip6_var.h>
 #include <netinet6/in6_pcb.h>
 #include <netinet6/udp6_var.h>
 #include <netinet6/scope6_var.h>
-#include <netinet6/vinet6.h>
 
 #ifdef IPSEC
 #include <netipsec/ipsec.h>
@@ -130,7 +127,6 @@ static void
 udp6_append(struct inpcb *inp, struct mbuf *n, int off,
     struct sockaddr_in6 *fromsa)
 {
-	INIT_VNET_INET(inp->inp_vnet);
 	struct socket *so;
 	struct mbuf *opts;
 
@@ -139,7 +135,6 @@ udp6_append(struct inpcb *inp, struct mbuf *n, int off,
 #ifdef IPSEC
 	/* Check AH/ESP integrity. */
 	if (ipsec6_in_reject(n, inp)) {
-		INIT_VNET_IPSEC(inp->inp_vnet);
 		m_freem(n);
 		V_ipsec6stat.in_polvio++;
 		return;
@@ -173,8 +168,6 @@ udp6_append(struct inpcb *inp, struct mbuf *n, int off,
 int
 udp6_input(struct mbuf **mp, int *offp, int proto)
 {
-	INIT_VNET_INET(curvnet);
-	INIT_VNET_INET6(curvnet);
 	struct mbuf *m = *mp;
 	struct ifnet *ifp;
 	struct ip6_hdr *ip6;
@@ -427,7 +420,6 @@ badunlocked:
 void
 udp6_ctlinput(int cmd, struct sockaddr *sa, void *d)
 {
-	INIT_VNET_INET(curvnet);
 	struct udphdr uh;
 	struct ip6_hdr *ip6;
 	struct mbuf *m;
@@ -493,8 +485,6 @@ udp6_ctlinput(int cmd, struct sockaddr *sa, void *d)
 static int
 udp6_getcred(SYSCTL_HANDLER_ARGS)
 {
-	INIT_VNET_INET(curvnet);
-	INIT_VNET_INET6(curvnet);
 	struct xucred xuc;
 	struct sockaddr_in6 addrs[2];
 	struct inpcb *inp;
@@ -546,13 +536,11 @@ static int
 udp6_output(struct inpcb *inp, struct mbuf *m, struct sockaddr *addr6,
     struct mbuf *control, struct thread *td)
 {
-	INIT_VNET_INET(curvnet);
-	INIT_VNET_INET6(curvnet);
 	u_int32_t ulen = m->m_pkthdr.len;
 	u_int32_t plen = sizeof(struct udphdr) + ulen;
 	struct ip6_hdr *ip6;
 	struct udphdr *udp6;
-	struct in6_addr *laddr, *faddr;
+	struct in6_addr *laddr, *faddr, in6a;
 	struct sockaddr_in6 *sin6 = NULL;
 	struct ifnet *oifp = NULL;
 	int scope_ambiguous = 0;
@@ -650,13 +638,16 @@ udp6_output(struct inpcb *inp, struct mbuf *m, struct sockaddr *addr6,
 		}
 
 		if (!IN6_IS_ADDR_V4MAPPED(faddr)) {
-			laddr = in6_selectsrc(sin6, optp, inp, NULL,
-			    td->td_ucred, &oifp, &error);
+			error = in6_selectsrc(sin6, optp, inp, NULL,
+			    td->td_ucred, &oifp, &in6a);
+			if (error)
+				goto release;
 			if (oifp && scope_ambiguous &&
 			    (error = in6_setscope(&sin6->sin6_addr,
 			    oifp, NULL))) {
 				goto release;
 			}
+			laddr = &in6a;
 		} else
 			laddr = &inp->in6p_laddr;	/* XXX */
 		if (laddr == NULL) {
@@ -763,7 +754,6 @@ releaseopt:
 static void
 udp6_abort(struct socket *so)
 {
-	INIT_VNET_INET(so->so_vnet);
 	struct inpcb *inp;
 
 	inp = sotoinpcb(so);
@@ -793,7 +783,6 @@ udp6_abort(struct socket *so)
 static int
 udp6_attach(struct socket *so, int proto, struct thread *td)
 {
-	INIT_VNET_INET(so->so_vnet);
 	struct inpcb *inp;
 	int error;
 
@@ -840,7 +829,6 @@ udp6_attach(struct socket *so, int proto, struct thread *td)
 static int
 udp6_bind(struct socket *so, struct sockaddr *nam, struct thread *td)
 {
-	INIT_VNET_INET(so->so_vnet);
 	struct inpcb *inp;
 	int error;
 
@@ -880,7 +868,6 @@ out:
 static void
 udp6_close(struct socket *so)
 {
-	INIT_VNET_INET(so->so_vnet);
 	struct inpcb *inp;
 
 	inp = sotoinpcb(so);
@@ -909,7 +896,6 @@ udp6_close(struct socket *so)
 static int
 udp6_connect(struct socket *so, struct sockaddr *nam, struct thread *td)
 {
-	INIT_VNET_INET(so->so_vnet);
 	struct inpcb *inp;
 	struct sockaddr_in6 *sin6;
 	int error;
@@ -966,7 +952,6 @@ out:
 static void
 udp6_detach(struct socket *so)
 {
-	INIT_VNET_INET(so->so_vnet);
 	struct inpcb *inp;
 	struct udpcb *up;
 
@@ -986,7 +971,6 @@ udp6_detach(struct socket *so)
 static int
 udp6_disconnect(struct socket *so)
 {
-	INIT_VNET_INET(so->so_vnet);
 	struct inpcb *inp;
 	int error;
 
@@ -1026,7 +1010,6 @@ static int
 udp6_send(struct socket *so, int flags, struct mbuf *m,
     struct sockaddr *addr, struct mbuf *control, struct thread *td)
 {
-	INIT_VNET_INET(so->so_vnet);
 	struct inpcb *inp;
 	int error = 0;
 

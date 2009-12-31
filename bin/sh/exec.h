@@ -46,30 +46,31 @@ enum {
 	TYPECMD_TYPE		/* type */
 };
 
+union node;
 struct cmdentry {
 	int cmdtype;
 	union param {
 		int index;
-		union node *func;
+		struct funcdef *func;
 	} u;
 	int special;
 };
 
 
-extern char *pathopt;		/* set by padvance */
+extern const char *pathopt;	/* set by padvance */
 extern int exerrno;		/* last exec error */
 
-void shellexec(char **, char **, char *, int);
-char *padvance(char **, char *);
+void shellexec(char **, char **, const char *, int) __dead2;
+char *padvance(const char **, const char *);
 int hashcmd(int, char **);
-void find_command(char *, struct cmdentry *, int, char *);
-int find_builtin(char *, int *);
+void find_command(const char *, struct cmdentry *, int, const char *);
+int find_builtin(const char *, int *);
 void hashcd(void);
 void changepath(const char *);
 void deletefuncs(void);
-void addcmdentry(char *, struct cmdentry *);
-void defun(char *, union node *);
-int unsetfunc(char *);
-int typecmd_impl(int, char **, int);
+void addcmdentry(const char *, struct cmdentry *);
+void defun(const char *, union node *);
+int unsetfunc(const char *);
+int typecmd_impl(int, char **, int, const char *);
 int typecmd(int, char **);
 void clearcmdentry(int);

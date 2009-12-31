@@ -104,10 +104,16 @@ void disk_err(struct bio *bp, const char *what, int blkdone, int nl);
 	 * must be at least MAXPATHLEN bytes long.
 	 */
 
-#define	DIOCGPROVIDERALIAS _IOR('d', 139, char[MAXPATHLEN])
+#define DIOCGSTRIPESIZE	_IOR('d', 139, off_t)	/* Get stripe size in bytes */
 	/*-
-	 * Store the provider alias, if present, in a buffer. The buffer must
-	 * be at least MAXPATHLEN bytes long.
+	 * Get the size of the device's optimal access block in bytes.
+	 * This should be a multiple of the sectorsize.
+	 */
+
+#define DIOCGSTRIPEOFFSET _IOR('d', 140, off_t)	/* Get stripe offset in bytes */
+	/*-
+	 * Get the offset of the first device's optimal access block in bytes.
+	 * This should be a multiple of the sectorsize.
 	 */
 
 #endif /* _SYS_DISK_H_ */

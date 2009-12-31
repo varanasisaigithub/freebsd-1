@@ -74,6 +74,9 @@ const int ieee80211_opcap[IEEE80211_OPMODE_MAX] = {
 	[IEEE80211_M_AHDEMO]	= IEEE80211_C_AHDEMO,
 	[IEEE80211_M_HOSTAP]	= IEEE80211_C_HOSTAP,
 	[IEEE80211_M_MONITOR]	= IEEE80211_C_MONITOR,
+#ifdef IEEE80211_SUPPORT_MESH
+	[IEEE80211_M_MBSS]	= IEEE80211_C_MBSS,
+#endif
 };
 
 static const uint8_t ieee80211broadcastaddr[IEEE80211_ADDR_LEN] =
@@ -221,12 +224,19 @@ null_update_promisc(struct ifnet *ifp)
 }
 
 static int
+null_transmit(struct ifnet *ifp, struct mbuf *m)
+{
+	m_freem(m);
+	ifp->if_oerrors++;
+	return EACCES;		/* XXX EIO/EPERM? */
+}
+
+static int
 null_output(struct ifnet *ifp, struct mbuf *m,
 	struct sockaddr *dst, struct route *ro)
 {
 	if_printf(ifp, "discard raw packet\n");
-	m_freem(m);
-	return EIO;
+	return null_transmit(ifp, m);
 }
 
 static void
@@ -268,6 +278,7 @@ ieee80211_ifattach(struct ieee80211com *ic,
 	ic->ic_update_mcast = null_update_mcast;
 	ic->ic_update_promisc = null_update_promisc;
 
+	ic->ic_hash_key = arc4random();
 	ic->ic_bintval = IEEE80211_BINTVAL_DEFAULT;
 	ic->ic_lintval = ic->ic_bintval;
 	ic->ic_txpowlimit = IEEE80211_TXPOWER_MAX;
@@ -301,6 +312,7 @@ ieee80211_ifattach(struct ieee80211com *ic,
 	sdl->sdl_type = IFT_ETHER;		/* XXX IFT_IEEE80211? */
 	sdl->sdl_alen = IEEE80211_ADDR_LEN;
 	IEEE80211_ADDR_COPY(LLADDR(sdl), macaddr);
+	ifa_free(ifa);
 }
 
 /*
@@ -379,7 +391,6 @@ ieee80211_vap_setup(struct ieee80211com *ic, struct ieee80211vap *vap,
 	ifp->if_flags = IFF_SIMPLEX | IFF_BROADCAST | IFF_MULTICAST;
 	ifp->if_start = ieee80211_start;
 	ifp->if_ioctl = ieee80211_ioctl;
-	ifp->if_watchdog = NULL;		/* NB: no watchdog routine */
 	ifp->if_init = ieee80211_init;
 	/* NB: input+output filled in by ether_ifattach */
 	IFQ_SET_MAXLEN(&ifp->if_snd, IFQ_MAXLEN);
@@ -510,9 +521,15 @@ ieee80211_vap_attach(struct ieee80211vap *vap,
 		ifp->if_baudrate = IF_Mbps(maxrate);
 
 	ether_ifattach(ifp, vap->iv_myaddr);
-	/* hook output method setup by ether_ifattach */
-	vap->iv_output = ifp->if_output;
-	ifp->if_output = ieee80211_output;
+	if (vap->iv_opmode == IEEE80211_M_MONITOR) {
+		/* NB: disallow transmit */
+		ifp->if_transmit = null_transmit;
+		ifp->if_output = null_output;
+	} else {
+		/* hook output method setup by ether_ifattach */
+		vap->iv_output = ifp->if_output;
+		ifp->if_output = ieee80211_output;
+	}
 	/* NB: if_mtu set by ether_ifattach to ETHERMTU */
 
 	IEEE80211_LOCK(ic);
@@ -555,10 +572,12 @@ ieee80211_vap_detach(struct ieee80211vap *vap)
 
 	/*
 	 * Flush any deferred vap tasks.
-	 * NB: must be before ether_ifdetach() and removal from ic_vaps list
 	 */
 	ieee80211_draintask(ic, &vap->iv_nstate_task);
 	ieee80211_draintask(ic, &vap->iv_swbmiss_task);
+
+	/* XXX band-aid until ifnet handles this for us */
+	taskqueue_drain(taskqueue_swi, &ifp->if_linktask);
 
 	IEEE80211_LOCK(ic);
 	KASSERT(vap->iv_state == IEEE80211_S_INIT , ("vap still running"));
@@ -619,7 +638,9 @@ ieee80211_syncifflag_locked(struct ieee80211com *ic, int flag)
 			 * drivers don't need to special-case it
 			 */
 			if (flag == IFF_PROMISC &&
-			    vap->iv_opmode == IEEE80211_M_HOSTAP)
+			    !(vap->iv_opmode == IEEE80211_M_MONITOR ||
+			      (vap->iv_opmode == IEEE80211_M_AHDEMO &&
+			       (vap->iv_caps & IEEE80211_C_TDMA) == 0)))
 				continue;
 			bit = 1;
 			break;
@@ -958,6 +979,8 @@ addmedia(struct ifmedia *media, int caps, int addsta, int mode, int mword)
 		ADD(media, mword, mopt | IFM_IEEE80211_MONITOR);
 	if (caps & IEEE80211_C_WDS)
 		ADD(media, mword, mopt | IFM_IEEE80211_WDS);
+	if (caps & IEEE80211_C_MBSS)
+		ADD(media, mword, mopt | IFM_IEEE80211_MBSS);
 #undef ADD
 }
 
@@ -1261,6 +1284,9 @@ media_status(enum ieee80211_opmode opmode, const struct ieee80211_channel *chan)
 		break;
 	case IEEE80211_M_WDS:
 		status |= IFM_IEEE80211_WDS;
+		break;
+	case IEEE80211_M_MBSS:
+		status |= IFM_IEEE80211_MBSS;
 		break;
 	}
 	if (IEEE80211_IS_CHAN_HTA(chan)) {
@@ -1567,3 +1593,39 @@ ieee80211_media2rate(int mword)
 		ieeerates[IFM_SUBTYPE(mword)] : 0;
 #undef N
 }
+
+/*
+ * The following hash function is adapted from "Hash Functions" by Bob Jenkins
+ * ("Algorithm Alley", Dr. Dobbs Journal, September 1997).
+ */
+#define	mix(a, b, c)							\
+do {									\
+	a -= b; a -= c; a ^= (c >> 13);					\
+	b -= c; b -= a; b ^= (a << 8);					\
+	c -= a; c -= b; c ^= (b >> 13);					\
+	a -= b; a -= c; a ^= (c >> 12);					\
+	b -= c; b -= a; b ^= (a << 16);					\
+	c -= a; c -= b; c ^= (b >> 5);					\
+	a -= b; a -= c; a ^= (c >> 3);					\
+	b -= c; b -= a; b ^= (a << 10);					\
+	c -= a; c -= b; c ^= (b >> 15);					\
+} while (/*CONSTCOND*/0)
+
+uint32_t
+ieee80211_mac_hash(const struct ieee80211com *ic,
+	const uint8_t addr[IEEE80211_ADDR_LEN])
+{
+	uint32_t a = 0x9e3779b9, b = 0x9e3779b9, c = ic->ic_hash_key;
+
+	b += addr[5] << 8;
+	b += addr[4];
+	a += addr[3] << 24;
+	a += addr[2] << 16;
+	a += addr[1] << 8;
+	a += addr[0];
+
+	mix(a, b, c);
+
+	return c;
+}
+#undef mix

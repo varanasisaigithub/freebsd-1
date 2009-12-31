@@ -87,7 +87,7 @@ static void die(void) __dead2;
 static void digest_dynamic(Obj_Entry *, int);
 static Obj_Entry *digest_phdr(const Elf_Phdr *, int, caddr_t, const char *);
 static Obj_Entry *dlcheck(void *);
-static Obj_Entry *do_load_object(int, const char *, char *, struct stat *);
+static Obj_Entry *do_load_object(int, const char *, char *, struct stat *, int);
 static int do_search_info(const Obj_Entry *obj, int, struct dl_serinfo *);
 static bool donelist_check(DoneList *, const Obj_Entry *);
 static void errmsg_restore(char *);
@@ -103,19 +103,18 @@ static void initlist_add_objects(Obj_Entry *, Obj_Entry **, Objlist *);
 static bool is_exported(const Elf_Sym *);
 static void linkmap_add(Obj_Entry *);
 static void linkmap_delete(Obj_Entry *);
-static int load_needed_objects(Obj_Entry *);
+static int load_needed_objects(Obj_Entry *, int);
 static int load_preload_objects(void);
-static Obj_Entry *load_object(const char *, const Obj_Entry *);
+static Obj_Entry *load_object(const char *, const Obj_Entry *, int);
 static Obj_Entry *obj_from_addr(const void *);
-static void objlist_call_fini(Objlist *, int *lockstate);
-static void objlist_call_init(Objlist *, int *lockstate);
+static void objlist_call_fini(Objlist *, bool, int *);
+static void objlist_call_init(Objlist *, int *);
 static void objlist_clear(Objlist *);
 static Objlist_Entry *objlist_find(Objlist *, const Obj_Entry *);
 static void objlist_init(Objlist *);
 static void objlist_push_head(Objlist *, Obj_Entry *);
 static void objlist_push_tail(Objlist *, Obj_Entry *);
 static void objlist_remove(Objlist *, Obj_Entry *);
-static void objlist_remove_unref(Objlist *);
 static void *path_enumerate(const char *, path_enum_proc, void *);
 static int relocate_objects(Obj_Entry *, bool, Obj_Entry *);
 static int rtld_dirname(const char *, char *);
@@ -136,9 +135,9 @@ static void unlink_object(Obj_Entry *);
 static void unload_object(Obj_Entry *);
 static void unref_dag(Obj_Entry *);
 static void ref_dag(Obj_Entry *);
-static int origin_subst_one(char **res, const char *real, const char *kw,
-  const char *subst, char *may_free);
-static char *origin_subst(const char *real, const char *origin_path);
+static int origin_subst_one(char **, const char *, const char *,
+  const char *, char *);
+static char *origin_subst(const char *, const char *);
 static int  rtld_verify_versions(const Objlist *);
 static int  rtld_verify_object_versions(Obj_Entry *);
 static void object_add_name(Obj_Entry *, const char *);
@@ -367,12 +366,12 @@ _rtld(Elf_Addr *sp, func_ptr_type *exit_proc, Obj_Entry **objp)
      * future processes to honor the potentially un-safe variables.
      */
     if (!trust) {
-        unsetenv(LD_ "PRELOAD");
-        unsetenv(LD_ "LIBMAP");
-        unsetenv(LD_ "LIBRARY_PATH");
-        unsetenv(LD_ "LIBMAP_DISABLE");
-        unsetenv(LD_ "DEBUG");
-        unsetenv(LD_ "ELF_HINTS_PATH");
+        if (unsetenv(LD_ "PRELOAD") || unsetenv(LD_ "LIBMAP") ||
+	    unsetenv(LD_ "LIBRARY_PATH") || unsetenv(LD_ "LIBMAP_DISABLE") ||
+	    unsetenv(LD_ "DEBUG") || unsetenv(LD_ "ELF_HINTS_PATH")) {
+		_rtld_error("environment corrupt; aborting");
+		die();
+	}
     }
     ld_debug = getenv(LD_ "DEBUG");
     libmap_disable = getenv(LD_ "LIBMAP_DISABLE") != NULL;
@@ -475,6 +474,7 @@ _rtld(Elf_Addr *sp, func_ptr_type *exit_proc, Obj_Entry **objp)
     /* Initialize a fake symbol for resolving undefined weak references. */
     sym_zero.st_info = ELF_ST_INFO(STB_GLOBAL, STT_NOTYPE);
     sym_zero.st_shndx = SHN_UNDEF;
+    sym_zero.st_value = -(uintptr_t)obj_main->relocbase;
 
     if (!libmap_disable)
         libmap_disable = (bool)lm_init(libmap_override);
@@ -485,7 +485,7 @@ _rtld(Elf_Addr *sp, func_ptr_type *exit_proc, Obj_Entry **objp)
     preload_tail = obj_tail;
 
     dbg("loading needed objects");
-    if (load_needed_objects(obj_main) == -1)
+    if (load_needed_objects(obj_main, 0) == -1)
 	die();
 
     /* Make a list of all objects loaded at startup. */
@@ -898,7 +898,7 @@ digest_dynamic(Obj_Entry *obj, int early)
 #endif
 
 	case DT_FLAGS:
-		if ((dynp->d_un.d_val & DF_1_ORIGIN) && trust)
+		if ((dynp->d_un.d_val & DF_ORIGIN) && trust)
 		    obj->z_origin = true;
 		if (dynp->d_un.d_val & DF_SYMBOLIC)
 		    obj->symbolic = true;
@@ -932,6 +932,8 @@ digest_dynamic(Obj_Entry *obj, int early)
 #endif
 
 	case DT_FLAGS_1:
+		if (dynp->d_un.d_val & DF_1_NOOPEN)
+		    obj->z_noopen = true;
 		if ((dynp->d_un.d_val & DF_1_ORIGIN) && trust)
 		    obj->z_origin = true;
 		if (dynp->d_un.d_val & DF_1_GLOBAL)
@@ -992,26 +994,26 @@ digest_phdr(const Elf_Phdr *phdr, int phnum, caddr_t entry, const char *path)
 
     obj = obj_new();
     for (ph = phdr;  ph < phlimit;  ph++) {
+	if (ph->p_type != PT_PHDR)
+	    continue;
+
+	obj->phdr = phdr;
+	obj->phsize = ph->p_memsz;
+	obj->relocbase = (caddr_t)phdr - ph->p_vaddr;
+	break;
+    }
+
+    for (ph = phdr;  ph < phlimit;  ph++) {
 	switch (ph->p_type) {
 
-	case PT_PHDR:
-	    if ((const Elf_Phdr *)ph->p_vaddr != phdr) {
-		_rtld_error("%s: invalid PT_PHDR", path);
-		return NULL;
-	    }
-	    obj->phdr = (const Elf_Phdr *) ph->p_vaddr;
-	    obj->phsize = ph->p_memsz;
-	    break;
-
 	case PT_INTERP:
-	    obj->interp = (const char *) ph->p_vaddr;
+	    obj->interp = (const char *)(ph->p_vaddr + obj->relocbase);
 	    break;
 
 	case PT_LOAD:
 	    if (nsegs == 0) {	/* First load segment */
 		obj->vaddrbase = trunc_page(ph->p_vaddr);
-		obj->mapbase = (caddr_t) obj->vaddrbase;
-		obj->relocbase = obj->mapbase - obj->vaddrbase;
+		obj->mapbase = obj->vaddrbase + obj->relocbase;
 		obj->textsize = round_page(ph->p_vaddr + ph->p_memsz) -
 		  obj->vaddrbase;
 	    } else {		/* Last load segment */
@@ -1022,7 +1024,7 @@ digest_phdr(const Elf_Phdr *phdr, int phnum, caddr_t entry, const char *path)
 	    break;
 
 	case PT_DYNAMIC:
-	    obj->dynamic = (const Elf_Dyn *) ph->p_vaddr;
+	    obj->dynamic = (const Elf_Dyn *)(ph->p_vaddr + obj->relocbase);
 	    break;
 
 	case PT_TLS:
@@ -1030,7 +1032,7 @@ digest_phdr(const Elf_Phdr *phdr, int phnum, caddr_t entry, const char *path)
 	    obj->tlssize = ph->p_memsz;
 	    obj->tlsalign = ph->p_align;
 	    obj->tlsinitsize = ph->p_filesz;
-	    obj->tlsinit = (void*) ph->p_vaddr;
+	    obj->tlsinit = (void*)(ph->p_vaddr + obj->relocbase);
 	    break;
 	}
     }
@@ -1309,8 +1311,8 @@ init_rtld(caddr_t mapbase)
     /*
      * Conjure up an Obj_Entry structure for the dynamic linker.
      *
-     * The "path" member can't be initialized yet because string constatns
-     * cannot yet be acessed. Below we will set it correctly.
+     * The "path" member can't be initialized yet because string constants
+     * cannot yet be accessed. Below we will set it correctly.
      */
     memset(&objtmp, 0, sizeof(objtmp));
     objtmp.path = NULL;
@@ -1379,9 +1381,9 @@ initlist_add_neededs(Needed_Entry *needed, Objlist *list)
 static void
 initlist_add_objects(Obj_Entry *obj, Obj_Entry **tail, Objlist *list)
 {
-    if (obj->init_done)
+    if (obj->init_scanned || obj->init_done)
 	return;
-    obj->init_done = true;
+    obj->init_scanned = true;
 
     /* Recursively process the successor objects. */
     if (&obj->next != tail)
@@ -1396,8 +1398,10 @@ initlist_add_objects(Obj_Entry *obj, Obj_Entry **tail, Objlist *list)
 	objlist_push_tail(list, obj);
 
     /* Add the object to the global fini list in the reverse order. */
-    if (obj->fini != (Elf_Addr)NULL)
+    if (obj->fini != (Elf_Addr)NULL && !obj->on_fini_list) {
 	objlist_push_head(&list_fini, obj);
+	obj->on_fini_list = true;
+    }
 }
 
 #ifndef FPTR_TARGET
@@ -1423,7 +1427,7 @@ is_exported(const Elf_Sym *def)
  * returns -1 on failure.
  */
 static int
-load_needed_objects(Obj_Entry *first)
+load_needed_objects(Obj_Entry *first, int flags)
 {
     Obj_Entry *obj, *obj1;
 
@@ -1431,7 +1435,8 @@ load_needed_objects(Obj_Entry *first)
 	Needed_Entry *needed;
 
 	for (needed = obj->needed;  needed != NULL;  needed = needed->next) {
-	    obj1 = needed->obj = load_object(obj->strtab + needed->name, obj);
+	    obj1 = needed->obj = load_object(obj->strtab + needed->name, obj,
+		flags & ~RTLD_LO_NOLOAD);
 	    if (obj1 == NULL && !ld_tracing)
 		return -1;
 	    if (obj1 != NULL && obj1->z_nodelete && !obj1->ref_nodel) {
@@ -1462,7 +1467,7 @@ load_preload_objects(void)
 
 	savech = p[len];
 	p[len] = '\0';
-	if (load_object(p, NULL) == NULL)
+	if (load_object(p, NULL, 0) == NULL)
 	    return -1;	/* XXX - cleanup */
 	p[len] = savech;
 	p += len;
@@ -1479,7 +1484,7 @@ load_preload_objects(void)
  * on failure.
  */
 static Obj_Entry *
-load_object(const char *name, const Obj_Entry *refobj)
+load_object(const char *name, const Obj_Entry *refobj, int flags)
 {
     Obj_Entry *obj;
     int fd = -1;
@@ -1525,9 +1530,11 @@ load_object(const char *name, const Obj_Entry *refobj)
 	close(fd);
 	return obj;
     }
+    if (flags & RTLD_LO_NOLOAD)
+	return (NULL);
 
     /* First use of this object, so we must map it in */
-    obj = do_load_object(fd, name, path, &sb);
+    obj = do_load_object(fd, name, path, &sb, flags);
     if (obj == NULL)
 	free(path);
     close(fd);
@@ -1536,7 +1543,8 @@ load_object(const char *name, const Obj_Entry *refobj)
 }
 
 static Obj_Entry *
-do_load_object(int fd, const char *name, char *path, struct stat *sbp)
+do_load_object(int fd, const char *name, char *path, struct stat *sbp,
+  int flags)
 {
     Obj_Entry *obj;
     struct statfs fs;
@@ -1563,6 +1571,14 @@ do_load_object(int fd, const char *name, char *path, struct stat *sbp)
     object_add_name(obj, name);
     obj->path = path;
     digest_dynamic(obj, 0);
+    if (obj->z_noopen && (flags & (RTLD_LO_DLOPEN | RTLD_LO_TRACE)) ==
+      RTLD_LO_DLOPEN) {
+	dbg("refusing to load non-loadable \"%s\"", obj->path);
+	_rtld_error("Cannot dlopen non-loadable %s", obj->path);
+	munmap(obj->mapbase, obj->mapsize);
+	obj_free(obj);
+	return (NULL);
+    }
 
     *obj_tail = obj;
     obj_tail = &obj->next;
@@ -1600,9 +1616,9 @@ obj_from_addr(const void *addr)
  * non-NULL fini functions.
  */
 static void
-objlist_call_fini(Objlist *list, int *lockstate)
+objlist_call_fini(Objlist *list, bool force, int *lockstate)
 {
-    Objlist_Entry *elm;
+    Objlist_Entry *elm, *elm_tmp;
     char *saved_msg;
 
     /*
@@ -1610,17 +1626,22 @@ objlist_call_fini(Objlist *list, int *lockstate)
      * call into the dynamic linker and overwrite it.
      */
     saved_msg = errmsg_save();
-    wlock_release(rtld_bind_lock, *lockstate);
-    STAILQ_FOREACH(elm, list, link) {
-	if (elm->obj->refcount == 0) {
+    STAILQ_FOREACH_SAFE(elm, list, link, elm_tmp) {
+	if (elm->obj->refcount == 0 || force) {
 	    dbg("calling fini function for %s at %p", elm->obj->path,
 	        (void *)elm->obj->fini);
 	    LD_UTRACE(UTRACE_FINI_CALL, elm->obj, (void *)elm->obj->fini, 0, 0,
 		elm->obj->path);
+	    /* Remove object from fini list to prevent recursive invocation. */
+	    STAILQ_REMOVE(list, elm, Struct_Objlist_Entry, link);
+	    wlock_release(rtld_bind_lock, *lockstate);
 	    call_initfini_pointer(elm->obj, elm->obj->fini);
+	    *lockstate = wlock_acquire(rtld_bind_lock);
+	    /* No need to free anything if process is going down. */
+	    if (!force)
+	    	free(elm);
 	}
     }
-    *lockstate = wlock_acquire(rtld_bind_lock);
     errmsg_restore(saved_msg);
 }
 
@@ -1633,22 +1654,39 @@ static void
 objlist_call_init(Objlist *list, int *lockstate)
 {
     Objlist_Entry *elm;
+    Obj_Entry *obj;
     char *saved_msg;
+
+    /*
+     * Clean init_scanned flag so that objects can be rechecked and
+     * possibly initialized earlier if any of vectors called below
+     * cause the change by using dlopen.
+     */
+    for (obj = obj_list;  obj != NULL;  obj = obj->next)
+	obj->init_scanned = false;
 
     /*
      * Preserve the current error message since an init function might
      * call into the dynamic linker and overwrite it.
      */
     saved_msg = errmsg_save();
-    wlock_release(rtld_bind_lock, *lockstate);
     STAILQ_FOREACH(elm, list, link) {
+	if (elm->obj->init_done) /* Initialized early. */
+	    continue;
 	dbg("calling init function for %s at %p", elm->obj->path,
 	    (void *)elm->obj->init);
 	LD_UTRACE(UTRACE_INIT_CALL, elm->obj, (void *)elm->obj->init, 0, 0,
 	    elm->obj->path);
+	/*
+	 * Race: other thread might try to use this object before current
+	 * one completes the initilization. Not much can be done here
+	 * without better locking.
+	 */
+	elm->obj->init_done = true;
+    	wlock_release(rtld_bind_lock, *lockstate);
 	call_initfini_pointer(elm->obj, elm->obj->init);
+	*lockstate = wlock_acquire(rtld_bind_lock);
     }
-    *lockstate = wlock_acquire(rtld_bind_lock);
     errmsg_restore(saved_msg);
 }
 
@@ -1710,27 +1748,6 @@ objlist_remove(Objlist *list, Obj_Entry *obj)
 	STAILQ_REMOVE(list, elm, Struct_Objlist_Entry, link);
 	free(elm);
     }
-}
-
-/*
- * Remove all of the unreferenced objects from "list".
- */
-static void
-objlist_remove_unref(Objlist *list)
-{
-    Objlist newlist;
-    Objlist_Entry *elm;
-
-    STAILQ_INIT(&newlist);
-    while (!STAILQ_EMPTY(list)) {
-	elm = STAILQ_FIRST(list);
-	STAILQ_REMOVE_HEAD(list, link);
-	if (elm->obj->refcount == 0)
-	    free(elm);
-	else
-	    STAILQ_INSERT_TAIL(&newlist, elm, link);
-    }
-    *list = newlist;
 }
 
 /*
@@ -1808,15 +1825,11 @@ relocate_objects(Obj_Entry *first, bool bind_now, Obj_Entry *rtldobj)
 static void
 rtld_exit(void)
 {
-    Obj_Entry *obj;
     int	lockstate;
 
     lockstate = wlock_acquire(rtld_bind_lock);
     dbg("rtld_exit()");
-    /* Clear all the reference counts so the fini functions will be called. */
-    for (obj = obj_list;  obj != NULL;  obj = obj->next)
-	obj->refcount = 0;
-    objlist_call_fini(&list_fini, &lockstate);
+    objlist_call_fini(&list_fini, true, &lockstate);
     /* No need to remove the items from the list, since we are exiting. */
     if (!libmap_disable)
         lm_fini();
@@ -1936,8 +1949,7 @@ dlclose(void *handle)
 	 * The object is no longer referenced, so we must unload it.
 	 * First, call the fini functions.
 	 */
-	objlist_call_fini(&list_fini, &lockstate);
-	objlist_remove_unref(&list_fini);
+	objlist_call_fini(&list_fini, false, &lockstate);
 
 	/* Finish cleaning up the newly-unreferenced objects. */
 	GDB_STATE(RT_DELETE,&root->linkmap);
@@ -1985,13 +1997,18 @@ dlopen(const char *name, int mode)
     Obj_Entry **old_obj_tail;
     Obj_Entry *obj;
     Objlist initlist;
-    int result, lockstate, nodelete;
+    int result, lockstate, nodelete, lo_flags;
 
     LD_UTRACE(UTRACE_DLOPEN_START, NULL, NULL, 0, mode, name);
     ld_tracing = (mode & RTLD_TRACE) == 0 ? NULL : "1";
     if (ld_tracing != NULL)
 	environ = (char **)*get_program_var_addr("environ");
     nodelete = mode & RTLD_NODELETE;
+    lo_flags = RTLD_LO_DLOPEN;
+    if (mode & RTLD_NOLOAD)
+	    lo_flags |= RTLD_LO_NOLOAD;
+    if (ld_tracing != NULL)
+	    lo_flags |= RTLD_LO_TRACE;
 
     objlist_init(&initlist);
 
@@ -2004,7 +2021,7 @@ dlopen(const char *name, int mode)
 	obj = obj_main;
 	obj->refcount++;
     } else {
-	obj = load_object(name, obj_main);
+	obj = load_object(name, obj_main, lo_flags);
     }
 
     if (obj) {
@@ -2014,7 +2031,7 @@ dlopen(const char *name, int mode)
 	mode &= RTLD_MODEMASK;
 	if (*old_obj_tail != NULL) {		/* We loaded something new. */
 	    assert(*old_obj_tail == obj);
-	    result = load_needed_objects(obj);
+	    result = load_needed_objects(obj, RTLD_LO_DLOPEN);
 	    init_dag(obj);
 	    if (result != -1)
 		result = rtld_verify_versions(&obj->dagmembers);
@@ -2132,7 +2149,7 @@ do_dlsym(void *handle, const char *name, void *retaddr, const Ver_Entry *ve,
 			       &donelist);
 
 	    /*
-	     * We do not distinguish between 'main' object an global scope.
+	     * We do not distinguish between 'main' object and global scope.
 	     * If symbol is not defined by objects loaded at startup, continue
 	     * search among dynamically loaded objects with RTLD_GLOBAL
 	     * scope.
@@ -3423,7 +3440,7 @@ locate_dependency(const Obj_Entry *obj, const char *name)
 	if (object_match_name(needed->obj, name))
 	    return needed->obj;
     }
-    _rtld_error("%s: Unexpected  inconsistency: dependency %s not found",
+    _rtld_error("%s: Unexpected inconsistency: dependency %s not found",
 	obj->path, name);
     die();
 }

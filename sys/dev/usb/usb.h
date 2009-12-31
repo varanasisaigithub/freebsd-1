@@ -39,7 +39,45 @@
 #ifndef _USB_STANDARD_H_
 #define	_USB_STANDARD_H_
 
+#if defined(_KERNEL)
+#include "opt_usb.h"
+
+/* Declare parent SYSCTL USB node. */
+#ifdef SYSCTL_DECL
+SYSCTL_DECL(_hw_usb);
+#endif
+
+#include <sys/malloc.h>
+
+MALLOC_DECLARE(M_USB);
+MALLOC_DECLARE(M_USBDEV);
+MALLOC_DECLARE(M_USBHC);
+#endif /* _KERNEL */
+
 #include <dev/usb/usb_endian.h>
+#include <dev/usb/usb_freebsd.h>
+
+#define	USB_STACK_VERSION 2000		/* 2.0 */
+
+/* Definition of some hardcoded USB constants. */
+
+#define	USB_MAX_IPACKET		8	/* initial USB packet size */
+#define	USB_EP_MAX (2*16)		/* hardcoded */
+#define	USB_ROOT_HUB_ADDR 1		/* index */
+#define	USB_MIN_DEVICES 2		/* unused + root HUB */
+#define	USB_UNCONFIG_INDEX 0xFF		/* internal use only */
+#define	USB_IFACE_INDEX_ANY 0xFF	/* internal use only */
+#define	USB_START_ADDR 0		/* default USB device BUS address
+					 * after USB bus reset */
+#define	USB_CONTROL_ENDPOINT 0		/* default control endpoint */
+
+#define	USB_FRAMES_PER_SECOND_FS 1000	/* full speed */
+#define	USB_FRAMES_PER_SECOND_HS 8000	/* high speed */
+
+#define	USB_FS_BYTES_PER_HS_UFRAME 188	/* bytes */
+#define	USB_HS_MICRO_FRAMES_MAX 8	/* units */
+
+#define	USB_ISOC_TIME_MAX 128		/* ms */
 
 /*
  * Minimum time a device needs to be powered down to go through a
@@ -386,9 +424,9 @@ typedef struct usb_interface_assoc_descriptor usb_interface_assoc_descriptor_t;
 #define	UISUBCLASS_MOBILE_DIRECT_LINE_MODEL 10
 #define	UISUBCLASS_OBEX 11
 #define	UISUBCLASS_ETHERNET_EMULATION_MODEL 12
+#define	UISUBCLASS_NETWORK_CONTROL_MODEL 13
 
 #define	UIPROTO_CDC_AT			1
-#define	UIPROTO_CDC_ETH_512X4 0x76	/* FreeBSD specific */
 
 #define	UICLASS_HID		0x03
 #define	UISUBCLASS_BOOT		1
@@ -423,7 +461,7 @@ typedef struct usb_interface_assoc_descriptor usb_interface_assoc_descriptor_t;
 #define	UIPROTO_HSHUBMTT	1
 
 #define	UICLASS_CDC_DATA	0x0a
-#define	UISUBCLASS_DATA		0
+#define	UISUBCLASS_DATA		0x00
 #define	UIPROTO_DATA_ISDNBRI		0x30	/* Physical iface */
 #define	UIPROTO_DATA_HDLC		0x31	/* HDLC */
 #define	UIPROTO_DATA_TRANSPARENT	0x32	/* Transparent */
@@ -437,6 +475,7 @@ typedef struct usb_interface_assoc_descriptor usb_interface_assoc_descriptor_t;
 #define	UIPROTO_DATA_HOST_BASED		0xfd	/* Host based driver */
 #define	UIPROTO_DATA_PUF		0xfe	/* see Prot. Unit Func. Desc. */
 #define	UIPROTO_DATA_VENDOR		0xff	/* Vendor specific */
+#define	UIPROTO_DATA_NCM		0x01	/* Network Control Model */
 
 #define	UICLASS_SMARTCARD	0x0b
 #define	UICLASS_FIRM_UPD	0x0c
@@ -445,6 +484,8 @@ typedef struct usb_interface_assoc_descriptor usb_interface_assoc_descriptor_t;
 #define	UICLASS_WIRELESS	0xe0
 #define	UISUBCLASS_RF			0x01
 #define	UIPROTO_BLUETOOTH		0x01
+
+#define	UICLASS_IAD		0xEF	/* Interface Association Descriptor */
 
 #define	UICLASS_APPL_SPEC	0xfe
 #define	UISUBCLASS_FIRMWARE_DOWNLOAD	1
@@ -642,4 +683,51 @@ struct usb_port_status {
 } __packed;
 typedef struct usb_port_status usb_port_status_t;
 
+/*
+ * The "USB_SPEED" macros defines all the supported USB speeds.
+ */
+enum usb_dev_speed {
+	USB_SPEED_VARIABLE,
+	USB_SPEED_LOW,
+	USB_SPEED_FULL,
+	USB_SPEED_HIGH,
+	USB_SPEED_SUPER,
+};
+#define	USB_SPEED_MAX	(USB_SPEED_SUPER+1)
+
+/*
+ * The "USB_REV" macros defines all the supported USB revisions.
+ */
+enum usb_revision {
+	USB_REV_UNKNOWN,
+	USB_REV_PRE_1_0,
+	USB_REV_1_0,
+	USB_REV_1_1,
+	USB_REV_2_0,
+	USB_REV_2_5,
+	USB_REV_3_0
+};
+#define	USB_REV_MAX	(USB_REV_3_0+1)
+
+/*
+ * Supported host contoller modes.
+ */
+enum usb_hc_mode {
+	USB_MODE_HOST,		/* initiates transfers */
+	USB_MODE_DEVICE,	/* bus transfer target */
+	USB_MODE_DUAL		/* can be host or device */
+};
+#define	USB_MODE_MAX	(USB_MODE_DUAL+1)
+
+/*
+ * The "USB_MODE" macros defines all the supported device states.
+ */
+enum usb_dev_state {
+	USB_STATE_DETACHED,
+	USB_STATE_ATTACHED,
+	USB_STATE_POWERED,
+	USB_STATE_ADDRESSED,
+	USB_STATE_CONFIGURED,
+};
+#define	USB_STATE_MAX	(USB_STATE_CONFIGURED+1)
 #endif					/* _USB_STANDARD_H_ */

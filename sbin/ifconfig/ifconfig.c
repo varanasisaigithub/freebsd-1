@@ -67,6 +67,7 @@ static const char rcsid[] =
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <jail.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -146,7 +147,7 @@ main(int argc, char *argv[])
 	struct ifaddrs *ifap, *ifa;
 	struct ifreq paifr;
 	const struct sockaddr_dl *sdl;
-	char options[1024], *cp;
+	char options[1024], *cp, *namecp = NULL;
 	const char *ifname;
 	struct option *p;
 	size_t iflen;
@@ -251,6 +252,19 @@ main(int argc, char *argv[])
 				ifconfig(argc, argv, 1, NULL);
 				exit(0);
 			}
+			/*
+			 * NOTE:  We have to special-case the `-vnet' command
+			 * right here as we would otherwise fail when trying
+			 * to find the interface as it lives in another vnet.
+			 */
+			if (argc > 0 && (strcmp(argv[0], "-vnet") == 0)) {
+				iflen = strlcpy(name, ifname, sizeof(name));
+				if (iflen >= sizeof(name))
+					errx(1, "%s: interface name too long",
+					    ifname);
+				ifconfig(argc, argv, 0, NULL);
+				exit(0);
+			}
 			errx(1, "interface %s does not exist", ifname);
 		}
 	}
@@ -280,7 +294,7 @@ main(int argc, char *argv[])
 			sdl = (const struct sockaddr_dl *) ifa->ifa_addr;
 		else
 			sdl = NULL;
-		if (cp != NULL && strcmp(cp, ifa->ifa_name) == 0)
+		if (cp != NULL && strcmp(cp, ifa->ifa_name) == 0 && !namesonly)
 			continue;
 		iflen = strlcpy(name, ifa->ifa_name, sizeof(name));
 		if (iflen >= sizeof(name)) {
@@ -294,16 +308,32 @@ main(int argc, char *argv[])
 			continue;
 		if (uponly && (ifa->ifa_flags & IFF_UP) == 0)
 			continue;
-		ifindex++;
 		/*
 		 * Are we just listing the interfaces?
 		 */
 		if (namesonly) {
+			if (namecp == cp)
+				continue;
+			if (afp != NULL) {
+				/* special case for "ether" address family */
+				if (!strcmp(afp->af_name, "ether")) {
+					if (sdl == NULL ||
+					    sdl->sdl_type != IFT_ETHER ||
+					    sdl->sdl_alen != ETHER_ADDR_LEN)
+						continue;
+				} else {
+					if (ifa->ifa_addr->sa_family != afp->af_af)
+						continue;
+				}
+			}
+			namecp = cp;
+			ifindex++;
 			if (ifindex > 1)
 				printf(" ");
 			fputs(name, stdout);
 			continue;
 		}
+		ifindex++;
 
 		if (argc > 0)
 			ifconfig(argc, argv, 0, afp);
@@ -626,6 +656,34 @@ deletetunnel(const char *vname, int param, int s, const struct afswtch *afp)
 
 	if (ioctl(s, SIOCDIFPHYADDR, &ifr) < 0)
 		err(1, "SIOCDIFPHYADDR");
+}
+
+static void
+setifvnet(const char *jname, int dummy __unused, int s,
+    const struct afswtch *afp)
+{
+	struct ifreq my_ifr;
+
+	memcpy(&my_ifr, &ifr, sizeof(my_ifr));
+	my_ifr.ifr_jid = jail_getid(jname);
+	if (my_ifr.ifr_jid < 0)
+		errx(1, "%s", jail_errmsg);
+	if (ioctl(s, SIOCSIFVNET, &my_ifr) < 0)
+		err(1, "SIOCSIFVNET");
+}
+
+static void
+setifrvnet(const char *jname, int dummy __unused, int s,
+    const struct afswtch *afp)
+{
+	struct ifreq my_ifr;
+
+	memcpy(&my_ifr, &ifr, sizeof(my_ifr));
+	my_ifr.ifr_jid = jail_getid(jname);
+	if (my_ifr.ifr_jid < 0)
+		errx(1, "%s", jail_errmsg);
+	if (ioctl(s, SIOCSIFRVNET, &my_ifr) < 0)
+		err(1, "SIOCSIFRVNET(%d, %s)", my_ifr.ifr_jid, my_ifr.ifr_name);
 }
 
 static void
@@ -1012,6 +1070,8 @@ static struct cmd basic_cmds[] = {
 	DEF_CMD_ARG2("tunnel",			settunnel),
 	DEF_CMD("-tunnel", 0,			deletetunnel),
 	DEF_CMD("deletetunnel", 0,		deletetunnel),
+	DEF_CMD_ARG("vnet",			setifvnet),
+	DEF_CMD_ARG("-vnet",			setifrvnet),
 	DEF_CMD("link0",	IFF_LINK0,	setifflags),
 	DEF_CMD("-link0",	-IFF_LINK0,	setifflags),
 	DEF_CMD("link1",	IFF_LINK1,	setifflags),
@@ -1053,7 +1113,7 @@ static __constructor void
 ifconfig_ctor(void)
 {
 #define	N(a)	(sizeof(a) / sizeof(a[0]))
-	int i;
+	size_t i;
 
 	for (i = 0; i < N(basic_cmds);  i++)
 		cmd_register(&basic_cmds[i]);

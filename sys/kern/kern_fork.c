@@ -39,6 +39,7 @@ __FBSDID("$FreeBSD$");
 
 #include "opt_kdtrace.h"
 #include "opt_ktrace.h"
+#include "opt_kstack_pages.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -67,7 +68,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/sdt.h>
 #include <sys/sx.h>
 #include <sys/signalvar.h>
-#include <sys/vimage.h>
 
 #include <security/audit/audit.h>
 #include <security/mac/mac_framework.h>
@@ -146,7 +146,7 @@ rfork(td, uap)
 	if ((uap->flags & RFKERNELONLY) != 0)
 		return (EINVAL);
 
-	AUDIT_ARG(fflags, uap->flags);
+	AUDIT_ARG_FFLAGS(uap->flags);
 	error = fork1(td, uap->flags, 0, &p2);
 	if (error == 0) {
 		td->td_retval[0] = p2 ? p2->p_pid : 0;
@@ -214,6 +214,7 @@ fork1(td, flags, pages, procp)
 	struct thread *td2;
 	struct sigacts *newsigacts;
 	struct vmspace *vm2;
+	vm_ooffset_t mem_charged;
 	int error;
 
 	/* Can't copy and clear. */
@@ -274,33 +275,50 @@ norfproc_fail:
 	 * however it proved un-needed and caused problems
 	 */
 
+	mem_charged = 0;
 	vm2 = NULL;
+	if (pages == 0)
+		pages = KSTACK_PAGES;
 	/* Allocate new proc. */
 	newproc = uma_zalloc(proc_zone, M_WAITOK);
-	if (TAILQ_EMPTY(&newproc->p_threads)) {
-		td2 = thread_alloc();
+	td2 = FIRST_THREAD_IN_PROC(newproc);
+	if (td2 == NULL) {
+		td2 = thread_alloc(pages);
 		if (td2 == NULL) {
 			error = ENOMEM;
 			goto fail1;
 		}
 		proc_linkup(newproc, td2);
-	} else
-		td2 = FIRST_THREAD_IN_PROC(newproc);
-
-	/* Allocate and switch to an alternate kstack if specified. */
-	if (pages != 0) {
-		if (!vm_thread_new_altkstack(td2, pages)) {
-			error = ENOMEM;
-			goto fail1;
+	} else {
+		if (td2->td_kstack == 0 || td2->td_kstack_pages != pages) {
+			if (td2->td_kstack != 0)
+				vm_thread_dispose(td2);
+			if (!thread_alloc_stack(td2, pages)) {
+				error = ENOMEM;
+				goto fail1;
+			}
 		}
 	}
+
 	if ((flags & RFMEM) == 0) {
-		vm2 = vmspace_fork(p1->p_vmspace);
+		vm2 = vmspace_fork(p1->p_vmspace, &mem_charged);
 		if (vm2 == NULL) {
 			error = ENOMEM;
 			goto fail1;
 		}
-	}
+		if (!swap_reserve(mem_charged)) {
+			/*
+			 * The swap reservation failed. The accounting
+			 * from the entries of the copied vm2 will be
+			 * substracted in vmspace_free(), so force the
+			 * reservation there.
+			 */
+			swap_reserve_force(mem_charged);
+			error = ENOMEM;
+			goto fail1;
+		}
+	} else
+		vm2 = NULL;
 #ifdef MAC
 	mac_proc_init(newproc);
 #endif
@@ -349,9 +367,6 @@ norfproc_fail:
 	 * are hard-limits as to the number of processes that can run.
 	 */
 	nprocs++;
-#ifdef VIMAGE
-	P_TO_VPROCG(p1)->nprocs++;
-#endif
 
 	/*
 	 * Find an unused process ID.  We remember a range of unused IDs
@@ -438,7 +453,7 @@ again:
 	thread_lock(td);
 	sched_fork(td, td2);
 	thread_unlock(td);
-	AUDIT_ARG(pid, p2->p_pid);
+	AUDIT_ARG_PID(p2->p_pid);
 	LIST_INSERT_HEAD(&allproc, p2, p_list);
 	LIST_INSERT_HEAD(PIDHASH(p2->p_pid), p2, p_hash);
 

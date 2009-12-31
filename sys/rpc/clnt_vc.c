@@ -70,6 +70,9 @@ __FBSDID("$FreeBSD$");
 #include <sys/syslog.h>
 #include <sys/time.h>
 #include <sys/uio.h>
+
+#include <net/vnet.h>
+
 #include <netinet/tcp.h>
 
 #include <rpc/rpc.h>
@@ -196,7 +199,7 @@ clnt_vc_create(
 		while ((so->so_state & SS_ISCONNECTING)
 		    && so->so_error == 0) {
 			error = msleep(&so->so_timeo, SOCK_MTX(so),
-			    PSOCK | PCATCH, "connec", 0);
+			    PSOCK | PCATCH | PBDRY, "connec", 0);
 			if (error) {
 				if (error == EINTR || error == ERESTART)
 					interrupted = 1;
@@ -217,8 +220,11 @@ clnt_vc_create(
 		}
 	}
 
-	if (!__rpc_socket2sockinfo(so, &si))
+	CURVNET_SET(so->so_vnet);
+	if (!__rpc_socket2sockinfo(so, &si)) {
+		CURVNET_RESTORE();
 		goto err;
+	}
 
 	if (so->so_proto->pr_flags & PR_CONNREQUIRED) {
 		bzero(&sopt, sizeof(sopt));
@@ -239,6 +245,7 @@ clnt_vc_create(
 		sopt.sopt_valsize = sizeof(one);
 		sosetopt(so, &sopt);
 	}
+	CURVNET_RESTORE();
 
 	ct->ct_closeit = FALSE;
 
@@ -406,6 +413,22 @@ call_again:
 
 	cr->cr_xid = xid;
 	mtx_lock(&ct->ct_lock);
+	/*
+	 * Check to see if the other end has already started to close down
+	 * the connection. The upcall will have set ct_error.re_status
+	 * to RPC_CANTRECV if this is the case.
+	 * If the other end starts to close down the connection after this
+	 * point, it will be detected later when cr_error is checked,
+	 * since the request is in the ct_pending queue.
+	 */
+	if (ct->ct_error.re_status == RPC_CANTRECV) {
+		if (errp != &ct->ct_error) {
+			errp->re_errno = ct->ct_error.re_errno;
+			errp->re_status = RPC_CANTRECV;
+		}
+		stat = RPC_CANTRECV;
+		goto out;
+	}
 	TAILQ_INSERT_TAIL(&ct->ct_pending, cr, cr_link);
 	mtx_unlock(&ct->ct_lock);
 
@@ -477,6 +500,7 @@ call_again:
 		errp->re_errno = error;
 		switch (error) {
 		case EINTR:
+		case ERESTART:
 			stat = RPC_INTR;
 			break;
 		case EWOULDBLOCK:
@@ -709,7 +733,7 @@ clnt_vc_control(CLIENT *cl, u_int request, void *info)
 
 	case CLSET_INTERRUPTIBLE:
 		if (*(int *) info)
-			ct->ct_waitflag = PCATCH;
+			ct->ct_waitflag = PCATCH | PBDRY;
 		else
 			ct->ct_waitflag = 0;
 		break;

@@ -103,7 +103,7 @@ static Elf64_Brandinfo freebsd_brand_info = {
 	.flags		= BI_CAN_EXEC_DYN | BI_BRAND_NOTE
 };
 
-SYSINIT(elf64, SI_SUB_EXEC, SI_ORDER_ANY,
+SYSINIT(elf64, SI_SUB_EXEC, SI_ORDER_FIRST,
     (sysinit_cfunc_t) elf64_insert_brand_entry,
     &freebsd_brand_info);
 
@@ -285,7 +285,7 @@ elf_reloc_local(linker_file_t lf, Elf_Addr relocbase, const void *data,
 	value = rela->r_addend + (Elf_Addr)lf->address;
 	where = (Elf_Addr *)((Elf_Addr)lf->address + rela->r_offset);
 
-	*where = value;
+	*where = elf_relocaddr(lf, value);
 
 	return (0);
 }
@@ -338,8 +338,9 @@ elf_reloc(linker_file_t lf, Elf_Addr relocbase, const void *data, int type,
 	if (RELOC_PC_RELATIVE(rtype))
 		value -= (Elf_Addr)where;
 
-	if (RELOC_BASE_RELATIVE(rtype))
-		value += relocbase;
+	if (RELOC_BASE_RELATIVE(rtype)) {
+		value = elf_relocaddr(lf, value + relocbase);
+	}
 
 	mask = RELOC_VALUE_BITMASK(rtype);
 	value >>= RELOC_VALUE_RIGHTSHIFT(rtype);

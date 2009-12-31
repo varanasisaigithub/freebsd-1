@@ -184,6 +184,10 @@ static struct nlist nl[] = {
 	{ .n_name = "_sctpstat" },
 #define	N_MFCTABLESIZE	54
 	{ .n_name = "_mfctablesize" },
+#define N_ARPSTAT       55
+	{ .n_name = "_arpstat" },
+#define	N_UNP_SPHEAD	56
+	{ .n_name = "unp_sphead" },
 	{ .n_name = NULL },
 };
 
@@ -232,6 +236,8 @@ struct protox {
 	  carp_stats,	NULL,		"carp",	1,	0 },
 	{ -1,		N_PFSYNCSTAT,	1,	NULL,
 	  pfsync_stats,	NULL,		"pfsync", 1,	0 },
+	{ -1,		N_ARPSTAT,	1,	NULL,
+	  arp_stats,	NULL,		"arp", 1,	0 },
 	{ -1,		-1,		0,	NULL,
 	  NULL,		NULL,		NULL,	0,	0 }
 };
@@ -333,7 +339,6 @@ int	numeric_port;	/* show ports numerically */
 static int pflag;	/* show given protocol */
 int	rflag;		/* show routing tables (or routing stats) */
 int	sflag;		/* show protocol statistics */
-int	tflag;		/* show i/f watchdog timers */
 int	Wflag;		/* wide display */
 int	xflag;		/* extra information, includes all socket buffer info */
 int	zflag;		/* zero stats */
@@ -354,7 +359,7 @@ main(int argc, char *argv[])
 
 	af = AF_UNSPEC;
 
-	while ((ch = getopt(argc, argv, "AaBbdf:ghI:iLlM:mN:np:rSstuWw:xz")) != -1)
+	while ((ch = getopt(argc, argv, "AaBbdf:ghI:iLlM:mN:np:rSsuWw:xz")) != -1)
 		switch(ch) {
 		case 'A':
 			Aflag = 1;
@@ -448,9 +453,6 @@ main(int argc, char *argv[])
 			break;
 		case 'S':
 			numeric_addr = 1;
-			break;
-		case 't':
-			tflag = 1;
 			break;
 		case 'u':
 			af = AF_UNIX;
@@ -597,7 +599,8 @@ main(int argc, char *argv[])
 #endif /* NETGRAPH */
 	if ((af == AF_UNIX || af == AF_UNSPEC) && !sflag)
 		unixpr(nl[N_UNP_COUNT].n_value, nl[N_UNP_GENCNT].n_value,
-		    nl[N_UNP_DHEAD].n_value, nl[N_UNP_SHEAD].n_value);
+		    nl[N_UNP_DHEAD].n_value, nl[N_UNP_SHEAD].n_value,
+		    nl[N_UNP_SPHEAD].n_value);
 	exit(0);
 }
 
@@ -774,7 +777,7 @@ usage(void)
 	(void)fprintf(stderr, "%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n",
 "usage: netstat [-AaLnSWx] [-f protocol_family | -p protocol]\n"
 "               [-M core] [-N system]",
-"       netstat -i | -I interface [-abdhntW] [-f address_family]\n"
+"       netstat -i | -I interface [-abdhnW] [-f address_family]\n"
 "               [-M core] [-N system]",
 "       netstat -w wait [-I interface] [-d] [-M core] [-N system]",
 "       netstat -s [-s] [-z] [-f protocol_family | -p protocol]\n"

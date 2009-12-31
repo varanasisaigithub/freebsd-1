@@ -36,9 +36,28 @@
  * NOTE: The current implementation only supports Device Side Mode!
  */
 
+#include <sys/stdint.h>
+#include <sys/stddef.h>
+#include <sys/param.h>
+#include <sys/queue.h>
+#include <sys/types.h>
+#include <sys/systm.h>
+#include <sys/kernel.h>
+#include <sys/bus.h>
+#include <sys/linker_set.h>
+#include <sys/module.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
+#include <sys/condvar.h>
+#include <sys/sysctl.h>
+#include <sys/sx.h>
+#include <sys/unistd.h>
+#include <sys/callout.h>
+#include <sys/malloc.h>
+#include <sys/priv.h>
+
 #include <dev/usb/usb.h>
-#include <dev/usb/usb_mfunc.h>
-#include <dev/usb/usb_error.h>
+#include <dev/usb/usbdi.h>
 
 #define	USB_DEBUG_VAR musbotgdebug
 
@@ -64,7 +83,7 @@
 #define	MUSBOTG_PC2SC(pc) \
    MUSBOTG_BUS2SC(USB_DMATAG_TO_XROOT((pc)->tag_parent)->bus)
 
-#if USB_DEBUG
+#ifdef USB_DEBUG
 static int musbotgdebug = 0;
 
 SYSCTL_NODE(_hw_usb, OID_AUTO, musbotg, CTLFLAG_RW, 0, "USB musbotg");
@@ -1125,6 +1144,7 @@ musbotg_setup_standard_chain(struct usb_xfer *xfer)
 
 	/* setup temp */
 
+	temp.pc = NULL;
 	temp.td = NULL;
 	temp.td_next = xfer->td_start[0];
 	temp.offset = 0;
@@ -1454,7 +1474,7 @@ musbotg_device_done(struct usb_xfer *xfer, usb_error_t error)
 
 static void
 musbotg_set_stall(struct usb_device *udev, struct usb_xfer *xfer,
-    struct usb_endpoint *ep)
+    struct usb_endpoint *ep, uint8_t *did_stall)
 {
 	struct musbotg_softc *sc;
 	uint8_t ep_no;
@@ -1519,18 +1539,18 @@ musbotg_clear_stall_sub(struct musbotg_softc *sc, uint16_t wMaxPacket,
 		/* Configure endpoint */
 		switch (ep_type) {
 		case UE_INTERRUPT:
-			MUSB2_WRITE_1(sc, MUSB2_REG_TXMAXP, wMaxPacket);
+			MUSB2_WRITE_2(sc, MUSB2_REG_TXMAXP, wMaxPacket);
 			MUSB2_WRITE_1(sc, MUSB2_REG_TXCSRH,
 			    MUSB2_MASK_CSRH_TXMODE | temp);
 			break;
 		case UE_ISOCHRONOUS:
-			MUSB2_WRITE_1(sc, MUSB2_REG_TXMAXP, wMaxPacket);
+			MUSB2_WRITE_2(sc, MUSB2_REG_TXMAXP, wMaxPacket);
 			MUSB2_WRITE_1(sc, MUSB2_REG_TXCSRH,
 			    MUSB2_MASK_CSRH_TXMODE |
 			    MUSB2_MASK_CSRH_TXISO | temp);
 			break;
 		case UE_BULK:
-			MUSB2_WRITE_1(sc, MUSB2_REG_TXMAXP, wMaxPacket);
+			MUSB2_WRITE_2(sc, MUSB2_REG_TXMAXP, wMaxPacket);
 			MUSB2_WRITE_1(sc, MUSB2_REG_TXCSRH,
 			    MUSB2_MASK_CSRH_TXMODE | temp);
 			break;
@@ -1580,18 +1600,18 @@ musbotg_clear_stall_sub(struct musbotg_softc *sc, uint16_t wMaxPacket,
 		/* Configure endpoint */
 		switch (ep_type) {
 		case UE_INTERRUPT:
-			MUSB2_WRITE_1(sc, MUSB2_REG_RXMAXP, wMaxPacket);
+			MUSB2_WRITE_2(sc, MUSB2_REG_RXMAXP, wMaxPacket);
 			MUSB2_WRITE_1(sc, MUSB2_REG_RXCSRH,
 			    MUSB2_MASK_CSRH_RXNYET | temp);
 			break;
 		case UE_ISOCHRONOUS:
-			MUSB2_WRITE_1(sc, MUSB2_REG_RXMAXP, wMaxPacket);
+			MUSB2_WRITE_2(sc, MUSB2_REG_RXMAXP, wMaxPacket);
 			MUSB2_WRITE_1(sc, MUSB2_REG_RXCSRH,
 			    MUSB2_MASK_CSRH_RXNYET |
 			    MUSB2_MASK_CSRH_RXISO | temp);
 			break;
 		case UE_BULK:
-			MUSB2_WRITE_1(sc, MUSB2_REG_RXMAXP, wMaxPacket);
+			MUSB2_WRITE_2(sc, MUSB2_REG_RXMAXP, wMaxPacket);
 			MUSB2_WRITE_1(sc, MUSB2_REG_RXCSRH, temp);
 			break;
 		default:
@@ -1668,12 +1688,14 @@ usb_error_t
 musbotg_init(struct musbotg_softc *sc)
 {
 	struct usb_hw_ep_profile *pf;
+	uint16_t offset;
 	uint8_t nrx;
 	uint8_t ntx;
 	uint8_t temp;
 	uint8_t fsize;
 	uint8_t frx;
 	uint8_t ftx;
+	uint8_t dynfifo;
 
 	DPRINTFN(1, "start\n");
 
@@ -1756,10 +1778,19 @@ musbotg_init(struct musbotg_softc *sc)
 	DPRINTFN(2, "Config Data: 0x%02x\n",
 	    sc->sc_conf_data);
 
+	dynfifo = (sc->sc_conf_data & MUSB2_MASK_CD_DYNFIFOSZ) ? 1 : 0;
+
+	if (dynfifo) {
+		device_printf(sc->sc_bus.bdev, "Dynamic FIFO sizing detected, "
+		    "assuming 16Kbytes of FIFO RAM\n");
+	}
+
 	DPRINTFN(2, "HW version: 0x%04x\n",
 	    MUSB2_READ_1(sc, MUSB2_REG_HWVERS));
 
 	/* initialise endpoint profiles */
+
+	offset = 0;
 
 	for (temp = 1; temp <= sc->sc_ep_max; temp++) {
 		pf = sc->sc_hw_ep_profile + temp;
@@ -1771,9 +1802,45 @@ musbotg_init(struct musbotg_softc *sc)
 		frx = (fsize & MUSB2_MASK_RX_FSIZE) / 16;;
 		ftx = (fsize & MUSB2_MASK_TX_FSIZE);
 
-		DPRINTF("Endpoint %u FIFO size: IN=%u, OUT=%u\n",
-		    temp, pf->max_in_frame_size,
-		    pf->max_out_frame_size);
+		DPRINTF("Endpoint %u FIFO size: IN=%u, OUT=%u, DYN=%d\n",
+		    temp, ftx, frx, dynfifo);
+
+		if (dynfifo) {
+			if (frx && (temp <= nrx)) {
+				if (temp < 8) {
+					frx = 10;	/* 1K */
+					MUSB2_WRITE_1(sc, MUSB2_REG_RXFIFOSZ, 
+					    MUSB2_VAL_FIFOSZ_512 |
+					    MUSB2_MASK_FIFODB);
+				} else {
+					frx = 7;	/* 128 bytes */
+					MUSB2_WRITE_1(sc, MUSB2_REG_RXFIFOSZ, 
+					    MUSB2_VAL_FIFOSZ_128);
+				}
+
+				MUSB2_WRITE_2(sc, MUSB2_REG_RXFIFOADD,
+				    offset >> 3);
+
+				offset += (1 << frx);
+			}
+			if (ftx && (temp <= ntx)) {
+				if (temp < 8) {
+					ftx = 10;	/* 1K */
+					MUSB2_WRITE_1(sc, MUSB2_REG_TXFIFOSZ,
+	 				    MUSB2_VAL_FIFOSZ_512 |
+	 				    MUSB2_MASK_FIFODB);
+				} else {
+					ftx = 7;	/* 128 bytes */
+					MUSB2_WRITE_1(sc, MUSB2_REG_TXFIFOSZ,
+	 				    MUSB2_VAL_FIFOSZ_128);
+				}
+
+				MUSB2_WRITE_2(sc, MUSB2_REG_TXFIFOADD,
+				    offset >> 3);
+
+				offset += (1 << ftx);
+			}
+		}
 
 		if (frx && ftx && (temp <= nrx) && (temp <= ntx)) {
 			pf->max_in_frame_size = 1 << ftx;
@@ -1803,6 +1870,8 @@ musbotg_init(struct musbotg_softc *sc)
 			pf->support_in = 1;
 		}
 	}
+
+	DPRINTFN(2, "Dynamic FIFO size = %d bytes\n", offset);
 
 	/* turn on default interrupts */
 
@@ -2717,4 +2786,5 @@ struct usb_bus_methods musbotg_bus_methods =
 	.set_stall = &musbotg_set_stall,
 	.clear_stall = &musbotg_clear_stall,
 	.roothub_exec = &musbotg_roothub_exec,
+	.xfer_poll = &musbotg_do_poll,
 };

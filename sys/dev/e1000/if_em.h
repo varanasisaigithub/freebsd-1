@@ -1,6 +1,6 @@
 /******************************************************************************
 
-  Copyright (c) 2001-2008, Intel Corporation 
+  Copyright (c) 2001-2009, Intel Corporation 
   All rights reserved.
   
   Redistribution and use in source and binary forms, with or without 
@@ -36,7 +36,7 @@
 #ifndef _EM_H_DEFINED_
 #define _EM_H_DEFINED_
 
-#define	IFNET_BUF_RING
+
 /* Tunables */
 
 /*
@@ -135,9 +135,9 @@
 #define EM_RADV                         64
 
 /*
- * This parameter controls the duration of transmit watchdog timer.
+ * This parameter controls the max duration of transmit watchdog.
  */
-#define EM_TX_TIMEOUT                   5
+#define EM_WATCHDOG                   (5 * hz)
 
 /*
  * This parameter controls when the driver calls the routine to reclaim
@@ -189,6 +189,7 @@
 #define ETHER_ALIGN                     2
 #define EM_FC_PAUSE_TIME		0x0680
 #define EM_EEPROM_APME			0x400;
+#define EM_82544_APME			0x0004;
 
 /* Code compatilbility between 6 and 7 */
 #ifndef ETHER_BPF_MTAP
@@ -232,6 +233,7 @@
 #define HW_DEBUGOUT2(S, A, B)       if (DEBUG_HW) printf(S "\n", A, B)
 
 #define EM_MAX_SCATTER		64
+#define EM_VFTA_SIZE		128
 #define EM_TSO_SIZE		(65535 + sizeof(struct ether_vlan_header))
 #define EM_TSO_SEG_SIZE		4096	/* Max dma segment size */
 #define EM_MSIX_MASK		0x01F00000 /* For 82574 use */
@@ -254,37 +256,10 @@
 #define EM_FIFO_HDR		0x10
 #define EM_82547_PKT_THRESH	0x3e0
 
-#ifdef EM_TIMESYNC
 /* Precision Time Sync (IEEE 1588) defines */
 #define ETHERTYPE_IEEE1588	0x88F7
 #define PICOSECS_PER_TICK	20833
 #define TSYNC_PORT		319 /* UDP port for the protocol */
-
-/* TIMESYNC IOCTL defines */
-#define EM_TIMESYNC_READTS	_IOWR('i', 127, struct em_tsync_read)
-  
-/* Used in the READTS IOCTL */
-struct em_tsync_read {
-	int read_current_time;
-	struct timespec	system_time;
-	u64 network_time;
-	u64 rx_stamp;
-	u64 tx_stamp;
-	u16 seqid;
-	unsigned char srcid[6];
-	int rx_valid;
-	int tx_valid;
-};
-
-#endif /* EM_TIMESYNC */
-
-struct adapter;
-
-struct em_int_delay_info {
-	struct adapter *adapter;	/* Back-pointer to the adapter struct */
-	int offset;			/* Register offset to read/write */
-	int value;			/* Current value in usecs */
-};
 
 /*
  * Bus dma allocation structure used by
@@ -299,13 +274,19 @@ struct em_dma_alloc {
         int                     dma_nseg;
 };
 
+struct adapter;
+
+struct em_int_delay_info {
+	struct adapter *adapter;	/* Back-pointer to the adapter struct */
+	int offset;			/* Register offset to read/write */
+	int value;			/* Current value in usecs */
+};
+
 /* Our adapter structure */
 struct adapter {
 	struct ifnet	*ifp;
-#ifdef IFNET_BUF_RING
+#if __FreeBSD_version >= 800000
 	struct buf_ring	*br;
-#else
-        void		*br;
 #endif
 	struct e1000_hw	hw;
 
@@ -320,7 +301,7 @@ struct adapter {
 	struct resource	*ioport;
 	int		io_rid;
 
-	/* 82574 uses 3 int vectors */
+	/* 82574 may use 3 int vectors */
 	struct resource	*res[3];
 	void		*tag[3];
 	int		rid[3];
@@ -328,7 +309,8 @@ struct adapter {
 	struct ifmedia	media;
 	struct callout	timer;
 	struct callout	tx_fifo_timer;
-	int		watchdog_timer;
+	bool		watchdog_check;
+	int		watchdog_time;
 	int		msi;
 	int		if_flags;
 	int		max_frame_size;
@@ -345,12 +327,16 @@ struct adapter {
 	struct task     tx_task;
 	struct taskqueue *tq;           /* private task queue */
 
+#if __FreeBSD_version >= 700029
 	eventhandler_tag vlan_attach;
 	eventhandler_tag vlan_detach;
+	u32	num_vlans;
+#endif
 
 	/* Management and WOL features */
-	int		wol;
-	int		has_manage;
+	u32		wol;
+	bool		has_manage;
+	bool		has_amt;
 
 	/* Info about the board itself */
 	uint8_t		link_active;
@@ -377,6 +363,7 @@ struct adapter {
 	uint32_t		next_tx_to_clean;
 	volatile uint16_t	num_tx_desc_avail;
         uint16_t		num_tx_desc;
+        uint16_t		last_hw_offload;
         uint32_t		txd_cmd;
 	struct em_buffer	*tx_buffer_area;
 	bus_dma_tag_t		txtag;		/* dma tag for tx */
@@ -433,11 +420,6 @@ struct adapter {
 	boolean_t       pcix_82544;
 	boolean_t       in_detach;
 
-#ifdef EM_TIMESYNC
-	u64		last_stamp;
-	u64		last_sec;
-	u32		last_ns;
-#endif
 
 	struct e1000_hw_stats stats;
 };
@@ -456,7 +438,6 @@ typedef struct _em_vendor_info_t {
 	unsigned int subdevice_id;
 	unsigned int index;
 } em_vendor_info_t;
-
 
 struct em_buffer {
 	int		next_eop;  /* Index of the desc to watch */
@@ -495,28 +476,5 @@ typedef struct _DESCRIPTOR_PAIR
 #define	EM_RX_UNLOCK(_sc)		mtx_unlock(&(_sc)->rx_mtx)
 #define	EM_CORE_LOCK_ASSERT(_sc)	mtx_assert(&(_sc)->core_mtx, MA_OWNED)
 #define	EM_TX_LOCK_ASSERT(_sc)		mtx_assert(&(_sc)->tx_mtx, MA_OWNED)
-
-#ifdef IFNET_BUF_RING
-#define ADAPTER_RING_EMPTY(adapter) drbr_empty((adapter)->ifp, (adapter)->br)
-#define	em_dequeue     	drbr_dequeue
-
-#else
-#define ADAPTER_RING_EMPTY(adapter) IFQ_DRV_IS_EMPTY(&((adapter)->ifp->if_snd))
-#define	drbr_free(br, type)
-static __inline struct mbuf *
-em_dequeue(struct ifnet *ifp, struct buf_ring *br)
-{
-    struct mbuf *m;
-    
-    IFQ_DRV_DEQUEUE(&ifp->if_snd, m);
-    return (m);
-}
-#ifdef BUF_RING_UNDEFINED
-
-struct buf_ring {
-};
-
-#endif
-#endif
 
 #endif /* _EM_H_DEFINED_ */

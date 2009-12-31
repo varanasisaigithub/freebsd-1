@@ -45,7 +45,10 @@ __FBSDID("$FreeBSD$");
 #include <sys/socket.h>
 #include <sys/sysctl.h>
 #include <sys/sx.h>
+#include <sys/taskqueue.h>
 
+/* count xmits ourselves, rather than via drbr */
+#define NO_SLOW_STATS
 #include <net/if.h>
 #include <net/if_arp.h>
 #include <net/ethernet.h>
@@ -89,6 +92,8 @@ __FBSDID("$FreeBSD$");
 #include <sys/buf_ring.h>
 #endif
 
+#include "opt_inet.h"
+
 /* tunable params */
 static int mxge_nvidia_ecrc_enable = 1;
 static int mxge_force_firmware = 0;
@@ -101,6 +106,8 @@ static int mxge_ticks;
 static int mxge_max_slices = 1;
 static int mxge_rss_hash_type = MXGEFW_RSS_HASH_TYPE_SRC_PORT;
 static int mxge_always_promisc = 0;
+static int mxge_initial_mtu = ETHERMTU_JUMBO;
+static int mxge_throttle = 0;
 static char *mxge_fw_unaligned = "mxge_ethp_z8e";
 static char *mxge_fw_aligned = "mxge_eth_z8e";
 static char *mxge_fw_rss_aligned = "mxge_rss_eth_z8e";
@@ -138,7 +145,7 @@ MODULE_DEPEND(mxge, zlib, 1, 1, 1);
 
 static int mxge_load_firmware(mxge_softc_t *sc, int adopt);
 static int mxge_send_cmd(mxge_softc_t *sc, uint32_t cmd, mxge_cmd_t *data);
-static int mxge_close(mxge_softc_t *sc);
+static int mxge_close(mxge_softc_t *sc, int down);
 static int mxge_open(mxge_softc_t *sc);
 static void mxge_tick(void *arg);
 
@@ -591,10 +598,13 @@ static int
 mxge_select_firmware(mxge_softc_t *sc)
 {
 	int aligned = 0;
+	int force_firmware = mxge_force_firmware;
 
+	if (sc->throttle)
+		force_firmware = sc->throttle;
 
-	if (mxge_force_firmware != 0) {
-		if (mxge_force_firmware == 1)
+	if (force_firmware != 0) {
+		if (force_firmware == 1)
 			aligned = 1;
 		else
 			aligned = 0;
@@ -1125,7 +1135,7 @@ mxge_set_multicast_list(mxge_softc_t *sc)
 
 	/* Walk the multicast list, and add each address */
 
-	IF_ADDR_LOCK(ifp);
+	if_maddr_rlock(ifp);
 	TAILQ_FOREACH(ifma, &ifp->if_multiaddrs, ifma_link) {
 		if (ifma->ifma_addr->sa_family != AF_LINK)
 			continue;
@@ -1141,11 +1151,11 @@ mxge_set_multicast_list(mxge_softc_t *sc)
 			       "MXGEFW_JOIN_MULTICAST_GROUP, error status:"
 			       "%d\t", err);
 			/* abort, leaving multicast filtering off */
-			IF_ADDR_UNLOCK(ifp);
+			if_maddr_runlock(ifp);
 			return;
 		}
 	}
-	IF_ADDR_UNLOCK(ifp);
+	if_maddr_runlock(ifp);
 	/* Enable multicast filtering */
 	err = mxge_send_cmd(sc, MXGEFW_DISABLE_ALLMULTI, &cmd);
 	if (err != 0) {
@@ -1300,16 +1310,53 @@ mxge_reset(mxge_softc_t *sc, int interrupts_setup)
 		ss->lro_queued = 0;
 		ss->lro_flushed = 0;
 		if (ss->fw_stats != NULL) {
-			ss->fw_stats->valid = 0;
-			ss->fw_stats->send_done_count = 0;
+			bzero(ss->fw_stats, sizeof *ss->fw_stats);
 		}
 	}
 	sc->rdma_tags_available = 15;
 	status = mxge_update_mac_address(sc);
-	mxge_change_promisc(sc, 0);
+	mxge_change_promisc(sc, sc->ifp->if_flags & IFF_PROMISC);
 	mxge_change_pause(sc, sc->pause);
 	mxge_set_multicast_list(sc);
+	if (sc->throttle) {
+		cmd.data0 = sc->throttle;
+		if (mxge_send_cmd(sc, MXGEFW_CMD_SET_THROTTLE_FACTOR,
+				  &cmd)) {
+			device_printf(sc->dev,
+				      "can't enable throttle\n");
+		}
+	}
 	return status;
+}
+
+static int
+mxge_change_throttle(SYSCTL_HANDLER_ARGS)
+{
+	mxge_cmd_t cmd;
+	mxge_softc_t *sc;
+	int err;
+	unsigned int throttle;
+
+	sc = arg1;
+	throttle = sc->throttle;
+	err = sysctl_handle_int(oidp, &throttle, arg2, req);
+        if (err != 0) {
+                return err;
+        }
+
+	if (throttle == sc->throttle)
+		return 0;
+
+        if (throttle < MXGE_MIN_THROTTLE || throttle > MXGE_MAX_THROTTLE)
+                return EINVAL;
+	
+	mtx_lock(&sc->driver_mtx);
+	cmd.data0 = throttle;
+	err = mxge_send_cmd(sc, MXGEFW_CMD_SET_THROTTLE_FACTOR, &cmd);
+	if (err == 0)
+		sc->throttle = throttle;
+	mtx_unlock(&sc->driver_mtx);	
+	return err;
 }
 
 static int
@@ -1374,7 +1421,7 @@ mxge_change_lro_locked(mxge_softc_t *sc, int lro_cnt)
 		ifp->if_capenable |= IFCAP_LRO;
 	sc->lro_cnt = lro_cnt;
 	if (ifp->if_drv_flags & IFF_DRV_RUNNING) {
-		mxge_close(sc);
+		mxge_close(sc, 0);
 		err = mxge_open(sc);
 	}
 	return err;
@@ -1490,6 +1537,10 @@ mxge_add_sysctls(mxge_softc_t *sc)
 		       "read_write_dma_MBs",
 		       CTLFLAG_RD, &sc->read_write_dma,
 		       0, "DMA concurrent Read/Write speed in MB/s");
+	SYSCTL_ADD_INT(ctx, children, OID_AUTO, 
+		       "watchdog_resets",
+		       CTLFLAG_RD, &sc->watchdog_resets,
+		       0, "Number of times NIC was reset");
 
 
 	/* performance related tunables */
@@ -1498,6 +1549,12 @@ mxge_add_sysctls(mxge_softc_t *sc)
 			CTLTYPE_INT|CTLFLAG_RW, sc,
 			0, mxge_change_intr_coal, 
 			"I", "interrupt coalescing delay in usecs");
+
+	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, 
+			"throttle",
+			CTLTYPE_INT|CTLFLAG_RW, sc,
+			0, mxge_change_throttle, 
+			"I", "transmit throttling");
 
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, 
 			"flow_control_enabled",
@@ -2198,7 +2255,6 @@ mxge_transmit_locked(struct mxge_slice_state *ss, struct mbuf *m)
 		BPF_MTAP(ifp, m);
 		/* give it to the nic */
 		mxge_encap(ss, m);
-		drbr_stats_update(ifp, m->m_pkthdr.len, m->m_flags);
 	} else if ((err = drbr_enqueue(ifp, tx->br, m)) != 0) {
 		return (err);
 	}
@@ -2408,10 +2464,13 @@ mxge_rx_csum(struct mbuf *m, int csum)
 	if (__predict_false(ip->ip_p != IPPROTO_TCP &&
 			    ip->ip_p != IPPROTO_UDP))
 		return 1;
-
+#ifdef INET
 	c = in_pseudo(ip->ip_src.s_addr, ip->ip_dst.s_addr,
 		      htonl(ntohs(csum) + ntohs(ip->ip_len) +
 			    - (ip->ip_hl << 2) + ip->ip_p));
+#else
+	c = 1;
+#endif
 	c ^= 0xffff;
 	return (c);
 }
@@ -2607,7 +2666,6 @@ static inline void
 mxge_clean_rx_done(struct mxge_slice_state *ss)
 {
 	mxge_rx_done_t *rx_done = &ss->rx_done;
-	struct lro_entry *lro;
 	int limit = 0;
 	uint16_t length;
 	uint16_t checksum;
@@ -2628,11 +2686,13 @@ mxge_clean_rx_done(struct mxge_slice_state *ss)
 		if (__predict_false(++limit > rx_done->mask / 2))
 			break;
 	}
+#ifdef INET
 	while (!SLIST_EMPTY(&ss->lro_active)) {
-		lro = SLIST_FIRST(&ss->lro_active);
+		struct lro_entry *lro = SLIST_FIRST(&ss->lro_active);
 		SLIST_REMOVE_HEAD(&ss->lro_active, next);
 		mxge_lro_flush(ss, lro);
 	}
+#endif
 }
 
 
@@ -2655,6 +2715,9 @@ mxge_tx_done(struct mxge_slice_state *ss, uint32_t mcp_idx)
 		/* mbuf and DMA map only attached to the first
 		   segment per-mbuf */
 		if (m != NULL) {
+			ss->obytes += m->m_pkthdr.len;
+			if (m->m_flags & M_MCAST)
+				ss->omcasts++;
 			ss->opackets++;
 			tx->info[idx].m = NULL;
 			map = tx->info[idx].map;
@@ -3577,7 +3640,6 @@ mxge_open(mxge_softc_t *sc)
 #endif
 	sc->ifp->if_drv_flags |= IFF_DRV_RUNNING;
 	sc->ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
-	callout_reset(&sc->co_hdl, mxge_ticks, mxge_tick, sc);
 
 	return 0;
 
@@ -3589,7 +3651,7 @@ abort:
 }
 
 static int
-mxge_close(mxge_softc_t *sc)
+mxge_close(mxge_softc_t *sc, int down)
 {
 	mxge_cmd_t cmd;
 	int err, old_down_cnt;
@@ -3598,7 +3660,6 @@ mxge_close(mxge_softc_t *sc)
 	int slice;
 #endif
 
-	callout_stop(&sc->co_hdl);
 #ifdef IFNET_BUF_RING
 	for (slice = 0; slice < sc->num_slices; slice++) {
 		ss = &sc->ss[slice];
@@ -3606,21 +3667,23 @@ mxge_close(mxge_softc_t *sc)
 	}
 #endif
 	sc->ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
-	old_down_cnt = sc->down_cnt;
-	wmb();
-	err = mxge_send_cmd(sc, MXGEFW_CMD_ETHERNET_DOWN, &cmd);
-	if (err) {
-		device_printf(sc->dev, "Couldn't bring down link\n");
+	if (!down) {
+		old_down_cnt = sc->down_cnt;
+		wmb();
+		err = mxge_send_cmd(sc, MXGEFW_CMD_ETHERNET_DOWN, &cmd);
+		if (err) {
+			device_printf(sc->dev,
+				      "Couldn't bring down link\n");
+		}
+		if (old_down_cnt == sc->down_cnt) {
+			/* wait for down irq */
+			DELAY(10 * sc->intr_coal_delay);
+		}
+		wmb();
+		if (old_down_cnt == sc->down_cnt) {
+			device_printf(sc->dev, "never got down irq\n");
+		}
 	}
-	if (old_down_cnt == sc->down_cnt) {
-		/* wait for down irq */
-		DELAY(10 * sc->intr_coal_delay);
-	}
-	wmb();
-	if (old_down_cnt == sc->down_cnt) {
-		device_printf(sc->dev, "never got down irq\n");
-	}
-
 	mxge_free_mbufs(sc);
 
 	return 0;
@@ -3637,10 +3700,16 @@ mxge_setup_cfg_space(mxge_softc_t *sc)
 	if (pci_find_extcap(dev, PCIY_EXPRESS, &reg) == 0) {
 		lnk = pci_read_config(dev, reg + 0x12, 2);
 		sc->link_width = (lnk >> 4) & 0x3f;
-		
-		pectl = pci_read_config(dev, reg + 0x8, 2);
-		pectl = (pectl & ~0x7000) | (5 << 12);
-		pci_write_config(dev, reg + 0x8, pectl, 2);
+
+		if (sc->pectl == 0) {
+			pectl = pci_read_config(dev, reg + 0x8, 2);
+			pectl = (pectl & ~0x7000) | (5 << 12);
+			pci_write_config(dev, reg + 0x8, pectl, 2);
+			sc->pectl = pectl;
+		} else {
+			/* restore saved pectl after watchdog reset */
+			pci_write_config(dev, reg + 0x8, sc->pectl, 2);
+		}
 	}
 
 	/* Enable DMA and Memory space access */
@@ -3669,12 +3738,12 @@ mxge_read_reboot(mxge_softc_t *sc)
 	return (pci_read_config(dev, vs + 0x14, 4));
 }
 
-static int
-mxge_watchdog_reset(mxge_softc_t *sc, int slice)
+static void
+mxge_watchdog_reset(mxge_softc_t *sc)
 {
 	struct pci_devinfo *dinfo;
-	mxge_tx_ring_t *tx;
-	int err;
+	struct mxge_slice_state *ss;
+	int err, running, s, num_tx_slices = 1;
 	uint32_t reboot;
 	uint16_t cmd;
 
@@ -3700,7 +3769,6 @@ mxge_watchdog_reset(mxge_softc_t *sc, int slice)
 		cmd = pci_read_config(sc->dev, PCIR_COMMAND, 2);
 		if (cmd == 0xffff) {
 			device_printf(sc->dev, "NIC disappeared!\n");
-			return (err);
 		}
 	}
 	if ((cmd & PCIM_CMD_BUSMASTEREN) == 0) {
@@ -3708,6 +3776,30 @@ mxge_watchdog_reset(mxge_softc_t *sc, int slice)
 		reboot = mxge_read_reboot(sc);
 		device_printf(sc->dev, "NIC rebooted, status = 0x%x\n",
 			      reboot);
+		running = sc->ifp->if_drv_flags & IFF_DRV_RUNNING;
+		if (running) {
+
+			/* 
+			 * quiesce NIC so that TX routines will not try to
+			 * xmit after restoration of BAR
+			 */
+
+			/* Mark the link as down */
+			if (sc->link_state) {
+				sc->link_state = 0;
+				if_link_state_change(sc->ifp,
+						     LINK_STATE_DOWN);
+			}
+#ifdef IFNET_BUF_RING
+			num_tx_slices = sc->num_slices;
+#endif
+			/* grab all TX locks to ensure no tx  */
+			for (s = 0; s < num_tx_slices; s++) {
+				ss = &sc->ss[s];
+				mtx_lock(&ss->tx.mtx);
+			}
+			mxge_close(sc, 1);
+		}
 		/* restore PCI configuration space */
 		dinfo = device_get_ivars(sc->dev);
 		pci_cfg_restore(sc->dev, dinfo);
@@ -3715,26 +3807,63 @@ mxge_watchdog_reset(mxge_softc_t *sc, int slice)
 		/* and redo any changes we made to our config space */
 		mxge_setup_cfg_space(sc);
 
-		if (sc->ifp->if_drv_flags & IFF_DRV_RUNNING) {
-			mxge_close(sc);
-			err = mxge_open(sc);
+		/* reload f/w */
+		err = mxge_load_firmware(sc, 0);
+		if (err) {
+			device_printf(sc->dev,
+				      "Unable to re-load f/w\n");
 		}
+		if (running) {
+			if (!err)
+				err = mxge_open(sc);
+			/* release all TX locks */
+			for (s = 0; s < num_tx_slices; s++) {
+				ss = &sc->ss[s];
+#ifdef IFNET_BUF_RING
+				mxge_start_locked(ss);
+#endif
+				mtx_unlock(&ss->tx.mtx);
+			}
+		}
+		sc->watchdog_resets++;
 	} else {
-		tx = &sc->ss[slice].tx;
 		device_printf(sc->dev,
-			      "NIC did not reboot, slice %d ring state:\n",
-			      slice);
-		device_printf(sc->dev,
-			      "tx.req=%d tx.done=%d, tx.queue_active=%d\n",
-			      tx->req, tx->done, tx->queue_active);
-		device_printf(sc->dev, "tx.activate=%d tx.deactivate=%d\n",
-			      tx->activate, tx->deactivate);
-		device_printf(sc->dev, "pkt_done=%d fw=%d\n",
-			      tx->pkt_done,
-			      be32toh(sc->ss->fw_stats->send_done_count));
-		device_printf(sc->dev, "not resetting\n");
+			      "NIC did not reboot, not resetting\n");
+		err = 0;
 	}
-	return (err);
+	if (err) {
+		device_printf(sc->dev, "watchdog reset failed\n");
+	} else {
+		if (sc->dying == 2)
+			sc->dying = 0;
+		callout_reset(&sc->co_hdl, mxge_ticks, mxge_tick, sc);
+	}
+}
+
+static void
+mxge_watchdog_task(void *arg, int pending)
+{
+	mxge_softc_t *sc = arg;
+
+
+	mtx_lock(&sc->driver_mtx);
+	mxge_watchdog_reset(sc);
+	mtx_unlock(&sc->driver_mtx);
+}
+
+static void
+mxge_warn_stuck(mxge_softc_t *sc, mxge_tx_ring_t *tx, int slice)
+{
+	tx = &sc->ss[slice].tx;
+	device_printf(sc->dev, "slice %d struck? ring state:\n", slice);
+	device_printf(sc->dev,
+		      "tx.req=%d tx.done=%d, tx.queue_active=%d\n",
+		      tx->req, tx->done, tx->queue_active);
+	device_printf(sc->dev, "tx.activate=%d tx.deactivate=%d\n",
+			      tx->activate, tx->deactivate);
+	device_printf(sc->dev, "pkt_done=%d fw=%d\n",
+		      tx->pkt_done,
+		      be32toh(sc->ss->fw_stats->send_done_count));
 }
 
 static int
@@ -3758,8 +3887,11 @@ mxge_watchdog(mxge_softc_t *sc)
 		    tx->watchdog_req != tx->watchdog_done &&
 		    tx->done == tx->watchdog_done) {
 			/* check for pause blocking before resetting */
-			if (tx->watchdog_rx_pause == rx_pause)
-				err = mxge_watchdog_reset(sc, i);
+			if (tx->watchdog_rx_pause == rx_pause) {
+				mxge_warn_stuck(sc, tx, i);
+				taskqueue_enqueue(sc->tq, &sc->watchdog_task);
+				return (ENXIO);
+			}
 			else
 				device_printf(sc->dev, "Flow control blocking "
 					      "xmits, check link partner\n");
@@ -3775,12 +3907,18 @@ mxge_watchdog(mxge_softc_t *sc)
 	return (err);
 }
 
-static void
+static u_long
 mxge_update_stats(mxge_softc_t *sc)
 {
 	struct mxge_slice_state *ss;
+	u_long pkts = 0;
 	u_long ipackets = 0;
 	u_long opackets = 0;
+#ifdef IFNET_BUF_RING
+	u_long obytes = 0;
+	u_long omcasts = 0;
+	u_long odrops = 0;
+#endif
 	u_long oerrors = 0;
 	int slice;
 
@@ -3788,28 +3926,60 @@ mxge_update_stats(mxge_softc_t *sc)
 		ss = &sc->ss[slice];
 		ipackets += ss->ipackets;
 		opackets += ss->opackets;
+#ifdef IFNET_BUF_RING
+		obytes += ss->obytes;
+		omcasts += ss->omcasts;
+		odrops += ss->tx.br->br_drops;
+#endif
 		oerrors += ss->oerrors;
 	}
+	pkts = (ipackets - sc->ifp->if_ipackets);
+	pkts += (opackets - sc->ifp->if_opackets);
 	sc->ifp->if_ipackets = ipackets;
 	sc->ifp->if_opackets = opackets;
+#ifdef IFNET_BUF_RING
+	sc->ifp->if_obytes = obytes;
+	sc->ifp->if_omcasts = omcasts;
+	sc->ifp->if_snd.ifq_drops = odrops;
+#endif
 	sc->ifp->if_oerrors = oerrors;
+	return pkts;
 }
 
 static void
 mxge_tick(void *arg)
 {
 	mxge_softc_t *sc = arg;
+	u_long pkts = 0;
 	int err = 0;
+	int running, ticks;
+	uint16_t cmd;
 
-	/* aggregate stats from different slices */
-	mxge_update_stats(sc);
-	if (!sc->watchdog_countdown) {
-		err = mxge_watchdog(sc);
-		sc->watchdog_countdown = 4;
+	ticks = mxge_ticks;
+	running = sc->ifp->if_drv_flags & IFF_DRV_RUNNING;
+	if (running) {
+		/* aggregate stats from different slices */
+		pkts = mxge_update_stats(sc);
+		if (!sc->watchdog_countdown) {
+			err = mxge_watchdog(sc);
+			sc->watchdog_countdown = 4;
+		}
+		sc->watchdog_countdown--;
 	}
-	sc->watchdog_countdown--;
+	if (pkts == 0) {
+		/* ensure NIC did not suffer h/w fault while idle */
+		cmd = pci_read_config(sc->dev, PCIR_COMMAND, 2);		
+		if ((cmd & PCIM_CMD_BUSMASTEREN) == 0) {
+			sc->dying = 2;
+			taskqueue_enqueue(sc->tq, &sc->watchdog_task);
+			err = ENXIO;
+		}
+		/* look less often if NIC is idle */
+		ticks *= 4;
+	}
+
 	if (err == 0)
-		callout_reset(&sc->co_hdl, mxge_ticks, mxge_tick, sc);
+		callout_reset(&sc->co_hdl, ticks, mxge_tick, sc);
 
 }
 
@@ -3834,11 +4004,11 @@ mxge_change_mtu(mxge_softc_t *sc, int mtu)
 	old_mtu = ifp->if_mtu;
 	ifp->if_mtu = mtu;
 	if (ifp->if_drv_flags & IFF_DRV_RUNNING) {
-		mxge_close(sc);
+		mxge_close(sc, 0);
 		err = mxge_open(sc);
 		if (err != 0) {
 			ifp->if_mtu = old_mtu;
-			mxge_close(sc);
+			mxge_close(sc, 0);
 			(void) mxge_open(sc);
 		}
 	}
@@ -3880,6 +4050,10 @@ mxge_ioctl(struct ifnet *ifp, u_long command, caddr_t data)
 
 	case SIOCSIFFLAGS:
 		mtx_lock(&sc->driver_mtx);
+		if (sc->dying) {
+			mtx_unlock(&sc->driver_mtx);
+			return EINVAL;
+		}
 		if (ifp->if_flags & IFF_UP) {
 			if (!(ifp->if_drv_flags & IFF_DRV_RUNNING)) {
 				err = mxge_open(sc);
@@ -3892,7 +4066,7 @@ mxge_ioctl(struct ifnet *ifp, u_long command, caddr_t data)
 			}
 		} else {
 			if (ifp->if_drv_flags & IFF_DRV_RUNNING) {
-				mxge_close(sc);
+				mxge_close(sc, 0);
 			}
 		}
 		mtx_unlock(&sc->driver_mtx);
@@ -3984,6 +4158,9 @@ mxge_fetch_tunables(mxge_softc_t *sc)
 	TUNABLE_INT_FETCH("hw.mxge.lro_cnt", &sc->lro_cnt);
 	TUNABLE_INT_FETCH("hw.mxge.always_promisc", &mxge_always_promisc);
 	TUNABLE_INT_FETCH("hw.mxge.rss_hash_type", &mxge_rss_hash_type);
+	TUNABLE_INT_FETCH("hw.mxge.rss_hashtype", &mxge_rss_hash_type);
+	TUNABLE_INT_FETCH("hw.mxge.initial_mtu", &mxge_initial_mtu);
+	TUNABLE_INT_FETCH("hw.mxge.throttle", &mxge_throttle);
 	if (sc->lro_cnt != 0)
 		mxge_lro_cnt = sc->lro_cnt;
 
@@ -3995,9 +4172,18 @@ mxge_fetch_tunables(mxge_softc_t *sc)
 		mxge_ticks = hz / 2;
 	sc->pause = mxge_flow_control;
 	if (mxge_rss_hash_type < MXGEFW_RSS_HASH_TYPE_IPV4 
-	    || mxge_rss_hash_type > MXGEFW_RSS_HASH_TYPE_SRC_PORT) {
+	    || mxge_rss_hash_type > MXGEFW_RSS_HASH_TYPE_MAX) {
 		mxge_rss_hash_type = MXGEFW_RSS_HASH_TYPE_SRC_PORT;
 	}
+	if (mxge_initial_mtu > ETHERMTU_JUMBO ||
+	    mxge_initial_mtu < ETHER_MIN_LEN)
+		mxge_initial_mtu = ETHERMTU_JUMBO;
+
+	if (mxge_throttle && mxge_throttle > MXGE_MAX_THROTTLE)
+		mxge_throttle = MXGE_MAX_THROTTLE;
+	if (mxge_throttle && mxge_throttle < MXGE_MIN_THROTTLE)
+		mxge_throttle = MXGE_MIN_THROTTLE;
+	sc->throttle = mxge_throttle;
 }
 
 
@@ -4414,6 +4600,17 @@ mxge_attach(device_t dev)
 	sc->dev = dev;
 	mxge_fetch_tunables(sc);
 
+	TASK_INIT(&sc->watchdog_task, 1, mxge_watchdog_task, sc);
+	sc->tq = taskqueue_create_fast("mxge_taskq", M_WAITOK,
+				       taskqueue_thread_enqueue,
+				       &sc->tq);
+	if (sc->tq == NULL) {
+		err = ENOMEM;
+		goto abort_with_nothing;
+	}
+	taskqueue_start_threads(&sc->tq, 1, PI_NET, "%s taskq",
+				device_get_nameunit(sc->dev));
+
 	err = bus_dma_tag_create(NULL,			/* parent */
 				 1,			/* alignment */
 				 0,			/* boundary */
@@ -4430,7 +4627,7 @@ mxge_attach(device_t dev)
 	if (err != 0) {
 		device_printf(sc->dev, "Err %d allocating parent dmat\n",
 			      err);
-		goto abort_with_nothing;
+		goto abort_with_tq;
 	}
 
 	ifp = sc->ifp = if_alloc(IFT_ETHER);
@@ -4529,7 +4726,10 @@ mxge_attach(device_t dev)
 
 	ifp->if_baudrate = IF_Gbps(10UL);
 	ifp->if_capabilities = IFCAP_RXCSUM | IFCAP_TXCSUM | IFCAP_TSO4 |
-		IFCAP_VLAN_MTU | IFCAP_LRO;
+		IFCAP_VLAN_MTU;
+#ifdef INET
+	ifp->if_capabilities |= IFCAP_LRO;
+#endif
 
 #ifdef MXGE_NEW_VLAN_API
 	ifp->if_capabilities |= IFCAP_VLAN_HWTAGGING | IFCAP_VLAN_HWCSUM;
@@ -4557,16 +4757,18 @@ mxge_attach(device_t dev)
 		     mxge_media_status);
 	mxge_set_media(sc, IFM_ETHER | IFM_AUTO);
 	mxge_media_probe(sc);
+	sc->dying = 0;
 	ether_ifattach(ifp, sc->mac_addr);
-	/* ether_ifattach sets mtu to 1500 */
-	if (ifp->if_capabilities & IFCAP_JUMBO_MTU)
-		ifp->if_mtu = 9000;
+	/* ether_ifattach sets mtu to ETHERMTU */
+	if (mxge_initial_mtu != ETHERMTU)
+		mxge_change_mtu(sc, mxge_initial_mtu);
 
 	mxge_add_sysctls(sc);
 #ifdef IFNET_BUF_RING
 	ifp->if_transmit = mxge_transmit;
 	ifp->if_qflush = mxge_qflush;
 #endif
+	callout_reset(&sc->co_hdl, mxge_ticks, mxge_tick, sc);
 	return 0;
 
 abort_with_rings:
@@ -4588,7 +4790,12 @@ abort_with_lock:
 	if_free(ifp);
 abort_with_parent_dmat:
 	bus_dma_tag_destroy(sc->parent_dmat);
-
+abort_with_tq:
+	if (sc->tq != NULL) {
+		taskqueue_drain(sc->tq, &sc->watchdog_task);
+		taskqueue_free(sc->tq);
+		sc->tq = NULL;
+	}
 abort_with_nothing:
 	return err;
 }
@@ -4604,10 +4811,16 @@ mxge_detach(device_t dev)
 		return EBUSY;
 	}
 	mtx_lock(&sc->driver_mtx);
+	sc->dying = 1;
 	if (sc->ifp->if_drv_flags & IFF_DRV_RUNNING)
-		mxge_close(sc);
+		mxge_close(sc, 0);
 	mtx_unlock(&sc->driver_mtx);
 	ether_ifdetach(sc->ifp);
+	if (sc->tq != NULL) {
+		taskqueue_drain(sc->tq, &sc->watchdog_task);
+		taskqueue_free(sc->tq);
+		sc->tq = NULL;
+	}
 	callout_drain(&sc->co_hdl);
 	ifmedia_removeall(&sc->media);
 	mxge_dummy_rdma(sc, 0);

@@ -121,6 +121,50 @@
 #define BM_RCTL_PMCF          0x0040          /* Pass MAC Control Frames */
 #define BM_RCTL_RFCE          0x0080          /* Rx Flow Control Enable */
 
+#define HV_LED_CONFIG		PHY_REG(768, 30) /* LED Configuration */
+#define HV_MUX_DATA_CTRL               PHY_REG(776, 16)
+#define HV_MUX_DATA_CTRL_GEN_TO_MAC    0x0400
+#define HV_MUX_DATA_CTRL_FORCE_SPEED   0x0004
+#define HV_SCC_UPPER		PHY_REG(778, 16) /* Single Collision Count */
+#define HV_SCC_LOWER		PHY_REG(778, 17)
+#define HV_ECOL_UPPER		PHY_REG(778, 18) /* Excessive Collision Count */
+#define HV_ECOL_LOWER		PHY_REG(778, 19)
+#define HV_MCC_UPPER		PHY_REG(778, 20) /* Multiple Collision Count */
+#define HV_MCC_LOWER		PHY_REG(778, 21)
+#define HV_LATECOL_UPPER	PHY_REG(778, 23) /* Late Collision Count */
+#define HV_LATECOL_LOWER	PHY_REG(778, 24)
+#define HV_COLC_UPPER		PHY_REG(778, 25) /* Collision Count */
+#define HV_COLC_LOWER		PHY_REG(778, 26)
+#define HV_DC_UPPER		PHY_REG(778, 27) /* Defer Count */
+#define HV_DC_LOWER		PHY_REG(778, 28)
+#define HV_TNCRS_UPPER		PHY_REG(778, 29) /* Transmit with no CRS */
+#define HV_TNCRS_LOWER		PHY_REG(778, 30)
+
+#define E1000_FCRTV_PCH     0x05F40 /* PCH Flow Control Refresh Timer Value */
+
+#define E1000_NVM_K1_CONFIG 0x1B /* NVM K1 Config Word */
+#define E1000_NVM_K1_ENABLE 0x1  /* NVM Enable K1 bit */
+
+/* SMBus Address Phy Register */
+#define HV_SMB_ADDR            PHY_REG(768, 26)
+#define HV_SMB_ADDR_PEC_EN     0x0200
+#define HV_SMB_ADDR_VALID      0x0080
+
+/* Strapping Option Register - RO */
+#define E1000_STRAP                     0x0000C
+#define E1000_STRAP_SMBUS_ADDRESS_MASK  0x00FE0000
+#define E1000_STRAP_SMBUS_ADDRESS_SHIFT 17
+
+/* OEM Bits Phy Register */
+#define HV_OEM_BITS            PHY_REG(768, 25)
+#define HV_OEM_BITS_LPLU       0x0004 /* Low Power Link Up */
+#define HV_OEM_BITS_GBE_DIS    0x0040 /* Gigabit Disable */
+#define HV_OEM_BITS_RESTART_AN 0x0400 /* Restart Auto-negotiation */
+
+#define LCD_CFG_PHY_ADDR_BIT   0x0020 /* Phy address bit from LCD Config word */
+
+#define SW_FLAG_TIMEOUT    1000 /* SW Semaphore flag timeout in milliseconds */
+
 /*
  * Additional interrupts need to be handled for ICH family:
  *  DSW = The FW changed the status of the DISSW bit in FWSM
@@ -150,8 +194,7 @@ void e1000_set_kmrn_lock_loss_workaround_ich8lan(struct e1000_hw *hw,
 void e1000_igp3_phy_powerdown_workaround_ich8lan(struct e1000_hw *hw);
 void e1000_gig_downshift_workaround_ich8lan(struct e1000_hw *hw);
 void e1000_disable_gig_wol_ich8lan(struct e1000_hw *hw);
-#if defined(HANKSVILLE_HW) && !defined(NO_PCH_A_SUPPORT)
+s32 e1000_configure_k1_ich8lan(struct e1000_hw *hw, bool k1_enable);
+s32 e1000_oem_bits_config_ich8lan(struct e1000_hw *hw, bool d0_config);
 s32 e1000_hv_phy_powerdown_workaround_ich8lan(struct e1000_hw *hw);
-#endif
-
 #endif

@@ -36,9 +36,28 @@ __FBSDID("$FreeBSD$");
  * endpoints, Function-address and more.
  */
 
+#include <sys/stdint.h>
+#include <sys/stddef.h>
+#include <sys/param.h>
+#include <sys/queue.h>
+#include <sys/types.h>
+#include <sys/systm.h>
+#include <sys/kernel.h>
+#include <sys/bus.h>
+#include <sys/linker_set.h>
+#include <sys/module.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
+#include <sys/condvar.h>
+#include <sys/sysctl.h>
+#include <sys/sx.h>
+#include <sys/unistd.h>
+#include <sys/callout.h>
+#include <sys/malloc.h>
+#include <sys/priv.h>
+
 #include <dev/usb/usb.h>
-#include <dev/usb/usb_mfunc.h>
-#include <dev/usb/usb_error.h>
+#include <dev/usb/usbdi.h>
 
 #define	USB_DEBUG_VAR avr32dci_debug
 
@@ -62,7 +81,7 @@ __FBSDID("$FreeBSD$");
 #define	AVR32_PC2SC(pc) \
    AVR32_BUS2SC(USB_DMATAG_TO_XROOT((pc)->tag_parent)->bus)
 
-#if USB_DEBUG
+#ifdef USB_DEBUG
 static int avr32dci_debug = 0;
 
 SYSCTL_NODE(_hw_usb, OID_AUTO, avr32dci, CTLFLAG_RW, 0, "USB AVR32 DCI");
@@ -748,6 +767,7 @@ avr32dci_setup_standard_chain(struct usb_xfer *xfer)
 
 	/* setup temp */
 
+	temp.pc = NULL;
 	temp.td = NULL;
 	temp.td_next = xfer->td_start[0];
 	temp.offset = 0;
@@ -1062,7 +1082,7 @@ avr32dci_device_done(struct usb_xfer *xfer, usb_error_t error)
 
 static void
 avr32dci_set_stall(struct usb_device *udev, struct usb_xfer *xfer,
-    struct usb_endpoint *ep)
+    struct usb_endpoint *ep, uint8_t *did_stall)
 {
 	struct avr32dci_softc *sc;
 	uint8_t ep_no;
@@ -1140,7 +1160,7 @@ avr32dci_clear_stall_sub(struct avr32dci_softc *sc, uint8_t ep_no,
 	temp = AVR32_READ_4(sc, AVR32_EPTCFG(ep_no));
 
 	if (!(temp & AVR32_EPTCFG_EPT_MAPD)) {
-		DPRINTFN(0, "Chip rejected configuration\n");
+		device_printf(sc->sc_bus.bdev, "Chip rejected configuration\n");
 	} else {
 		AVR32_WRITE_4(sc, AVR32_EPTCTLENB(ep_no),
 		    AVR32_EPTCTL_EPT_ENABL);
@@ -1820,7 +1840,8 @@ tr_handle_clear_port_feature:
 		temp = AVR32_READ_4(sc, AVR32_EPTCFG(0));
 
 		if (!(temp & AVR32_EPTCFG_EPT_MAPD)) {
-			DPRINTFN(0, "Chip rejected configuration\n");
+			device_printf(sc->sc_bus.bdev,
+			    "Chip rejected configuration\n");
 		} else {
 			AVR32_WRITE_4(sc, AVR32_EPTCTLENB(0),
 			    AVR32_EPTCTL_EPT_ENABL);
@@ -2062,4 +2083,5 @@ struct usb_bus_methods avr32dci_bus_methods =
 	.set_stall = &avr32dci_set_stall,
 	.clear_stall = &avr32dci_clear_stall,
 	.roothub_exec = &avr32dci_roothub_exec,
+	.xfer_poll = &avr32dci_do_poll,
 };

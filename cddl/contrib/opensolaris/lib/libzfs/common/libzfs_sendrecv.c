@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
 
@@ -1126,7 +1126,7 @@ again:
 		uint64_t originguid = 0;
 		uint64_t stream_originguid = 0;
 		uint64_t parent_fromsnap_guid, stream_parent_fromsnap_guid;
-		char *fsname, *stream_fsname;
+		char *fsname, *stream_fsname, *p1, *p2;
 
 		nextfselem = nvlist_next_nvpair(local_nv, fselem);
 
@@ -1295,10 +1295,11 @@ again:
 		    "parentfromsnap", &stream_parent_fromsnap_guid));
 
 		/* check for rename */
+		p1 = strrchr(fsname, '/');
+		p2 = strrchr(stream_fsname, '/');
 		if ((stream_parent_fromsnap_guid != 0 &&
 		    stream_parent_fromsnap_guid != parent_fromsnap_guid) ||
-		    strcmp(strrchr(fsname, '/'),
-		    strrchr(stream_fsname, '/')) != 0) {
+		    (p1 != NULL && p2 != NULL && strcmp (p1, p2) != 0)) {
 			nvlist_t *parent;
 			char tryname[ZFS_MAXNAMELEN];
 
@@ -1317,7 +1318,7 @@ again:
 				VERIFY(0 == nvlist_lookup_string(parent, "name",
 				    &pname));
 				(void) snprintf(tryname, sizeof (tryname),
-				    "%s%s", pname, strrchr(stream_fsname, '/'));
+				    "%s%s", pname, p2 != NULL ? p2 : "");
 			} else {
 				tryname[0] = '\0';
 				if (flags.verbose) {
@@ -2079,7 +2080,7 @@ zfs_receive(libzfs_handle_t *hdl, const char *tosnap, recvflags_t flags,
 
 	err = zfs_receive_impl(hdl, tosnap, flags, infd, stream_avl, &top_zfs);
 
-	if (err == 0 && top_zfs) {
+	if (err == 0 && !flags.nomount && top_zfs) {
 		zfs_handle_t *zhp;
 		prop_changelist_t *clp;
 

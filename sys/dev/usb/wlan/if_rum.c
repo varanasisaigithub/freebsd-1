@@ -66,17 +66,12 @@ __FBSDID("$FreeBSD$");
 #include <net80211/ieee80211_radiotap.h>
 #include <net80211/ieee80211_amrr.h>
 
-#define	USB_DEBUG_VAR rum_debug
-
 #include <dev/usb/usb.h>
-#include <dev/usb/usb_error.h>
-#include <dev/usb/usb_core.h>
-#include <dev/usb/usb_lookup.h>
-#include <dev/usb/usb_debug.h>
-#include <dev/usb/usb_request.h>
-#include <dev/usb/usb_busdma.h>
-#include <dev/usb/usb_util.h>
+#include <dev/usb/usbdi.h>
 #include "usbdevs.h"
+
+#define	USB_DEBUG_VAR rum_debug
+#include <dev/usb/usb_debug.h>
 
 #include <dev/usb/wlan/if_rumreg.h>
 #include <dev/usb/wlan/if_rumvar.h>
@@ -91,54 +86,56 @@ SYSCTL_INT(_hw_usb_rum, OID_AUTO, debug, CTLFLAG_RW, &rum_debug, 0,
 #endif
 
 static const struct usb_device_id rum_devs[] = {
-    { USB_VP(USB_VENDOR_ABOCOM,		USB_PRODUCT_ABOCOM_HWU54DM) },
-    { USB_VP(USB_VENDOR_ABOCOM,		USB_PRODUCT_ABOCOM_RT2573_2) },
-    { USB_VP(USB_VENDOR_ABOCOM,		USB_PRODUCT_ABOCOM_RT2573_3) },
-    { USB_VP(USB_VENDOR_ABOCOM,		USB_PRODUCT_ABOCOM_RT2573_4) },
-    { USB_VP(USB_VENDOR_ABOCOM,		USB_PRODUCT_ABOCOM_WUG2700) },
-    { USB_VP(USB_VENDOR_AMIT,		USB_PRODUCT_AMIT_CGWLUSB2GO) },
-    { USB_VP(USB_VENDOR_ASUS,		USB_PRODUCT_ASUS_RT2573_1) },
-    { USB_VP(USB_VENDOR_ASUS,		USB_PRODUCT_ASUS_RT2573_2) },
-    { USB_VP(USB_VENDOR_BELKIN,		USB_PRODUCT_BELKIN_F5D7050A) },
-    { USB_VP(USB_VENDOR_BELKIN,		USB_PRODUCT_BELKIN_F5D9050V3) },
-    { USB_VP(USB_VENDOR_CISCOLINKSYS,	USB_PRODUCT_CISCOLINKSYS_WUSB54GC) },
-    { USB_VP(USB_VENDOR_CISCOLINKSYS,	USB_PRODUCT_CISCOLINKSYS_WUSB54GR) },
-    { USB_VP(USB_VENDOR_CONCEPTRONIC2,	USB_PRODUCT_CONCEPTRONIC2_C54RU2) },
-    { USB_VP(USB_VENDOR_COREGA,		USB_PRODUCT_COREGA_CGWLUSB2GL) },
-    { USB_VP(USB_VENDOR_COREGA,		USB_PRODUCT_COREGA_CGWLUSB2GPX) },
-    { USB_VP(USB_VENDOR_DICKSMITH,	USB_PRODUCT_DICKSMITH_CWD854F) },
-    { USB_VP(USB_VENDOR_DICKSMITH,	USB_PRODUCT_DICKSMITH_RT2573) },
-    { USB_VP(USB_VENDOR_DLINK2,		USB_PRODUCT_DLINK2_DWLG122C1) },
-    { USB_VP(USB_VENDOR_DLINK2,		USB_PRODUCT_DLINK2_WUA1340) },
-    { USB_VP(USB_VENDOR_DLINK2,		USB_PRODUCT_DLINK2_DWA111) },
-    { USB_VP(USB_VENDOR_DLINK2,		USB_PRODUCT_DLINK2_DWA110) },
-    { USB_VP(USB_VENDOR_GIGABYTE,	USB_PRODUCT_GIGABYTE_GNWB01GS) },
-    { USB_VP(USB_VENDOR_GIGABYTE,	USB_PRODUCT_GIGABYTE_GNWI05GS) },
-    { USB_VP(USB_VENDOR_GIGASET,	USB_PRODUCT_GIGASET_RT2573) },
-    { USB_VP(USB_VENDOR_GOODWAY,	USB_PRODUCT_GOODWAY_RT2573) },
-    { USB_VP(USB_VENDOR_GUILLEMOT,	USB_PRODUCT_GUILLEMOT_HWGUSB254LB) },
-    { USB_VP(USB_VENDOR_GUILLEMOT,	USB_PRODUCT_GUILLEMOT_HWGUSB254V2AP) },
-    { USB_VP(USB_VENDOR_HUAWEI3COM,	USB_PRODUCT_HUAWEI3COM_WUB320G) },
-    { USB_VP(USB_VENDOR_MELCO,		USB_PRODUCT_MELCO_G54HP) },
-    { USB_VP(USB_VENDOR_MELCO,		USB_PRODUCT_MELCO_SG54HP) },
-    { USB_VP(USB_VENDOR_MSI,		USB_PRODUCT_MSI_RT2573_1) },
-    { USB_VP(USB_VENDOR_MSI,		USB_PRODUCT_MSI_RT2573_2) },
-    { USB_VP(USB_VENDOR_MSI,		USB_PRODUCT_MSI_RT2573_3) },
-    { USB_VP(USB_VENDOR_MSI,		USB_PRODUCT_MSI_RT2573_4) },
-    { USB_VP(USB_VENDOR_NOVATECH,	USB_PRODUCT_NOVATECH_RT2573) },
-    { USB_VP(USB_VENDOR_PLANEX2,	USB_PRODUCT_PLANEX2_GWUS54HP) },
-    { USB_VP(USB_VENDOR_PLANEX2,	USB_PRODUCT_PLANEX2_GWUS54MINI2) },
-    { USB_VP(USB_VENDOR_PLANEX2,	USB_PRODUCT_PLANEX2_GWUSMM) },
-    { USB_VP(USB_VENDOR_QCOM,		USB_PRODUCT_QCOM_RT2573) },
-    { USB_VP(USB_VENDOR_QCOM,		USB_PRODUCT_QCOM_RT2573_2) },
-    { USB_VP(USB_VENDOR_QCOM,		USB_PRODUCT_QCOM_RT2573_3) },
-    { USB_VP(USB_VENDOR_RALINK,		USB_PRODUCT_RALINK_RT2573) },
-    { USB_VP(USB_VENDOR_RALINK,		USB_PRODUCT_RALINK_RT2573_2) },
-    { USB_VP(USB_VENDOR_RALINK,		USB_PRODUCT_RALINK_RT2671) },
-    { USB_VP(USB_VENDOR_SITECOMEU,	USB_PRODUCT_SITECOMEU_WL113R2) },
-    { USB_VP(USB_VENDOR_SITECOMEU,	USB_PRODUCT_SITECOMEU_WL172) },
-    { USB_VP(USB_VENDOR_SPARKLAN,	USB_PRODUCT_SPARKLAN_RT2573) },
-    { USB_VP(USB_VENDOR_SURECOM,	USB_PRODUCT_SURECOM_RT2573) },
+#define	RUM_DEV(v,p)  { USB_VP(USB_VENDOR_##v, USB_PRODUCT_##v##_##p) }
+    RUM_DEV(ABOCOM, HWU54DM),
+    RUM_DEV(ABOCOM, RT2573_2),
+    RUM_DEV(ABOCOM, RT2573_3),
+    RUM_DEV(ABOCOM, RT2573_4),
+    RUM_DEV(ABOCOM, WUG2700),
+    RUM_DEV(AMIT, CGWLUSB2GO),
+    RUM_DEV(ASUS, RT2573_1),
+    RUM_DEV(ASUS, RT2573_2),
+    RUM_DEV(BELKIN, F5D7050A),
+    RUM_DEV(BELKIN, F5D9050V3),
+    RUM_DEV(CISCOLINKSYS, WUSB54GC),
+    RUM_DEV(CISCOLINKSYS, WUSB54GR),
+    RUM_DEV(CONCEPTRONIC2, C54RU2),
+    RUM_DEV(COREGA, CGWLUSB2GL),
+    RUM_DEV(COREGA, CGWLUSB2GPX),
+    RUM_DEV(DICKSMITH, CWD854F),
+    RUM_DEV(DICKSMITH, RT2573),
+    RUM_DEV(DLINK2, DWLG122C1),
+    RUM_DEV(DLINK2, WUA1340),
+    RUM_DEV(DLINK2, DWA111),
+    RUM_DEV(DLINK2, DWA110),
+    RUM_DEV(GIGABYTE, GNWB01GS),
+    RUM_DEV(GIGABYTE, GNWI05GS),
+    RUM_DEV(GIGASET, RT2573),
+    RUM_DEV(GOODWAY, RT2573),
+    RUM_DEV(GUILLEMOT, HWGUSB254LB),
+    RUM_DEV(GUILLEMOT, HWGUSB254V2AP),
+    RUM_DEV(HUAWEI3COM, WUB320G),
+    RUM_DEV(MELCO, G54HP),
+    RUM_DEV(MELCO, SG54HP),
+    RUM_DEV(MSI, RT2573_1),
+    RUM_DEV(MSI, RT2573_2),
+    RUM_DEV(MSI, RT2573_3),
+    RUM_DEV(MSI, RT2573_4),
+    RUM_DEV(NOVATECH, RT2573),
+    RUM_DEV(PLANEX2, GWUS54HP),
+    RUM_DEV(PLANEX2, GWUS54MINI2),
+    RUM_DEV(PLANEX2, GWUSMM),
+    RUM_DEV(QCOM, RT2573),
+    RUM_DEV(QCOM, RT2573_2),
+    RUM_DEV(QCOM, RT2573_3),
+    RUM_DEV(RALINK, RT2573),
+    RUM_DEV(RALINK, RT2573_2),
+    RUM_DEV(RALINK, RT2671),
+    RUM_DEV(SITECOMEU, WL113R2),
+    RUM_DEV(SITECOMEU, WL172),
+    RUM_DEV(SPARKLAN, RT2573),
+    RUM_DEV(SURECOM, RT2573),
+#undef RUM_DEV
 };
 
 MODULE_DEPEND(rum, wlan, 1, 1, 1);
@@ -764,23 +761,27 @@ rum_newstate(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
 }
 
 static void
-rum_bulk_write_callback(struct usb_xfer *xfer)
+rum_bulk_write_callback(struct usb_xfer *xfer, usb_error_t error)
 {
-	struct rum_softc *sc = xfer->priv_sc;
+	struct rum_softc *sc = usbd_xfer_softc(xfer);
 	struct ifnet *ifp = sc->sc_ifp;
 	struct ieee80211vap *vap;
 	struct rum_tx_data *data;
 	struct mbuf *m;
+	struct usb_page_cache *pc;
 	unsigned int len;
+	int actlen, sumlen;
+
+	usbd_xfer_status(xfer, &actlen, &sumlen, NULL, NULL);
 
 	switch (USB_GET_STATE(xfer)) {
 	case USB_ST_TRANSFERRED:
-		DPRINTFN(11, "transfer complete, %d bytes\n", xfer->actlen);
+		DPRINTFN(11, "transfer complete, %d bytes\n", actlen);
 
 		/* free resources */
-		data = xfer->priv_fifo;
+		data = usbd_xfer_get_priv(xfer);
 		rum_tx_free(data, 0);
-		xfer->priv_fifo = NULL;
+		usbd_xfer_set_priv(xfer, NULL);
 
 		ifp->if_opackets++;
 		ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
@@ -798,10 +799,10 @@ tr_setup:
 				    m->m_pkthdr.len);
 				m->m_pkthdr.len = (MCLBYTES + RT2573_TX_DESC_SIZE);
 			}
-			usbd_copy_in(xfer->frbuffers, 0, &data->desc,
-			    RT2573_TX_DESC_SIZE);
-			usbd_m_copy_in(xfer->frbuffers, RT2573_TX_DESC_SIZE, m,
-			    0, m->m_pkthdr.len);
+			pc = usbd_xfer_get_frame(xfer, 0);
+			usbd_copy_in(pc, 0, &data->desc, RT2573_TX_DESC_SIZE);
+			usbd_m_copy_in(pc, RT2573_TX_DESC_SIZE, m, 0,
+			    m->m_pkthdr.len);
 
 			vap = data->ni->ni_vap;
 			if (ieee80211_radiotap_active_vap(vap)) {
@@ -822,53 +823,58 @@ tr_setup:
 			DPRINTFN(11, "sending frame len=%u xferlen=%u\n",
 			    m->m_pkthdr.len, len);
 
-			xfer->frlengths[0] = len;
-			xfer->priv_fifo = data;
+			usbd_xfer_set_frame_len(xfer, 0, len);
+			usbd_xfer_set_priv(xfer, data);
 
 			usbd_transfer_submit(xfer);
 		}
+		RUM_UNLOCK(sc);
+		rum_start(ifp);
+		RUM_LOCK(sc);
 		break;
 
 	default:			/* Error */
 		DPRINTFN(11, "transfer error, %s\n",
-		    usbd_errstr(xfer->error));
+		    usbd_errstr(error));
 
 		ifp->if_oerrors++;
-		data = xfer->priv_fifo;
+		data = usbd_xfer_get_priv(xfer);
 		if (data != NULL) {
-			rum_tx_free(data, xfer->error);
-			xfer->priv_fifo = NULL;
+			rum_tx_free(data, error);
+			usbd_xfer_set_priv(xfer, NULL);
 		}
 
-		if (xfer->error == USB_ERR_STALLED) {
+		if (error == USB_ERR_STALLED) {
 			/* try to clear stall first */
-			xfer->flags.stall_pipe = 1;
+			usbd_xfer_set_stall(xfer);
 			goto tr_setup;
 		}
-		if (xfer->error == USB_ERR_TIMEOUT)
+		if (error == USB_ERR_TIMEOUT)
 			device_printf(sc->sc_dev, "device timeout\n");
 		break;
 	}
 }
 
 static void
-rum_bulk_read_callback(struct usb_xfer *xfer)
+rum_bulk_read_callback(struct usb_xfer *xfer, usb_error_t error)
 {
-	struct rum_softc *sc = xfer->priv_sc;
+	struct rum_softc *sc = usbd_xfer_softc(xfer);
 	struct ifnet *ifp = sc->sc_ifp;
 	struct ieee80211com *ic = ifp->if_l2com;
 	struct ieee80211_node *ni;
 	struct mbuf *m = NULL;
+	struct usb_page_cache *pc;
 	uint32_t flags;
 	uint8_t rssi = 0;
-	unsigned int len;
+	int len;
+
+	usbd_xfer_status(xfer, &len, NULL, NULL, NULL);
 
 	switch (USB_GET_STATE(xfer)) {
 	case USB_ST_TRANSFERRED:
 
-		DPRINTFN(15, "rx done, actlen=%d\n", xfer->actlen);
+		DPRINTFN(15, "rx done, actlen=%d\n", len);
 
-		len = xfer->actlen;
 		if (len < RT2573_RX_DESC_SIZE + IEEE80211_MIN_LEN) {
 			DPRINTF("%s: xfer too short %d\n",
 			    device_get_nameunit(sc->sc_dev), len);
@@ -877,8 +883,8 @@ rum_bulk_read_callback(struct usb_xfer *xfer)
 		}
 
 		len -= RT2573_RX_DESC_SIZE;
-		usbd_copy_out(xfer->frbuffers, 0, &sc->sc_rx_desc,
-		    RT2573_RX_DESC_SIZE);
+		pc = usbd_xfer_get_frame(xfer, 0);
+		usbd_copy_out(pc, 0, &sc->sc_rx_desc, RT2573_RX_DESC_SIZE);
 
 		rssi = rum_get_rssi(sc, sc->sc_rx_desc.rssi);
 		flags = le32toh(sc->sc_rx_desc.flags);
@@ -899,7 +905,7 @@ rum_bulk_read_callback(struct usb_xfer *xfer)
 			ifp->if_ierrors++;
 			goto tr_setup;
 		}
-		usbd_copy_out(xfer->frbuffers, RT2573_RX_DESC_SIZE,
+		usbd_copy_out(pc, RT2573_RX_DESC_SIZE,
 		    mtod(m, uint8_t *), len);
 
 		/* finalize mbuf */
@@ -921,7 +927,7 @@ rum_bulk_read_callback(struct usb_xfer *xfer)
 		/* FALLTHROUGH */
 	case USB_ST_SETUP:
 tr_setup:
-		xfer->frlengths[0] = xfer->max_data_length;
+		usbd_xfer_set_frame_len(xfer, 0, usbd_xfer_max_len(xfer));
 		usbd_transfer_submit(xfer);
 
 		/*
@@ -929,8 +935,8 @@ tr_setup:
 		 * the private mutex of a device! That is why we do the
 		 * "ieee80211_input" here, and not some lines up!
 		 */
+		RUM_UNLOCK(sc);
 		if (m) {
-			RUM_UNLOCK(sc);
 			ni = ieee80211_find_rxnode(ic,
 			    mtod(m, struct ieee80211_frame_min *));
 			if (ni != NULL) {
@@ -940,14 +946,17 @@ tr_setup:
 			} else
 				(void) ieee80211_input_all(ic, m, rssi,
 				    RT2573_NOISE_FLOOR);
-			RUM_LOCK(sc);
 		}
+		if ((ifp->if_drv_flags & IFF_DRV_OACTIVE) == 0 &&
+		    !IFQ_IS_EMPTY(&ifp->if_snd))
+			rum_start(ifp);
+		RUM_LOCK(sc);
 		return;
 
 	default:			/* Error */
-		if (xfer->error != USB_ERR_CANCELLED) {
+		if (error != USB_ERR_CANCELLED) {
 			/* try to clear stall first */
-			xfer->flags.stall_pipe = 1;
+			usbd_xfer_set_stall(xfer);
 			goto tr_setup;
 		}
 		return;
@@ -2011,7 +2020,7 @@ rum_init_locked(struct rum_softc *sc)
 
 	ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
 	ifp->if_drv_flags |= IFF_DRV_RUNNING;
-	usbd_transfer_set_stall(sc->sc_xfer[RUM_BULK_WR]);
+	usbd_xfer_set_stall(sc->sc_xfer[RUM_BULK_WR]);
 	usbd_transfer_start(sc->sc_xfer[RUM_BULK_RD]);
 	return;
 

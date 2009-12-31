@@ -83,12 +83,17 @@ static int	dirent_exists(struct vnode *vp, const char *dirname,
  *
  * If there is no specific entry here, we will return EOPNOTSUPP.
  *
+ * Note that every filesystem has to implement either vop_access
+ * or vop_accessx; failing to do so will result in immediate crash
+ * due to stack overflow, as vop_stdaccess() calls vop_stdaccessx(),
+ * which calls vop_stdaccess() etc.
  */
 
 struct vop_vector default_vnodeops = {
 	.vop_default =		NULL,
 	.vop_bypass =		VOP_EOPNOTSUPP,
 
+	.vop_access =		vop_stdaccess,
 	.vop_accessx =		vop_stdaccessx,
 	.vop_advlock =		vop_stdadvlock,
 	.vop_advlockasync =	vop_stdadvlockasync,
@@ -323,6 +328,16 @@ dirent_exists(struct vnode *vp, const char *dirname, struct thread *td)
 out:
 	free(dirbuf, M_TEMP);
 	return (found);
+}
+
+int
+vop_stdaccess(struct vop_access_args *ap)
+{
+
+	KASSERT((ap->a_accmode & ~(VEXEC | VWRITE | VREAD | VADMIN |
+	    VAPPEND)) == 0, ("invalid bit in accmode"));
+
+	return (VOP_ACCESSX(ap->a_vp, ap->a_accmode, ap->a_cred, ap->a_td));
 }
 
 int
@@ -693,6 +708,7 @@ vop_stdvptocnp(struct vop_vptocnp_args *ap)
 {
 	struct vnode *vp = ap->a_vp;
 	struct vnode **dvp = ap->a_vpp;
+	struct ucred *cred = ap->a_cred;
 	char *buf = ap->a_buf;
 	int *buflen = ap->a_buflen;
 	char *dirbuf, *cpos;
@@ -713,7 +729,7 @@ vop_stdvptocnp(struct vop_vptocnp_args *ap)
 	if (vp->v_type != VDIR)
 		return (ENOENT);
 
-	error = VOP_GETATTR(vp, &va, td->td_ucred);
+	error = VOP_GETATTR(vp, &va, cred);
 	if (error)
 		return (error);
 
@@ -723,7 +739,7 @@ vop_stdvptocnp(struct vop_vptocnp_args *ap)
 	NDINIT_ATVP(&nd, LOOKUP, FOLLOW | LOCKLEAF, UIO_SYSSPACE,
 	    "..", vp, td);
 	flags = FREAD;
-	error = vn_open(&nd, &flags, 0, NULL);
+	error = vn_open_cred(&nd, &flags, 0, VN_OPEN_NOAUDIT, cred, NULL);
 	if (error) {
 		vn_lock(vp, locked | LK_RETRY);
 		return (error);
@@ -738,7 +754,7 @@ vop_stdvptocnp(struct vop_vptocnp_args *ap)
 		*dvp = (*dvp)->v_mount->mnt_vnodecovered;
 		VREF(mvp);
 		VOP_UNLOCK(mvp, 0);
-		vn_close(mvp, FREAD, td->td_ucred, td);
+		vn_close(mvp, FREAD, cred, td);
 		VREF(*dvp);
 		vn_lock(*dvp, LK_EXCLUSIVE | LK_RETRY);
 		covered = 1;
@@ -803,7 +819,7 @@ out:
 		vrele(mvp);
 	} else {
 		VOP_UNLOCK(mvp, 0);
-		vn_close(mvp, FREAD, td->td_ucred, td);
+		vn_close(mvp, FREAD, cred, td);
 	}
 	vn_lock(vp, locked | LK_RETRY);
 	return (error);

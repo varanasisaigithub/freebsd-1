@@ -880,7 +880,7 @@ bd_open_gpt(struct open_disk *od, struct i386_devdesc *dev)
     for (i = 0; i < NDOSPART; i++) {
 	if (dp[i].dp_typ == 0xee)
 	    part++;
-	else if (dp[i].dp_typ != 0x00)
+	else if ((part != 1) && (dp[i].dp_typ != 0x00))
 	    return (EINVAL);
     }
     if (part != 1)
@@ -1266,11 +1266,11 @@ bd_io(struct open_disk *od, daddr_t dblk, int blks, caddr_t dest, int write)
 	}
 
 	if (write)
-	    DEBUG("%d sectors from %lld to %p (0x%x) %s", x, dblk, p, VTOP(p),
-		result ? "failed" : "ok");
+	    DEBUG("Write %d sector(s) from %p (0x%x) to %lld %s", x,
+		p, VTOP(p), dblk, result ? "failed" : "ok");
 	else
-	    DEBUG("%d sectors from %p (0x%x) to %lld %s", x, p, VTOP(p), dblk,
-		result ? "failed" : "ok");
+	    DEBUG("Read %d sector(s) from %lld to %p (0x%x) %s", x,
+		dblk, p, VTOP(p), result ? "failed" : "ok");
 	if (result) {
 	    return(-1);
 	}

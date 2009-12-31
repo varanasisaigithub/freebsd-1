@@ -567,7 +567,6 @@ nfe_attach(device_t dev)
 	ifp->if_start = nfe_start;
 	ifp->if_hwassist = 0;
 	ifp->if_capabilities = 0;
-	ifp->if_watchdog = NULL;
 	ifp->if_init = nfe_init;
 	IFQ_SET_MAXLEN(&ifp->if_snd, NFE_TX_RING_COUNT - 1);
 	ifp->if_snd.ifq_drv_maxlen = NFE_TX_RING_COUNT - 1;
@@ -2491,7 +2490,7 @@ nfe_setmulti(struct nfe_softc *sc)
 	bcopy(etherbroadcastaddr, addr, ETHER_ADDR_LEN);
 	bcopy(etherbroadcastaddr, mask, ETHER_ADDR_LEN);
 
-	IF_ADDR_LOCK(ifp);
+	if_maddr_rlock(ifp);
 	TAILQ_FOREACH(ifma, &ifp->if_multiaddrs, ifma_link) {
 		u_char *addrp;
 
@@ -2505,7 +2504,7 @@ nfe_setmulti(struct nfe_softc *sc)
 			mask[i] &= ~mcaddr;
 		}
 	}
-	IF_ADDR_UNLOCK(ifp);
+	if_maddr_runlock(ifp);
 
 	for (i = 0; i < ETHER_ADDR_LEN; i++) {
 		mask[i] |= addr[i];

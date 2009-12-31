@@ -32,10 +32,28 @@
  * NOTE: The datasheet does not document everything.
  */
 
+#include <sys/stdint.h>
+#include <sys/stddef.h>
+#include <sys/param.h>
+#include <sys/queue.h>
+#include <sys/types.h>
+#include <sys/systm.h>
+#include <sys/kernel.h>
+#include <sys/bus.h>
+#include <sys/linker_set.h>
+#include <sys/module.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
+#include <sys/condvar.h>
+#include <sys/sysctl.h>
+#include <sys/sx.h>
+#include <sys/unistd.h>
+#include <sys/callout.h>
+#include <sys/malloc.h>
+#include <sys/priv.h>
+
 #include <dev/usb/usb.h>
-#include <dev/usb/usb_mfunc.h>
-#include <dev/usb/usb_revision.h>
-#include <dev/usb/usb_error.h>
+#include <dev/usb/usbdi.h>
 
 #define	USB_DEBUG_VAR uss820dcidebug
 
@@ -840,6 +858,7 @@ uss820dci_setup_standard_chain(struct usb_xfer *xfer)
 
 	/* setup temp */
 
+	temp.pc = NULL;
 	temp.td = NULL;
 	temp.td_next = xfer->td_start[0];
 	temp.offset = 0;
@@ -1184,7 +1203,7 @@ uss820dci_device_done(struct usb_xfer *xfer, usb_error_t error)
 
 static void
 uss820dci_set_stall(struct usb_device *udev, struct usb_xfer *xfer,
-    struct usb_endpoint *ep)
+    struct usb_endpoint *ep, uint8_t *did_stall)
 {
 	struct uss820dci_softc *sc;
 	uint8_t ep_no;
@@ -2342,4 +2361,5 @@ struct usb_bus_methods uss820dci_bus_methods =
 	.set_stall = &uss820dci_set_stall,
 	.clear_stall = &uss820dci_clear_stall,
 	.roothub_exec = &uss820dci_roothub_exec,
+	.xfer_poll = &uss820dci_do_poll,
 };

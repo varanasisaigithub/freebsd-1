@@ -32,10 +32,13 @@
 __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/pmc.h>
 #include <sys/pmckern.h>
 #include <sys/systm.h>
 
+#include <machine/intr_machdep.h>
+#include <machine/apicvar.h>
 #include <machine/cpu.h>
 #include <machine/cpufunc.h>
 #include <machine/specialreg.h>
@@ -666,7 +669,7 @@ static struct iap_event_descr iap_events[] = {
     IAPDESCR(3CH_01H, 0x3C, 0x01, IAP_F_FM | IAP_F_ALLCPUS),
     IAPDESCR(3CH_02H, 0x3C, 0x02, IAP_F_FM | IAP_F_ALLCPUS),
 
-    IAPDESCR(40H, 0x40, IAP_M_MESI, IAP_F_CC),
+    IAPDESCR(40H, 0x40, IAP_M_MESI, IAP_F_CC | IAP_F_CC2),
     IAPDESCR(40H_21H, 0x40, 0x21, IAP_F_FM | IAP_F_CA),
 
     IAPDESCR(41H, 0x41, IAP_M_MESI, IAP_F_CC | IAP_F_CC2),
@@ -1179,6 +1182,29 @@ static struct iap_event_descr iap_events[] = {
     IAPDESCR(DBH_01H, 0xDB, 0x01, IAP_F_FM | IAP_F_I7),
     IAPDESCR(E4H_01H, 0xE4, 0x01, IAP_F_FM | IAP_F_I7),
     IAPDESCR(E5H_01H, 0xE5, 0x01, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(E6H_01H, 0xE6, 0x01, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(E6H_02H, 0xE6, 0x02, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(E8H_01H, 0xE8, 0x01, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(E8H_02H, 0xE8, 0x02, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(E8H_03H, 0xE8, 0x03, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(F0H_01H, 0xF0, 0x01, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(F0H_02H, 0xF0, 0x02, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(F0H_04H, 0xF0, 0x04, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(F0H_08H, 0xF0, 0x08, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(F0H_10H, 0xF0, 0x10, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(F0H_20H, 0xF0, 0x20, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(F0H_40H, 0xF0, 0x40, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(F0H_80H, 0xF0, 0x80, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(F1H_02H, 0xF1, 0x02, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(F1H_04H, 0xF1, 0x04, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(F1H_07H, 0xF1, 0x07, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(F2H_01H, 0xF2, 0x01, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(F2H_02H, 0xF2, 0x02, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(F2H_04H, 0xF2, 0x04, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(F2H_08H, 0xF2, 0x08, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(F2H_0FH, 0xF2, 0x0F, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(F3H_01H, 0xF3, 0x01, IAP_F_FM | IAP_F_I7),
+    IAPDESCR(F3H_02H, 0xF3, 0x02, IAP_F_FM | IAP_F_I7),
     IAPDESCR(F3H_04H, 0xF3, 0x04, IAP_F_FM | IAP_F_I7),
     IAPDESCR(F3H_08H, 0xF3, 0x08, IAP_F_FM | IAP_F_I7),
     IAPDESCR(F3H_10H, 0xF3, 0x10, IAP_F_FM | IAP_F_I7),
@@ -1393,17 +1419,17 @@ iap_allocate_pmc(int cpu, int ri, struct pmc *pm,
 
 		mask = 0;
 
-		if (ie->iap_flags & IAP_M_CORE) {
+		if (ie->iap_umask & IAP_M_CORE) {
 			if ((c = (config & IAP_F_CORE)) != IAP_CORE_ALL &&
 			    c != IAP_CORE_THIS)
 				return (EINVAL);
 			mask |= IAP_F_CORE;
 		}
 
-		if (ie->iap_flags & IAP_M_AGENT)
+		if (ie->iap_umask & IAP_M_AGENT)
 			mask |= IAP_F_AGENT;
 
-		if (ie->iap_flags & IAP_M_PREFETCH) {
+		if (ie->iap_umask & IAP_M_PREFETCH) {
 
 			if ((c = (config & IAP_F_PREFETCH)) ==
 			    IAP_PREFETCH_RESERVED)
@@ -1412,16 +1438,16 @@ iap_allocate_pmc(int cpu, int ri, struct pmc *pm,
 			mask |= IAP_F_PREFETCH;
 		}
 
-		if (ie->iap_flags & IAP_M_MESI)
+		if (ie->iap_umask & IAP_M_MESI)
 			mask |= IAP_F_MESI;
 
-		if (ie->iap_flags & IAP_M_SNOOPRESPONSE)
+		if (ie->iap_umask & IAP_M_SNOOPRESPONSE)
 			mask |= IAP_F_SNOOPRESPONSE;
 
-		if (ie->iap_flags & IAP_M_SNOOPTYPE)
+		if (ie->iap_umask & IAP_M_SNOOPTYPE)
 			mask |= IAP_F_SNOOPTYPE;
 
-		if (ie->iap_flags & IAP_M_TRANSITION)
+		if (ie->iap_umask & IAP_M_TRANSITION)
 			mask |= IAP_F_TRANSITION;
 
 		/*
@@ -1771,7 +1797,7 @@ core_intr(int cpu, struct trapframe *tf)
 	}
 
 	if (found_interrupt)
-		pmc_x86_lapic_enable_pmc_interrupt();
+		lapic_reenable_pmc();
 
 	atomic_add_int(found_interrupt ? &pmc_stats.pm_intr_processed :
 	    &pmc_stats.pm_intr_ignored, 1);
@@ -1895,7 +1921,7 @@ core2_intr(int cpu, struct trapframe *tf)
 	    (uintmax_t) rdmsr(IA_GLOBAL_OVF_CTRL));
 
 	if (found_interrupt)
-		pmc_x86_lapic_enable_pmc_interrupt();
+		lapic_reenable_pmc();
 
 	atomic_add_int(found_interrupt ? &pmc_stats.pm_intr_processed :
 	    &pmc_stats.pm_intr_ignored, 1);
@@ -1951,11 +1977,21 @@ pmc_core_initialize(struct pmc_mdep *md, int maxcpu)
 		core_iaf_npmc = cpuid[CORE_CPUID_EDX] & 0x1F;
 		core_iaf_width = (cpuid[CORE_CPUID_EDX] >> 5) & 0xFF;
 
-		iaf_initialize(md, maxcpu, core_iaf_npmc, core_iaf_width);
-
-		core_pmcmask |= ((1ULL << core_iaf_npmc) - 1) <<
-		    IAF_OFFSET;
-
+		if (core_iaf_npmc > 0) {
+			iaf_initialize(md, maxcpu, core_iaf_npmc,
+			    core_iaf_width);
+			core_pmcmask |= ((1ULL << core_iaf_npmc) - 1) <<
+			    IAF_OFFSET;
+		} else {
+			/*
+			 * Adjust the number of classes exported to
+			 * user space.
+			 */
+			md->pmd_nclass--;
+			KASSERT(md->pmd_nclass == 2,
+			    ("[core,%d] unexpected nclass %d", __LINE__,
+				md->pmd_nclass));
+		}
 	}
 
 	PMCDBG(MDP,INI,1,"core-init pmcmask=0x%jx iafri=%d", core_pmcmask,

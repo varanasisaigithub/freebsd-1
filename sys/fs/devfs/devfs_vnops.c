@@ -48,6 +48,7 @@
 #include <sys/file.h>
 #include <sys/filedesc.h>
 #include <sys/filio.h>
+#include <sys/jail.h>
 #include <sys/kernel.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
@@ -435,14 +436,14 @@ devfs_access(struct vop_access_args *ap)
 
 	error = vaccess(vp->v_type, de->de_mode, de->de_uid, de->de_gid,
 	    ap->a_accmode, ap->a_cred, NULL);
-	if (!error)
-		return (error);
+	if (error == 0)
+		return (0);
 	if (error != EACCES)
 		return (error);
 	/* We do, however, allow access to the controlling terminal */
 	if (!(ap->a_td->td_proc->p_flag & P_CONTROLT))
 		return (error);
-	if (ap->a_td->td_proc->p_session->s_ttyvp == de->de_vnode)
+	if (ap->a_td->td_proc->p_session->s_ttydp == de->de_cdp)
 		return (0);
 	return (error);
 }
@@ -473,6 +474,7 @@ devfs_close(struct vop_close_args *ap)
 		VI_LOCK(vp);
 		if (count_dev(dev) == 2 && (vp->v_iflag & VI_DOOMED) == 0) {
 			td->td_proc->p_session->s_ttyvp = NULL;
+			td->td_proc->p_session->s_ttydp = NULL;
 			oldvp = vp;
 		}
 		VI_UNLOCK(vp);
@@ -674,6 +676,7 @@ devfs_ioctl_f(struct file *fp, u_long com, void *data, struct ucred *cred, struc
 		VREF(vp);
 		SESS_LOCK(td->td_proc->p_session);
 		td->td_proc->p_session->s_ttyvp = vp;
+		td->td_proc->p_session->s_ttydp = cdev2priv(dev);
 		SESS_UNLOCK(td->td_proc->p_session);
 
 		sx_sunlock(&proctree_lock);
@@ -703,6 +706,31 @@ devfs_kqfilter_f(struct file *fp, struct knote *kn)
 	error = dsw->d_kqfilter(dev, kn);
 	td->td_fpop = fpop;
 	dev_relthread(dev);
+	return (error);
+}
+
+static inline int
+devfs_prison_check(struct devfs_dirent *de, struct thread *td)
+{
+	struct cdev_priv *cdp;
+	struct ucred *dcr;
+	int error;
+
+	cdp = de->de_cdp;
+	if (cdp == NULL)
+		return (0);
+	dcr = cdp->cdp_c.si_cred;
+	if (dcr == NULL)
+		return (0);
+
+	error = prison_check(td->td_ucred, dcr);
+	if (error == 0)
+		return (0);
+	/* We do, however, allow access to the controlling terminal */
+	if (!(td->td_proc->p_flag & P_CONTROLT))
+		return (error);
+	if (td->td_proc->p_session->s_ttydp == cdp)
+		return (0);
 	return (error);
 }
 
@@ -830,6 +858,9 @@ devfs_lookupx(struct vop_lookup_args *ap, int *dm_unlock)
 		}
 		return (ENOENT);
 	}
+
+	if (devfs_prison_check(de, td))
+		return (ENOENT);
 
 	if ((cnp->cn_nameiop == DELETE) && (flags & ISLASTCN)) {
 		error = VOP_ACCESS(dvp, VWRITE, cnp->cn_cred, td);
@@ -1105,6 +1136,8 @@ devfs_readdir(struct vop_readdir_args *ap)
 	TAILQ_FOREACH(dd, &de->de_dlist, de_list) {
 		KASSERT(dd->de_cdp != (void *)0xdeadc0de, ("%s %d\n", __func__, __LINE__));
 		if (dd->de_flags & DE_WHITEOUT)
+			continue;
+		if (devfs_prison_check(dd, uio->uio_td))
 			continue;
 		if (dd->de_dirent->d_type == DT_DIR)
 			de = dd->de_dir;

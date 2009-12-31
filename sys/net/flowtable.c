@@ -29,6 +29,7 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include "opt_route.h"
 #include "opt_mpath.h"
+#include "opt_ddb.h"
 
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
@@ -36,6 +37,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/param.h>  
 #include <sys/types.h>
 #include <sys/bitstring.h>
+#include <sys/condvar.h>
 #include <sys/callout.h>
 #include <sys/kernel.h>  
 #include <sys/kthread.h>
@@ -48,15 +50,13 @@ __FBSDID("$FreeBSD$");
 #include <sys/socket.h>
 #include <sys/syslog.h>
 #include <sys/sysctl.h>
-#include <sys/vimage.h>
 
 #include <net/if.h>
 #include <net/if_llatbl.h>
 #include <net/if_var.h>
 #include <net/route.h> 
-#include <net/vnet.h>
 #include <net/flowtable.h>
-
+#include <net/vnet.h>
 
 #include <netinet/in.h>
 #include <netinet/in_systm.h>
@@ -68,6 +68,7 @@ __FBSDID("$FreeBSD$");
 #include <netinet/sctp.h>
 
 #include <libkern/jenkins.h>
+#include <ddb/ddb.h>
 
 struct ipv4_tuple {
 	uint16_t 	ip_sport;	/* source port */
@@ -96,8 +97,9 @@ union ipv6_flow {
 struct flentry {
 	volatile uint32_t	f_fhash;	/* hash flowing forward */
 	uint16_t		f_flags;	/* flow flags */
-	uint8_t			f_pad;		/* alignment */
+	uint8_t			f_pad;		
 	uint8_t			f_proto;	/* protocol */
+	uint32_t		f_fibnum;	/* fib index */
 	uint32_t		f_uptime;	/* uptime at last access */
 	struct flentry		*f_next;	/* pointer to collision entry */
 	volatile struct rtentry *f_rt;		/* rtentry for flow */
@@ -165,10 +167,19 @@ struct flowtable {
 };
 
 static struct proc *flowcleanerproc;
-static struct flowtable *flow_list_head;
-static uint32_t hashjitter;
-static uma_zone_t ipv4_zone;
-static uma_zone_t ipv6_zone;
+static VNET_DEFINE(struct flowtable *, flow_list_head);
+static VNET_DEFINE(uint32_t, flow_hashjitter);
+static VNET_DEFINE(uma_zone_t, flow_ipv4_zone);
+static VNET_DEFINE(uma_zone_t, flow_ipv6_zone);
+
+#define	V_flow_list_head	VNET(flow_list_head)
+#define	V_flow_hashjitter	VNET(flow_hashjitter)
+#define	V_flow_ipv4_zone	VNET(flow_ipv4_zone)
+#define	V_flow_ipv6_zone	VNET(flow_ipv6_zone)
+
+static struct cv 	flowclean_cv;
+static struct mtx	flowclean_lock;
+static uint32_t		flowclean_cycles;
 
 /*
  * TODO:
@@ -185,49 +196,76 @@ static uma_zone_t ipv6_zone;
  *   of flows with flag to indicate that a flow was imported so should
  *   not be considered for auto-cleaning
  * - support explicit connection state (currently only ad-hoc for DSR)
+ * - idetach() cleanup for options VIMAGE builds.
  */
+VNET_DEFINE(int, flowtable_enable) = 1;
+static VNET_DEFINE(int, flowtable_debug);
+static VNET_DEFINE(int, flowtable_hits);
+static VNET_DEFINE(int, flowtable_lookups);
+static VNET_DEFINE(int, flowtable_misses);
+static VNET_DEFINE(int, flowtable_frees);
+static VNET_DEFINE(int, flowtable_free_checks);
+static VNET_DEFINE(int, flowtable_max_depth);
+static VNET_DEFINE(int, flowtable_collisions);
+static VNET_DEFINE(int, flowtable_syn_expire) = SYN_IDLE;
+static VNET_DEFINE(int, flowtable_udp_expire) = UDP_IDLE;
+static VNET_DEFINE(int, flowtable_fin_wait_expire) = FIN_WAIT_IDLE;
+static VNET_DEFINE(int, flowtable_tcp_expire) = TCP_IDLE;
+static VNET_DEFINE(int, flowtable_nmbflows) = 4096;
+static VNET_DEFINE(int, flowtable_ready) = 0;
+
+#define	V_flowtable_enable		VNET(flowtable_enable)
+#define	V_flowtable_debug		VNET(flowtable_debug)
+#define	V_flowtable_hits		VNET(flowtable_hits)
+#define	V_flowtable_lookups		VNET(flowtable_lookups)
+#define	V_flowtable_misses		VNET(flowtable_misses)
+#define	V_flowtable_frees		VNET(flowtable_frees)
+#define	V_flowtable_free_checks		VNET(flowtable_free_checks)
+#define	V_flowtable_max_depth		VNET(flowtable_max_depth)
+#define	V_flowtable_collisions		VNET(flowtable_collisions)
+#define	V_flowtable_syn_expire		VNET(flowtable_syn_expire)
+#define	V_flowtable_udp_expire		VNET(flowtable_udp_expire)
+#define	V_flowtable_fin_wait_expire	VNET(flowtable_fin_wait_expire)
+#define	V_flowtable_tcp_expire		VNET(flowtable_tcp_expire)
+#define	V_flowtable_nmbflows		VNET(flowtable_nmbflows)
+#define	V_flowtable_ready		VNET(flowtable_ready)
+
 SYSCTL_NODE(_net_inet, OID_AUTO, flowtable, CTLFLAG_RD, NULL, "flowtable");
-int	flowtable_enable = 1;
-SYSCTL_INT(_net_inet_flowtable, OID_AUTO, enable, CTLFLAG_RW,
-    &flowtable_enable, 0, "enable flowtable caching.");
-static int flowtable_hits = 0;
-SYSCTL_INT(_net_inet_flowtable, OID_AUTO, hits, CTLFLAG_RD,
-    &flowtable_hits, 0, "# flowtable hits.");
-static int flowtable_lookups = 0;
-SYSCTL_INT(_net_inet_flowtable, OID_AUTO, lookups, CTLFLAG_RD,
-    &flowtable_lookups, 0, "# flowtable lookups.");
-static int flowtable_misses = 0;
-SYSCTL_INT(_net_inet_flowtable, OID_AUTO, misses, CTLFLAG_RD,
-    &flowtable_misses, 0, "#flowtable misses.");
-static int flowtable_frees = 0;
-SYSCTL_INT(_net_inet_flowtable, OID_AUTO, frees, CTLFLAG_RD,
-    &flowtable_frees, 0, "#flows freed.");
-static int flowtable_free_checks = 0;
-SYSCTL_INT(_net_inet_flowtable, OID_AUTO, free_checks, CTLFLAG_RD,
-    &flowtable_free_checks, 0, "#flows free checks.");
-static int flowtable_max_depth = 0;
-SYSCTL_INT(_net_inet_flowtable, OID_AUTO, max_depth, CTLFLAG_RD,
-    &flowtable_max_depth, 0, "max collision list length.");
-static int flowtable_collisions = 0;
-SYSCTL_INT(_net_inet_flowtable, OID_AUTO, collisions, CTLFLAG_RD,
-    &flowtable_collisions, 0, "#flowtable collisions.");
+SYSCTL_VNET_INT(_net_inet_flowtable, OID_AUTO, debug, CTLFLAG_RW,
+    &VNET_NAME(flowtable_debug), 0, "print debug info.");
+SYSCTL_VNET_INT(_net_inet_flowtable, OID_AUTO, enable, CTLFLAG_RW,
+    &VNET_NAME(flowtable_enable), 0, "enable flowtable caching.");
+SYSCTL_VNET_INT(_net_inet_flowtable, OID_AUTO, hits, CTLFLAG_RD,
+    &VNET_NAME(flowtable_hits), 0, "# flowtable hits.");
+SYSCTL_VNET_INT(_net_inet_flowtable, OID_AUTO, lookups, CTLFLAG_RD,
+    &VNET_NAME(flowtable_lookups), 0, "# flowtable lookups.");
+SYSCTL_VNET_INT(_net_inet_flowtable, OID_AUTO, misses, CTLFLAG_RD,
+    &VNET_NAME(flowtable_misses), 0, "#flowtable misses.");
+SYSCTL_VNET_INT(_net_inet_flowtable, OID_AUTO, frees, CTLFLAG_RD,
+    &VNET_NAME(flowtable_frees), 0, "#flows freed.");
+SYSCTL_VNET_INT(_net_inet_flowtable, OID_AUTO, free_checks, CTLFLAG_RD,
+    &VNET_NAME(flowtable_free_checks), 0, "#flows free checks.");
+SYSCTL_VNET_INT(_net_inet_flowtable, OID_AUTO, max_depth, CTLFLAG_RD,
+    &VNET_NAME(flowtable_max_depth), 0, "max collision list length.");
+SYSCTL_VNET_INT(_net_inet_flowtable, OID_AUTO, collisions, CTLFLAG_RD,
+    &VNET_NAME(flowtable_collisions), 0, "#flowtable collisions.");
 
 /*
  * XXX This does not end up updating timeouts at runtime
  * and only reflects the value for the last table added :-/
  */
-static int flowtable_syn_expire = SYN_IDLE;
-SYSCTL_INT(_net_inet_flowtable, OID_AUTO, syn_expire, CTLFLAG_RW,
-    &flowtable_syn_expire, 0, "seconds after which to remove syn allocated flow.");
-static int flowtable_udp_expire = UDP_IDLE;
-SYSCTL_INT(_net_inet_flowtable, OID_AUTO, udp_expire, CTLFLAG_RW,
-    &flowtable_udp_expire, 0, "seconds after which to remove flow allocated to UDP.");
-static int flowtable_fin_wait_expire = FIN_WAIT_IDLE;
-SYSCTL_INT(_net_inet_flowtable, OID_AUTO, fin_wait_expire, CTLFLAG_RW,
-    &flowtable_fin_wait_expire, 0, "seconds after which to remove a flow in FIN_WAIT.");
-static int flowtable_tcp_expire = TCP_IDLE;
-SYSCTL_INT(_net_inet_flowtable, OID_AUTO, tcp_expire, CTLFLAG_RW,
-    &flowtable_tcp_expire, 0, "seconds after which to remove flow allocated to a TCP connection.");
+SYSCTL_VNET_INT(_net_inet_flowtable, OID_AUTO, syn_expire, CTLFLAG_RW,
+    &VNET_NAME(flowtable_syn_expire), 0,
+    "seconds after which to remove syn allocated flow.");
+SYSCTL_VNET_INT(_net_inet_flowtable, OID_AUTO, udp_expire, CTLFLAG_RW,
+    &VNET_NAME(flowtable_udp_expire), 0,
+    "seconds after which to remove flow allocated to UDP.");
+SYSCTL_VNET_INT(_net_inet_flowtable, OID_AUTO, fin_wait_expire, CTLFLAG_RW,
+    &VNET_NAME(flowtable_fin_wait_expire), 0,
+    "seconds after which to remove a flow in FIN_WAIT.");
+SYSCTL_VNET_INT(_net_inet_flowtable, OID_AUTO, tcp_expire, CTLFLAG_RW,
+    &VNET_NAME(flowtable_tcp_expire), 0,
+    "seconds after which to remove flow allocated to a TCP connection.");
 
 
 /*
@@ -237,34 +275,35 @@ SYSCTL_INT(_net_inet_flowtable, OID_AUTO, tcp_expire, CTLFLAG_RW,
  * there is no reason why this could not be changed at runtime)
  * and thus (currently) needs to be set with a tunable.
  */
-static int nmbflows = 4096;
-
 static int
 sysctl_nmbflows(SYSCTL_HANDLER_ARGS)
 {
 	int error, newnmbflows;
 
-	newnmbflows = nmbflows;
+	newnmbflows = V_flowtable_nmbflows;
 	error = sysctl_handle_int(oidp, &newnmbflows, 0, req); 
 	if (error == 0 && req->newptr) {
-		if (newnmbflows > nmbflows) {
-			nmbflows = newnmbflows;
-			uma_zone_set_max(ipv4_zone, nmbflows);
-			uma_zone_set_max(ipv6_zone, nmbflows);
+		if (newnmbflows > V_flowtable_nmbflows) {
+			V_flowtable_nmbflows = newnmbflows;
+			uma_zone_set_max(V_flow_ipv4_zone,
+			    V_flowtable_nmbflows);
+			uma_zone_set_max(V_flow_ipv6_zone,
+			    V_flowtable_nmbflows);
 		} else
 			error = EINVAL;
 	}
 	return (error);
 }
-SYSCTL_PROC(_net_inet_flowtable, OID_AUTO, nmbflows, CTLTYPE_INT|CTLFLAG_RW,
-    &nmbflows, 0, sysctl_nmbflows, "IU", "Maximum number of flows allowed");
+SYSCTL_VNET_PROC(_net_inet_flowtable, OID_AUTO, nmbflows,
+    CTLTYPE_INT|CTLFLAG_RW, 0, 0, sysctl_nmbflows, "IU",
+    "Maximum number of flows allowed");
 
 #ifndef RADIX_MPATH
 static void
-in_rtalloc_ign_wrapper(struct route *ro, uint32_t hash, u_int fib)
+in_rtalloc_ign_wrapper(struct route *ro, uint32_t hash, u_int fibnum)
 {
 
-	rtalloc_ign_fib(ro, 0, fib);
+	rtalloc_ign_fib(ro, 0, fibnum);
 }
 #endif
 
@@ -320,7 +359,7 @@ ipv4_flow_lookup_hash_internal(struct mbuf *m, struct route *ro,
 	struct udphdr *uh;
 	struct sctphdr *sh;
 
-	if (flowtable_enable == 0)
+	if ((V_flowtable_enable == 0) || (V_flowtable_ready == 0))
 		return (0);
 
 	key[1] = key[0] = 0;
@@ -382,7 +421,7 @@ ipv4_flow_lookup_hash_internal(struct mbuf *m, struct route *ro,
 	((uint16_t *)key)[1] = dport; 
 
 skipports:
-	hash = jenkins_hashword(key, 3, hashjitter + proto);
+	hash = jenkins_hashword(key, 3, V_flow_hashjitter + proto);
 	if (m != NULL && (m->m_flags & M_FLOWID) == 0) {
 		m->m_flags |= M_FLOWID;
 		m->m_pkthdr.flowid = hash;
@@ -398,7 +437,7 @@ static bitstr_t *
 flowtable_mask(struct flowtable *ft)
 {
 	bitstr_t *mask;
-	
+
 	if (ft->ft_flags & FL_PCPU)
 		mask = ft->ft_masks[curcpu];
 	else
@@ -474,14 +513,14 @@ flowtable_set_hashkey(struct flentry *fle, uint32_t *key)
 
 static int
 flowtable_insert(struct flowtable *ft, uint32_t hash, uint32_t *key,
-    uint8_t proto, struct route *ro, uint16_t flags)
+    uint8_t proto, uint32_t fibnum, struct route *ro, uint16_t flags)
 {
 	struct flentry *fle, *fletail, *newfle, **flep;
 	int depth;
 	uma_zone_t flezone;
 	bitstr_t *mask;
 
-	flezone = (flags & FL_IPV6) ? ipv6_zone : ipv4_zone;
+	flezone = (flags & FL_IPV6) ? V_flow_ipv6_zone : V_flow_ipv4_zone;
 	newfle = uma_zalloc(flezone, M_NOWAIT | M_ZERO);
 	if (newfle == NULL)
 		return (ENOMEM);
@@ -500,7 +539,7 @@ flowtable_insert(struct flowtable *ft, uint32_t hash, uint32_t *key,
 	} 
 	
 	depth = 0;
-	flowtable_collisions++;
+	V_flowtable_collisions++;
 	/*
 	 * find end of list and make sure that we were not
 	 * preempted by another thread handling this flow
@@ -513,7 +552,7 @@ flowtable_insert(struct flowtable *ft, uint32_t hash, uint32_t *key,
 			 */
 			FL_ENTRY_UNLOCK(ft, hash);
 			uma_zfree((newfle->f_flags & FL_IPV6) ?
-			    ipv6_zone : ipv4_zone, newfle);
+			    V_flow_ipv6_zone : V_flow_ipv4_zone, newfle);
 			return (EEXIST);
 		}
 		/*
@@ -526,8 +565,8 @@ flowtable_insert(struct flowtable *ft, uint32_t hash, uint32_t *key,
 		fle = fle->f_next;
 	} 
 
-	if (depth > flowtable_max_depth)
-		flowtable_max_depth = depth;
+	if (depth > V_flowtable_max_depth)
+		V_flowtable_max_depth = depth;
 	fletail->f_next = newfle;
 	fle = newfle;
 skip:
@@ -537,6 +576,7 @@ skip:
 	fle->f_rt = ro->ro_rt;
 	fle->f_lle = ro->ro_lle;
 	fle->f_fhash = hash;
+	fle->f_fibnum = fibnum;
 	fle->f_uptime = time_uptime;
 	FL_ENTRY_UNLOCK(ft, hash);
 	return (0);
@@ -564,13 +604,13 @@ flowtable_key_equal(struct flentry *fle, uint32_t *key)
 }
 
 int
-flowtable_lookup(struct flowtable *ft, struct mbuf *m, struct route *ro)
+flowtable_lookup(struct flowtable *ft, struct mbuf *m, struct route *ro, uint32_t fibnum)
 {
 	uint32_t key[9], hash;
 	struct flentry *fle;
 	uint16_t flags;
 	uint8_t proto = 0;
-	int error = 0, fib = 0;
+	int error = 0;
 	struct rtentry *rt;
 	struct llentry *lle;
 
@@ -600,7 +640,7 @@ flowtable_lookup(struct flowtable *ft, struct mbuf *m, struct route *ro)
 	if (hash == 0 || (key[0] == 0 && (ft->ft_flags & FL_HASH_PORTS)))
 		return (ENOENT);
 
-	flowtable_lookups++;
+	V_flowtable_lookups++;
 	FL_ENTRY_LOCK(ft, hash);
 	if ((fle = FL_ENTRY(ft, hash)) == NULL) {
 		FL_ENTRY_UNLOCK(ft, hash);
@@ -613,9 +653,10 @@ keycheck:
 	    && fle->f_fhash == hash
 	    && flowtable_key_equal(fle, key)
 	    && (proto == fle->f_proto)
+	    && (fibnum == fle->f_fibnum)
 	    && (rt->rt_flags & RTF_UP)
 	    && (rt->rt_ifp != NULL)) {
-		flowtable_hits++;
+		V_flowtable_hits++;
 		fle->f_uptime = time_uptime;
 		fle->f_flags |= flags;
 		ro->ro_rt = rt;
@@ -629,7 +670,7 @@ keycheck:
 	FL_ENTRY_UNLOCK(ft, hash);
 
 uncached:
-	flowtable_misses++;
+	V_flowtable_misses++;
 	/*
 	 * This bit of code ends up locking the
 	 * same route 3 times (just like ip_output + ether_output)
@@ -641,10 +682,8 @@ uncached:
 	 * of arpresolve with an rt_check variant that expected to
 	 * receive the route locked
 	 */
-	if (m != NULL)
-		fib = M_GETFIB(m);
 
-	ft->ft_rtalloc(ro, hash, fib);
+	ft->ft_rtalloc(ro, hash, fibnum);
 	if (ro->ro_rt == NULL) 
 		error = ENETUNREACH;
 	else {
@@ -652,6 +691,12 @@ uncached:
 		struct sockaddr *l3addr;
 		struct rtentry *rt = ro->ro_rt;
 		struct ifnet *ifp = rt->rt_ifp;
+
+		if (ifp->if_flags & (IFF_POINTOPOINT | IFF_LOOPBACK)) {
+			RTFREE(rt);
+			ro->ro_rt = NULL;
+			return (ENOENT);
+		}
 
 		if (rt->rt_flags & RTF_GATEWAY)
 			l3addr = rt->rt_gateway;
@@ -665,7 +710,7 @@ uncached:
 			ro->ro_rt = NULL;
 			return (ENOENT);
 		}
-		error = flowtable_insert(ft, hash, key, proto,
+		error = flowtable_insert(ft, hash, key, proto, fibnum,
 		    ro, flags);
 				
 		if (error) {
@@ -690,8 +735,8 @@ flowtable_alloc(int nentry, int flags)
 	struct flowtable *ft, *fttail;
 	int i;
 
-	if (hashjitter == 0)
-		hashjitter = arc4random();
+	if (V_flow_hashjitter == 0)
+		V_flow_hashjitter = arc4random();
 
 	KASSERT(nentry > 0, ("nentry must be > 0, is %d\n", nentry));
 
@@ -739,10 +784,10 @@ flowtable_alloc(int nentry, int flags)
 	 * replacement after 5s of non-use
 	 */
 	if (flags & FL_HASH_PORTS) {
-		ft->ft_udp_idle = flowtable_udp_expire;
-		ft->ft_syn_idle = flowtable_syn_expire;
-		ft->ft_fin_wait_idle = flowtable_fin_wait_expire;
-		ft->ft_tcp_idle = flowtable_fin_wait_expire;
+		ft->ft_udp_idle = V_flowtable_udp_expire;
+		ft->ft_syn_idle = V_flowtable_syn_expire;
+		ft->ft_fin_wait_idle = V_flowtable_fin_wait_expire;
+		ft->ft_tcp_idle = V_flowtable_fin_wait_expire;
 	} else {
 		ft->ft_udp_idle = ft->ft_fin_wait_idle =
 		    ft->ft_syn_idle = ft->ft_tcp_idle = 30;
@@ -752,10 +797,10 @@ flowtable_alloc(int nentry, int flags)
 	/*
 	 * hook in to the cleaner list
 	 */
-	if (flow_list_head == NULL)
-		flow_list_head = ft;
+	if (V_flow_list_head == NULL)
+		V_flow_list_head = ft;
 	else {
-		fttail = flow_list_head;
+		fttail = V_flow_list_head;
 		while (fttail->ft_next != NULL)
 			fttail = fttail->ft_next;
 		fttail->ft_next = ft;
@@ -763,20 +808,6 @@ flowtable_alloc(int nentry, int flags)
 
 	return (ft);
 }
-
-static void
-flowtable_setup(void *arg)
-{
-
-	ipv4_zone = uma_zcreate("ip4flow", sizeof(struct flentry_v4), NULL,
-	    NULL, NULL, NULL, 64, UMA_ZONE_MAXBUCKET);
-	ipv6_zone = uma_zcreate("ip6flow", sizeof(struct flentry_v6), NULL,
-	    NULL, NULL, NULL, 64, UMA_ZONE_MAXBUCKET);	
-	uma_zone_set_max(ipv4_zone, nmbflows);
-	uma_zone_set_max(ipv6_zone, nmbflows);
-}
-
-SYSINIT(flowtable_setup, SI_SUB_KTHREAD_INIT, SI_ORDER_ANY, flowtable_setup, NULL);
 
 /*
  * The rest of the code is devoted to garbage collection of expired entries.
@@ -794,11 +825,12 @@ fle_free(struct flentry *fle)
 	lle = __DEVOLATILE(struct llentry *, fle->f_lle);
 	RTFREE(rt);
 	LLE_FREE(lle);
-	uma_zfree((fle->f_flags & FL_IPV6) ? ipv6_zone : ipv4_zone, fle);
+	uma_zfree((fle->f_flags & FL_IPV6) ?
+	    V_flow_ipv6_zone : V_flow_ipv4_zone, fle);
 }
 
 static void
-flowtable_free_stale(struct flowtable *ft)
+flowtable_free_stale(struct flowtable *ft, struct rtentry *rt)
 {
 	int curbit = 0, count;
 	struct flentry *fle,  **flehead, *fleprev;
@@ -826,7 +858,7 @@ flowtable_free_stale(struct flowtable *ft)
 		flehead = flowtable_entry(ft, curbit);
 		fle = fleprev = *flehead;
 
-		flowtable_free_checks++;
+		V_flowtable_free_checks++;
 #ifdef DIAGNOSTIC
 		if (fle == NULL && curbit > 0) {
 			log(LOG_ALERT,
@@ -834,8 +866,14 @@ flowtable_free_stale(struct flowtable *ft)
 			    curbit);
 		}
 #endif		
-		while (fle != NULL) {	
-			if (!flow_stale(ft, fle)) {
+		while (fle != NULL) {
+			if (rt != NULL) {
+				if (__DEVOLATILE(struct rtentry *, fle->f_rt) != rt) {
+					fleprev = fle;
+					fle = fle->f_next;
+					continue;
+				}
+			} else if (!flow_stale(ft, fle)) {
 				fleprev = fle;
 				fle = fle->f_next;
 				continue;
@@ -877,50 +915,115 @@ flowtable_free_stale(struct flowtable *ft)
 	while ((fle = flefreehead) != NULL) {
 		flefreehead = fle->f_next;
 		count++;
-		flowtable_frees++;
+		V_flowtable_frees++;
 		fle_free(fle);
 	}
-	if (bootverbose && count)
+	if (V_flowtable_debug && count)
 		log(LOG_DEBUG, "freed %d flow entries\n", count);
+}
+
+void
+flowtable_route_flush(struct flowtable *ft, struct rtentry *rt)
+{
+	int i;
+	if (ft->ft_flags & FL_PCPU) {
+		for (i = 0; i <= mp_maxid; i++) {
+			if (CPU_ABSENT(i))
+				continue;
+			
+			if (smp_started == 1) {
+				thread_lock(curthread);
+				sched_bind(curthread, i);
+				thread_unlock(curthread);
+			}
+
+			flowtable_free_stale(ft, rt);
+
+			if (smp_started == 1) {
+				thread_lock(curthread);
+				sched_unbind(curthread);
+				thread_unlock(curthread);
+			}
+		}
+	} else {
+		flowtable_free_stale(ft, rt);
+	}
+}
+
+static void
+flowtable_clean_vnet(void)
+{
+	struct flowtable *ft;
+	int i;
+
+	ft = V_flow_list_head;
+	while (ft != NULL) {
+		if (ft->ft_flags & FL_PCPU) {
+			for (i = 0; i <= mp_maxid; i++) {
+				if (CPU_ABSENT(i))
+					continue;
+
+				if (smp_started == 1) {
+					thread_lock(curthread);
+					sched_bind(curthread, i);
+					thread_unlock(curthread);
+				}
+
+				flowtable_free_stale(ft, NULL);
+
+				if (smp_started == 1) {
+					thread_lock(curthread);
+					sched_unbind(curthread);
+					thread_unlock(curthread);
+				}
+			}
+		} else {
+			flowtable_free_stale(ft, NULL);
+		}
+		ft = ft->ft_next;
+	}
 }
 
 static void
 flowtable_cleaner(void)
 {
-	struct flowtable *ft;
-	int i;
+	VNET_ITERATOR_DECL(vnet_iter);
 
 	if (bootverbose)
 		log(LOG_INFO, "flowtable cleaner started\n");
 	while (1) {
-		ft = flow_list_head;
-		while (ft != NULL) {
-			if (ft->ft_flags & FL_PCPU) {
-				for (i = 0; i <= mp_maxid; i++) {
-					if (CPU_ABSENT(i))
-						continue;
-
-					thread_lock(curthread);
-					sched_bind(curthread, i);
-					thread_unlock(curthread);
-
-					flowtable_free_stale(ft);
-
-					thread_lock(curthread);
-					sched_unbind(curthread);
-					thread_unlock(curthread);
-				}
-			} else {
-				flowtable_free_stale(ft);
-			}
-			ft = ft->ft_next;
+		VNET_LIST_RLOCK();
+		VNET_FOREACH(vnet_iter) {
+			CURVNET_SET(vnet_iter);
+			flowtable_clean_vnet();
+			CURVNET_RESTORE();
 		}
+		VNET_LIST_RUNLOCK();
+
+		flowclean_cycles++;
 		/*
-		 * The 20 second interval between cleaning checks
+		 * The 10 second interval between cleaning checks
 		 * is arbitrary
 		 */
-		pause("flowcleanwait", 20*hz);
+		mtx_lock(&flowclean_lock);
+		cv_broadcast(&flowclean_cv);
+		cv_timedwait(&flowclean_cv, &flowclean_lock, 10*hz);
+		mtx_unlock(&flowclean_lock);
 	}
+}
+
+static void
+flowtable_flush(void *unused __unused)
+{
+	uint64_t start;
+	
+	mtx_lock(&flowclean_lock);
+	start = flowclean_cycles;
+	while (start == flowclean_cycles) {
+		cv_broadcast(&flowclean_cv);
+		cv_wait(&flowclean_cv, &flowclean_lock);
+	}
+	mtx_unlock(&flowclean_lock);
 }
 
 static struct kproc_desc flow_kp = {
@@ -930,3 +1033,160 @@ static struct kproc_desc flow_kp = {
 };
 SYSINIT(flowcleaner, SI_SUB_KTHREAD_IDLE, SI_ORDER_ANY, kproc_start, &flow_kp);
 
+static void
+flowtable_init_vnet(const void *unused __unused)
+{
+
+	V_flow_ipv4_zone = uma_zcreate("ip4flow", sizeof(struct flentry_v4),
+	    NULL, NULL, NULL, NULL, 64, UMA_ZONE_MAXBUCKET);
+	V_flow_ipv6_zone = uma_zcreate("ip6flow", sizeof(struct flentry_v6),
+	    NULL, NULL, NULL, NULL, 64, UMA_ZONE_MAXBUCKET);	
+	uma_zone_set_max(V_flow_ipv4_zone, V_flowtable_nmbflows);
+	uma_zone_set_max(V_flow_ipv6_zone, V_flowtable_nmbflows);
+	V_flowtable_ready = 1;
+}
+VNET_SYSINIT(flowtable_init_vnet, SI_SUB_KTHREAD_INIT, SI_ORDER_MIDDLE,
+    flowtable_init_vnet, NULL);
+
+static void
+flowtable_init(const void *unused __unused)
+{
+
+	cv_init(&flowclean_cv, "flowcleanwait");
+	mtx_init(&flowclean_lock, "flowclean lock", NULL, MTX_DEF);
+	EVENTHANDLER_REGISTER(ifnet_departure_event, flowtable_flush, NULL,
+	    EVENTHANDLER_PRI_ANY);
+}
+SYSINIT(flowtable_init, SI_SUB_KTHREAD_INIT, SI_ORDER_ANY,
+    flowtable_init, NULL);
+
+
+#ifdef VIMAGE
+static void
+flowtable_uninit(const void *unused __unused)
+{
+
+	V_flowtable_ready = 0;
+	uma_zdestroy(V_flow_ipv4_zone);
+	uma_zdestroy(V_flow_ipv6_zone);
+}
+
+VNET_SYSUNINIT(flowtable_uninit, SI_SUB_KTHREAD_INIT, SI_ORDER_ANY,
+    flowtable_uninit, NULL);
+#endif
+
+#ifdef DDB
+static bitstr_t *
+flowtable_mask_pcpu(struct flowtable *ft, int cpuid)
+{
+	bitstr_t *mask;
+
+	if (ft->ft_flags & FL_PCPU)
+		mask = ft->ft_masks[cpuid];
+	else
+		mask = ft->ft_masks[0];
+
+	return (mask);
+}
+
+static struct flentry **
+flowtable_entry_pcpu(struct flowtable *ft, uint32_t hash, int cpuid)
+{
+	struct flentry **fle;
+	int index = (hash % ft->ft_size);
+
+	if (ft->ft_flags & FL_PCPU) {
+		fle = &ft->ft_table.pcpu[cpuid][index];
+	} else {
+		fle = &ft->ft_table.global[index];
+	}
+	
+	return (fle);
+}
+
+static void
+flow_show(struct flowtable *ft, struct flentry *fle)
+{
+	int idle_time;
+	int rt_valid;
+
+	idle_time = (int)(time_uptime - fle->f_uptime);
+	rt_valid = fle->f_rt != NULL;
+	db_printf("hash=0x%08x idle_time=%03d rt=%p ifp=%p",
+	    fle->f_fhash, idle_time,
+	    fle->f_rt, rt_valid ? fle->f_rt->rt_ifp : NULL);
+	if (rt_valid && (fle->f_rt->rt_flags & RTF_UP))
+		db_printf(" RTF_UP ");
+	if (fle->f_flags & FL_STALE)
+		db_printf(" FL_STALE ");
+	db_printf("\n");
+}
+
+static void
+flowtable_show(struct flowtable *ft, int cpuid)
+{
+	int curbit = 0;
+	struct flentry *fle,  **flehead;
+	bitstr_t *mask, *tmpmask;
+
+	db_printf("cpu: %d\n", cpuid);
+	mask = flowtable_mask_pcpu(ft, cpuid);
+	tmpmask = ft->ft_tmpmask;
+	memcpy(tmpmask, mask, ft->ft_size/8);
+	/*
+	 * XXX Note to self, bit_ffs operates at the byte level
+	 * and thus adds gratuitous overhead
+	 */
+	bit_ffs(tmpmask, ft->ft_size, &curbit);
+	while (curbit != -1) {
+		if (curbit >= ft->ft_size || curbit < -1) {
+			db_printf("warning: bad curbit value %d \n",
+			    curbit);
+			break;
+		}
+
+		flehead = flowtable_entry_pcpu(ft, curbit, cpuid);
+		fle = *flehead;
+
+		while (fle != NULL) {	
+			flow_show(ft, fle);
+			fle = fle->f_next;
+			continue;
+		}
+		bit_clear(tmpmask, curbit);
+		bit_ffs(tmpmask, ft->ft_size, &curbit);
+	}
+}
+
+static void
+flowtable_show_vnet(void)
+{
+	struct flowtable *ft;
+	int i;
+
+	ft = V_flow_list_head;
+	while (ft != NULL) {
+		if (ft->ft_flags & FL_PCPU) {
+			for (i = 0; i <= mp_maxid; i++) {
+				if (CPU_ABSENT(i))
+					continue;
+				flowtable_show(ft, i);
+			}
+		} else {
+			flowtable_show(ft, 0);
+		}
+		ft = ft->ft_next;
+	}
+}
+
+DB_SHOW_COMMAND(flowtables, db_show_flowtables)
+{
+	VNET_ITERATOR_DECL(vnet_iter);
+
+	VNET_FOREACH(vnet_iter) {
+		CURVNET_SET(vnet_iter);
+		flowtable_show_vnet();
+		CURVNET_RESTORE();
+	}
+}
+#endif

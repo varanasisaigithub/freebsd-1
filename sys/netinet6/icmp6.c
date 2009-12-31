@@ -74,6 +74,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/mbuf.h>
+#include <sys/proc.h>
 #include <sys/protosw.h>
 #include <sys/signalvar.h>
 #include <sys/socket.h>
@@ -82,7 +83,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/syslog.h>
 #include <sys/systm.h>
 #include <sys/time.h>
-#include <sys/vimage.h>
 
 #include <net/if.h>
 #include <net/if_dl.h>
@@ -97,7 +97,6 @@ __FBSDID("$FreeBSD$");
 #include <netinet/ip6.h>
 #include <netinet/icmp6.h>
 #include <netinet/tcp_var.h>
-#include <netinet/vinet.h>
 
 #include <netinet6/in6_ifattach.h>
 #include <netinet6/in6_pcb.h>
@@ -106,7 +105,6 @@ __FBSDID("$FreeBSD$");
 #include <netinet6/scope6_var.h>
 #include <netinet6/mld6_var.h>
 #include <netinet6/nd6.h>
-#include <netinet6/vinet6.h>
 
 #ifdef IPSEC
 #include <netipsec/ipsec.h>
@@ -115,16 +113,22 @@ __FBSDID("$FreeBSD$");
 
 extern struct domain inet6domain;
 
-#ifdef VIMAGE_GLOBALS
-extern struct inpcbinfo ripcbinfo;
-extern struct inpcbhead ripcb;
-extern int icmp6errppslim;
-extern int icmp6_nodeinfo;
+VNET_DECLARE(struct inpcbinfo, ripcbinfo);
+VNET_DECLARE(struct inpcbhead, ripcb);
+VNET_DECLARE(int, icmp6errppslim);
+VNET_DECLARE(int, icmp6_nodeinfo);
 
-struct icmp6stat icmp6stat;
-static int icmp6errpps_count;
-static struct timeval icmp6errppslim_last;
-#endif
+#define	V_ripcbinfo			VNET(ripcbinfo)
+#define	V_ripcb				VNET(ripcb)
+#define	V_icmp6errppslim		VNET(icmp6errppslim)
+#define	V_icmp6_nodeinfo		VNET(icmp6_nodeinfo)
+
+VNET_DEFINE(struct icmp6stat, icmp6stat);
+static VNET_DEFINE(int, icmp6errpps_count);
+static VNET_DEFINE(struct timeval, icmp6errppslim_last);
+
+#define	V_icmp6errpps_count	VNET(icmp6errpps_count)
+#define	V_icmp6errppslim_last	VNET(icmp6errppslim_last)
 
 static void icmp6_errcount(struct icmp6errstat *, int, int);
 static int icmp6_rip6_input(struct mbuf **, int);
@@ -144,9 +148,22 @@ static int icmp6_notify_error(struct mbuf **, int, int, int);
 void
 icmp6_init(void)
 {
-	INIT_VNET_INET6(curvnet);
 
 	V_icmp6errpps_count = 0;
+}
+
+/*
+ * Kernel module interface for updating icmp6stat.  The argument is an index
+ * into icmp6stat treated as an array of u_quad_t.  While this encodes the
+ * general layout of icmp6stat into the caller, it doesn't encode its
+ * location, so that future changes to add, for example, per-CPU stats
+ * support won't cause binary compatibility problems for kernel modules.
+ */
+void
+kmod_icmp6stat_inc(int statnum)
+{
+
+	(*((u_quad_t *)&V_icmp6stat + statnum))++;
 }
 
 static void
@@ -213,7 +230,6 @@ void
 icmp6_error2(struct mbuf *m, int type, int code, int param,
     struct ifnet *ifp)
 {
-	INIT_VNET_INET6(curvnet);
 	struct ip6_hdr *ip6;
 
 	if (ifp == NULL)
@@ -245,7 +261,6 @@ icmp6_error2(struct mbuf *m, int type, int code, int param,
 void
 icmp6_error(struct mbuf *m, int type, int code, int param)
 {
-	INIT_VNET_INET6(curvnet);
 	struct ip6_hdr *oip6, *nip6;
 	struct icmp6_hdr *icmp6;
 	u_int preplen;
@@ -400,7 +415,6 @@ icmp6_error(struct mbuf *m, int type, int code, int param)
 int
 icmp6_input(struct mbuf **mp, int *offp, int proto)
 {
-	INIT_VNET_INET6(curvnet);
 	struct mbuf *m = *mp, *n;
 	struct ifnet *ifp;
 	struct ip6_hdr *ip6, *nip6;
@@ -856,7 +870,7 @@ icmp6_input(struct mbuf **mp, int *offp, int proto)
 			break;
 		}
 	deliver:
-		if (icmp6_notify_error(&m, off, icmp6len, code)) {
+		if (icmp6_notify_error(&m, off, icmp6len, code) != 0) {
 			/* In this case, m should've been freed. */
 			return (IPPROTO_DONE);
 		}
@@ -884,7 +898,6 @@ icmp6_input(struct mbuf **mp, int *offp, int proto)
 static int
 icmp6_notify_error(struct mbuf **mp, int off, int icmp6len, int code)
 {
-	INIT_VNET_INET6(curvnet);
 	struct mbuf *m = *mp;
 	struct icmp6_hdr *icmp6;
 	struct ip6_hdr *eip6;
@@ -1116,7 +1129,6 @@ icmp6_notify_error(struct mbuf **mp, int off, int icmp6len, int code)
 void
 icmp6_mtudisc_update(struct ip6ctlparam *ip6cp, int validated)
 {
-	INIT_VNET_INET6(curvnet);
 	struct in6_addr *dst = ip6cp->ip6c_finaldst;
 	struct icmp6_hdr *icmp6 = ip6cp->ip6c_icmp6;
 	struct mbuf *m = ip6cp->ip6c_m;	/* will be necessary for scope issue */
@@ -1181,7 +1193,6 @@ icmp6_mtudisc_update(struct ip6ctlparam *ip6cp, int validated)
 static struct mbuf *
 ni6_input(struct mbuf *m, int off)
 {
-	INIT_VNET_INET6(curvnet);
 	struct icmp6_nodeinfo *ni6, *nni6;
 	struct mbuf *n = NULL;
 	struct prison *pr;
@@ -1244,11 +1255,13 @@ ni6_input(struct mbuf *m, int off)
 
 		if ((ia6->ia6_flags & IN6_IFF_TEMPORARY) &&
 		    !(V_icmp6_nodeinfo & ICMP6_NODEINFO_TMPADDROK)) {
+			ifa_free(&ia6->ia_ifa);
 			nd6log((LOG_DEBUG, "ni6_input: ignore node info to "
 				"a temporary address in %s:%d",
 			       __FILE__, __LINE__));
 			goto bad;
 		}
+		ifa_free(&ia6->ia_ifa);
 	}
 
 	/* validate query Subject field. */
@@ -1671,8 +1684,6 @@ static int
 ni6_addrs(struct icmp6_nodeinfo *ni6, struct mbuf *m, struct ifnet **ifpp,
     struct in6_addr *subj)
 {
-	INIT_VNET_NET(curvnet);
-	INIT_VNET_INET6(curvnet);
 	struct ifnet *ifp;
 	struct in6_ifaddr *ifa6;
 	struct ifaddr *ifa;
@@ -1694,7 +1705,7 @@ ni6_addrs(struct icmp6_nodeinfo *ni6, struct mbuf *m, struct ifnet **ifpp,
 		}
 	}
 
-	IFNET_RLOCK();
+	IFNET_RLOCK_NOSLEEP();
 	for (ifp = TAILQ_FIRST(&V_ifnet); ifp; ifp = TAILQ_NEXT(ifp, if_list)) {
 		addrsofif = 0;
 		IF_ADDR_LOCK(ifp);
@@ -1751,13 +1762,13 @@ ni6_addrs(struct icmp6_nodeinfo *ni6, struct mbuf *m, struct ifnet **ifpp,
 		IF_ADDR_UNLOCK(ifp);
 		if (iffound) {
 			*ifpp = ifp;
-			IFNET_RUNLOCK();
+			IFNET_RUNLOCK_NOSLEEP();
 			return (addrsofif);
 		}
 
 		addrs += addrsofif;
 	}
-	IFNET_RUNLOCK();
+	IFNET_RUNLOCK_NOSLEEP();
 
 	return (addrs);
 }
@@ -1766,8 +1777,6 @@ static int
 ni6_store_addrs(struct icmp6_nodeinfo *ni6, struct icmp6_nodeinfo *nni6,
     struct ifnet *ifp0, int resid)
 {
-	INIT_VNET_NET(curvnet);
-	INIT_VNET_INET6(curvnet);
 	struct ifnet *ifp = ifp0 ? ifp0 : TAILQ_FIRST(&V_ifnet);
 	struct in6_ifaddr *ifa6;
 	struct ifaddr *ifa;
@@ -1780,7 +1789,7 @@ ni6_store_addrs(struct icmp6_nodeinfo *ni6, struct icmp6_nodeinfo *nni6,
 	if (ifp0 == NULL && !(niflags & NI_NODEADDR_FLAG_ALL))
 		return (0);	/* needless to copy */
 
-	IFNET_RLOCK();
+	IFNET_RLOCK_NOSLEEP();
   again:
 
 	for (; ifp; ifp = TAILQ_NEXT(ifp, if_list)) {
@@ -1845,7 +1854,7 @@ ni6_store_addrs(struct icmp6_nodeinfo *ni6, struct icmp6_nodeinfo *nni6,
 				 * Set the truncate flag and return.
 				 */
 				nni6->ni_flags |= NI_NODEADDR_FLAG_TRUNCATE;
-				IFNET_RUNLOCK();
+				IFNET_RUNLOCK_NOSLEEP();
 				return (copied);
 			}
 
@@ -1898,7 +1907,7 @@ ni6_store_addrs(struct icmp6_nodeinfo *ni6, struct icmp6_nodeinfo *nni6,
 		goto again;
 	}
 
-	IFNET_RUNLOCK();
+	IFNET_RUNLOCK_NOSLEEP();
 
 	return (copied);
 }
@@ -1909,8 +1918,6 @@ ni6_store_addrs(struct icmp6_nodeinfo *ni6, struct icmp6_nodeinfo *nni6,
 static int
 icmp6_rip6_input(struct mbuf **mp, int off)
 {
-	INIT_VNET_INET(curvnet);
-	INIT_VNET_INET6(curvnet);
 	struct mbuf *m = *mp;
 	struct ip6_hdr *ip6 = mtod(m, struct ip6_hdr *);
 	struct inpcb *in6p;
@@ -2071,14 +2078,13 @@ icmp6_rip6_input(struct mbuf **mp, int off)
 void
 icmp6_reflect(struct mbuf *m, size_t off)
 {
-	INIT_VNET_INET6(curvnet);
 	struct ip6_hdr *ip6;
 	struct icmp6_hdr *icmp6;
-	struct in6_ifaddr *ia;
+	struct in6_ifaddr *ia = NULL;
 	int plen;
 	int type, code;
 	struct ifnet *outif = NULL;
-	struct in6_addr origdst, *src = NULL;
+	struct in6_addr origdst, src, *srcp = NULL;
 
 	/* too short to reflect */
 	if (off < sizeof(struct ip6_hdr)) {
@@ -2146,7 +2152,7 @@ icmp6_reflect(struct mbuf *m, size_t off)
 		if ((ia = ip6_getdstifaddr(m))) {
 			if (!(ia->ia6_flags &
 			    (IN6_IFF_ANYCAST|IN6_IFF_NOTREADY)))
-				src = &ia->ia_addr.sin6_addr;
+				srcp = &ia->ia_addr.sin6_addr;
 		} else {
 			struct sockaddr_in6 d;
 
@@ -2159,12 +2165,16 @@ icmp6_reflect(struct mbuf *m, size_t off)
 			if (ia &&
 			    !(ia->ia6_flags &
 			    (IN6_IFF_ANYCAST|IN6_IFF_NOTREADY))) {
-				src = &ia->ia_addr.sin6_addr;
+				srcp = &ia->ia_addr.sin6_addr;
 			}
 		}
 	}
 
-	if (src == NULL) {
+	if ((srcp != NULL) && 
+	    (in6_addrscope(srcp) != in6_addrscope(&ip6->ip6_src)))
+		srcp = NULL;
+
+	if (srcp == NULL) {
 		int e;
 		struct sockaddr_in6 sin6;
 		struct route_in6 ro;
@@ -2180,10 +2190,10 @@ icmp6_reflect(struct mbuf *m, size_t off)
 		sin6.sin6_addr = ip6->ip6_dst; /* zone ID should be embedded */
 
 		bzero(&ro, sizeof(ro));
-		src = in6_selectsrc(&sin6, NULL, NULL, &ro, NULL, &outif, &e);
+		e = in6_selectsrc(&sin6, NULL, NULL, &ro, NULL, &outif, &src);
 		if (ro.ro_rt)
 			RTFREE(ro.ro_rt); /* XXX: we could use this */
-		if (src == NULL) {
+		if (e) {
 			char ip6buf[INET6_ADDRSTRLEN];
 			nd6log((LOG_DEBUG,
 			    "icmp6_reflect: source can't be determined: "
@@ -2191,9 +2201,10 @@ icmp6_reflect(struct mbuf *m, size_t off)
 			    ip6_sprintf(ip6buf, &sin6.sin6_addr), e));
 			goto bad;
 		}
+		srcp = &src;
 	}
 
-	ip6->ip6_src = *src;
+	ip6->ip6_src = *srcp;
 	ip6->ip6_flow = 0;
 	ip6->ip6_vfc &= ~IPV6_VERSION_MASK;
 	ip6->ip6_vfc |= IPV6_VERSION;
@@ -2220,9 +2231,13 @@ icmp6_reflect(struct mbuf *m, size_t off)
 	if (outif)
 		icmp6_ifoutstat_inc(outif, type, code);
 
+	if (ia != NULL)
+		ifa_free(&ia->ia_ifa);
 	return;
 
  bad:
+	if (ia != NULL)
+		ifa_free(&ia->ia_ifa);
 	m_freem(m);
 	return;
 }
@@ -2258,7 +2273,6 @@ icmp6_redirect_diag(struct in6_addr *src6, struct in6_addr *dst6,
 void
 icmp6_redirect_input(struct mbuf *m, int off)
 {
-	INIT_VNET_INET6(curvnet);
 	struct ifnet *ifp;
 	struct ip6_hdr *ip6 = mtod(m, struct ip6_hdr *);
 	struct nd_redirect *nd_rd;
@@ -2466,7 +2480,6 @@ icmp6_redirect_input(struct mbuf *m, int off)
 void
 icmp6_redirect_output(struct mbuf *m0, struct rtentry *rt)
 {
-	INIT_VNET_INET6(curvnet);
 	struct ifnet *ifp;	/* my outgoing interface */
 	struct in6_addr *ifp_ll6;
 	struct in6_addr *router_ll6;
@@ -2541,6 +2554,8 @@ icmp6_redirect_output(struct mbuf *m0, struct rtentry *rt)
 						 IN6_IFF_ANYCAST)) == NULL)
 			goto fail;
 		ifp_ll6 = &ia->ia_addr.sin6_addr;
+		/* XXXRW: reference released prematurely. */
+		ifa_free(&ia->ia_ifa);
 	}
 
 	/* get ip6 linklocal address for the router. */
@@ -2834,7 +2849,6 @@ static int
 icmp6_ratelimit(const struct in6_addr *dst, const int type,
     const int code)
 {
-	INIT_VNET_INET6(curvnet);
 	int ret;
 
 	ret = 0;	/* okay to send */

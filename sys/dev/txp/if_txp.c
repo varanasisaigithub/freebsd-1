@@ -1389,7 +1389,8 @@ txp_alloc_rings(struct txp_softc *sc)
 
 	/* High priority rx ring. */
 	error = txp_dma_alloc(sc, "hi priority rx ring",
-	    &sc->sc_cdata.txp_rxhiring_tag, sizeof(struct txp_rx_desc), 0,
+	    &sc->sc_cdata.txp_rxhiring_tag,
+	    roundup(sizeof(struct txp_rx_desc), 16), 0,
 	    &sc->sc_cdata.txp_rxhiring_map, (void **)&sc->sc_ldata.txp_rxhiring,
 	    sizeof(struct txp_rx_desc) * RX_ENTRIES,
 	    &sc->sc_ldata.txp_rxhiring_paddr);
@@ -1409,7 +1410,8 @@ txp_alloc_rings(struct txp_softc *sc)
 
 	/* Low priority rx ring. */
 	error = txp_dma_alloc(sc, "low priority rx ring",
-	    &sc->sc_cdata.txp_rxloring_tag, sizeof(struct txp_rx_desc), 0,
+	    &sc->sc_cdata.txp_rxloring_tag,
+	    roundup(sizeof(struct txp_rx_desc), 16), 0,
 	    &sc->sc_cdata.txp_rxloring_map, (void **)&sc->sc_ldata.txp_rxloring,
 	    sizeof(struct txp_rx_desc) * RX_ENTRIES,
 	    &sc->sc_ldata.txp_rxloring_paddr);
@@ -2725,7 +2727,7 @@ txp_set_filter(struct txp_softc *sc)
 
 	mchash[0] = mchash[1] = 0;
 	mcnt = 0;
-	IF_ADDR_LOCK(ifp);
+	if_maddr_rlock(ifp);
 	TAILQ_FOREACH(ifma, &ifp->if_multiaddrs, ifma_link) {
 		if (ifma->ifma_addr->sa_family != AF_LINK)
 			continue;
@@ -2735,7 +2737,7 @@ txp_set_filter(struct txp_softc *sc)
 		mchash[crc >> 5] |= 1 << (crc & 0x1f);
 		mcnt++;
 	}
-	IF_ADDR_UNLOCK(ifp);
+	if_maddr_runlock(ifp);
 
 	if (mcnt > 0) {
 		filter |= TXP_RXFILT_HASHMULTI;

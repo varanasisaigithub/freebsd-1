@@ -113,7 +113,6 @@ g_dev_taste(struct g_class *mp, struct g_provider *pp, int insist __unused)
 {
 	struct g_geom *gp;
 	struct g_consumer *cp;
-	char *alias;
 	int error;
 	struct cdev *dev;
 
@@ -135,17 +134,6 @@ g_dev_taste(struct g_class *mp, struct g_provider *pp, int insist __unused)
 	gp->softc = dev;
 	dev->si_drv1 = gp;
 	dev->si_drv2 = cp;
-
-	g_topology_unlock();
-
-	alias = g_malloc(MAXPATHLEN, M_WAITOK | M_ZERO);
-	error = (pp->geom->ioctl == NULL) ? ENODEV :
-	    pp->geom->ioctl(pp, DIOCGPROVIDERALIAS, alias, 0, curthread);
-	if (!error && alias[0] != '\0')
-		make_dev_alias(dev, "%s", alias);
-	g_free(alias);
-
-	g_topology_lock();
 	return (gp);
 }
 
@@ -311,8 +299,8 @@ g_dev_ioctl(struct cdev *dev, u_long cmd, caddr_t data, int fflag, struct thread
 		}
 		while (length > 0) { 
 			chunk = length;
-			if (chunk > 1024 * cp->provider->sectorsize)
-				chunk = 1024 * cp->provider->sectorsize;
+			if (chunk > 65536 * cp->provider->sectorsize)
+				chunk = 65536 * cp->provider->sectorsize;
 			error = g_delete_data(cp, offset, chunk);
 			length -= chunk;
 			offset += chunk;
@@ -335,7 +323,12 @@ g_dev_ioctl(struct cdev *dev, u_long cmd, caddr_t data, int fflag, struct thread
 			return (ENOENT);
 		strlcpy(data, pp->name, i);
 		break;
-
+	case DIOCGSTRIPESIZE:
+		*(off_t *)data = cp->provider->stripesize;
+		break;
+	case DIOCGSTRIPEOFFSET:
+		*(off_t *)data = cp->provider->stripeoffset;
+		break;
 	default:
 		if (cp->provider->geom->ioctl != NULL) {
 			error = cp->provider->geom->ioctl(cp->provider, cmd, data, fflag, td);
@@ -383,14 +376,14 @@ g_dev_strategy(struct bio *bp)
 	cp = dev->si_drv2;
 	KASSERT(cp->acr || cp->acw,
 	    ("Consumer with zero access count in g_dev_strategy"));
-
+#ifdef INVARIANTS
 	if ((bp->bio_offset % cp->provider->sectorsize) != 0 ||
 	    (bp->bio_bcount % cp->provider->sectorsize) != 0) {
 		bp->bio_resid = bp->bio_bcount;
 		biofinish(bp, NULL, EINVAL);
 		return;
 	}
-
+#endif
 	for (;;) {
 		/*
 		 * XXX: This is not an ideal solution, but I belive it to

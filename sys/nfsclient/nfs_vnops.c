@@ -50,6 +50,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/mount.h>
 #include <sys/bio.h>
 #include <sys/buf.h>
+#include <sys/jail.h>
 #include <sys/malloc.h>
 #include <sys/mbuf.h>
 #include <sys/namei.h>
@@ -61,7 +62,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/stat.h>
 #include <sys/sysctl.h>
 #include <sys/signalvar.h>
-#include <sys/vimage.h>
 
 #include <vm/vm.h>
 #include <vm/vm_object.h>
@@ -70,7 +70,6 @@ __FBSDID("$FreeBSD$");
 
 #include <fs/fifofs/fifo.h>
 
-#include <nfs/rpcv2.h>
 #include <nfs/nfsproto.h>
 #include <nfsclient/nfs.h>
 #include <nfsclient/nfsnode.h>
@@ -83,7 +82,6 @@ __FBSDID("$FreeBSD$");
 #include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/in_var.h>
-#include <netinet/vinet.h>
 
 #include <machine/stdarg.h>
 
@@ -926,6 +924,7 @@ nfs_lookup(struct vop_lookup_args *ap)
 	struct vnode **vpp = ap->a_vpp;
 	struct mount *mp = dvp->v_mount;
 	struct vattr vattr;
+	time_t dmtime;
 	int flags = cnp->cn_flags;
 	struct vnode *newvp;
 	struct nfsmount *nmp;
@@ -937,7 +936,7 @@ nfs_lookup(struct vop_lookup_args *ap)
 	int error = 0, attrflag, fhsize, ltype;
 	int v3 = NFS_ISV3(dvp);
 	struct thread *td = cnp->cn_thread;
-	
+
 	*vpp = NULLVP;
 	if ((flags & ISLASTCN) && (mp->mnt_flag & MNT_RDONLY) &&
 	    (cnp->cn_nameiop == DELETE || cnp->cn_nameiop == RENAME))
@@ -994,6 +993,19 @@ nfs_lookup(struct vop_lookup_args *ap)
 		np->n_dmtime = 0;
 		mtx_unlock(&np->n_mtx);
 	}
+
+	/*
+	 * Cache the modification time of the parent directory in case
+	 * the lookup fails and results in adding the first negative
+	 * name cache entry for the directory.  Since this is reading
+	 * a single time_t, don't bother with locking.  The
+	 * modification time may be a bit stale, but it must be read
+	 * before performing the lookup RPC to prevent a race where
+	 * another lookup updates the timestamp on the directory after
+	 * the lookup RPC has been performed on the server but before
+	 * n_dmtime is set at the end of this function.
+	 */
+	dmtime = np->n_vattr.va_mtime.tv_sec;
 	error = 0;
 	newvp = NULLVP;
 	nfsstats.lookupcache_misses++;
@@ -1044,9 +1056,11 @@ nfs_lookup(struct vop_lookup_args *ap)
 		ltype = VOP_ISLOCKED(dvp);
 		error = vfs_busy(mp, MBF_NOWAIT);
 		if (error != 0) {
+			vfs_ref(mp);
 			VOP_UNLOCK(dvp, 0);
 			error = vfs_busy(mp, 0);
 			vn_lock(dvp, ltype | LK_RETRY);
+			vfs_rel(mp);
 			if (error == 0 && (dvp->v_iflag & VI_DOOMED)) {
 				vfs_unbusy(mp);
 				error = ENOENT;
@@ -1061,7 +1075,8 @@ nfs_lookup(struct vop_lookup_args *ap)
 		if (error == 0)
 			newvp = NFSTOV(np);
 		vfs_unbusy(mp);
-		vn_lock(dvp, ltype | LK_RETRY);
+		if (newvp != dvp)
+			vn_lock(dvp, ltype | LK_RETRY);
 		if (dvp->v_iflag & VI_DOOMED) {
 			if (error == 0) {
 				if (newvp == dvp)
@@ -1129,13 +1144,25 @@ nfsmout:
 			 * Maintain n_dmtime as the modification time
 			 * of the parent directory when the oldest -ve
 			 * name cache entry for this directory was
-			 * added.
+			 * added.  If a -ve cache entry has already
+			 * been added with a newer modification time
+			 * by a concurrent lookup, then don't bother
+			 * adding a cache entry.  The modification
+			 * time of the directory might have changed
+			 * due to the file this lookup failed to find
+			 * being created.  In that case a subsequent
+			 * lookup would incorrectly use the entry
+			 * added here instead of doing an extra
+			 * lookup.
 			 */
 			mtx_lock(&np->n_mtx);
-			if (np->n_dmtime == 0)
-				np->n_dmtime = np->n_vattr.va_mtime.tv_sec;
-			mtx_unlock(&np->n_mtx);
-			cache_enter(dvp, NULL, cnp);
+			if (np->n_dmtime <= dmtime) {
+				if (np->n_dmtime == 0)
+					np->n_dmtime = dmtime;
+				mtx_unlock(&np->n_mtx);
+				cache_enter(dvp, NULL, cnp);
+			} else
+				mtx_unlock(&np->n_mtx);
 		}
 		return (ENOENT);
 	}
@@ -1528,14 +1555,21 @@ nfs_create(struct vop_create_args *ap)
 	struct vattr vattr;
 	int v3 = NFS_ISV3(dvp);
 
+	CURVNET_SET(CRED_TO_VNET(curthread->td_ucred));
+
 	/*
 	 * Oops, not for me..
 	 */
-	if (vap->va_type == VSOCK)
-		return (nfs_mknodrpc(dvp, ap->a_vpp, cnp, vap));
-
-	if ((error = VOP_GETATTR(dvp, &vattr, cnp->cn_cred)) != 0)
+	if (vap->va_type == VSOCK) {
+		error = nfs_mknodrpc(dvp, ap->a_vpp, cnp, vap);
+		CURVNET_RESTORE();
 		return (error);
+	}
+
+	if ((error = VOP_GETATTR(dvp, &vattr, cnp->cn_cred)) != 0) {
+		CURVNET_RESTORE();
+		return (error);
+	}
 	if (vap->va_vaflags & VA_EXCLUSIVE)
 		fmode |= O_EXCL;
 again:
@@ -1552,12 +1586,17 @@ again:
 			*tl = txdr_unsigned(NFSV3CREATE_EXCLUSIVE);
 			tl = nfsm_build(u_int32_t *, NFSX_V3CREATEVERF);
 #ifdef INET
-			INIT_VNET_INET(curvnet);
+			CURVNET_SET(CRED_TO_VNET(cnp->cn_cred));
+			IN_IFADDR_RLOCK();
 			if (!TAILQ_EMPTY(&V_in_ifaddrhead))
 				*tl++ = IA_SIN(TAILQ_FIRST(&V_in_ifaddrhead))->sin_addr.s_addr;
 			else
 #endif
 				*tl++ = create_verf;
+#ifdef INET
+			IN_IFADDR_RUNLOCK();
+			CURVNET_RESTORE();
+#endif
 			*tl = ++create_verf;
 		} else {
 			*tl = txdr_unsigned(NFSV3CREATE_UNCHECKED);
@@ -1626,6 +1665,7 @@ nfsmout:
 		KDTRACE_NFS_ATTRCACHE_FLUSH_DONE(dvp);
 	}
 	mtx_unlock(&(VTONFS(dvp))->n_mtx);
+	CURVNET_RESTORE();
 	return (error);
 }
 
@@ -2931,7 +2971,7 @@ nfs_flush(struct vnode *vp, int waitfor, int commit)
 	int bvecsize = 0, bveccount;
 
 	if (nmp->nm_flag & NFSMNT_INT)
-		slpflag = PCATCH;
+		slpflag = NFS_PCATCH;
 	if (!commit)
 		passone = 0;
 	bo = &vp->v_bufobj;
@@ -3125,11 +3165,11 @@ loop:
 				error = 0;
 				goto loop;
 			}
-			if (nfs_sigintr(nmp, NULL, td)) {
+			if (nfs_sigintr(nmp, td)) {
 				error = EINTR;
 				goto done;
 			}
-			if (slpflag == PCATCH) {
+			if (slpflag & PCATCH) {
 				slpflag = 0;
 				slptimeo = 2 * hz;
 			}
@@ -3148,7 +3188,7 @@ loop:
 		else
 		    bp->b_flags |= B_ASYNC;
 		bwrite(bp);
-		if (nfs_sigintr(nmp, NULL, td)) {
+		if (nfs_sigintr(nmp, td)) {
 			error = EINTR;
 			goto done;
 		}
@@ -3164,10 +3204,10 @@ loop:
 			error = bufobj_wwait(bo, slpflag, slptimeo);
 			if (error) {
 			    BO_UNLOCK(bo);
-			    error = nfs_sigintr(nmp, NULL, td);
+			    error = nfs_sigintr(nmp, td);
 			    if (error)
 				goto done;
-			    if (slpflag == PCATCH) {
+			    if (slpflag & PCATCH) {
 				slpflag = 0;
 				slptimeo = 2 * hz;
 			    }
@@ -3189,7 +3229,7 @@ loop:
 					   &np->n_mtx, slpflag | (PRIBIO + 1), 
 					   "nfsfsync", 0);
 			if (error) {
-				if (nfs_sigintr(nmp, (struct nfsreq *)0, td)) {
+				if (nfs_sigintr(nmp, td)) {
 					mtx_unlock(&np->n_mtx);
 					error = EINTR;	
 					goto done;

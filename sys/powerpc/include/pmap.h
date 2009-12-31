@@ -113,7 +113,9 @@ struct	md_page {
 	struct	pvo_head mdpg_pvoh;
 };
 
+#define	pmap_page_get_memattr(m)	VM_MEMATTR_DEFAULT
 #define	pmap_page_is_mapped(m)	(!LIST_EMPTY(&(m)->md.mdpg_pvoh))
+#define	pmap_page_set_memattr(m, ma)	(void)0
 
 #else
 
@@ -143,7 +145,9 @@ struct md_page {
 	TAILQ_HEAD(, pv_entry) pv_list;
 };
 
+#define	pmap_page_get_memattr(m)	VM_MEMATTR_DEFAULT
 #define	pmap_page_is_mapped(m)	(!TAILQ_EMPTY(&(m)->md.pv_list))
+#define	pmap_page_set_memattr(m, ma)	(void)0
 
 #endif /* AIM */
 
@@ -167,7 +171,6 @@ void		pmap_bootstrap(vm_offset_t, vm_offset_t);
 void		pmap_kenter(vm_offset_t va, vm_offset_t pa);
 void		pmap_kremove(vm_offset_t);
 void		*pmap_mapdev(vm_offset_t, vm_size_t);
-boolean_t	pmap_page_executable(vm_page_t);
 void		pmap_unmapdev(vm_offset_t, vm_size_t);
 void		pmap_deactivate(struct thread *);
 vm_offset_t	pmap_kextract(vm_offset_t);

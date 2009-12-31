@@ -230,6 +230,12 @@
                 ..
                 dyn_sysctl
                 ..
+                firmware
+                    fwconsumer
+                    ..
+                    fwimage
+                    ..
+                ..
                 syscall
                     module
                     ..
@@ -259,8 +265,6 @@
             ..
             ppp
             ..
-            pppd
-            ..
             printing
             ..
             scsi_target
@@ -277,15 +281,9 @@
                 srcs
                 ..
             ..
-            slattach
-            ..
-            sliplogin
-            ..
             smbfs
                 print
                 ..
-            ..
-            startslip
             ..
             sunrpc
                 dir
@@ -553,6 +551,8 @@
             ..
             la_LN.ISO8859-1
             ..
+            la_LN.ISO8859-13
+            ..
             la_LN.ISO8859-15
             ..
             la_LN.ISO8859-2
@@ -566,6 +566,10 @@
             lt_LT.ISO8859-4
             ..
             lt_LT.UTF-8
+            ..
+            lv_LV.ISO8859-13
+            ..
+            lv_LV.UTF-8
             ..
             mn_MN.UTF-8
             ..
@@ -1025,6 +1029,8 @@
             ..
             fr_FR.UTF-8
             ..
+            gl_ES.ISO8859-1
+            ..
             he_IL.UTF-8
             ..
             hi_IN.ISCII-DEV
@@ -1077,6 +1083,8 @@
             ..
             la_LN.ISO8859-1
             ..
+            la_LN.ISO8859-13
+            ..
             la_LN.ISO8859-15
             ..
             la_LN.ISO8859-2
@@ -1090,6 +1098,10 @@
             lt_LT.ISO8859-4
             ..
             lt_LT.UTF-8
+            ..
+            lv_LV.ISO8859-13
+            ..
+            lv_LV.UTF-8
             ..
             mn_MN.UTF-8
             ..

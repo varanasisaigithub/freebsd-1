@@ -223,7 +223,6 @@ FBSD_1.0 {
 	posix_madvise;
 	popen;
 	pclose;
-	pselect;
 	psignal;
 	raise;
 	readdir;
@@ -247,7 +246,6 @@ FBSD_1.0 {
 	sem_timedwait;
 	sem_post;
 	sem_getvalue;
-	semctl;
 	setdomainname;
 	sethostname;
 	longjmperror;
@@ -362,8 +360,14 @@ FBSD_1.1 {
 	posix_spawnattr_setsigdefault;
 	posix_spawnattr_setsigmask;
 	posix_spawnp;
+	semctl;
 	tcgetsid;
 	tcsetsid;
+};
+
+FBSD_1.2 {
+	basename_r;
+	getpagesizes;
 };
 
 FBSDprivate_1.0 {
@@ -449,7 +453,6 @@ FBSDprivate_1.0 {
 	__opendir2;
 	__pause;
 	_pause;
-	__pselect;
 	__pw_scan;	/* Used by (at least) libutil */
 	__raise;
 	_raise;

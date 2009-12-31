@@ -152,7 +152,7 @@ struct g_class g_md_class = {
 DECLARE_GEOM_CLASS(g_md_class, g_md);
 
 
-static LIST_HEAD(, md_s) md_softc_list = LIST_HEAD_INITIALIZER(&md_softc_list);
+static LIST_HEAD(, md_s) md_softc_list = LIST_HEAD_INITIALIZER(md_softc_list);
 
 #define NINDIR	(PAGE_SIZE / sizeof(uintptr_t))
 #define NMASK	(NINDIR-1)
@@ -1042,18 +1042,18 @@ mdcreate_swap(struct md_s *sc, struct md_ioctl *mdio, struct thread *td)
 	if (mdio->md_fwheads != 0)
 		sc->fwheads = mdio->md_fwheads;
 	sc->object = vm_pager_allocate(OBJT_SWAP, NULL, PAGE_SIZE * npage,
-	    VM_PROT_DEFAULT, 0);
+	    VM_PROT_DEFAULT, 0, td->td_ucred);
 	if (sc->object == NULL)
 		return (ENOMEM);
 	sc->flags = mdio->md_options & MD_FORCE;
 	if (mdio->md_options & MD_RESERVE) {
 		if (swap_pager_reserve(sc->object, 0, npage) < 0) {
-			vm_object_deallocate(sc->object);
-			sc->object = NULL;
-			return (EDOM);
+			error = EDOM;
+			goto finish;
 		}
 	}
 	error = mdsetcred(sc, td->td_ucred);
+ finish:
 	if (error != 0) {
 		vm_object_deallocate(sc->object);
 		sc->object = NULL;

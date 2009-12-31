@@ -91,7 +91,7 @@ vn_open(ndp, flagp, cmode, fp)
 {
 	struct thread *td = ndp->ni_cnd.cn_thread;
 
-	return (vn_open_cred(ndp, flagp, cmode, td->td_ucred, fp));
+	return (vn_open_cred(ndp, flagp, cmode, 0, td->td_ucred, fp));
 }
 
 /*
@@ -102,11 +102,8 @@ vn_open(ndp, flagp, cmode, fp)
  * due to the NDINIT being done elsewhere.
  */
 int
-vn_open_cred(ndp, flagp, cmode, cred, fp)
-	struct nameidata *ndp;
-	int *flagp, cmode;
-	struct ucred *cred;
-	struct file *fp;
+vn_open_cred(struct nameidata *ndp, int *flagp, int cmode, u_int vn_open_flags,
+    struct ucred *cred, struct file *fp)
 {
 	struct vnode *vp;
 	struct mount *mp;
@@ -124,9 +121,11 @@ restart:
 	if (fmode & O_CREAT) {
 		ndp->ni_cnd.cn_nameiop = CREATE;
 		ndp->ni_cnd.cn_flags = ISOPEN | LOCKPARENT | LOCKLEAF |
-		    MPSAFE | AUDITVNODE1;
+		    MPSAFE;
 		if ((fmode & O_EXCL) == 0 && (fmode & O_NOFOLLOW) == 0)
 			ndp->ni_cnd.cn_flags |= FOLLOW;
+		if (!(vn_open_flags & VN_OPEN_NOAUDIT))
+			ndp->ni_cnd.cn_flags |= AUDITVNODE1;
 		bwillwrite();
 		if ((error = namei(ndp)) != 0)
 			return (error);
@@ -181,9 +180,11 @@ restart:
 		ndp->ni_cnd.cn_nameiop = LOOKUP;
 		ndp->ni_cnd.cn_flags = ISOPEN |
 		    ((fmode & O_NOFOLLOW) ? NOFOLLOW : FOLLOW) |
-		    LOCKLEAF | MPSAFE | AUDITVNODE1;
+		    LOCKLEAF | MPSAFE;
 		if (!(fmode & FWRITE))
 			ndp->ni_cnd.cn_flags |= LOCKSHARED;
+		if (!(vn_open_flags & VN_OPEN_NOAUDIT))
+			ndp->ni_cnd.cn_flags |= AUDITVNODE1;
 		if ((error = namei(ndp)) != 0)
 			return (error);
 		if (!mpsafe)
@@ -211,7 +212,7 @@ restart:
 		accmode |= VREAD;
 	if (fmode & FEXEC)
 		accmode |= VEXEC;
-	if (fmode & O_APPEND)
+	if ((fmode & O_APPEND) && (fmode & FWRITE))
 		accmode |= VAPPEND;
 #ifdef MAC
 	error = mac_vnode_check_open(cred, vp, accmode);
@@ -310,6 +311,9 @@ vn_close(vp, flags, file_cred, td)
 static int
 sequential_heuristic(struct uio *uio, struct file *fp)
 {
+
+	if (atomic_load_acq_int(&(fp->f_flag)) & FRDAHEAD)
+		return (fp->f_seqcount << IO_SEQSHIFT);
 
 	/*
 	 * Offset 0 is handled specially.  open() sets f_seqcount to 1 so
@@ -998,7 +1002,8 @@ vn_start_write(vp, mpp, flags)
 		goto unlock;
 	mp->mnt_writeopcount++;
 unlock:
-	MNT_REL(mp);
+	if (error != 0 || (flags & V_XSLEEP) != 0)
+		MNT_REL(mp);
 	MNT_IUNLOCK(mp);
 	return (error);
 }
@@ -1048,7 +1053,6 @@ vn_start_secondary_write(vp, mpp, flags)
 	if ((mp->mnt_kern_flag & (MNTK_SUSPENDED | MNTK_SUSPEND2)) == 0) {
 		mp->mnt_secondary_writes++;
 		mp->mnt_secondary_accwrites++;
-		MNT_REL(mp);
 		MNT_IUNLOCK(mp);
 		return (0);
 	}
@@ -1080,6 +1084,7 @@ vn_finished_write(mp)
 	if (mp == NULL)
 		return;
 	MNT_ILOCK(mp);
+	MNT_REL(mp);
 	mp->mnt_writeopcount--;
 	if (mp->mnt_writeopcount < 0)
 		panic("vn_finished_write: neg cnt");
@@ -1102,6 +1107,7 @@ vn_finished_secondary_write(mp)
 	if (mp == NULL)
 		return;
 	MNT_ILOCK(mp);
+	MNT_REL(mp);
 	mp->mnt_secondary_writes--;
 	if (mp->mnt_secondary_writes < 0)
 		panic("vn_finished_secondary_write: neg cnt");
@@ -1306,9 +1312,11 @@ vn_vget_ino(struct vnode *vp, ino_t ino, int lkflags, struct vnode **rvp)
 	    ("vn_vget_ino: vp not locked"));
 	error = vfs_busy(mp, MBF_NOWAIT);
 	if (error != 0) {
+		vfs_ref(mp);
 		VOP_UNLOCK(vp, 0);
 		error = vfs_busy(mp, 0);
 		vn_lock(vp, ltype | LK_RETRY);
+		vfs_rel(mp);
 		if (error != 0)
 			return (ENOENT);
 		if (vp->v_iflag & VI_DOOMED) {

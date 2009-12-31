@@ -7,7 +7,7 @@ LDADD=	-lbz2 -lz -lmd
 
 # FreeBSD SHLIB_MAJOR value is managed as part of the FreeBSD system.
 # It has no real relation to the libarchive version number.
-SHLIB_MAJOR= 4
+SHLIB_MAJOR= 5
 
 CFLAGS+=	-DPLATFORM_CONFIG_H=\"config_freebsd.h\"
 CFLAGS+=	-I${.OBJDIR}
@@ -34,6 +34,7 @@ SRCS=	archive_check_magic.c				\
 	archive_entry_stat.c				\
 	archive_entry_strmode.c				\
 	archive_entry_link_resolver.c			\
+	archive_entry_xattr.c				\
 	archive_read.c					\
 	archive_read_data_into_fd.c			\
 	archive_read_disk.c				\
@@ -50,6 +51,7 @@ SRCS=	archive_check_magic.c				\
 	archive_read_support_compression_gzip.c		\
 	archive_read_support_compression_none.c		\
 	archive_read_support_compression_program.c	\
+	archive_read_support_compression_uu.c		\
 	archive_read_support_compression_xz.c		\
 	archive_read_support_format_all.c		\
 	archive_read_support_format_ar.c		\
@@ -86,6 +88,7 @@ SRCS=	archive_check_magic.c				\
 	archive_write_set_format_pax.c			\
 	archive_write_set_format_shar.c			\
 	archive_write_set_format_ustar.c		\
+	archive_write_set_format_zip.c			\
 	filter_fork.c
 
 # Man pages to be installed.
@@ -223,6 +226,7 @@ MLINKS+=	archive_util.3 archive_compression.3
 MLINKS+=	archive_util.3 archive_compression_name.3
 MLINKS+=	archive_util.3 archive_errno.3
 MLINKS+=	archive_util.3 archive_error_string.3
+MLINKS+=	archive_util.3 archive_file_count.3
 MLINKS+=	archive_util.3 archive_format.3
 MLINKS+=	archive_util.3 archive_format_name.3
 MLINKS+=	archive_util.3 archive_set_error.3

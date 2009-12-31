@@ -48,7 +48,6 @@ iostat(8)	ken	Pre-commit review requested.
 cd(4)		ken	Pre-commit review requested.
 pass(4)		ken	Pre-commit review requested.
 ch(4)		ken	Pre-commit review requested.
-isp(4)		mjacob	Pre-commit review requested.
 em(4)		jfv	Pre-commit review requested.
 tdfx(4)		cokane  Just keep me informed of changes, try not to break it.
 sendmail	gshapiro	Pre-commit review requested.
@@ -111,7 +110,7 @@ truss		alfred	Will be happy to review code, but not mandatory.
 rpc		alfred	Pre-commit review requested.
 xfs		kan@FreeBSD.org,rodrigc@FreeBSD.org,cattelan@xfs.org
 			Pre-commit review preferred.
-pkg_install	krion	Pre-commit review or approval from portmgr@ requested.
+pkg_install	portmgr	Pre-commit review or approval from portmgr@ requested.
 linux emul	emulation	Please discuss changes here.
 bs{diff,patch}	cperciva	Pre-commit review requested.
 portsnap	cperciva	Pre-commit review requested.
@@ -123,9 +122,9 @@ lib/libsdp		emax	Pre-commit review preferred.
 usr.bin/bluetooth	emax	Pre-commit review preferred.
 usr.sbin/bluetooth	emax	Pre-commit review preferred.
 gnu/usr.bin/send-pr	bugmaster	Pre-commit review requested.
-BSD.{local,x11*}.dist	portmgr	Pre-commit review requested, since these files interface with ports.
-usb		core	Please contact core@ before any major changes
 ncurses		rafan	Heads-up appreciated, try not to break it.
+*env(3)		secteam	Due to the problematic security history of this
+			code, please have patches reviewed by secteam.
 
 Following are the entries from the Makefiles, and a few other sources.
 Please remove stale entries from both their origin, and this file.

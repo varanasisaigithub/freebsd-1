@@ -424,6 +424,11 @@ pmap_activate(struct thread *td)
 	critical_exit();
 }
 
+void
+pmap_sync_icache(pmap_t pm, vm_offset_t va, vm_size_t sz)
+{
+}
+
 /*
  *	Increase the starting virtual address of the given mapping if a
  *	different alignment might result in more superpage mappings.
@@ -765,6 +770,11 @@ skipshuffle:
 	 * allocate MMU fault status areas for all CPUS
 	 */
 	mmu_fault_status_area = pmap_bootstrap_alloc(MMFSA_SIZE*MAXCPU);
+
+	/*
+	 * Allocate and map the dynamic per-CPU area for the BSP.
+	 */
+	dpcpu0 = (void *)TLB_PHYS_TO_DIRECT(pmap_bootstrap_alloc(DPCPU_SIZE));
 
 	/*
 	 * Allocate and map the message buffer.
@@ -1292,7 +1302,7 @@ pmap_alloc_zeroed_contig_pages(int npages, uint64_t alignment)
 	while (m == NULL) {	
 		for (i = 0; phys_avail[i + 1] != 0; i += 2) {
 			m = vm_phys_alloc_contig(npages, phys_avail[i], 
-						 phys_avail[i + 1], alignment, (1UL<<34));
+			    phys_avail[i + 1], alignment, (1UL<<34));
 			if (m)
 				goto found;
 		}

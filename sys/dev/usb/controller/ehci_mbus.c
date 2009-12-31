@@ -38,8 +38,28 @@ __FBSDID("$FreeBSD$");
 
 #include "opt_bus.h"
 
-#include <dev/usb/usb_mfunc.h>
+#include <sys/stdint.h>
+#include <sys/stddef.h>
+#include <sys/param.h>
+#include <sys/queue.h>
+#include <sys/types.h>
+#include <sys/systm.h>
+#include <sys/kernel.h>
+#include <sys/bus.h>
+#include <sys/linker_set.h>
+#include <sys/module.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
+#include <sys/condvar.h>
+#include <sys/sysctl.h>
+#include <sys/sx.h>
+#include <sys/unistd.h>
+#include <sys/callout.h>
+#include <sys/malloc.h>
+#include <sys/priv.h>
+
 #include <dev/usb/usb.h>
+#include <dev/usb/usbdi.h>
 
 #include <dev/usb/usb_core.h>
 #include <dev/usb/usb_busdma.h>
@@ -49,6 +69,7 @@ __FBSDID("$FreeBSD$");
 #include <dev/usb/usb_controller.h>
 #include <dev/usb/usb_bus.h>
 #include <dev/usb/controller/ehci.h>
+#include <dev/usb/controller/ehcireg.h>
 
 #include <arm/mv/mvreg.h>
 #include <arm/mv/mvvar.h>
@@ -144,8 +165,6 @@ ehci_mbus_attach(device_t self)
 	    USB_GET_DMA_TAG(self), &ehci_iterate_hw_softc)) {
 		return (ENOMEM);
 	}
-
-	sc->sc_bus.usbrev = USB_REV_2_0;
 
 	rid = 0;
 	sc->sc_io_res = bus_alloc_resource_any(self, SYS_RES_MEMORY, &rid, RF_ACTIVE);

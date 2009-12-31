@@ -29,20 +29,17 @@
 #ifndef _USB_DEBUG_H_
 #define	_USB_DEBUG_H_
 
-/* Declare parent SYSCTL USB node. */
-SYSCTL_DECL(_hw_usb);
-
 /* Declare global USB debug variable. */
 extern int usb_debug;
 
 /* Check if USB debugging is enabled. */
 #ifdef USB_DEBUG_VAR
 #if (USB_DEBUG != 0)
-#define	DPRINTFN(n,fmt,...) do {				\
-  if ((USB_DEBUG_VAR) >= (n)) {				\
-    printf("%s:%u: " fmt,				\
-	   __FUNCTION__, __LINE__,## __VA_ARGS__);	\
-  }							\
+#define	DPRINTFN(n,fmt,...) do {		\
+  if ((USB_DEBUG_VAR) >= (n)) {			\
+    printf("%s: " fmt,				\
+	   __FUNCTION__,## __VA_ARGS__);	\
+  }						\
 } while (0)
 #define	DPRINTF(...)	DPRINTFN(1, __VA_ARGS__)
 #else

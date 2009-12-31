@@ -293,12 +293,12 @@ static void bce_dump_enet           (struct bce_softc *, struct mbuf *);
 static void bce_dump_mbuf 			(struct bce_softc *, struct mbuf *);
 static void bce_dump_tx_mbuf_chain	(struct bce_softc *, u16, int);
 static void bce_dump_rx_mbuf_chain	(struct bce_softc *, u16, int);
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 static void bce_dump_pg_mbuf_chain	(struct bce_softc *, u16, int);
 #endif
 static void bce_dump_txbd			(struct bce_softc *, int, struct tx_bd *);
 static void bce_dump_rxbd			(struct bce_softc *, int, struct rx_bd *);
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 static void bce_dump_pgbd			(struct bce_softc *, int, struct rx_bd *);
 #endif
 static void bce_dump_l2fhdr			(struct bce_softc *, int, struct l2_fhdr *);
@@ -306,7 +306,7 @@ static void bce_dump_ctx			(struct bce_softc *, u16);
 static void bce_dump_ftqs			(struct bce_softc *);
 static void bce_dump_tx_chain		(struct bce_softc *, u16, int);
 static void bce_dump_rx_chain		(struct bce_softc *, u16, int);
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 static void bce_dump_pg_chain		(struct bce_softc *, u16, int);
 #endif
 static void bce_dump_status_block	(struct bce_softc *);
@@ -329,6 +329,8 @@ static void bce_breakpoint			(struct bce_softc *);
 /****************************************************************************/
 static u32  bce_reg_rd_ind			(struct bce_softc *, u32);
 static void bce_reg_wr_ind			(struct bce_softc *, u32, u32);
+static void bce_shmem_wr            (struct bce_softc *, u32, u32);
+static u32  bce_shmem_rd            (struct bce_softc *, u32);
 static void bce_ctx_wr				(struct bce_softc *, u32, u32, u32);
 static int  bce_miibus_read_reg		(device_t, int, int);
 static int  bce_miibus_write_reg	(device_t, int, int, int);
@@ -391,7 +393,7 @@ static int  bce_init_rx_chain		(struct bce_softc *);
 static void bce_fill_rx_chain		(struct bce_softc *);
 static void bce_free_rx_chain		(struct bce_softc *);
 
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 static int  bce_get_pg_buf			(struct bce_softc *, struct mbuf *, u16 *, u16 *);
 static int  bce_init_pg_chain		(struct bce_softc *);
 static void bce_fill_pg_chain		(struct bce_softc *);
@@ -574,6 +576,8 @@ bce_probe(device_t dev)
 static void
 bce_print_adapter_info(struct bce_softc *sc)
 {
+    int i = 0;
+
 	DBENTER(BCE_VERBOSE_LOAD);
 
 	BCE_PRINTF("ASIC (0x%08X); ", sc->bce_chipid);
@@ -596,19 +600,33 @@ bce_print_adapter_info(struct bce_softc *sc)
 	}
 
 	/* Firmware version and device features. */
-	printf("B/C (0x%08X); Flags( ", sc->bce_bc_ver);
-#ifdef ZERO_COPY_SOCKETS
+	printf("B/C (%s); Flags (", sc->bce_bc_ver);
+
+#ifdef BCE_JUMBO_HDRSPLIT
 	printf("SPLT ");
+    i++;
 #endif
-	if (sc->bce_flags & BCE_MFW_ENABLE_FLAG)
-		printf("MFW ");
-	if (sc->bce_flags & BCE_USING_MSI_FLAG)
-		printf("MSI ");
-	if (sc->bce_flags & BCE_USING_MSIX_FLAG)
-		printf("MSI-X ");
-	if (sc->bce_phy_flags & BCE_PHY_2_5G_CAPABLE_FLAG)
-		printf("2.5G ");
-	printf(")\n");
+    if (sc->bce_flags & BCE_USING_MSI_FLAG) {
+        if (i > 0) printf("|");
+		printf("MSI"); i++;
+    }
+
+    if (sc->bce_flags & BCE_USING_MSIX_FLAG) {
+        if (i > 0) printf("|");
+		printf("MSI-X "); i++;
+    }
+
+    if (sc->bce_phy_flags & BCE_PHY_2_5G_CAPABLE_FLAG) {
+        if (i > 0) printf("|");
+		printf("2.5G"); i++;
+    }
+
+    if (sc->bce_flags & BCE_MFW_ENABLE_FLAG) {
+        if (i > 0) printf("|");
+        printf("MFW); MFW (%s)\n", sc->bce_mfw_ver);
+    } else {
+        printf(")\n");
+    }
 
 	DBEXIT(BCE_VERBOSE_LOAD);
 }
@@ -847,13 +865,50 @@ bce_attach(device_t dev)
 		__FUNCTION__, sc->bce_shmem_base);
 
 	/* Fetch the bootcode revision. */
-	sc->bce_bc_ver = REG_RD_IND(sc, sc->bce_shmem_base +
-		BCE_DEV_INFO_BC_REV);
+    val = bce_shmem_rd(sc, BCE_DEV_INFO_BC_REV);
+    for (int i = 0, j = 0; i < 3; i++) {
+        u8 num;
 
-	/* Check if any management firmware is running. */
-	val = REG_RD_IND(sc, sc->bce_shmem_base + BCE_PORT_FEATURE);
-	if (val & (BCE_PORT_FEATURE_ASF_ENABLED | BCE_PORT_FEATURE_IMD_ENABLED))
-		sc->bce_flags |= BCE_MFW_ENABLE_FLAG;
+        num = (u8) (val >> (24 - (i * 8)));
+        for (int k = 100, skip0 = 1; k >= 1; num %= k, k /= 10) {
+            if (num >= k || !skip0 || k == 1) {
+                sc->bce_bc_ver[j++] = (num / k) + '0';
+                skip0 = 0;
+            }
+        }
+        if (i != 2)
+            sc->bce_bc_ver[j++] = '.';
+    }
+
+    /* Check if any management firwmare is running. */
+    val = bce_shmem_rd(sc, BCE_PORT_FEATURE);
+    if (val & BCE_PORT_FEATURE_ASF_ENABLED) {
+        sc->bce_flags |= BCE_MFW_ENABLE_FLAG;
+
+        /* Allow time for firmware to enter the running state. */
+        for (int i = 0; i < 30; i++) {
+            val = bce_shmem_rd(sc, BCE_BC_STATE_CONDITION);
+            if (val & BCE_CONDITION_MFW_RUN_MASK)
+                break;
+            DELAY(10000);
+        }
+    }
+
+    /* Check the current bootcode state. */
+    val = bce_shmem_rd(sc, BCE_BC_STATE_CONDITION);
+    val &= BCE_CONDITION_MFW_RUN_MASK;
+    if (val != BCE_CONDITION_MFW_RUN_UNKNOWN &&
+        val != BCE_CONDITION_MFW_RUN_NONE) {
+        u32 addr = bce_shmem_rd(sc, BCE_MFW_VER_PTR);
+        int i = 0;
+
+        for (int j = 0; j < 3; j++) {
+            val = bce_reg_rd_ind(sc, addr + j * 4);
+            val = bswap32(val);
+            memcpy(&sc->bce_mfw_ver[i], &val, 4);
+            i += 4;
+        }
+    }
 
 	/* Get PCI bus information (speed and type). */
 	val = REG_RD(sc, BCE_PCICFG_MISC_STATUS);
@@ -967,10 +1022,8 @@ bce_attach(device_t dev)
 	bce_get_media(sc);
 
 	/* Store data needed by PHY driver for backplane applications */
-	sc->bce_shared_hw_cfg = REG_RD_IND(sc, sc->bce_shmem_base +
-		BCE_SHARED_HW_CFG_CONFIG);
-	sc->bce_port_hw_cfg   = REG_RD_IND(sc, sc->bce_shmem_base +
-		BCE_PORT_HW_CFG_CONFIG);
+	sc->bce_shared_hw_cfg = bce_shmem_rd(sc, BCE_SHARED_HW_CFG_CONFIG);
+	sc->bce_port_hw_cfg   = bce_shmem_rd(sc, BCE_PORT_HW_CFG_CONFIG);
 
 	/* Allocate DMA memory resources. */
 	if (bce_dma_alloc(dev)) {
@@ -1013,7 +1066,7 @@ bce_attach(device_t dev)
 	 * This may change later if the MTU size is set to
 	 * something other than 1500.
 	 */
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 	sc->rx_bd_mbuf_alloc_size = MHLEN;
 	/* Make sure offset is 16 byte aligned for hardware. */
 	sc->rx_bd_mbuf_align_pad  = roundup2((MSIZE - MHLEN), 16) -
@@ -1290,6 +1343,36 @@ bce_reg_wr_ind(struct bce_softc *sc, u32 offset, u32 val)
 
 	pci_write_config(dev, BCE_PCICFG_REG_WINDOW_ADDRESS, offset, 4);
 	pci_write_config(dev, BCE_PCICFG_REG_WINDOW, val, 4);
+}
+
+
+/****************************************************************************/
+/* Shared memory write.                                                     */
+/*                                                                          */
+/* Writes NetXtreme II shared memory region.                                */
+/*                                                                          */
+/* Returns:                                                                 */
+/*   Nothing.                                                               */
+/****************************************************************************/
+static void
+bce_shmem_wr(struct bce_softc *sc, u32 offset, u32 val)
+{
+	bce_reg_wr_ind(sc, sc->bce_shmem_base + offset, val);
+}
+
+
+/****************************************************************************/
+/* Shared memory read.                                                      */
+/*                                                                          */
+/* Reads NetXtreme II shared memory region.                                 */
+/*                                                                          */
+/* Returns:                                                                 */
+/*   The 32 bit value read.                                                 */
+/****************************************************************************/
+static u32
+bce_shmem_rd(struct bce_softc *sc, u32 offset)
+{
+	return (bce_reg_rd_ind(sc, sc->bce_shmem_base + offset));
 }
 
 
@@ -2094,7 +2177,7 @@ bce_init_nvram(struct bce_softc *sc)
 
 bce_init_nvram_get_flash_size:
 	/* Write the flash config data to the shared memory interface. */
-	val = REG_RD_IND(sc, sc->bce_shmem_base + BCE_SHARED_HW_CFG_CONFIG2);
+	val = bce_shmem_rd(sc, BCE_SHARED_HW_CFG_CONFIG2);
 	val &= BCE_SHARED_HW_CFG2_NVM_SIZE_MASK;
 	if (val)
 		sc->bce_flash_size = val;
@@ -2583,8 +2666,7 @@ bce_get_media(struct bce_softc *sc)
 		sc->bce_flags |= BCE_NO_WOL_FLAG;
 		if (BCE_CHIP_NUM(sc) != BCE_CHIP_NUM_5706) {
 			sc->bce_phy_addr = 2;
-			val = REG_RD_IND(sc, sc->bce_shmem_base +
-				 BCE_SHARED_HW_CFG_CONFIG);
+			val = bce_shmem_rd(sc, BCE_SHARED_HW_CFG_CONFIG);
 			if (val & BCE_SHARED_HW_CFG_PHY_2_5G) {
 				sc->bce_phy_flags |= BCE_PHY_2_5G_CAPABLE_FLAG;
 				DBPRINT(sc, BCE_INFO_LOAD, "Found 2.5Gb capable adapter\n");
@@ -2753,7 +2835,7 @@ bce_dma_free(struct bce_softc *sc)
 	}
 
 
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 	/* Free, unmap and destroy all page buffer descriptor chain pages. */
 	for (i = 0; i < PG_PAGES; i++ ) {
 		if (sc->pg_bd_chain[i] != NULL) {
@@ -2817,7 +2899,7 @@ bce_dma_free(struct bce_softc *sc)
 		sc->rx_mbuf_tag = NULL;
 	}
 
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 	/* Unload and destroy the page mbuf maps. */
 	for (i = 0; i < TOTAL_PG_BD; i++) {
 		if (sc->pg_mbuf_map[i] != NULL) {
@@ -3263,7 +3345,7 @@ bce_dma_alloc(device_t dev)
 	/*
 	 * Create a DMA tag for RX mbufs.
 	 */
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 	max_size = max_seg_size = ((sc->rx_bd_mbuf_alloc_size < MCLBYTES) ?
 		MCLBYTES : sc->rx_bd_mbuf_alloc_size);
 #else
@@ -3304,7 +3386,7 @@ bce_dma_alloc(device_t dev)
 		}
 	}
 
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 	/*
 	 * Create a DMA tag for the page buffer descriptor chain,
 	 * allocate and clear the memory, and fetch the physical
@@ -3487,12 +3569,12 @@ bce_fw_sync(struct bce_softc *sc, u32 msg_data)
  		msg_data);
 
 	/* Send the message to the bootcode driver mailbox. */
-	REG_WR_IND(sc, sc->bce_shmem_base + BCE_DRV_MB, msg_data);
+	bce_shmem_wr(sc, BCE_DRV_MB, msg_data);
 
 	/* Wait for the bootcode to acknowledge the message. */
 	for (i = 0; i < FW_ACK_TIME_OUT_MS; i++) {
 		/* Check for a response in the bootcode firmware mailbox. */
-		val = REG_RD_IND(sc, sc->bce_shmem_base + BCE_FW_MB);
+		val = bce_shmem_rd(sc, BCE_FW_MB);
 		if ((val & BCE_FW_MSG_ACK) == (msg_data & BCE_DRV_MSG_SEQ))
 			break;
 		DELAY(1000);
@@ -3509,7 +3591,7 @@ bce_fw_sync(struct bce_softc *sc, u32 msg_data)
 		msg_data &= ~BCE_DRV_MSG_CODE;
 		msg_data |= BCE_DRV_MSG_CODE_FW_TIMEOUT;
 
-		REG_WR_IND(sc, sc->bce_shmem_base + BCE_DRV_MB, msg_data);
+		bce_shmem_wr(sc, BCE_DRV_MB, msg_data);
 
 		sc->bce_fw_timed_out = 1;
 		rc = EBUSY;
@@ -4309,10 +4391,8 @@ bce_get_mac_addr(struct bce_softc *sc)
 	 * shared memory for speed.
 	 */
 
-	mac_hi = REG_RD_IND(sc, sc->bce_shmem_base +
-		BCE_PORT_HW_CFG_MAC_UPPER);
-	mac_lo = REG_RD_IND(sc, sc->bce_shmem_base +
-		BCE_PORT_HW_CFG_MAC_LOWER);
+	mac_hi = bce_shmem_rd(sc, BCE_PORT_HW_CFG_MAC_UPPER);
+	mac_lo = bce_shmem_rd(sc, BCE_PORT_HW_CFG_MAC_LOWER);
 
 	if ((mac_lo == 0) && (mac_hi == 0)) {
 		BCE_PRINTF("%s(%d): Invalid Ethernet address!\n",
@@ -4393,7 +4473,7 @@ bce_stop(struct bce_softc *sc)
 	bce_disable_intr(sc);
 
 	/* Free RX buffers. */
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 	bce_free_pg_chain(sc);
 #endif
 	bce_free_rx_chain(sc);
@@ -4467,8 +4547,7 @@ bce_reset(struct bce_softc *sc, u32 reset_code)
 		goto bce_reset_exit;
 
 	/* Set a firmware reminder that this is a soft reset. */
-	REG_WR_IND(sc, sc->bce_shmem_base + BCE_DRV_RESET_SIGNATURE,
-		   BCE_DRV_RESET_SIGNATURE_MAGIC);
+	bce_shmem_wr(sc, BCE_DRV_RESET_SIGNATURE, BCE_DRV_RESET_SIGNATURE_MAGIC);
 
 	/* Dummy read to force the chip to complete all current transactions. */
 	val = REG_RD(sc, BCE_MISC_ID);
@@ -4735,7 +4814,7 @@ bce_blockinit(struct bce_softc *sc)
 	REG_WR(sc, BCE_HC_COMMAND, BCE_HC_COMMAND_CLR_STAT_NOW);
 
 	/* Verify that bootcode is running. */
-	reg = REG_RD_IND(sc, sc->bce_shmem_base + BCE_DEV_INFO_SIGNATURE);
+	reg = bce_shmem_rd(sc, BCE_DEV_INFO_SIGNATURE);
 
 	DBRUNIF(DB_RANDOMTRUE(bootcode_running_failure_sim_control),
 		BCE_PRINTF("%s(%d): Simulating bootcode failure.\n",
@@ -4831,7 +4910,7 @@ bce_get_rx_buf(struct bce_softc *sc, struct mbuf *m, u16 *prod,
 			goto bce_get_rx_buf_exit);
 
 		/* This is a new mbuf allocation. */
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 		MGETHDR(m_new, M_DONTWAIT, MT_DATA);
 #else
 		if (sc->rx_bd_mbuf_alloc_size <= MCLBYTES)
@@ -4912,7 +4991,7 @@ bce_get_rx_buf_exit:
 }
 
 
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 /****************************************************************************/
 /* Encapsulate an mbuf cluster into the page chain.                        */
 /*                                                                          */
@@ -5021,7 +5100,7 @@ bce_get_pg_buf_exit:
 
 	return(rc);
 }
-#endif /* ZERO_COPY_SOCKETS */
+#endif /* BCE_JUMBO_HDRSPLIT */
 
 /****************************************************************************/
 /* Initialize the TX context memory.                                        */
@@ -5377,7 +5456,7 @@ bce_free_rx_chain(struct bce_softc *sc)
 }
 
 
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 /****************************************************************************/
 /* Allocate memory and initialize the page data structures.                 */
 /* Assumes that bce_init_rx_chain() has not already been called.            */
@@ -5541,7 +5620,7 @@ bce_free_pg_chain(struct bce_softc *sc)
 
 	DBEXIT(BCE_VERBOSE_RESET | BCE_VERBOSE_RECV | BCE_VERBOSE_UNLOAD);
 }
-#endif /* ZERO_COPY_SOCKETS */
+#endif /* BCE_JUMBO_HDRSPLIT */
 
 
 /****************************************************************************/
@@ -5714,7 +5793,7 @@ bce_rx_intr(struct bce_softc *sc)
 	unsigned int pkt_len;
 	u16 sw_rx_cons, sw_rx_cons_idx, hw_rx_cons;
 	u32 status;
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 	unsigned int rem_len;
 	u16 sw_pg_cons, sw_pg_cons_idx;
 #endif
@@ -5730,7 +5809,7 @@ bce_rx_intr(struct bce_softc *sc)
 		bus_dmamap_sync(sc->rx_bd_chain_tag,
 		    sc->rx_bd_chain_map[i], BUS_DMASYNC_POSTREAD);
 
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 	/* Prepare the page chain pages to be accessed by the host CPU. */
 	for (int i = 0; i < PG_PAGES; i++)
 		bus_dmamap_sync(sc->pg_bd_chain_tag,
@@ -5742,7 +5821,7 @@ bce_rx_intr(struct bce_softc *sc)
 
 	/* Get working copies of the driver's view of the consumer indices. */
 	sw_rx_cons = sc->rx_cons;
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 	sw_pg_cons = sc->pg_cons;
 #endif
 
@@ -5803,7 +5882,7 @@ bce_rx_intr(struct bce_softc *sc)
 		 */
 		m_adj(m0, sizeof(struct l2_fhdr) + ETHER_ALIGN);
 
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 		/*
 		 * Check whether the received frame fits in a single
 		 * mbuf or not (i.e. packet data + FCS <=
@@ -5977,7 +6056,7 @@ bce_rx_int_next_rx:
 		if (m0) {
 			/* Make sure we don't lose our place when we release the lock. */
 			sc->rx_cons = sw_rx_cons;
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 			sc->pg_cons = sw_pg_cons;
 #endif
 
@@ -5987,7 +6066,7 @@ bce_rx_int_next_rx:
 
 			/* Recover our place. */
 			sw_rx_cons = sc->rx_cons;
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 			sw_pg_cons = sc->pg_cons;
 #endif
 		}
@@ -5998,7 +6077,7 @@ bce_rx_int_next_rx:
 	}
 
 	/* No new packets to process.  Refill the RX and page chains and exit. */
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 	sc->pg_cons = sw_pg_cons;
 	bce_fill_pg_chain(sc);
 #endif
@@ -6011,7 +6090,7 @@ bce_rx_int_next_rx:
 		bus_dmamap_sync(sc->rx_bd_chain_tag,
 		    sc->rx_bd_chain_map[i], BUS_DMASYNC_PREWRITE);
 
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 	for (int i = 0; i < PG_PAGES; i++)
 		bus_dmamap_sync(sc->pg_bd_chain_tag,
 		    sc->pg_bd_chain_map[i], BUS_DMASYNC_PREWRITE);
@@ -6257,7 +6336,7 @@ bce_init_locked(struct bce_softc *sc)
 	 * Calculate and program the hardware Ethernet MTU
 	 * size. Be generous on the receive if we have room.
 	 */
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 	if (ifp->if_mtu <= (sc->rx_bd_mbuf_data_len + sc->pg_bd_mbuf_alloc_size))
 		ether_mtu = sc->rx_bd_mbuf_data_len + sc->pg_bd_mbuf_alloc_size;
 #else
@@ -6289,7 +6368,7 @@ bce_init_locked(struct bce_softc *sc)
 	/* Program appropriate promiscuous/multicast filtering. */
 	bce_set_rx_mode(sc);
 
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 	DBPRINT(sc, BCE_INFO_LOAD, "%s(): pg_bd_mbuf_alloc_size = %d\n",
 		__FUNCTION__, sc->pg_bd_mbuf_alloc_size);
 
@@ -6802,7 +6881,7 @@ bce_ioctl(struct ifnet *ifp, u_long command, caddr_t data)
 			BCE_LOCK(sc);
 			ifp->if_mtu = ifr->ifr_mtu;
 			ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 			/* No buffer allocation size changes are necessary. */
 #else
 			/* Recalculate our buffer allocation sizes. */
@@ -7181,7 +7260,7 @@ bce_set_rx_mode(struct bce_softc *sc)
 		/* Accept one or more multicast(s). */
 		DBPRINT(sc, BCE_INFO_MISC, "Enabling selective multicast mode.\n");
 
-		IF_ADDR_LOCK(ifp);
+		if_maddr_rlock(ifp);
 		TAILQ_FOREACH(ifma, &ifp->if_multiaddrs, ifma_link) {
 			if (ifma->ifma_addr->sa_family != AF_LINK)
 				continue;
@@ -7189,7 +7268,7 @@ bce_set_rx_mode(struct bce_softc *sc)
 			    ifma->ifma_addr), ETHER_ADDR_LEN) & 0xFF;
 			    hashes[(h & 0xE0) >> 5] |= 1 << (h & 0x1F);
 		}
-		IF_ADDR_UNLOCK(ifp);
+		if_maddr_runlock(ifp);
 
 		for (i = 0; i < NUM_MC_HASH_REGISTERS; i++)
 			REG_WR(sc, BCE_EMAC_MULTICAST_HASH0 + (i * 4), hashes[i]);
@@ -7470,7 +7549,7 @@ bce_pulse(void *xsc)
 
 	/* Tell the firmware that the driver is still running. */
 	msg = (u32) ++sc->bce_fw_drv_pulse_wr_seq;
-	REG_WR_IND(sc, sc->bce_shmem_base + BCE_DRV_PULSE_MB, msg);
+	bce_shmem_wr(sc, BCE_DRV_PULSE_MB, msg);
 
 	/* Schedule the next pulse. */
 	callout_reset(&sc->bce_pulse_callout, hz, bce_pulse, sc);
@@ -7505,7 +7584,7 @@ bce_tick(void *xsc)
 	bce_stats_update(sc);
 
 	/* Top off the receive and page chains. */
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 	bce_fill_pg_chain(sc);
 #endif
 	bce_fill_rx_chain(sc);
@@ -7685,7 +7764,7 @@ bce_sysctl_dump_tx_chain(SYSCTL_HANDLER_ARGS)
 }
 
 
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 /****************************************************************************/
 /* Provides a sysctl interface to allow dumping the page chain.             */
 /*                                                                          */
@@ -8313,7 +8392,7 @@ bce_add_sysctls(struct bce_softc *sc)
 		(void *)sc, 0,
 		bce_sysctl_dump_tx_chain, "I", "Dump tx_bd chain");
 
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO,
 		"dump_pg_chain", CTLTYPE_INT | CTLFLAG_RW,
 		(void *)sc, 0,
@@ -8608,7 +8687,7 @@ bce_dump_rx_mbuf_chain(struct bce_softc *sc, u16 chain_prod, int count)
 }
 
 
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 /****************************************************************************/
 /* Prints out the mbufs in the mbuf page chain.                             */
 /*                                                                          */
@@ -8732,7 +8811,7 @@ bce_dump_rxbd(struct bce_softc *sc, int idx, struct rx_bd *rxbd)
 }
 
 
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 /****************************************************************************/
 /* Prints out a rx_bd structure in the page chain.                          */
 /*                                                                          */
@@ -9219,7 +9298,7 @@ bce_dump_rx_chain(struct bce_softc *sc, u16 rx_prod, int count)
 }
 
 
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 /****************************************************************************/
 /* Prints out the page chain.                                               */
 /*                                                                          */
@@ -9700,7 +9779,7 @@ bce_dump_driver_state(struct bce_softc *sc)
 		"0x%08X:%08X - (sc->rx_bd_chain) rx_bd chain virtual address\n",
 		val_hi, val_lo);
 
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 	val_hi = BCE_ADDR_HI(sc->pg_bd_chain);
 	val_lo = BCE_ADDR_LO(sc->pg_bd_chain);
 	BCE_PRINTF(
@@ -9720,7 +9799,7 @@ bce_dump_driver_state(struct bce_softc *sc)
 		"0x%08X:%08X - (sc->rx_mbuf_ptr) rx mbuf chain virtual address\n",
 		val_hi, val_lo);
 
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 	val_hi = BCE_ADDR_HI(sc->pg_mbuf_ptr);
 	val_lo = BCE_ADDR_LO(sc->pg_mbuf_ptr);
 	BCE_PRINTF(
@@ -9773,7 +9852,7 @@ bce_dump_driver_state(struct bce_softc *sc)
 	BCE_PRINTF("         0x%08X - (sc->free_rx_bd) free rx_bd's\n",
 		sc->free_rx_bd);
 
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 	BCE_PRINTF("     0x%04X(0x%04X) - (sc->pg_prod) page producer index\n",
 		sc->pg_prod, (u16) PG_CHAIN_IDX(sc->pg_prod));
 
@@ -9824,7 +9903,7 @@ bce_dump_hw_state(struct bce_softc *sc)
 		" Hardware State "
 		"----------------------------\n");
 
-	BCE_PRINTF("0x%08X - bootcode version\n", sc->bce_bc_ver);
+	BCE_PRINTF("%s - bootcode version\n", sc->bce_bc_ver);
 
 	val = REG_RD(sc, BCE_MISC_ENABLE_STATUS_BITS);
 	BCE_PRINTF("0x%08X - (0x%06X) misc_enable_status_bits\n",
@@ -9949,21 +10028,21 @@ bce_dump_bc_state(struct bce_softc *sc)
 		" Bootcode State "
 		"----------------------------\n");
 
-	BCE_PRINTF("0x%08X - bootcode version\n", sc->bce_bc_ver);
+	BCE_PRINTF("%s - bootcode version\n", sc->bce_bc_ver);
 
-	val = REG_RD_IND(sc, sc->bce_shmem_base + BCE_BC_RESET_TYPE);
+	val = bce_shmem_rd(sc, BCE_BC_RESET_TYPE);
 	BCE_PRINTF("0x%08X - (0x%06X) reset_type\n",
 		val, BCE_BC_RESET_TYPE);
 
-	val = REG_RD_IND(sc, sc->bce_shmem_base + BCE_BC_STATE);
+	val = bce_shmem_rd(sc, BCE_BC_STATE);
 	BCE_PRINTF("0x%08X - (0x%06X) state\n",
 		val, BCE_BC_STATE);
 
-	val = REG_RD_IND(sc, sc->bce_shmem_base + BCE_BC_CONDITION);
+	val = bce_shmem_rd(sc, BCE_BC_CONDITION);
 	BCE_PRINTF("0x%08X - (0x%06X) condition\n",
 		val, BCE_BC_CONDITION);
 
-	val = REG_RD_IND(sc, sc->bce_shmem_base + BCE_BC_STATE_DEBUG_CMD);
+	val = bce_shmem_rd(sc, BCE_BC_STATE_DEBUG_CMD);
 	BCE_PRINTF("0x%08X - (0x%06X) debug_cmd\n",
 		val, BCE_BC_STATE_DEBUG_CMD);
 
@@ -10279,7 +10358,7 @@ bce_breakpoint(struct bce_softc *sc)
 		bce_dump_tpat_state(sc, 0);
 		bce_dump_cp_state(sc, 0);
 		bce_dump_com_state(sc, 0);
-#ifdef ZERO_COPY_SOCKETS
+#ifdef BCE_JUMBO_HDRSPLIT
 		bce_dump_pgbd(sc, 0, NULL);
 		bce_dump_pg_mbuf_chain(sc, 0, USABLE_PG_BD);
 		bce_dump_pg_chain(sc, 0, USABLE_PG_BD);

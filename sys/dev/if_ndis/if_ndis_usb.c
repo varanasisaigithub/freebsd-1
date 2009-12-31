@@ -53,7 +53,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/bus.h>
 #include <machine/bus.h>
 #include <dev/usb/usb.h>
-#include <dev/usb/usb_core.h>
+#include <dev/usb/usbdi.h>
 
 #include <net80211/ieee80211_var.h>
 
@@ -165,6 +165,7 @@ ndisusb_attach(device_t self)
 	driver_object		*drv;
 	int			devidx = 0;
 
+	device_set_usb_desc(self);
 	db = uaa->driver_ivar;
 	sc = (struct ndis_softc *)dummy;
 	sc->ndis_dev = self;
@@ -194,9 +195,9 @@ ndisusb_attach(device_t self)
 	}
 
 	if (ndis_attach(self) != 0)
-		return ENXIO;
+		return (ENXIO);
 
-	return 0;
+	return (0);
 }
 
 static int

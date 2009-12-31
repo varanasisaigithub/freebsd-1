@@ -73,11 +73,9 @@ __FBSDID("$FreeBSD$");
 #include <sys/user.h>
 #include <sys/vmmeter.h>
 #include <sys/vnode.h>
-#include <sys/vimage.h>
 #include <sys/bus.h>
 
 #include <net/if.h>
-#include <net/route.h>
 #include <net/vnet.h>
 
 #include <vm/vm.h>
@@ -1079,7 +1077,6 @@ linprocfs_doprocmaps(PFS_FILL_ARGS)
 static int
 linprocfs_donetdev(PFS_FILL_ARGS)
 {
-	INIT_VNET_NET(TD_TO_VNET(td));
 	char ifname[16]; /* XXX LINUX_IFNAMSIZ */
 	struct ifnet *ifp;
 
@@ -1088,6 +1085,7 @@ linprocfs_donetdev(PFS_FILL_ARGS)
 	    "bytes    packets errs drop fifo frame compressed",
 	    "bytes    packets errs drop fifo frame compressed");
 
+	CURVNET_SET(TD_TO_VNET(curthread));
 	IFNET_RLOCK();
 	TAILQ_FOREACH(ifp, &V_ifnet, if_link) {
 		linux_ifname(ifp, ifname, sizeof ifname);
@@ -1098,6 +1096,7 @@ linprocfs_donetdev(PFS_FILL_ARGS)
 		    0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL);
 	}
 	IFNET_RUNLOCK();
+	CURVNET_RESTORE();
 
 	return (0);
 }

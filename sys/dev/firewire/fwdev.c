@@ -443,7 +443,7 @@ fw_write_async(struct fw_drv1 *d, struct uio *uio, int ioflag)
 	xfer->send.pay_len = uio->uio_resid;
 	if (uio->uio_resid > 0) {
 		if ((err = uiomove((caddr_t)&xfer->send.payload[0],
-		    uio->uio_resid, uio)));
+		    uio->uio_resid, uio)))
 			goto out;
 	}
 
@@ -884,7 +884,8 @@ static int
 #if defined(__DragonFly__) || __FreeBSD_version < 500102
 fw_mmap (struct cdev *dev, vm_offset_t offset, int nproto)
 #else
-fw_mmap (struct cdev *dev, vm_offset_t offset, vm_paddr_t *paddr, int nproto)
+fw_mmap (struct cdev *dev, vm_ooffset_t offset, vm_paddr_t *paddr,
+    int nproto, vm_memattr_t *memattr)
 #endif
 {  
 
@@ -892,7 +893,7 @@ fw_mmap (struct cdev *dev, vm_offset_t offset, vm_paddr_t *paddr, int nproto)
 #if defined(__DragonFly__) || __FreeBSD_version < 500102
 		return fwmem_mmap(dev, offset, nproto);
 #else
-		return fwmem_mmap(dev, offset, paddr, nproto);
+		return fwmem_mmap(dev, offset, paddr, nproto, memattr);
 #endif
 
 	return EINVAL;

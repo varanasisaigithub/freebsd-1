@@ -82,7 +82,7 @@ struct ifsregion {
 	struct ifsregion *next;	/* next region in list */
 	int begoff;		/* offset of start of region */
 	int endoff;		/* offset of end of region */
-	int nulonly;		/* search for nul bytes only */
+	int inquotes;		/* search for nul bytes only */
 };
 
 
@@ -107,7 +107,7 @@ STATIC void expmeta(char *, char *);
 STATIC void addfname(char *);
 STATIC struct strlist *expsort(struct strlist *);
 STATIC struct strlist *msort(struct strlist *, int);
-STATIC int pmatch(char *, char *, int);
+STATIC int pmatch(const char *, const char *, int);
 STATIC char *cvtnum(int, char *);
 STATIC int collate_range_cmp(int, int);
 
@@ -271,8 +271,13 @@ exptilde(char *p, int flag)
 
 	while ((c = *p) != '\0') {
 		switch(c) {
-		case CTLESC:
-			return (startp);
+		case CTLESC: /* This means CTL* are always considered quoted. */
+		case CTLVAR:
+		case CTLENDVAR:
+		case CTLBACKQ:
+		case CTLBACKQ | CTLQUOTE:
+		case CTLARI:
+		case CTLENDARI:
 		case CTLQUOTEMARK:
 			return (startp);
 		case ':':
@@ -657,7 +662,7 @@ again: /* jump here after setting a variable with ${var=text} */
 	}
 	varlen = 0;
 	startloc = expdest - stackblock();
-	if (!set && uflag) {
+	if (!set && uflag && *var != '@' && *var != '*') {
 		switch (subtype) {
 		case VSNORMAL:
 		case VSTRIMLEFT:
@@ -850,7 +855,6 @@ varvalue(char *name, int quoted, int subtype, int flag)
 	int num;
 	char *p;
 	int i;
-	extern int oexitstatus;
 	char sep;
 	char **ap;
 	char const *syntax;
@@ -936,13 +940,19 @@ numvar:
  */
 
 STATIC void
-recordregion(int start, int end, int nulonly)
+recordregion(int start, int end, int inquotes)
 {
 	struct ifsregion *ifsp;
 
 	if (ifslastp == NULL) {
 		ifsp = &ifsfirst;
 	} else {
+		if (ifslastp->endoff == start
+		    && ifslastp->inquotes == inquotes) {
+			/* extend previous area */
+			ifslastp->endoff = end;
+			return;
+		}
 		ifsp = (struct ifsregion *)ckmalloc(sizeof (struct ifsregion));
 		ifslastp->next = ifsp;
 	}
@@ -950,7 +960,7 @@ recordregion(int start, int end, int nulonly)
 	ifslastp->next = NULL;
 	ifslastp->begoff = start;
 	ifslastp->endoff = end;
-	ifslastp->nulonly = nulonly;
+	ifslastp->inquotes = inquotes;
 }
 
 
@@ -968,76 +978,90 @@ ifsbreakup(char *string, struct arglist *arglist)
 	char *start;
 	char *p;
 	char *q;
-	char *ifs;
-	int ifsspc;
-	int nulonly;
-
+	const char *ifs;
+	const char *ifsspc;
+	int had_param_ch = 0;
 
 	start = string;
-	ifsspc = 0;
-	nulonly = 0;
-	if (ifslastp != NULL) {
-		ifsp = &ifsfirst;
-		do {
-			p = string + ifsp->begoff;
-			nulonly = ifsp->nulonly;
-			ifs = nulonly ? nullstr :
-				( ifsset() ? ifsval() : " \t\n" );
-			ifsspc = 0;
-			while (p < string + ifsp->endoff) {
-				q = p;
-				if (*p == CTLESC)
+
+	if (ifslastp == NULL) {
+		/* Return entire argument, IFS doesn't apply to any of it */
+		sp = (struct strlist *)stalloc(sizeof *sp);
+		sp->text = start;
+		*arglist->lastp = sp;
+		arglist->lastp = &sp->next;
+		return;
+	}
+
+	ifs = ifsset() ? ifsval() : " \t\n";
+
+	for (ifsp = &ifsfirst; ifsp != NULL; ifsp = ifsp->next) {
+		p = string + ifsp->begoff;
+		while (p < string + ifsp->endoff) {
+			q = p;
+			if (*p == CTLESC)
+				p++;
+			if (ifsp->inquotes) {
+				/* Only NULs (should be from "$@") end args */
+				had_param_ch = 1;
+				if (*p != 0) {
 					p++;
-				if (strchr(ifs, *p)) {
-					if (!nulonly)
-						ifsspc = (strchr(" \t\n", *p) != NULL);
-					/* Ignore IFS whitespace at start */
-					if (q == start && ifsspc) {
-						p++;
-						start = p;
-						continue;
-					}
-					*q = '\0';
-					sp = (struct strlist *)stalloc(sizeof *sp);
-					sp->text = start;
-					*arglist->lastp = sp;
-					arglist->lastp = &sp->next;
+					continue;
+				}
+				ifsspc = NULL;
+			} else {
+				if (!strchr(ifs, *p)) {
+					had_param_ch = 1;
 					p++;
-					if (!nulonly) {
-						for (;;) {
-							if (p >= string + ifsp->endoff) {
-								break;
-							}
-							q = p;
-							if (*p == CTLESC)
-								p++;
-							if (strchr(ifs, *p) == NULL ) {
-								p = q;
-								break;
-							} else if (strchr(" \t\n",*p) == NULL) {
-								if (ifsspc) {
-									p++;
-									ifsspc = 0;
-								} else {
-									p = q;
-									break;
-								}
-							} else
-								p++;
-						}
-					}
+					continue;
+				}
+				ifsspc = strchr(" \t\n", *p);
+
+				/* Ignore IFS whitespace at start */
+				if (q == start && ifsspc != NULL) {
+					p++;
 					start = p;
-				} else
-					p++;
+					continue;
+				}
+				had_param_ch = 0;
 			}
-		} while ((ifsp = ifsp->next) != NULL);
-		if (*start || (!ifsspc && start > string)) {
+
+			/* Save this argument... */
+			*q = '\0';
 			sp = (struct strlist *)stalloc(sizeof *sp);
 			sp->text = start;
 			*arglist->lastp = sp;
 			arglist->lastp = &sp->next;
+			p++;
+
+			if (ifsspc != NULL) {
+				/* Ignore further trailing IFS whitespace */
+				for (; p < string + ifsp->endoff; p++) {
+					q = p;
+					if (*p == CTLESC)
+						p++;
+					if (strchr(ifs, *p) == NULL) {
+						p = q;
+						break;
+					}
+					if (strchr(" \t\n", *p) == NULL) {
+						p++;
+						break;
+					}
+				}
+			}
+			start = p;
 		}
-	} else {
+	}
+
+	/*
+	 * Save anything left as an argument.
+	 * Traditionally we have treated 'IFS=':'; set -- x$IFS' as
+	 * generating 2 arguments, the second of which is empty.
+	 * Some recent clarification of the Posix spec say that it
+	 * should only generate one....
+	 */
+	if (had_param_ch || *start != 0) {
 		sp = (struct strlist *)stalloc(sizeof *sp);
 		sp->text = start;
 		*arglist->lastp = sp;
@@ -1318,7 +1342,7 @@ msort(struct strlist *list, int len)
  */
 
 int
-patmatch(char *pattern, char *string, int squoted)
+patmatch(const char *pattern, const char *string, int squoted)
 {
 #ifdef notdef
 	if (pattern[0] == '!' && pattern[1] == '!')
@@ -1330,9 +1354,9 @@ patmatch(char *pattern, char *string, int squoted)
 
 
 STATIC int
-pmatch(char *pattern, char *string, int squoted)
+pmatch(const char *pattern, const char *string, int squoted)
 {
-	char *p, *q;
+	const char *p, *q;
 	char c;
 
 	p = pattern;
@@ -1380,7 +1404,7 @@ pmatch(char *pattern, char *string, int squoted)
 			} while (*q++ != '\0');
 			return 0;
 		case '[': {
-			char *endp;
+			const char *endp;
 			int invert, found;
 			char chr;
 
@@ -1484,7 +1508,7 @@ rmescapes(char *str)
  */
 
 int
-casematch(union node *pattern, char *val)
+casematch(union node *pattern, const char *val)
 {
 	struct stackmark smark;
 	int result;

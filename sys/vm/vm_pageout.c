@@ -105,8 +105,6 @@ __FBSDID("$FreeBSD$");
 #include <vm/vm_extern.h>
 #include <vm/uma.h>
 
-#include <machine/mutex.h>
-
 /*
  * System initialization
  */
@@ -350,7 +348,7 @@ more:
 			break;
 		}
 		vm_page_test_dirty(p);
-		if ((p->dirty & p->valid) == 0 ||
+		if (p->dirty == 0 ||
 		    p->queue != PQ_INACTIVE ||
 		    p->wire_count != 0 ||	/* may be held by buf cache */
 		    p->hold_count != 0) {	/* may be undergoing I/O */
@@ -378,7 +376,7 @@ more:
 			break;
 		}
 		vm_page_test_dirty(p);
-		if ((p->dirty & p->valid) == 0 ||
+		if (p->dirty == 0 ||
 		    p->queue != PQ_INACTIVE ||
 		    p->wire_count != 0 ||	/* may be held by buf cache */
 		    p->hold_count != 0) {	/* may be undergoing I/O */
@@ -515,7 +513,9 @@ vm_pageout_object_deactivate_pages(pmap, first_object, desired)
 	int actcount, rcount, remove_mode;
 
 	VM_OBJECT_LOCK_ASSERT(first_object, MA_OWNED);
-	if (first_object->type == OBJT_DEVICE || first_object->type == OBJT_PHYS)
+	if (first_object->type == OBJT_DEVICE ||
+	    first_object->type == OBJT_SG ||
+	    first_object->type == OBJT_PHYS)
 		return;
 	for (object = first_object;; object = backing_object) {
 		if (pmap_resident_count(pmap) <= desired)

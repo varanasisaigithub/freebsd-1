@@ -11,7 +11,7 @@ SRCS=	anonFTP.c cdrom.c command.c config.c devices.c dhcp.c \
 	ftp.c globals.c http.c index.c install.c installUpgrade.c keymap.c \
 	label.c main.c makedevs.c media.c menus.c misc.c modules.c \
 	mouse.c msg.c network.c nfs.c options.c package.c \
-	system.c tcpip.c termcap.c ttys.c ufs.c user.c \
+	system.c tcpip.c termcap.c ttys.c ufs.c usb.c user.c \
 	variable.c ${_wizard} keymap.h countries.h
 
 CFLAGS+= -DUSE_GZIP=1
@@ -22,37 +22,6 @@ CFLAGS+= -I${.CURDIR}/../../gnu/lib/libdialog -I.
 
 DPADD=	${LIBDIALOG} ${LIBNCURSES} ${LIBUTIL} ${LIBDISK} ${LIBFTPIO}
 LDADD=	-ldialog -lncurses -lutil -ldisk -lftpio
-
-#
-# When distributions have both UP and SMP kernels sysinstall
-# will probe for the number of cpus on the target machine and
-# automatically select which is appropriate.  This can be overridden
-# through the menus or both kernels can be installed (with the
-# most "appropriate" one setup as /boot/kernel).  For now this
-# is done for i386 and amd64; for other systems support must be
-# added to identify the cpu count if acpi and MPTable probing
-# is insufficient.
-#
-# The unmber of cpus probed is passed through the environment in
-# VAR_NCPUS ("ncpus") to scripts.
-#
-# Note that WITH_SMP is a compile time option that enables the
-# builtin menus for the SMP kernel configuration.  If this kernel
-# is not built (see release/Makefile) then this should not be
-# enabled as sysinstall may try to select an SMP kernel config
-# where none is available.  This option should not be needed--we
-# should probe for an SMP kernel in the distribution but doing
-# that is painful because of media changes and the structure of
-# sysinstall so for now it's a priori.
-#
-.if ${MACHINE} == "i386" || ${MACHINE_ARCH} == "amd64"
-SRCS+=	acpi.c biosmptable.c
-.if exists(${.CURDIR}/../../sys/${MACHINE}/conf/SMP)
-CFLAGS+=-DWITH_SMP	
-.endif
-DPADD+=	${LIBDEVINFO}
-LDADD+=	-ldevinfo
-.endif
 
 CLEANFILES=	makedevs.c rtermcap
 CLEANFILES+=	keymap.tmp keymap.h countries.tmp countries.h

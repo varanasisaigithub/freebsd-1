@@ -55,7 +55,6 @@
 #include <sys/sockio.h>
 #include <sys/sysctl.h>
 #include <sys/systm.h>
-#include <sys/vimage.h>
 
 #include <net/bpf.h>
 #include <net/ethernet.h>
@@ -64,7 +63,6 @@
 #include <net/if_dl.h>
 #include <net/if_types.h>
 #include <net/if_vlan_var.h>
-#include <net/route.h>
 #include <net/vnet.h>
 
 #define VLANNAME	"vlan"
@@ -190,7 +188,7 @@ static	int vlan_setmulti(struct ifnet *ifp);
 static	int vlan_unconfig(struct ifnet *ifp);
 static	int vlan_unconfig_locked(struct ifnet *ifp);
 static	int vlan_config(struct ifvlan *ifv, struct ifnet *p, uint16_t tag);
-static	void vlan_link_state(struct ifnet *ifp, int link);
+static	void vlan_link_state(struct ifnet *ifp);
 static	void vlan_capabilities(struct ifvlan *ifv);
 static	void vlan_trunk_capabilities(struct ifnet *ifp);
 
@@ -468,7 +466,8 @@ vlan_setmulti(struct ifnet *ifp)
  * A handler for network interface departure events.
  * Track departure of trunks here so that we don't access invalid
  * pointers or whatever if a trunk is ripped from under us, e.g.,
- * by ejecting its hot-plug card.
+ * by ejecting its hot-plug card.  However, if an ifnet is simply
+ * being renamed, then there's no need to tear down the state.
  */
 static void
 vlan_ifdetach(void *arg __unused, struct ifnet *ifp)
@@ -481,6 +480,10 @@ vlan_ifdetach(void *arg __unused, struct ifnet *ifp)
 	 * to avoid needless locking.
 	 */
 	if (ifp->if_vlantrunk == NULL)
+		return;
+
+	/* If the ifnet is just being renamed, don't do anything. */
+	if (ifp->if_flags & IFF_RENAMING)
 		return;
 
 	VLAN_LOCK();
@@ -522,7 +525,7 @@ restart:
 extern	void (*vlan_input_p)(struct ifnet *, struct mbuf *);
 
 /* For if_link_state_change() eyes only... */
-extern	void (*vlan_link_state_p)(struct ifnet *, int);
+extern	void (*vlan_link_state_p)(struct ifnet *);
 
 static int
 vlan_modevent(module_t mod, int type, void *data)
@@ -577,31 +580,32 @@ MODULE_VERSION(if_vlan, 3);
 static struct ifnet *
 vlan_clone_match_ethertag(struct if_clone *ifc, const char *name, int *tag)
 {
-	INIT_VNET_NET(curvnet);
 	const char *cp;
 	struct ifnet *ifp;
-	int t = 0;
+	int t;
 
 	/* Check for <etherif>.<vlan> style interface names. */
-	IFNET_RLOCK();
+	IFNET_RLOCK_NOSLEEP();
 	TAILQ_FOREACH(ifp, &V_ifnet, if_link) {
 		if (ifp->if_type != IFT_ETHER)
 			continue;
 		if (strncmp(ifp->if_xname, name, strlen(ifp->if_xname)) != 0)
 			continue;
 		cp = name + strlen(ifp->if_xname);
-		if (*cp != '.')
+		if (*cp++ != '.')
 			continue;
-		for(; *cp != '\0'; cp++) {
-			if (*cp < '0' || *cp > '9')
-				continue;
+		if (*cp == '\0')
+			continue;
+		t = 0;
+		for(; *cp >= '0' && *cp <= '9'; cp++)
 			t = (t * 10) + (*cp - '0');
-		}
+		if (*cp != '\0')
+			continue;
 		if (tag != NULL)
 			*tag = t;
 		break;
 	}
-	IFNET_RUNLOCK();
+	IFNET_RUNLOCK_NOSLEEP();
 
 	return (ifp);
 }
@@ -1229,7 +1233,7 @@ vlan_setflags(struct ifnet *ifp, int status)
 
 /* Inform all vlans that their parent has changed link state */
 static void
-vlan_link_state(struct ifnet *ifp, int link)
+vlan_link_state(struct ifnet *ifp)
 {
 	struct ifvlantrunk *trunk = ifp->if_vlantrunk;
 	struct ifvlan *ifv;
@@ -1367,7 +1371,7 @@ vlan_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 			break;
 		}
 		p = ifunit(vlr.vlr_parent);
-		if (p == 0) {
+		if (p == NULL) {
 			error = ENOENT;
 			break;
 		}

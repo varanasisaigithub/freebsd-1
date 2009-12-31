@@ -76,20 +76,34 @@ __FBSDID("$FreeBSD$");
  * http://www.asix.com.tw/FrootAttach/datasheet/AX88772_datasheet_Rev10.pdf
  */
 
-#include "usbdevs.h"
+#include <sys/stdint.h>
+#include <sys/stddef.h>
+#include <sys/param.h>
+#include <sys/queue.h>
+#include <sys/types.h>
+#include <sys/systm.h>
+#include <sys/kernel.h>
+#include <sys/bus.h>
+#include <sys/linker_set.h>
+#include <sys/module.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
+#include <sys/condvar.h>
+#include <sys/sysctl.h>
+#include <sys/sx.h>
+#include <sys/unistd.h>
+#include <sys/callout.h>
+#include <sys/malloc.h>
+#include <sys/priv.h>
+
 #include <dev/usb/usb.h>
-#include <dev/usb/usb_mfunc.h>
-#include <dev/usb/usb_error.h>
+#include <dev/usb/usbdi.h>
+#include <dev/usb/usbdi_util.h>
+#include "usbdevs.h"
 
 #define	USB_DEBUG_VAR axe_debug
-
-#include <dev/usb/usb_core.h>
-#include <dev/usb/usb_lookup.h>
-#include <dev/usb/usb_process.h>
 #include <dev/usb/usb_debug.h>
-#include <dev/usb/usb_request.h>
-#include <dev/usb/usb_busdma.h>
-#include <dev/usb/usb_util.h>
+#include <dev/usb/usb_process.h>
 
 #include <dev/usb/net/usb_ethernet.h>
 #include <dev/usb/net/if_axereg.h>
@@ -121,31 +135,34 @@ SYSCTL_INT(_hw_usb_axe, OID_AUTO, debug, CTLFLAG_RW, &axe_debug, 0,
  * Various supported device vendors/products.
  */
 static const struct usb_device_id axe_devs[] = {
-	{USB_VPI(USB_VENDOR_ABOCOM, USB_PRODUCT_ABOCOM_UF200, 0)},
-	{USB_VPI(USB_VENDOR_ACERCM, USB_PRODUCT_ACERCM_EP1427X2, 0)},
-	{USB_VPI(USB_VENDOR_APPLE, USB_PRODUCT_APPLE_ETHERNET, AXE_FLAG_772)},
-	{USB_VPI(USB_VENDOR_ASIX, USB_PRODUCT_ASIX_AX88172, 0)},
-	{USB_VPI(USB_VENDOR_ASIX, USB_PRODUCT_ASIX_AX88178, AXE_FLAG_178)},
-	{USB_VPI(USB_VENDOR_ASIX, USB_PRODUCT_ASIX_AX88772, AXE_FLAG_772)},
-	{USB_VPI(USB_VENDOR_ATEN, USB_PRODUCT_ATEN_UC210T, 0)},
-	{USB_VPI(USB_VENDOR_BELKIN, USB_PRODUCT_BELKIN_F5D5055, AXE_FLAG_178)},
-	{USB_VPI(USB_VENDOR_BILLIONTON, USB_PRODUCT_BILLIONTON_USB2AR, 0)},
-	{USB_VPI(USB_VENDOR_CISCOLINKSYS, USB_PRODUCT_CISCOLINKSYS_USB200MV2, AXE_FLAG_772)},
-	{USB_VPI(USB_VENDOR_COREGA, USB_PRODUCT_COREGA_FETHER_USB2_TX, 0)},
-	{USB_VPI(USB_VENDOR_DLINK, USB_PRODUCT_DLINK_DUBE100, 0)},
-	{USB_VPI(USB_VENDOR_DLINK, USB_PRODUCT_DLINK_DUBE100B1, AXE_FLAG_772)},
-	{USB_VPI(USB_VENDOR_GOODWAY, USB_PRODUCT_GOODWAY_GWUSB2E, 0)},
-	{USB_VPI(USB_VENDOR_IODATA, USB_PRODUCT_IODATA_ETGUS2, AXE_FLAG_178)},
-	{USB_VPI(USB_VENDOR_JVC, USB_PRODUCT_JVC_MP_PRX1, 0)},
-	{USB_VPI(USB_VENDOR_LINKSYS2, USB_PRODUCT_LINKSYS2_USB200M, 0)},
-	{USB_VPI(USB_VENDOR_LINKSYS4, USB_PRODUCT_LINKSYS4_USB1000, AXE_FLAG_178)},
-	{USB_VPI(USB_VENDOR_MELCO, USB_PRODUCT_MELCO_LUAU2KTX, 0)},
-	{USB_VPI(USB_VENDOR_NETGEAR, USB_PRODUCT_NETGEAR_FA120, 0)},
-	{USB_VPI(USB_VENDOR_OQO, USB_PRODUCT_OQO_ETHER01PLUS, AXE_FLAG_772)},
-	{USB_VPI(USB_VENDOR_PLANEX3, USB_PRODUCT_PLANEX3_GU1000T, AXE_FLAG_178)},
-	{USB_VPI(USB_VENDOR_SITECOM, USB_PRODUCT_SITECOM_LN029, 0)},
-	{USB_VPI(USB_VENDOR_SITECOMEU, USB_PRODUCT_SITECOMEU_LN028, AXE_FLAG_178)},
-	{USB_VPI(USB_VENDOR_SYSTEMTALKS, USB_PRODUCT_SYSTEMTALKS_SGCX2UL, 0)},
+#define	AXE_DEV(v,p,i) { USB_VPI(USB_VENDOR_##v, USB_PRODUCT_##v##_##p, i) }
+	AXE_DEV(ABOCOM, UF200, 0),
+	AXE_DEV(ACERCM, EP1427X2, 0),
+	AXE_DEV(APPLE, ETHERNET, AXE_FLAG_772),
+	AXE_DEV(ASIX, AX88172, 0),
+	AXE_DEV(ASIX, AX88178, AXE_FLAG_178),
+	AXE_DEV(ASIX, AX88772, AXE_FLAG_772),
+	AXE_DEV(ASIX, AX88772A, AXE_FLAG_772),
+	AXE_DEV(ATEN, UC210T, 0),
+	AXE_DEV(BELKIN, F5D5055, AXE_FLAG_178),
+	AXE_DEV(BILLIONTON, USB2AR, 0),
+	AXE_DEV(CISCOLINKSYS, USB200MV2, AXE_FLAG_772),
+	AXE_DEV(COREGA, FETHER_USB2_TX, 0),
+	AXE_DEV(DLINK, DUBE100, 0),
+	AXE_DEV(DLINK, DUBE100B1, AXE_FLAG_772),
+	AXE_DEV(GOODWAY, GWUSB2E, 0),
+	AXE_DEV(IODATA, ETGUS2, AXE_FLAG_178),
+	AXE_DEV(JVC, MP_PRX1, 0),
+	AXE_DEV(LINKSYS2, USB200M, 0),
+	AXE_DEV(LINKSYS4, USB1000, AXE_FLAG_178),
+	AXE_DEV(MELCO, LUAU2KTX, 0),
+	AXE_DEV(NETGEAR, FA120, 0),
+	AXE_DEV(OQO, ETHER01PLUS, AXE_FLAG_772),
+	AXE_DEV(PLANEX3, GU1000T, AXE_FLAG_178),
+	AXE_DEV(SITECOM, LN029, 0),
+	AXE_DEV(SITECOMEU, LN028, AXE_FLAG_178),
+	AXE_DEV(SYSTEMTALKS, SGCX2UL, 0),
+#undef AXE_DEV
 };
 
 static device_probe_t axe_probe;
@@ -191,10 +208,7 @@ static const struct usb_config axe_config[AXE_N_TRANSFER] = {
 		.type = UE_BULK,
 		.endpoint = UE_ADDR_ANY,
 		.direction = UE_DIR_IN,
-#if (MCLBYTES < 2048)
-#error "(MCLBYTES < 2048)"
-#endif
-		.bufsize = MCLBYTES,
+		.bufsize = 16384,	/* bytes */
 		.flags = {.pipe_bof = 1,.short_xfer_ok = 1,},
 		.callback = axe_bulk_read_callback,
 		.timeout = 0,	/* no timeout */
@@ -461,7 +475,7 @@ axe_setmulti(struct usb_ether *ue)
 	}
 	rxmode &= ~AXE_RXCMD_ALLMULTI;
 
-	IF_ADDR_LOCK(ifp);
+	if_maddr_rlock(ifp);
 	TAILQ_FOREACH(ifma, &ifp->if_multiaddrs, ifma_link)
 	{
 		if (ifma->ifma_addr->sa_family != AF_LINK)
@@ -470,7 +484,7 @@ axe_setmulti(struct usb_ether *ue)
 		    ifma->ifma_addr), ETHER_ADDR_LEN) >> 26;
 		hashtbl[h / 8] |= 1 << (h % 8);
 	}
-	IF_ADDR_UNLOCK(ifp);
+	if_maddr_runlock(ifp);
 
 	axe_cmd(sc, AXE_CMD_WRITE_MCAST, 0, 0, (void *)&hashtbl);
 	axe_cmd(sc, AXE_CMD_RXCTL_WRITE, 0, rxmode, NULL);
@@ -695,7 +709,7 @@ axe_attach(device_t dev)
 	error = usbd_transfer_setup(uaa->device, &iface_index, sc->sc_xfer,
 	    axe_config, AXE_N_TRANSFER, sc, &sc->sc_mtx);
 	if (error) {
-		device_printf(dev, "allocating USB transfers failed!\n");
+		device_printf(dev, "allocating USB transfers failed\n");
 		goto detach;
 	}
 
@@ -731,20 +745,20 @@ axe_detach(device_t dev)
 }
 
 static void
-axe_intr_callback(struct usb_xfer *xfer)
+axe_intr_callback(struct usb_xfer *xfer, usb_error_t error)
 {
 	switch (USB_GET_STATE(xfer)) {
 	case USB_ST_TRANSFERRED:
 	case USB_ST_SETUP:
 tr_setup:
-		xfer->frlengths[0] = xfer->max_data_length;
+		usbd_xfer_set_frame_len(xfer, 0, usbd_xfer_max_len(xfer));
 		usbd_transfer_submit(xfer);
 		return;
 
 	default:			/* Error */
-		if (xfer->error != USB_ERR_CANCELLED) {
+		if (error != USB_ERR_CANCELLED) {
 			/* try to clear stall first */
-			xfer->flags.stall_pipe = 1;
+			usbd_xfer_set_stall(xfer);
 			goto tr_setup;
 		}
 		return;
@@ -756,76 +770,72 @@ tr_setup:
 #endif
 
 static void
-axe_bulk_read_callback(struct usb_xfer *xfer)
+axe_bulk_read_callback(struct usb_xfer *xfer, usb_error_t error)
 {
-	struct axe_softc *sc = xfer->priv_sc;
+	struct axe_softc *sc = usbd_xfer_softc(xfer);
 	struct usb_ether *ue = &sc->sc_ue;
 	struct ifnet *ifp = uether_getifp(ue);
 	struct axe_sframe_hdr hdr;
-	int error, pos, len, adjust;
+	struct usb_page_cache *pc;
+	int err, pos, len;
+	int actlen;
+
+	usbd_xfer_status(xfer, &actlen, NULL, NULL, NULL);
 
 	switch (USB_GET_STATE(xfer)) {
 	case USB_ST_TRANSFERRED:
 		pos = 0;
-		while (1) {
-			if (sc->sc_flags & (AXE_FLAG_772 | AXE_FLAG_178)) {
-				if (xfer->actlen < sizeof(hdr)) {
+		len = 0;
+		err = 0;
+
+		pc = usbd_xfer_get_frame(xfer, 0);
+		if (sc->sc_flags & (AXE_FLAG_772 | AXE_FLAG_178)) {
+			while (pos < actlen) {
+				if ((pos + sizeof(hdr)) > actlen) {
 					/* too little data */
+					err = EINVAL;
 					break;
 				}
-				usbd_copy_out(xfer->frbuffers, pos, &hdr, sizeof(hdr));
+				usbd_copy_out(pc, pos, &hdr, sizeof(hdr));
 
 				if ((hdr.len ^ hdr.ilen) != 0xFFFF) {
 					/* we lost sync */
+					err = EINVAL;
 					break;
 				}
-				xfer->actlen -= sizeof(hdr);
 				pos += sizeof(hdr);
 
 				len = le16toh(hdr.len);
-				if (len > xfer->actlen) {
+				if ((pos + len) > actlen) {
 					/* invalid length */
+					err = EINVAL;
 					break;
 				}
-				adjust = (len & 1);
+				err = uether_rxbuf(ue, pc, pos, len);
 
-			} else {
-				len = xfer->actlen;
-				adjust = 0;
+				pos += len + (len % 2);
 			}
-			error = uether_rxbuf(ue, xfer->frbuffers, pos, len);
-			if (error)
-				break;
-
-			pos += len;
-			xfer->actlen -= len;
-
-			if (xfer->actlen <= adjust) {
-				/* we are finished */
-				goto tr_setup;
-			}
-			pos += adjust;
-			xfer->actlen -= adjust;
+		} else {
+			err = uether_rxbuf(ue, pc, 0, actlen);
 		}
 
-		/* count an error */
-		ifp->if_ierrors++;
+		if (err != 0)
+			ifp->if_ierrors++;
 
 		/* FALLTHROUGH */
 	case USB_ST_SETUP:
 tr_setup:
-		xfer->frlengths[0] = xfer->max_data_length;
+		usbd_xfer_set_frame_len(xfer, 0, usbd_xfer_max_len(xfer));
 		usbd_transfer_submit(xfer);
 		uether_rxflush(ue);
 		return;
 
 	default:			/* Error */
-		DPRINTF("bulk read error, %s\n", 
-		    usbd_errstr(xfer->error));
+		DPRINTF("bulk read error, %s\n", usbd_errstr(error));
 
-		if (xfer->error != USB_ERR_CANCELLED) {
+		if (error != USB_ERR_CANCELLED) {
 			/* try to clear stall first */
-			xfer->flags.stall_pipe = 1;
+			usbd_xfer_set_stall(xfer);
 			goto tr_setup;
 		}
 		return;
@@ -838,11 +848,12 @@ tr_setup:
 #endif
 
 static void
-axe_bulk_write_callback(struct usb_xfer *xfer)
+axe_bulk_write_callback(struct usb_xfer *xfer, usb_error_t error)
 {
-	struct axe_softc *sc = xfer->priv_sc;
+	struct axe_softc *sc = usbd_xfer_softc(xfer);
 	struct axe_sframe_hdr hdr;
 	struct ifnet *ifp = uether_getifp(&sc->sc_ue);
+	struct usb_page_cache *pc;
 	struct mbuf *m;
 	int pos;
 
@@ -860,6 +871,7 @@ tr_setup:
 			return;
 		}
 		pos = 0;
+		pc = usbd_xfer_get_frame(xfer, 0);
 
 		while (1) {
 
@@ -878,7 +890,7 @@ tr_setup:
 				hdr.len = htole16(m->m_pkthdr.len);
 				hdr.ilen = ~hdr.len;
 
-				usbd_copy_in(xfer->frbuffers, pos, &hdr, sizeof(hdr));
+				usbd_copy_in(pc, pos, &hdr, sizeof(hdr));
 
 				pos += sizeof(hdr);
 
@@ -890,9 +902,7 @@ tr_setup:
 				 * USB_FORCE_SHORT_XFER flag instead.
 				 */
 			}
-			usbd_m_copy_in(xfer->frbuffers, pos,
-			    m, 0, m->m_pkthdr.len);
-
+			usbd_m_copy_in(pc, pos, m, 0, m->m_pkthdr.len);
 			pos += m->m_pkthdr.len;
 
 			/*
@@ -914,19 +924,19 @@ tr_setup:
 			}
 		}
 
-		xfer->frlengths[0] = pos;
+		usbd_xfer_set_frame_len(xfer, 0, pos);
 		usbd_transfer_submit(xfer);
 		return;
 
 	default:			/* Error */
 		DPRINTFN(11, "transfer error, %s\n",
-		    usbd_errstr(xfer->error));
+		    usbd_errstr(error));
 
 		ifp->if_oerrors++;
 
-		if (xfer->error != USB_ERR_CANCELLED) {
+		if (error != USB_ERR_CANCELLED) {
 			/* try to clear stall first */
-			xfer->flags.stall_pipe = 1;
+			usbd_xfer_set_stall(xfer);
 			goto tr_setup;
 		}
 		return;
@@ -975,10 +985,11 @@ axe_init(struct usb_ether *ue)
 	/* Cancel pending I/O */
 	axe_stop(ue);
 
-#ifdef notdef
-	/* Set MAC address */
-	axe_mac(sc, IF_LLADDR(ifp), 1);
-#endif
+	/* Set MAC address. */
+	if (sc->sc_flags & (AXE_FLAG_178 | AXE_FLAG_772))
+		axe_cmd(sc, AXE_178_CMD_WRITE_NODEID, 0, 0, IF_LLADDR(ifp));
+	else
+		axe_cmd(sc, AXE_172_CMD_WRITE_NODEID, 0, 0, IF_LLADDR(ifp));
 
 	/* Set transmitter IPG values */
 	if (sc->sc_flags & (AXE_FLAG_178 | AXE_FLAG_772)) {
@@ -993,7 +1004,15 @@ axe_init(struct usb_ether *ue)
 	/* Enable receiver, set RX mode */
 	rxmode = (AXE_RXCMD_MULTICAST | AXE_RXCMD_ENABLE);
 	if (sc->sc_flags & (AXE_FLAG_178 | AXE_FLAG_772)) {
+#if 0
 		rxmode |= AXE_178_RXCMD_MFB_2048;	/* chip default */
+#else
+		/*
+		 * Default Rx buffer size is too small to get
+		 * maximum performance.
+		 */
+		rxmode |= AXE_178_RXCMD_MFB_16384;
+#endif
 	} else {
 		rxmode |= AXE_172_RXCMD_UNICAST;
 	}
@@ -1010,7 +1029,7 @@ axe_init(struct usb_ether *ue)
 	/* Load the multicast filter. */
 	axe_setmulti(ue);
 
-	usbd_transfer_set_stall(sc->sc_xfer[AXE_BULK_DT_WR]);
+	usbd_xfer_set_stall(sc->sc_xfer[AXE_BULK_DT_WR]);
 
 	ifp->if_drv_flags |= IFF_DRV_RUNNING;
 	axe_start(ue);

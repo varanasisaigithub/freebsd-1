@@ -79,10 +79,16 @@ struct pmap_statistics {
 };
 typedef struct pmap_statistics *pmap_statistics_t;
 
+/*
+ * Each machine dependent implementation is expected to provide:
+ *
+ * vm_memattr_t	pmap_page_get_memattr(vm_page_t);
+ * boolean_t	pmap_page_is_mapped(vm_page_t);
+ * void		pmap_page_set_memattr(vm_page_t, vm_memattr_t);
+ */
 #include <machine/pmap.h>
 
 #ifdef _KERNEL
-struct proc;
 struct thread;
 
 /*
@@ -127,6 +133,7 @@ void		 pmap_remove(pmap_t, vm_offset_t, vm_offset_t);
 void		 pmap_remove_all(vm_page_t m);
 void		 pmap_remove_pages(pmap_t);
 void		 pmap_remove_write(vm_page_t m);
+void		 pmap_sync_icache(pmap_t, vm_offset_t, vm_size_t);
 void		 pmap_zero_page(vm_page_t);
 void		 pmap_zero_page_area(vm_page_t, int off, int size);
 void		 pmap_zero_page_idle(vm_page_t);

@@ -56,7 +56,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/sockio.h>
 #include <sys/ttycom.h>
 #include <sys/uio.h>
-#include <sys/vimage.h>
 
 #include <sys/event.h>
 #include <sys/file.h>
@@ -73,6 +72,7 @@ __FBSDID("$FreeBSD$");
 #endif
 #include <net/bpf_zerocopy.h>
 #include <net/bpfdesc.h>
+#include <net/vnet.h>
 
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
@@ -148,8 +148,11 @@ static struct cdevsw bpf_cdevsw = {
 	.d_kqfilter =	bpfkqfilter,
 };
 
-static struct filterops bpfread_filtops =
-	{ 1, NULL, filt_bpfdetach, filt_bpfread };
+static struct filterops bpfread_filtops = {
+	.f_isfd = 1,
+	.f_detach = filt_bpfdetach,
+	.f_event = filt_bpfread,
+};
 
 /*
  * Wrapper functions for various buffering methods.  If the set of buffer
@@ -1585,6 +1588,9 @@ void
 bpf_tap(struct bpf_if *bp, u_char *pkt, u_int pktlen)
 {
 	struct bpf_d *d;
+#ifdef BPF_JITTER
+	bpf_jit_filter *bf;
+#endif
 	u_int slen;
 	int gottime;
 	struct timeval tv;
@@ -1601,8 +1607,9 @@ bpf_tap(struct bpf_if *bp, u_char *pkt, u_int pktlen)
 		 * the interface pointers on the mbuf to figure it out.
 		 */
 #ifdef BPF_JITTER
-		if (bpf_jitter_enable != 0 && d->bd_bfilter != NULL)
-			slen = (*(d->bd_bfilter->func))(pkt, pktlen, pktlen);
+		bf = bpf_jitter_enable != 0 ? d->bd_bfilter : NULL;
+		if (bf != NULL)
+			slen = (*(bf->func))(pkt, pktlen, pktlen);
 		else
 #endif
 		slen = bpf_filter(d->bd_rfilter, pkt, pktlen, pktlen);
@@ -1634,6 +1641,9 @@ void
 bpf_mtap(struct bpf_if *bp, struct mbuf *m)
 {
 	struct bpf_d *d;
+#ifdef BPF_JITTER
+	bpf_jit_filter *bf;
+#endif
 	u_int pktlen, slen;
 	int gottime;
 	struct timeval tv;
@@ -1655,11 +1665,10 @@ bpf_mtap(struct bpf_if *bp, struct mbuf *m)
 		BPFD_LOCK(d);
 		++d->bd_rcount;
 #ifdef BPF_JITTER
+		bf = bpf_jitter_enable != 0 ? d->bd_bfilter : NULL;
 		/* XXX We cannot handle multiple mbufs. */
-		if (bpf_jitter_enable != 0 && d->bd_bfilter != NULL &&
-		    m->m_next == NULL)
-			slen = (*(d->bd_bfilter->func))(mtod(m, u_char *),
-			    pktlen, pktlen);
+		if (bf != NULL && m->m_next == NULL)
+			slen = (*(bf->func))(mtod(m, u_char *), pktlen, pktlen);
 		else
 #endif
 		slen = bpf_filter(d->bd_rfilter, (u_char *)m, pktlen, 0);
@@ -2029,7 +2038,35 @@ bpf_drvinit(void *unused)
 	dev = make_dev(&bpf_cdevsw, 0, UID_ROOT, GID_WHEEL, 0600, "bpf");
 	/* For compatibility */
 	make_dev_alias(dev, "bpf0");
+}
 
+/*
+ * Zero out the various packet counters associated with all of the bpf
+ * descriptors.  At some point, we will probably want to get a bit more
+ * granular and allow the user to specify descriptors to be zeroed.
+ */
+static void
+bpf_zero_counters(void)
+{
+	struct bpf_if *bp;
+	struct bpf_d *bd;
+
+	mtx_lock(&bpf_mtx);
+	LIST_FOREACH(bp, &bpf_iflist, bif_next) {
+		BPFIF_LOCK(bp);
+		LIST_FOREACH(bd, &bp->bif_dlist, bd_next) {
+			BPFD_LOCK(bd);
+			bd->bd_rcount = 0;
+			bd->bd_dcount = 0;
+			bd->bd_fcount = 0;
+			bd->bd_wcount = 0;
+			bd->bd_wfcount = 0;
+			bd->bd_zcopy = 0;
+			BPFD_UNLOCK(bd);
+		}
+		BPFIF_UNLOCK(bp);
+	}
+	mtx_unlock(&bpf_mtx);
 }
 
 static void
@@ -2066,7 +2103,7 @@ bpfstats_fill_xbpf(struct xbpf_d *d, struct bpf_d *bd)
 static int
 bpf_stats_sysctl(SYSCTL_HANDLER_ARGS)
 {
-	struct xbpf_d *xbdbuf, *xbd;
+	struct xbpf_d *xbdbuf, *xbd, zerostats;
 	int index, error;
 	struct bpf_if *bp;
 	struct bpf_d *bd;
@@ -2080,6 +2117,21 @@ bpf_stats_sysctl(SYSCTL_HANDLER_ARGS)
 	error = priv_check(req->td, PRIV_NET_BPF);
 	if (error)
 		return (error);
+	/*
+	 * Check to see if the user is requesting that the counters be
+	 * zeroed out.  Explicitly check that the supplied data is zeroed,
+	 * as we aren't allowing the user to set the counters currently.
+	 */
+	if (req->newptr != NULL) {
+		if (req->newlen != sizeof(zerostats))
+			return (EINVAL);
+		bzero(&zerostats, sizeof(zerostats));
+		xbd = req->newptr;
+		if (bcmp(xbd, &zerostats, sizeof(*xbd)) != 0)
+			return (EINVAL);
+		bpf_zero_counters();
+		return (0);
+	}
 	if (req->oldptr == NULL)
 		return (SYSCTL_OUT(req, 0, bpf_bpfd_cnt * sizeof(*xbd)));
 	if (bpf_bpfd_cnt == 0)

@@ -1047,7 +1047,7 @@ ae_get_reg_eaddr(ae_softc_t *sc, uint32_t *eaddr)
 	if (AE_CHECK_EADDR_VALID(eaddr) != 0) {
 		if (bootverbose)
 			device_printf(sc->dev,
-			    "Ethetnet address registers are invalid.\n");
+			    "Ethernet address registers are invalid.\n");
 		return (EINVAL);
 	}
 	return (0);
@@ -2073,15 +2073,15 @@ ae_rxfilter(ae_softc_t *sc)
 	 * Load multicast tables.
 	 */
 	bzero(mchash, sizeof(mchash));
-	IF_ADDR_LOCK(ifp);
+	if_maddr_rlock(ifp);
 	TAILQ_FOREACH(ifma, &ifp->if_multiaddrs, ifma_link) {
 		if (ifma->ifma_addr->sa_family != AF_LINK)
 			continue;
-		crc = ether_crc32_le(LLADDR((struct sockaddr_dl *)
+		crc = ether_crc32_be(LLADDR((struct sockaddr_dl *)
 			ifma->ifma_addr), ETHER_ADDR_LEN);
 		mchash[crc >> 31] |= 1 << ((crc >> 26) & 0x1f);
 	}
-	IF_ADDR_UNLOCK(ifp);
+	if_maddr_runlock(ifp);
 	AE_WRITE_4(sc, AE_REG_MHT0, mchash[0]);
 	AE_WRITE_4(sc, AE_REG_MHT1, mchash[1]);
 	AE_WRITE_4(sc, AE_MAC_REG, rxcfg);

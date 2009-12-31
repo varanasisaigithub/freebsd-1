@@ -14,13 +14,15 @@ SUBDIR=	${_3dfx} \
 	${_agp} \
 	aha \
 	${_ahb} \
+	ahci \
 	${_aic} \
 	aic7xxx \
 	aio \
-	${_amd} \
-	${_amdtemp} \
 	alc \
 	ale \
+	${_amd} \
+	${_amdsbwd} \
+	${_amdtemp} \
 	amr \
 	${_an} \
 	${_aout} \
@@ -39,6 +41,7 @@ SUBDIR=	${_3dfx} \
 	${_bktr} \
 	${_bm} \
 	bridgestp \
+	bwi \
 	cam \
 	${_canbepm} \
 	${_canbus} \
@@ -108,6 +111,7 @@ SUBDIR=	${_3dfx} \
 	if_disc \
 	if_edsc \
 	if_ef \
+	if_epair \
 	if_faith \
 	if_gif \
 	if_gre \
@@ -148,6 +152,7 @@ SUBDIR=	${_3dfx} \
 	libiconv \
 	libmbpool \
 	libmchain \
+	${_lindev} \
 	${_linprocfs} \
 	${_linsysfs} \
 	${_linux} \
@@ -223,6 +228,7 @@ SUBDIR=	${_3dfx} \
 	procfs \
 	pseudofs \
 	${_pst} \
+	pty  \
 	puc \
 	ral \
 	ralfw \
@@ -241,6 +247,7 @@ SUBDIR=	${_3dfx} \
 	sdhci \
 	sem \
 	sf \
+	siis \
 	sis \
 	sk \
 	${_smbfs} \
@@ -271,7 +278,7 @@ SUBDIR=	${_3dfx} \
 	ubsec \
 	udf \
 	udf_iconv \
-	${_ufs} \
+	ufs \
 	unionfs \
 	usb \
 	utopia \
@@ -293,6 +300,7 @@ SUBDIR=	${_3dfx} \
 	wlan_xauth \
 	${_wpi} \
 	${_wpifw} \
+	${_x86bios} \
 	${_xe} \
 	xfs \
 	xl \
@@ -302,10 +310,6 @@ SUBDIR=	${_3dfx} \
 .if ${MACHINE_ARCH} != "powerpc"
 _syscons=	syscons
 _vpo=		vpo
-.endif
-
-.if defined(ALL_MODULES)
-_ufs=		ufs
 .endif
 
 .if ${MK_CRYPT} != "no" || defined(ALL_MODULES)
@@ -371,6 +375,7 @@ _ie=		ie
 _if_ndis=	if_ndis
 _igb=		igb
 _io=		io
+_lindev=	lindev
 _linprocfs=	linprocfs
 _linsysfs=	linsysfs
 _linux=		linux
@@ -412,6 +417,7 @@ _zfs=		zfs
 _aac=		aac
 _acpi=		acpi
 _ahb=		ahb
+_amdsbwd=	amdsbwd
 _amdtemp=	amdtemp
 _arcmsr=	arcmsr
 _asmc=		asmc
@@ -454,6 +460,7 @@ _padlock=	padlock
 _s3=		s3
 _twa=		twa
 _vesa=		vesa
+_x86bios=	x86bios
 .elif ${MACHINE} == "pc98"
 _canbepm=	canbepm
 _canbus=	canbus
@@ -467,6 +474,7 @@ _aac=		aac
 _acpi=		acpi
 _agp=		agp
 _an=		an
+_amdsbwd=	amdsbwd
 _amdtemp=	amdtemp
 _arcmsr=	arcmsr
 _asmc=		asmc
@@ -480,6 +488,7 @@ _cpufreq=	cpufreq
 .if ${MK_CDDL} != "no" || defined(ALL_MODULES)
 _cyclic=	cyclic
 .endif
+_dpms=		dpms
 _drm=		drm
 .if ${MK_CDDL} != "no" || defined(ALL_MODULES)
 _dtrace=	dtrace
@@ -506,6 +515,7 @@ _ipwfw=		ipwfw
 _iwn=		iwn
 _iwnfw=		iwnfw
 _ixgb=		ixgb
+_lindev=	lindev
 _linprocfs=	linprocfs
 _linsysfs=	linsysfs
 _linux=		linux
@@ -525,14 +535,18 @@ _padlock=	padlock
 .endif
 _pccard=	pccard
 _rdma=		rdma	
+_s3=		s3
 _safe=		safe
 _scsi_low=	scsi_low
 _smbfs=		smbfs
 _sound=		sound
 _speaker=	speaker
+_splash=	splash
 _sppp=		sppp
 _tmpfs=		tmpfs
 _twa=		twa
+_vesa=		vesa
+_x86bios=	x86bios
 _wi=		wi
 _wpi=		wpi
 _wpifw=		wpifw

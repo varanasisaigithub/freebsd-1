@@ -58,9 +58,12 @@ __FBSDID("$FreeBSD$");
 #include <sys/syscallsubr.h>
 #include <sys/sysctl.h>
 #include <sys/vnode.h>
-#include <sys/vimage.h>
+
 #include <net/if.h>
+#include <net/vnet.h>
+
 #include <netinet/in.h>
+
 #ifdef DDB
 #include <ddb/ddb.h>
 #ifdef INET6
@@ -69,6 +72,8 @@ __FBSDID("$FreeBSD$");
 #endif /* DDB */
 
 #include <security/mac/mac_framework.h>
+
+#define	DEFAULT_HOSTUUID	"00000000-0000-0000-0000-000000000000"
 
 MALLOC_DEFINE(M_PRISON, "prison", "Prison structures");
 
@@ -80,9 +85,14 @@ struct prison prison0 = {
 	.pr_uref	= 1,
 	.pr_path	= "/",
 	.pr_securelevel	= -1,
-	.pr_hostuuid	= "00000000-0000-0000-0000-000000000000",
-	.pr_children	= LIST_HEAD_INITIALIZER(&prison0.pr_children),
+	.pr_childmax	= JAIL_MAX,
+	.pr_hostuuid	= DEFAULT_HOSTUUID,
+	.pr_children	= LIST_HEAD_INITIALIZER(prison0.pr_children),
+#ifdef VIMAGE
+	.pr_flags	= PR_HOST|PR_VNET,
+#else
 	.pr_flags	= PR_HOST,
+#endif
 	.pr_allow	= PR_ALLOW_ALL,
 };
 MTX_SYSINIT(prison0, &prison0.pr_mtx, "jail mutex", MTX_DEF);
@@ -119,29 +129,26 @@ static int prison_restrict_ip6(struct prison *pr, struct in6_addr *newip6);
  */
 static char *pr_flag_names[] = {
 	[0] = "persist",
-	"host",
-#ifdef INET
-	"ip4",
-#endif
-#ifdef INET6
-	[3] = "ip6",
-#endif
-#ifdef VIMAGE
-	[4] = "vnet",
-#endif
 };
 
 static char *pr_flag_nonames[] = {
 	[0] = "nopersist",
-	"nohost",
+};
+
+struct jailsys_flags {
+	const char	*name;
+	unsigned	 disable;
+	unsigned	 new;
+} pr_flag_jailsys[] = {
+	{ "host", 0, PR_HOST },
+#ifdef VIMAGE
+	{ "vnet", 0, PR_VNET },
+#endif
 #ifdef INET
-	"noip4",
+	{ "ip4", PR_IP4_USER | PR_IP4_DISABLE, PR_IP4_USER },
 #endif
 #ifdef INET6
-	[3] = "noip6",
-#endif
-#ifdef VIMAGE
-	[4] = "novnet",
+	{ "ip6", PR_IP6_USER | PR_IP6_DISABLE, PR_IP6_USER },
 #endif
 };
 
@@ -152,7 +159,6 @@ static char *pr_allow_names[] = {
 	"allow.chflags",
 	"allow.mount",
 	"allow.quotas",
-	"allow.jails",
 	"allow.socket_af",
 };
 
@@ -163,13 +169,13 @@ static char *pr_allow_nonames[] = {
 	"allow.nochflags",
 	"allow.nomount",
 	"allow.noquotas",
-	"allow.nojails",
 	"allow.nosocket_af",
 };
 
-#define	JAIL_DEFAULT_ALLOW	PR_ALLOW_SET_HOSTNAME
+#define	JAIL_DEFAULT_ALLOW		PR_ALLOW_SET_HOSTNAME
+#define	JAIL_DEFAULT_ENFORCE_STATFS	2
 static unsigned jail_default_allow = JAIL_DEFAULT_ALLOW;
-static int jail_default_enforce_statfs = 2;
+static int jail_default_enforce_statfs = JAIL_DEFAULT_ENFORCE_STATFS;
 #if defined(INET) || defined(INET6)
 static unsigned jail_max_af_ips = 255;
 #endif
@@ -472,23 +478,25 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 	struct vfsoptlist *opts;
 	struct prison *pr, *deadpr, *mypr, *ppr, *tpr;
 	struct vnode *root;
-	char *domain, *errmsg, *host, *name, *p, *path, *uuid;
+	char *domain, *errmsg, *host, *name, *namelc, *p, *path, *uuid;
 #if defined(INET) || defined(INET6)
+	struct prison *tppr;
 	void *op;
 #endif
 	unsigned long hid;
 	size_t namelen, onamelen;
 	int created, cuflags, descend, enforce, error, errmsg_len, errmsg_pos;
-	int gotenforce, gothid, gotslevel, fi, jid, len;
-	int slevel, vfslocked;
+	int gotchildmax, gotenforce, gothid, gotslevel;
+	int fi, jid, jsys, len, level;
+	int childmax, slevel, vfslocked;
 #if defined(INET) || defined(INET6)
 	int ii, ij;
 #endif
 #ifdef INET
-	int ip4s, ip4a, redo_ip4;
+	int ip4s, redo_ip4;
 #endif
 #ifdef INET6
-	int ip6s, ip6a, redo_ip6;
+	int ip6s, redo_ip6;
 #endif
 	unsigned pr_flags, ch_flags;
 	unsigned pr_allow, ch_allow, tallow;
@@ -500,7 +508,7 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 	if (error)
 		return (error);
 	mypr = ppr = td->td_ucred->cr_prison;
-	if ((flags & JAIL_CREATE) && !(mypr->pr_allow & PR_ALLOW_JAILS))
+	if ((flags & JAIL_CREATE) && mypr->pr_childmax == 0)
 		return (EPERM);
 	if (flags & ~JAIL_SET_MASK)
 		return (EINVAL);
@@ -519,17 +527,12 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 	if (error)
 		return (error);
 #ifdef INET
-	ip4a = 0;
 	ip4 = NULL;
 #endif
 #ifdef INET6
-	ip6a = 0;
 	ip6 = NULL;
 #endif
 
-#if defined(INET) || defined(INET6)
- again:
-#endif
 	error = vfs_copyopt(opts, "jid", &jid, sizeof(jid));
 	if (error == ENOENT)
 		jid = 0;
@@ -543,6 +546,15 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 		goto done_free;
 	else
 		gotslevel = 1;
+
+	error =
+	    vfs_copyopt(opts, "children.max", &childmax, sizeof(childmax));
+	if (error == ENOENT)
+		gotchildmax = 0;
+	else if (error != 0)
+		goto done_free;
+	else
+		gotchildmax = 1;
 
 	error = vfs_copyopt(opts, "enforce_statfs", &enforce, sizeof(enforce));
 	gotenforce = (error == 0);
@@ -561,6 +573,34 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 		vfs_flagopt(opts, pr_flag_nonames[fi], &ch_flags, 1 << fi);
 	}
 	ch_flags |= pr_flags;
+	for (fi = 0; fi < sizeof(pr_flag_jailsys) / sizeof(pr_flag_jailsys[0]);
+	    fi++) {
+		error = vfs_copyopt(opts, pr_flag_jailsys[fi].name, &jsys,
+		    sizeof(jsys));
+		if (error == ENOENT)
+			continue;
+		if (error != 0)
+			goto done_free;
+		switch (jsys) {
+		case JAIL_SYS_DISABLE:
+			if (!pr_flag_jailsys[fi].disable) {
+				error = EINVAL;
+				goto done_free;
+			}
+			pr_flags |= pr_flag_jailsys[fi].disable;
+			break;
+		case JAIL_SYS_NEW:
+			pr_flags |= pr_flag_jailsys[fi].new;
+			break;
+		case JAIL_SYS_INHERIT:
+			break;
+		default:
+			error = EINVAL;
+			goto done_free;
+		}
+		ch_flags |=
+		    pr_flag_jailsys[fi].new | pr_flag_jailsys[fi].disable;
+	}
 	if ((flags & (JAIL_CREATE | JAIL_UPDATE | JAIL_ATTACH)) == JAIL_CREATE
 	    && !(pr_flags & PR_PERSIST)) {
 		error = EINVAL;
@@ -571,6 +611,20 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 	if ((flags & JAIL_UPDATE) && (ch_flags & PR_VNET)) {
 		error = EINVAL;
 		vfs_opterror(opts, "vnet cannot be changed after creation");
+		goto done_errmsg;
+	}
+#endif
+#ifdef INET
+	if ((flags & JAIL_UPDATE) && (ch_flags & PR_IP4_USER)) {
+		error = EINVAL;
+		vfs_opterror(opts, "ip4 cannot be changed after creation");
+		goto done_errmsg;
+	}
+#endif
+#ifdef INET6
+	if ((flags & JAIL_UPDATE) && (ch_flags & PR_IP6_USER)) {
+		error = EINVAL;
+		vfs_opterror(opts, "ip6 cannot be changed after creation");
 		goto done_errmsg;
 	}
 #endif
@@ -672,34 +726,28 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 		pr_flags |= PR_HOST;
 	}
 
-	/* This might be the second time around for this option. */
 #ifdef INET
 	error = vfs_getopt(opts, "ip4.addr", &op, &ip4s);
 	if (error == ENOENT)
-		ip4s = -1;
+		ip4s = (pr_flags & PR_IP4_DISABLE) ? 0 : -1;
 	else if (error != 0)
 		goto done_free;
 	else if (ip4s & (sizeof(*ip4) - 1)) {
 		error = EINVAL;
 		goto done_free;
 	} else {
-		ch_flags |= PR_IP4_USER;
-		pr_flags |= PR_IP4_USER;
-		if (ip4s > 0) {
+		ch_flags |= PR_IP4_USER | PR_IP4_DISABLE;
+		if (ip4s == 0)
+			pr_flags |= PR_IP4_USER | PR_IP4_DISABLE;
+		else {
+			pr_flags = (pr_flags & ~PR_IP4_DISABLE) | PR_IP4_USER;
 			ip4s /= sizeof(*ip4);
 			if (ip4s > jail_max_af_ips) {
 				error = EINVAL;
 				vfs_opterror(opts, "too many IPv4 addresses");
 				goto done_errmsg;
 			}
-			if (ip4a < ip4s) {
-				ip4a = ip4s;
-				free(ip4, M_PRISON);
-				ip4 = NULL;
-			}
-			if (ip4 == NULL)
-				ip4 = malloc(ip4a * sizeof(*ip4), M_PRISON,
-				    M_WAITOK);
+			ip4 = malloc(ip4s * sizeof(*ip4), M_PRISON, M_WAITOK);
 			bcopy(op, ip4, ip4s * sizeof(*ip4));
 			/*
 			 * IP addresses are all sorted but ip[0] to preserve
@@ -737,30 +785,25 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 #ifdef INET6
 	error = vfs_getopt(opts, "ip6.addr", &op, &ip6s);
 	if (error == ENOENT)
-		ip6s = -1;
+		ip6s = (pr_flags & PR_IP6_DISABLE) ? 0 : -1;
 	else if (error != 0)
 		goto done_free;
 	else if (ip6s & (sizeof(*ip6) - 1)) {
 		error = EINVAL;
 		goto done_free;
 	} else {
-		ch_flags |= PR_IP6_USER;
-		pr_flags |= PR_IP6_USER;
-		if (ip6s > 0) {
+		ch_flags |= PR_IP6_USER | PR_IP6_DISABLE;
+		if (ip6s == 0)
+			pr_flags |= PR_IP6_USER | PR_IP6_DISABLE;
+		else {
+			pr_flags = (pr_flags & ~PR_IP6_DISABLE) | PR_IP6_USER;
 			ip6s /= sizeof(*ip6);
 			if (ip6s > jail_max_af_ips) {
 				error = EINVAL;
 				vfs_opterror(opts, "too many IPv6 addresses");
 				goto done_errmsg;
 			}
-			if (ip6a < ip6s) {
-				ip6a = ip6s;
-				free(ip6, M_PRISON);
-				ip6 = NULL;
-			}
-			if (ip6 == NULL)
-				ip6 = malloc(ip6a * sizeof(*ip6), M_PRISON,
-				    M_WAITOK);
+			ip6 = malloc(ip6s * sizeof(*ip6), M_PRISON, M_WAITOK);
 			bcopy(op, ip6, ip6s * sizeof(*ip6));
 			if (ip6s > 1)
 				qsort(ip6 + 1, ip6s - 1, sizeof(*ip6), qcmp_v6);
@@ -778,6 +821,15 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 				}
 			}
 		}
+	}
+#endif
+
+#if defined(VIMAGE) && (defined(INET) || defined(INET6))
+	if ((ch_flags & PR_VNET) && (ch_flags & (PR_IP4_USER | PR_IP6_USER))) {
+		error = EINVAL;
+		vfs_opterror(opts,
+		    "vnet jails cannot have IP address restrictions");
+		goto done_errmsg;
 	}
 #endif
 
@@ -855,6 +907,13 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 		goto done_unlock_list;
 	}
 	pr = NULL;
+	namelc = NULL;
+	if (cuflags == JAIL_CREATE && jid == 0 && name != NULL) {
+		namelc = strrchr(name, '.');
+		jid = strtoul(namelc != NULL ? namelc + 1 : name, &p, 10);
+		if (*p != '\0')
+			jid = 0;
+	}
 	if (jid != 0) {
 		/*
 		 * See if a requested jid already exists.  There is an
@@ -921,17 +980,19 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 	 * because that is the jail being updated).
 	 */
 	if (name != NULL) {
-		p = strrchr(name, '.');
-		if (p != NULL) {
+		namelc = strrchr(name, '.');
+		if (namelc == NULL)
+			namelc = name;
+		else {
 			/*
 			 * This is a hierarchical name.  Split it into the
 			 * parent and child names, and make sure the parent
 			 * exists or matches an already found jail.
 			 */
-			*p = '\0';
+			*namelc = '\0';
 			if (pr != NULL) {
-				if (strncmp(name, ppr->pr_name, p - name) ||
-				    ppr->pr_name[p - name] != '\0') {
+				if (strncmp(name, ppr->pr_name, namelc - name)
+				    || ppr->pr_name[namelc - name] != '\0') {
 					mtx_unlock(&pr->pr_mtx);
 					error = EINVAL;
 					vfs_opterror(opts,
@@ -948,7 +1009,7 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 				}
 				mtx_unlock(&ppr->pr_mtx);
 			}
-			name = p + 1;
+			name = ++namelc;
 		}
 		if (name[0] != '\0') {
 			namelen =
@@ -1023,6 +1084,12 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 
 	/* If there's no prison to update, create a new one and link it in. */
 	if (pr == NULL) {
+		for (tpr = mypr; tpr != NULL; tpr = tpr->pr_parent)
+			if (tpr->pr_childcount >= tpr->pr_childmax) {
+				error = EPERM;
+				vfs_opterror(opts, "prison limit exceeded");
+				goto done_unlock_list;
+			}
 		created = 1;
 		mtx_lock(&ppr->pr_mtx);
 		if (ppr->pr_ref == 0 || (ppr->pr_flags & PR_REMOVE)) {
@@ -1076,7 +1143,7 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 			TAILQ_INSERT_TAIL(&allprison, pr, pr_list);
 		LIST_INSERT_HEAD(&ppr->pr_children, pr, pr_sibling);
 		for (tpr = ppr; tpr != NULL; tpr = tpr->pr_parent)
-			tpr->pr_prisoncount++;
+			tpr->pr_childcount++;
 
 		pr->pr_parent = ppr;
 		pr->pr_id = jid;
@@ -1084,44 +1151,55 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 		/* Set some default values, and inherit some from the parent. */
 		if (name == NULL)
 			name = "";
-		if (host != NULL || domain != NULL || uuid != NULL || gothid) {
-			if (host == NULL)
-				host = ppr->pr_hostname;
-			if (domain == NULL)
-				domain = ppr->pr_domainname;
-			if (uuid == NULL)
-				uuid = ppr->pr_hostuuid;
-			if (!gothid)
-				hid = ppr->pr_hostid;
-		}
 		if (path == NULL) {
 			path = "/";
 			root = mypr->pr_root;
 			vref(root);
 		}
+		strlcpy(pr->pr_hostuuid, DEFAULT_HOSTUUID, HOSTUUIDLEN);
+		pr->pr_flags |= PR_HOST;
+#if defined(INET) || defined(INET6)
+#ifdef VIMAGE
+		if (!(pr_flags & PR_VNET))
+#endif
+		{
 #ifdef INET
-		pr->pr_flags |= ppr->pr_flags & PR_IP4;
-		pr->pr_ip4s = ppr->pr_ip4s;
-		if (ppr->pr_ip4 != NULL) {
-			pr->pr_ip4 = malloc(pr->pr_ip4s *
-			    sizeof(struct in_addr), M_PRISON, M_WAITOK);
-			bcopy(ppr->pr_ip4, pr->pr_ip4,
-			    pr->pr_ip4s * sizeof(*pr->pr_ip4));
-		}
+			if (!(ch_flags & PR_IP4_USER))
+				pr->pr_flags |=
+				    PR_IP4 | PR_IP4_USER | PR_IP4_DISABLE;
+			else if (!(pr_flags & PR_IP4_USER)) {
+				pr->pr_flags |= ppr->pr_flags & PR_IP4;
+				if (ppr->pr_ip4 != NULL) {
+					pr->pr_ip4s = ppr->pr_ip4s;
+					pr->pr_ip4 = malloc(pr->pr_ip4s *
+					    sizeof(struct in_addr), M_PRISON,
+					    M_WAITOK);
+					bcopy(ppr->pr_ip4, pr->pr_ip4,
+					    pr->pr_ip4s * sizeof(*pr->pr_ip4));
+				}
+			}
 #endif
 #ifdef INET6
-		pr->pr_flags |= ppr->pr_flags & PR_IP6;
-		pr->pr_ip6s = ppr->pr_ip6s;
-		if (ppr->pr_ip6 != NULL) {
-			pr->pr_ip6 = malloc(pr->pr_ip6s *
-			    sizeof(struct in6_addr), M_PRISON, M_WAITOK);
-			bcopy(ppr->pr_ip6, pr->pr_ip6,
-			    pr->pr_ip6s * sizeof(*pr->pr_ip6));
+			if (!(ch_flags & PR_IP6_USER))
+				pr->pr_flags |=
+				    PR_IP6 | PR_IP6_USER | PR_IP6_DISABLE;
+			else if (!(pr_flags & PR_IP6_USER)) {
+				pr->pr_flags |= ppr->pr_flags & PR_IP6;
+				if (ppr->pr_ip6 != NULL) {
+					pr->pr_ip6s = ppr->pr_ip6s;
+					pr->pr_ip6 = malloc(pr->pr_ip6s *
+					    sizeof(struct in6_addr), M_PRISON,
+					    M_WAITOK);
+					bcopy(ppr->pr_ip6, pr->pr_ip6,
+					    pr->pr_ip6s * sizeof(*pr->pr_ip6));
+				}
+			}
+#endif
 		}
 #endif
 		pr->pr_securelevel = ppr->pr_securelevel;
 		pr->pr_allow = JAIL_DEFAULT_ALLOW & ppr->pr_allow;
-		pr->pr_enforce_statfs = ppr->pr_enforce_statfs;
+		pr->pr_enforce_statfs = JAIL_DEFAULT_ENFORCE_STATFS;
 
 		LIST_INIT(&pr->pr_children);
 		mtx_init(&pr->pr_mtx, "jail mutex", NULL, MTX_DEF | MTX_DUPOK);
@@ -1154,11 +1232,42 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 		 * continue to exist for the duration of the call.
 		 */
 		pr->pr_ref++;
+#if defined(VIMAGE) && (defined(INET) || defined(INET6))
+		if ((pr->pr_flags & PR_VNET) &&
+		    (ch_flags & (PR_IP4_USER | PR_IP6_USER))) {
+			error = EINVAL;
+			vfs_opterror(opts,
+			    "vnet jails cannot have IP address restrictions");
+			goto done_deref_locked;
+		}
+#endif
+#ifdef INET
+		if (PR_IP4_USER & ch_flags & (pr_flags ^ pr->pr_flags)) {
+			error = EINVAL;
+			vfs_opterror(opts,
+			    "ip4 cannot be changed after creation");
+			goto done_deref_locked;
+		}
+#endif
+#ifdef INET6
+		if (PR_IP6_USER & ch_flags & (pr_flags ^ pr->pr_flags)) {
+			error = EINVAL;
+			vfs_opterror(opts,
+			    "ip6 cannot be changed after creation");
+			goto done_deref_locked;
+		}
+#endif
 	}
 
 	/* Do final error checking before setting anything. */
 	if (gotslevel) {
 		if (slevel < ppr->pr_securelevel) {
+			error = EPERM;
+			goto done_deref_locked;
+		}
+	}
+	if (gotchildmax) {
+		if (childmax >= ppr->pr_childmax) {
 			error = EPERM;
 			goto done_deref_locked;
 		}
@@ -1170,232 +1279,138 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 		}
 	}
 #ifdef INET
-	if (ch_flags & PR_IP4_USER) {
+	if (ip4s > 0) {
 		if (ppr->pr_flags & PR_IP4) {
-			if (!(pr_flags & PR_IP4_USER)) {
-				/*
-				 * Silently ignore attempts to make the IP
-				 * addresses unrestricted when the parent is
-				 * restricted; in other words, interpret
-				 * "unrestricted" as "as unrestricted as
-				 * possible".
-				 */
-				ip4s = ppr->pr_ip4s;
-				if (ip4s == 0) {
-					free(ip4, M_PRISON);
-					ip4 = NULL;
-				} else if (ip4s <= ip4a) {
-					/* Inherit the parent's address(es). */
-					bcopy(ppr->pr_ip4, ip4,
-					    ip4s * sizeof(*ip4));
-				} else {
-					/*
-					 * There's no room for the parent's
-					 * address list.  Allocate some more.
-					 */
-					ip4a = ip4s;
-					free(ip4, M_PRISON);
-					ip4 = malloc(ip4a * sizeof(*ip4),
-					    M_PRISON, M_NOWAIT);
-					if (ip4 != NULL)
-						bcopy(ppr->pr_ip4, ip4,
-						    ip4s * sizeof(*ip4));
-					else {
-						/* Allocation failed without
-						 * sleeping.  Unlocking the
-						 * prison now will invalidate
-						 * some checks and prematurely
-						 * show an unfinished new jail.
-						 * So let go of everything and
-						 * start over.
-						 */
-						prison_deref(pr, created
-						    ? PD_LOCKED |
-						      PD_LIST_XLOCKED
-						    : PD_DEREF | PD_LOCKED |
-						      PD_LIST_XLOCKED);
-						if (root != NULL) {
-							vfslocked =
-							    VFS_LOCK_GIANT(
-							    root->v_mount);
-							vrele(root);
-							VFS_UNLOCK_GIANT(
-							    vfslocked);
-						}
-						ip4 = malloc(ip4a *
-						    sizeof(*ip4), M_PRISON,
-						    M_WAITOK);
-						goto again;
-					}
-				}
-			} else if (ip4s > 0) {
-				/*
-				 * Make sure the new set of IP addresses is a
-				 * subset of the parent's list.  Don't worry
-				 * about the parent being unlocked, as any
-				 * setting is done with allprison_lock held.
-				 */
-				for (ij = 0; ij < ppr->pr_ip4s; ij++)
-					if (ip4[0].s_addr ==
-					    ppr->pr_ip4[ij].s_addr)
+			/*
+			 * Make sure the new set of IP addresses is a
+			 * subset of the parent's list.  Don't worry
+			 * about the parent being unlocked, as any
+			 * setting is done with allprison_lock held.
+			 */
+			for (ij = 0; ij < ppr->pr_ip4s; ij++)
+				if (ip4[0].s_addr == ppr->pr_ip4[ij].s_addr)
+					break;
+			if (ij == ppr->pr_ip4s) {
+				error = EPERM;
+				goto done_deref_locked;
+			}
+			if (ip4s > 1) {
+				for (ii = ij = 1; ii < ip4s; ii++) {
+					if (ip4[ii].s_addr ==
+					    ppr->pr_ip4[0].s_addr)
+						continue;
+					for (; ij < ppr->pr_ip4s; ij++)
+						if (ip4[ii].s_addr ==
+						    ppr->pr_ip4[ij].s_addr)
+							break;
+					if (ij == ppr->pr_ip4s)
 						break;
+				}
 				if (ij == ppr->pr_ip4s) {
 					error = EPERM;
 					goto done_deref_locked;
 				}
-				if (ip4s > 1) {
-					for (ii = ij = 1; ii < ip4s; ii++) {
-						if (ip4[ii].s_addr ==
-						    ppr->pr_ip4[0].s_addr)
-							continue;
-						for (; ij < ppr->pr_ip4s; ij++)
-						    if (ip4[ii].s_addr ==
-							ppr->pr_ip4[ij].s_addr)
-							    break;
-						if (ij == ppr->pr_ip4s)
-							break;
-					}
-					if (ij == ppr->pr_ip4s) {
-						error = EPERM;
-						goto done_deref_locked;
-					}
-				}
 			}
 		}
-		if (ip4s > 0) {
-			/*
-			 * Check for conflicting IP addresses.  We permit them
-			 * if there is no more than one IP on each jail.  If
-			 * there is a duplicate on a jail with more than one
-			 * IP stop checking and return error.
-			 */
-			FOREACH_PRISON_DESCENDANT(&prison0, tpr, descend) {
-				if (tpr == pr || tpr->pr_uref == 0) {
-					descend = 0;
-					continue;
-				}
-				if (!(tpr->pr_flags & PR_IP4_USER))
-					continue;
+		/*
+		 * Check for conflicting IP addresses.  We permit them
+		 * if there is no more than one IP on each jail.  If
+		 * there is a duplicate on a jail with more than one
+		 * IP stop checking and return error.
+		 */
+		tppr = ppr;
+#ifdef VIMAGE
+		for (; tppr != &prison0; tppr = tppr->pr_parent)
+			if (tppr->pr_flags & PR_VNET)
+				break;
+#endif
+		FOREACH_PRISON_DESCENDANT(tppr, tpr, descend) {
+			if (tpr == pr ||
+#ifdef VIMAGE
+			    (tpr != tppr && (tpr->pr_flags & PR_VNET)) ||
+#endif
+			    tpr->pr_uref == 0) {
 				descend = 0;
-				if (tpr->pr_ip4 == NULL ||
-				    (ip4s == 1 && tpr->pr_ip4s == 1))
-					continue;
-				for (ii = 0; ii < ip4s; ii++) {
-					if (_prison_check_ip4(tpr,
-					    &ip4[ii]) == 0) {
-						error = EADDRINUSE;
-						vfs_opterror(opts,
-						    "IPv4 addresses clash");
-						goto done_deref_locked;
-					}
+				continue;
+			}
+			if (!(tpr->pr_flags & PR_IP4_USER))
+				continue;
+			descend = 0;
+			if (tpr->pr_ip4 == NULL ||
+			    (ip4s == 1 && tpr->pr_ip4s == 1))
+				continue;
+			for (ii = 0; ii < ip4s; ii++) {
+				if (_prison_check_ip4(tpr, &ip4[ii]) == 0) {
+					error = EADDRINUSE;
+					vfs_opterror(opts,
+					    "IPv4 addresses clash");
+					goto done_deref_locked;
 				}
 			}
 		}
 	}
 #endif
 #ifdef INET6
-	if (ch_flags & PR_IP6_USER) {
+	if (ip6s > 0) {
 		if (ppr->pr_flags & PR_IP6) {
-			if (!(pr_flags & PR_IP6_USER)) {
-				/*
-				 * Silently ignore attempts to make the IP
-				 * addresses unrestricted when the parent is
-				 * restricted.
-				 */
-				ip6s = ppr->pr_ip6s;
-				if (ip6s == 0) {
-					free(ip6, M_PRISON);
-					ip6 = NULL;
-				} else if (ip6s <= ip6a) {
-					/* Inherit the parent's address(es). */
-					bcopy(ppr->pr_ip6, ip6,
-					    ip6s * sizeof(*ip6));
-				} else {
-					/*
-					 * There's no room for the parent's
-					 * address list.
-					 */
-					ip6a = ip6s;
-					free(ip6, M_PRISON);
-					ip6 = malloc(ip6a * sizeof(*ip6),
-					    M_PRISON, M_NOWAIT);
-					if (ip6 != NULL)
-						bcopy(ppr->pr_ip6, ip6,
-						    ip6s * sizeof(*ip6));
-					else {
-						prison_deref(pr, created
-						    ? PD_LOCKED |
-						      PD_LIST_XLOCKED
-						    : PD_DEREF | PD_LOCKED |
-						      PD_LIST_XLOCKED);
-						if (root != NULL) {
-							vfslocked =
-							    VFS_LOCK_GIANT(
-							    root->v_mount);
-							vrele(root);
-							VFS_UNLOCK_GIANT(
-							    vfslocked);
-						}
-						ip6 = malloc(ip6a *
-						    sizeof(*ip6), M_PRISON,
-						    M_WAITOK);
-						goto again;
-					}
-				}
-			} else if (ip6s > 0) {
-				/*
-				 * Make sure the new set of IP addresses is a
-				 * subset of the parent's list.
-				 */
-				for (ij = 0; ij < ppr->pr_ip6s; ij++)
-					if (IN6_ARE_ADDR_EQUAL(&ip6[0],
-					    &ppr->pr_ip6[ij]))
+			/*
+			 * Make sure the new set of IP addresses is a
+			 * subset of the parent's list.
+			 */
+			for (ij = 0; ij < ppr->pr_ip6s; ij++)
+				if (IN6_ARE_ADDR_EQUAL(&ip6[0],
+				    &ppr->pr_ip6[ij]))
+					break;
+			if (ij == ppr->pr_ip6s) {
+				error = EPERM;
+				goto done_deref_locked;
+			}
+			if (ip6s > 1) {
+				for (ii = ij = 1; ii < ip6s; ii++) {
+					if (IN6_ARE_ADDR_EQUAL(&ip6[ii],
+					     &ppr->pr_ip6[0]))
+						continue;
+					for (; ij < ppr->pr_ip6s; ij++)
+						if (IN6_ARE_ADDR_EQUAL(
+						    &ip6[ii], &ppr->pr_ip6[ij]))
+							break;
+					if (ij == ppr->pr_ip6s)
 						break;
+				}
 				if (ij == ppr->pr_ip6s) {
 					error = EPERM;
 					goto done_deref_locked;
 				}
-				if (ip6s > 1) {
-					for (ii = ij = 1; ii < ip6s; ii++) {
-						if (IN6_ARE_ADDR_EQUAL(&ip6[ii],
-						    &ppr->pr_ip6[0]))
-							continue;
-						for (; ij < ppr->pr_ip6s; ij++)
-							if (IN6_ARE_ADDR_EQUAL(
-							    &ip6[ii],
-							    &ppr->pr_ip6[ij]))
-								break;
-						if (ij == ppr->pr_ip6s)
-							break;
-					}
-					if (ij == ppr->pr_ip6s) {
-						error = EPERM;
-						goto done_deref_locked;
-					}
-				}
 			}
 		}
-		if (ip6s > 0) {
-			/* Check for conflicting IP addresses. */
-			FOREACH_PRISON_DESCENDANT(&prison0, tpr, descend) {
-				if (tpr == pr || tpr->pr_uref == 0) {
-					descend = 0;
-					continue;
-				}
-				if (!(tpr->pr_flags & PR_IP6_USER))
-					continue;
+		/* Check for conflicting IP addresses. */
+		tppr = ppr;
+#ifdef VIMAGE
+		for (; tppr != &prison0; tppr = tppr->pr_parent)
+			if (tppr->pr_flags & PR_VNET)
+				break;
+#endif
+		FOREACH_PRISON_DESCENDANT(tppr, tpr, descend) {
+			if (tpr == pr ||
+#ifdef VIMAGE
+			    (tpr != tppr && (tpr->pr_flags & PR_VNET)) ||
+#endif
+			    tpr->pr_uref == 0) {
 				descend = 0;
-				if (tpr->pr_ip6 == NULL ||
-				    (ip6s == 1 && tpr->pr_ip6s == 1))
-					continue;
-				for (ii = 0; ii < ip6s; ii++) {
-					if (_prison_check_ip6(tpr,
-					    &ip6[ii]) == 0) {
-						error = EADDRINUSE;
-						vfs_opterror(opts,
-						    "IPv6 addresses clash");
-						goto done_deref_locked;
-					}
+				continue;
+			}
+			if (!(tpr->pr_flags & PR_IP6_USER))
+				continue;
+			descend = 0;
+			if (tpr->pr_ip6 == NULL ||
+			    (ip6s == 1 && tpr->pr_ip6s == 1))
+				continue;
+			for (ii = 0; ii < ip6s; ii++) {
+				if (_prison_check_ip6(tpr, &ip6[ii]) == 0) {
+					error = EADDRINUSE;
+					vfs_opterror(opts,
+					    "IPv6 addresses clash");
+					goto done_deref_locked;
 				}
 			}
 		}
@@ -1406,9 +1421,11 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 		/* Give a default name of the jid. */
 		if (name[0] == '\0')
 			snprintf(name = numbuf, sizeof(numbuf), "%d", jid);
-		else if (strtoul(name, &p, 10) != jid && *p == '\0') {
+		else if (*namelc == '0' || (strtoul(namelc, &p, 10) != jid &&
+		    *p == '\0')) {
 			error = EINVAL;
-			vfs_opterror(opts, "name cannot be numeric");
+			vfs_opterror(opts,
+			    "name cannot be numeric (unless it is the jid)");
 			goto done_deref_locked;
 		}
 		/*
@@ -1437,29 +1454,19 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 	/* Set the parameters of the prison. */
 #ifdef INET
 	redo_ip4 = 0;
-	if (ch_flags & PR_IP4_USER) {
-		if (pr_flags & PR_IP4_USER) {
-			/* Some restriction set. */
-			pr->pr_flags |= PR_IP4;
-			if (ip4s >= 0) {
-				free(pr->pr_ip4, M_PRISON);
-				pr->pr_ip4s = ip4s;
-				pr->pr_ip4 = ip4;
-				ip4 = NULL;
-			}
-		} else if (ppr->pr_flags & PR_IP4) {
-			/* This restriction cleared, but keep inherited. */
-			free(pr->pr_ip4, M_PRISON);
-			pr->pr_ip4s = ip4s;
-			pr->pr_ip4 = ip4;
-			ip4 = NULL;
-		} else {
-			/* Restriction cleared, now unrestricted. */
-			pr->pr_flags &= ~PR_IP4;
-			free(pr->pr_ip4, M_PRISON);
-			pr->pr_ip4s = 0;
-		}
+	if (pr_flags & PR_IP4_USER) {
+		pr->pr_flags |= PR_IP4;
+		free(pr->pr_ip4, M_PRISON);
+		pr->pr_ip4s = ip4s;
+		pr->pr_ip4 = ip4;
+		ip4 = NULL;
 		FOREACH_PRISON_DESCENDANT_LOCKED(pr, tpr, descend) {
+#ifdef VIMAGE
+			if (tpr->pr_flags & PR_VNET) {
+				descend = 0;
+				continue;
+			}
+#endif
 			if (prison_restrict_ip4(tpr, NULL)) {
 				redo_ip4 = 1;
 				descend = 0;
@@ -1469,29 +1476,19 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 #endif
 #ifdef INET6
 	redo_ip6 = 0;
-	if (ch_flags & PR_IP6_USER) {
-		if (pr_flags & PR_IP6_USER) {
-			/* Some restriction set. */
-			pr->pr_flags |= PR_IP6;
-			if (ip6s >= 0) {
-				free(pr->pr_ip6, M_PRISON);
-				pr->pr_ip6s = ip6s;
-				pr->pr_ip6 = ip6;
-				ip6 = NULL;
-			}
-		} else if (ppr->pr_flags & PR_IP6) {
-			/* This restriction cleared, but keep inherited. */
-			free(pr->pr_ip6, M_PRISON);
-			pr->pr_ip6s = ip6s;
-			pr->pr_ip6 = ip6;
-			ip6 = NULL;
-		} else {
-			/* Restriction cleared, now unrestricted. */
-			pr->pr_flags &= ~PR_IP6;
-			free(pr->pr_ip6, M_PRISON);
-			pr->pr_ip6s = 0;
-		}
+	if (pr_flags & PR_IP6_USER) {
+		pr->pr_flags |= PR_IP6;
+		free(pr->pr_ip6, M_PRISON);
+		pr->pr_ip6s = ip6s;
+		pr->pr_ip6 = ip6;
+		ip6 = NULL;
 		FOREACH_PRISON_DESCENDANT_LOCKED(pr, tpr, descend) {
+#ifdef VIMAGE
+			if (tpr->pr_flags & PR_VNET) {
+				descend = 0;
+				continue;
+			}
+#endif
 			if (prison_restrict_ip6(tpr, NULL)) {
 				redo_ip6 = 1;
 				descend = 0;
@@ -1505,6 +1502,14 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 		FOREACH_PRISON_DESCENDANT_LOCKED(pr, tpr, descend)
 			if (tpr->pr_securelevel < slevel)
 				tpr->pr_securelevel = slevel;
+	}
+	if (gotchildmax) {
+		pr->pr_childmax = childmax;
+		/* Set all child jails to under this limit. */
+		FOREACH_PRISON_DESCENDANT_LOCKED_LEVEL(pr, tpr, descend, level)
+			if (tpr->pr_childmax > childmax - level)
+				tpr->pr_childmax = childmax > level
+				    ? childmax - level : 0;
 	}
 	if (gotenforce) {
 		pr->pr_enforce_statfs = enforce;
@@ -1617,6 +1622,12 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 		mtx_lock(&pr->pr_mtx);
 		redo_ip4 = 0;
 		FOREACH_PRISON_DESCENDANT_LOCKED(pr, tpr, descend) {
+#ifdef VIMAGE
+			if (tpr->pr_flags & PR_VNET) {
+				descend = 0;
+				continue;
+			}
+#endif
 			if (prison_restrict_ip4(tpr, ip4)) {
 				if (ip4 != NULL)
 					ip4 = NULL;
@@ -1634,6 +1645,12 @@ kern_jail_set(struct thread *td, struct uio *optuio, int flags)
 		mtx_lock(&pr->pr_mtx);
 		redo_ip6 = 0;
 		FOREACH_PRISON_DESCENDANT_LOCKED(pr, tpr, descend) {
+#ifdef VIMAGE
+			if (tpr->pr_flags & PR_VNET) {
+				descend = 0;
+				continue;
+			}
+#endif
 			if (prison_restrict_ip6(tpr, ip6)) {
 				if (ip6 != NULL)
 					ip6 = NULL;
@@ -1895,6 +1912,14 @@ kern_jail_get(struct thread *td, struct uio *optuio, int flags)
 	    sizeof(pr->pr_securelevel));
 	if (error != 0 && error != ENOENT)
 		goto done_deref;
+	error = vfs_setopt(opts, "children.cur", &pr->pr_childcount,
+	    sizeof(pr->pr_childcount));
+	if (error != 0 && error != ENOENT)
+		goto done_deref;
+	error = vfs_setopt(opts, "children.max", &pr->pr_childmax,
+	    sizeof(pr->pr_childmax));
+	if (error != 0 && error != ENOENT)
+		goto done_deref;
 	error = vfs_setopts(opts, "host.hostname", pr->pr_hostname);
 	if (error != 0 && error != ENOENT)
 		goto done_deref;
@@ -1929,6 +1954,19 @@ kern_jail_get(struct thread *td, struct uio *optuio, int flags)
 			goto done_deref;
 		i = !i;
 		error = vfs_setopt(opts, pr_flag_nonames[fi], &i, sizeof(i));
+		if (error != 0 && error != ENOENT)
+			goto done_deref;
+	}
+	for (fi = 0; fi < sizeof(pr_flag_jailsys) / sizeof(pr_flag_jailsys[0]);
+	    fi++) {
+		i = pr->pr_flags &
+		    (pr_flag_jailsys[fi].disable | pr_flag_jailsys[fi].new);
+		i = pr_flag_jailsys[fi].disable &&
+		      (i == pr_flag_jailsys[fi].disable) ? JAIL_SYS_DISABLE
+		    : (i == pr_flag_jailsys[fi].new) ? JAIL_SYS_NEW
+		    : JAIL_SYS_INHERIT;
+		error =
+		    vfs_setopt(opts, pr_flag_jailsys[fi].name, &i, sizeof(i));
 		if (error != 0 && error != ENOENT)
 			goto done_deref;
 	}
@@ -2425,11 +2463,11 @@ prison_deref(struct prison *pr, int flags)
 		LIST_REMOVE(pr, pr_sibling);
 		ppr = pr->pr_parent;
 		for (tpr = ppr; tpr != NULL; tpr = tpr->pr_parent)
-			tpr->pr_prisoncount--;
-		sx_downgrade(&allprison_lock);
+			tpr->pr_childcount--;
+		sx_xunlock(&allprison_lock);
 
 #ifdef VIMAGE
-		if (pr->pr_flags & PR_VNET)
+		if (pr->pr_vnet != ppr->pr_vnet)
 			vnet_destroy(pr->pr_vnet);
 #endif
 		if (pr->pr_root != NULL) {
@@ -2452,7 +2490,7 @@ prison_deref(struct prison *pr, int flags)
 		/* Removing a prison frees a reference on its parent. */
 		pr = ppr;
 		mtx_lock(&pr->pr_mtx);
-		flags = PD_DEREF | PD_LIST_SLOCKED;
+		flags = PD_DEREF;
 	}
 }
 
@@ -2531,7 +2569,6 @@ prison_restrict_ip4(struct prison *pr, struct in_addr *newip4)
 				free(pr->pr_ip4, M_PRISON);
 				pr->pr_ip4 = newip4;
 				pr->pr_ip4s = ppr->pr_ip4s;
-				pr->pr_flags |= PR_IP4;
 			}
 			return (used);
 		}
@@ -2543,9 +2580,7 @@ prison_restrict_ip4(struct prison *pr, struct in_addr *newip4)
 			free(pr->pr_ip4, M_PRISON);
 			pr->pr_ip4 = NULL;
 		}
-		pr->pr_flags =
-			(pr->pr_flags & ~PR_IP4) | (ppr->pr_flags & PR_IP4);
-	} else if (pr->pr_ip4s > 0 && (ppr->pr_flags & PR_IP4)) {
+	} else if (pr->pr_ip4s > 0) {
 		/* Remove addresses that aren't in the parent. */
 		for (ij = 0; ij < ppr->pr_ip4s; ij++)
 			if (pr->pr_ip4[0].s_addr == ppr->pr_ip4[ij].s_addr)
@@ -2578,6 +2613,7 @@ prison_restrict_ip4(struct prison *pr, struct in_addr *newip4)
 			}
 		}
 		if (pr->pr_ip4s == 0) {
+			pr->pr_flags |= PR_IP4_DISABLE;
 			free(pr->pr_ip4, M_PRISON);
 			pr->pr_ip4 = NULL;
 		}
@@ -2631,17 +2667,21 @@ prison_equal_ip4(struct prison *pr1, struct prison *pr2)
 		return (1);
 
 	/*
-	 * jail_set maintains an exclusive hold on allprison_lock while it
-	 * changes the IP addresses, so only a shared hold is needed.  This is
-	 * easier than locking the two prisons which would require finding the
-	 * proper locking order and end up needing allprison_lock anyway.
+	 * No need to lock since the PR_IP4_USER flag can't be altered for
+	 * existing prisons.
 	 */
-	sx_slock(&allprison_lock);
-	while (pr1 != &prison0 && !(pr1->pr_flags & PR_IP4_USER))
+	while (pr1 != &prison0 &&
+#ifdef VIMAGE
+	       !(pr1->pr_flags & PR_VNET) &&
+#endif
+	       !(pr1->pr_flags & PR_IP4_USER))
 		pr1 = pr1->pr_parent;
-	while (pr2 != &prison0 && !(pr2->pr_flags & PR_IP4_USER))
+	while (pr2 != &prison0 &&
+#ifdef VIMAGE
+	       !(pr2->pr_flags & PR_VNET) &&
+#endif
+	       !(pr2->pr_flags & PR_IP4_USER))
 		pr2 = pr2->pr_parent;
-	sx_sunlock(&allprison_lock);
 	return (pr1 == pr2);
 }
 
@@ -2833,7 +2873,6 @@ prison_restrict_ip6(struct prison *pr, struct in6_addr *newip6)
 				free(pr->pr_ip6, M_PRISON);
 				pr->pr_ip6 = newip6;
 				pr->pr_ip6s = ppr->pr_ip6s;
-				pr->pr_flags |= PR_IP6;
 			}
 			return (used);
 		}
@@ -2845,9 +2884,7 @@ prison_restrict_ip6(struct prison *pr, struct in6_addr *newip6)
 			free(pr->pr_ip6, M_PRISON);
 			pr->pr_ip6 = NULL;
 		}
-		pr->pr_flags =
-			(pr->pr_flags & ~PR_IP6) | (ppr->pr_flags & PR_IP6);
-	} else if (pr->pr_ip6s > 0 && (ppr->pr_flags & PR_IP6)) {
+	} else if (pr->pr_ip6s > 0) {
 		/* Remove addresses that aren't in the parent. */
 		for (ij = 0; ij < ppr->pr_ip6s; ij++)
 			if (IN6_ARE_ADDR_EQUAL(&pr->pr_ip6[0],
@@ -2882,6 +2919,7 @@ prison_restrict_ip6(struct prison *pr, struct in6_addr *newip6)
 			}
 		}
 		if (pr->pr_ip6s == 0) {
+			pr->pr_flags |= PR_IP6_DISABLE;
 			free(pr->pr_ip6, M_PRISON);
 			pr->pr_ip6 = NULL;
 		}
@@ -2933,12 +2971,18 @@ prison_equal_ip6(struct prison *pr1, struct prison *pr2)
 	if (pr1 == pr2)
 		return (1);
 
-	sx_slock(&allprison_lock);
-	while (pr1 != &prison0 && !(pr1->pr_flags & PR_IP6_USER))
+	while (pr1 != &prison0 &&
+#ifdef VIMAGE
+	       !(pr1->pr_flags & PR_VNET) &&
+#endif
+	       !(pr1->pr_flags & PR_IP6_USER))
 		pr1 = pr1->pr_parent;
-	while (pr2 != &prison0 && !(pr2->pr_flags & PR_IP6_USER))
+	while (pr2 != &prison0 &&
+#ifdef VIMAGE
+	       !(pr2->pr_flags & PR_VNET) &&
+#endif
+	       !(pr2->pr_flags & PR_IP6_USER))
 		pr2 = pr2->pr_parent;
-	sx_sunlock(&allprison_lock);
 	return (pr1 == pr2);
 }
 
@@ -3115,6 +3159,12 @@ prison_check_af(struct ucred *cred, int af)
 	KASSERT(cred != NULL, ("%s: cred is NULL", __func__));
 
 	pr = cred->cr_prison;
+#ifdef VIMAGE
+	/* Prisons with their own network stack are not limited. */
+	if (prison_owns_vnet(cred))
+		return (0);
+#endif
+
 	error = 0;
 	switch (af)
 	{
@@ -3172,6 +3222,11 @@ prison_if(struct ucred *cred, struct sockaddr *sa)
 	KASSERT(cred != NULL, ("%s: cred is NULL", __func__));
 	KASSERT(sa != NULL, ("%s: sa is NULL", __func__));
 
+#ifdef VIMAGE
+	if (prison_owns_vnet(cred))
+		return (0);
+#endif
+
 	error = 0;
 	switch (sa->sa_family)
 	{
@@ -3201,10 +3256,6 @@ int
 prison_check(struct ucred *cred1, struct ucred *cred2)
 {
 
-#ifdef VIMAGE
-	if (cred2->cr_vimage->v_procg != cred1->cr_vimage->v_procg)
-		return (ESRCH);
-#endif
 	return ((cred1->cr_prison == cred2->cr_prison ||
 	    prison_ischild(cred1->cr_prison, cred2->cr_prison)) ? 0 : ESRCH);
 }
@@ -3230,6 +3281,24 @@ jailed(struct ucred *cred)
 {
 
 	return (cred->cr_prison != &prison0);
+}
+
+/*
+ * Return 1 if the passed credential is in a jail and that jail does not
+ * have its own virtual network stack, otherwise 0.
+ */
+int
+jailed_without_vnet(struct ucred *cred)
+{
+
+	if (!jailed(cred))
+		return (0);
+#ifdef VIMAGE
+	if (prison_owns_vnet(cred))
+		return (0);
+#endif
+
+	return (1);
 }
 
 /*
@@ -3276,6 +3345,25 @@ getcredhostid(struct ucred *cred, unsigned long *hostid)
 	*hostid = cred->cr_prison->pr_hostid;
 	mtx_unlock(&cred->cr_prison->pr_mtx);
 }
+
+#ifdef VIMAGE
+/*
+ * Determine whether the prison represented by cred owns
+ * its vnet rather than having it inherited.
+ *
+ * Returns 1 in case the prison owns the vnet, 0 otherwise.
+ */
+int
+prison_owns_vnet(struct ucred *cred)
+{
+
+	/*
+	 * vnets cannot be added/removed after jail creation,
+	 * so no need to lock here.
+	 */
+	return (cred->cr_prison->pr_flags & PR_VNET ? 1 : 0);
+}
+#endif
 
 /*
  * Determine whether the subject represented by cred can "see"
@@ -3375,6 +3463,130 @@ prison_priv_check(struct ucred *cred, int priv)
 
 	if (!jailed(cred))
 		return (0);
+
+#ifdef VIMAGE
+	/*
+	 * Privileges specific to prisons with a virtual network stack.
+	 * There might be a duplicate entry here in case the privilege
+	 * is only granted conditionally in the legacy jail case.
+	 */
+	switch (priv) {
+#ifdef notyet
+		/*
+		 * NFS-specific privileges.
+		 */
+	case PRIV_NFS_DAEMON:
+	case PRIV_NFS_LOCKD:
+#endif
+		/*
+		 * Network stack privileges.
+		 */
+	case PRIV_NET_BRIDGE:
+	case PRIV_NET_GRE:
+	case PRIV_NET_BPF:
+	case PRIV_NET_RAW:		/* Dup, cond. in legacy jail case. */
+	case PRIV_NET_ROUTE:
+	case PRIV_NET_TAP:
+	case PRIV_NET_SETIFMTU:
+	case PRIV_NET_SETIFFLAGS:
+	case PRIV_NET_SETIFCAP:
+	case PRIV_NET_SETIFNAME	:
+	case PRIV_NET_SETIFMETRIC:
+	case PRIV_NET_SETIFPHYS:
+	case PRIV_NET_SETIFMAC:
+	case PRIV_NET_ADDMULTI:
+	case PRIV_NET_DELMULTI:
+	case PRIV_NET_HWIOCTL:
+	case PRIV_NET_SETLLADDR:
+	case PRIV_NET_ADDIFGROUP:
+	case PRIV_NET_DELIFGROUP:
+	case PRIV_NET_IFCREATE:
+	case PRIV_NET_IFDESTROY:
+	case PRIV_NET_ADDIFADDR:
+	case PRIV_NET_DELIFADDR:
+	case PRIV_NET_LAGG:
+	case PRIV_NET_GIF:
+	case PRIV_NET_SETIFVNET:
+
+		/*
+		 * 802.11-related privileges.
+		 */
+	case PRIV_NET80211_GETKEY:
+#ifdef notyet
+	case PRIV_NET80211_MANAGE:		/* XXX-BZ discuss with sam@ */
+#endif
+
+#ifdef notyet
+		/*
+		 * AppleTalk privileges.
+		 */
+	case PRIV_NETATALK_RESERVEDPORT:
+
+		/*
+		 * ATM privileges.
+		 */
+	case PRIV_NETATM_CFG:
+	case PRIV_NETATM_ADD:
+	case PRIV_NETATM_DEL:
+	case PRIV_NETATM_SET:
+
+		/*
+		 * Bluetooth privileges.
+		 */
+	case PRIV_NETBLUETOOTH_RAW:
+#endif
+
+		/*
+		 * Netgraph and netgraph module privileges.
+		 */
+	case PRIV_NETGRAPH_CONTROL:
+#ifdef notyet
+	case PRIV_NETGRAPH_TTY:
+#endif
+
+		/*
+		 * IPv4 and IPv6 privileges.
+		 */
+	case PRIV_NETINET_IPFW:
+	case PRIV_NETINET_DIVERT:
+	case PRIV_NETINET_PF:
+	case PRIV_NETINET_DUMMYNET:
+	case PRIV_NETINET_CARP:
+	case PRIV_NETINET_MROUTE:
+	case PRIV_NETINET_RAW:
+	case PRIV_NETINET_ADDRCTRL6:
+	case PRIV_NETINET_ND6:
+	case PRIV_NETINET_SCOPE6:
+	case PRIV_NETINET_ALIFETIME6:
+	case PRIV_NETINET_IPSEC:
+	case PRIV_NETINET_BINDANY:
+
+#ifdef notyet
+		/*
+		 * IPX/SPX privileges.
+		 */
+	case PRIV_NETIPX_RESERVEDPORT:
+	case PRIV_NETIPX_RAW:
+
+		/*
+		 * NCP privileges.
+		 */
+	case PRIV_NETNCP:
+
+		/*
+		 * SMB privileges.
+		 */
+	case PRIV_NETSMB:
+#endif
+
+	/*
+	 * No default: or deny here.
+	 * In case of no permit fall through to next switch().
+	 */
+		if (cred->cr_prison->pr_flags & PR_VNET)
+			return (0);
+	}
+#endif /* VIMAGE */
 
 	switch (priv) {
 
@@ -3873,14 +4085,18 @@ SYSCTL_JAIL_PARAM(, persist, CTLTYPE_INT | CTLFLAG_RW,
     "B", "Jail persistence");
 #ifdef VIMAGE
 SYSCTL_JAIL_PARAM(, vnet, CTLTYPE_INT | CTLFLAG_RDTUN,
-    "B", "Virtual network stack");
+    "E,jailsys", "Virtual network stack");
 #endif
 SYSCTL_JAIL_PARAM(, dying, CTLTYPE_INT | CTLFLAG_RD,
     "B", "Jail is in the process of shutting down");
 
-SYSCTL_JAIL_PARAM_NODE(host, "Jail host info");
-SYSCTL_JAIL_PARAM(, nohost, CTLTYPE_INT | CTLFLAG_RW,
-    "BN", "Jail w/ no host info");
+SYSCTL_JAIL_PARAM_NODE(children, "Number of child jails");
+SYSCTL_JAIL_PARAM(_children, cur, CTLTYPE_INT | CTLFLAG_RD,
+    "I", "Current number of child jails");
+SYSCTL_JAIL_PARAM(_children, max, CTLTYPE_INT | CTLFLAG_RW,
+    "I", "Maximum number of child jails");
+
+SYSCTL_JAIL_PARAM_SYS_NODE(host, CTLFLAG_RW, "Jail host info");
 SYSCTL_JAIL_PARAM_STRING(_host, hostname, CTLFLAG_RW, MAXHOSTNAMELEN,
     "Jail hostname");
 SYSCTL_JAIL_PARAM_STRING(_host, domainname, CTLFLAG_RW, MAXHOSTNAMELEN,
@@ -3894,16 +4110,14 @@ SYSCTL_JAIL_PARAM_NODE(cpuset, "Jail cpuset");
 SYSCTL_JAIL_PARAM(_cpuset, id, CTLTYPE_INT | CTLFLAG_RD, "I", "Jail cpuset ID");
 
 #ifdef INET
-SYSCTL_JAIL_PARAM_NODE(ip4, "Jail IPv4 address virtualization");
-SYSCTL_JAIL_PARAM(, noip4, CTLTYPE_INT | CTLFLAG_RW,
-    "BN", "Jail w/ no IP address virtualization");
+SYSCTL_JAIL_PARAM_SYS_NODE(ip4, CTLFLAG_RDTUN,
+    "Jail IPv4 address virtualization");
 SYSCTL_JAIL_PARAM_STRUCT(_ip4, addr, CTLFLAG_RW, sizeof(struct in_addr),
     "S,in_addr,a", "Jail IPv4 addresses");
 #endif
 #ifdef INET6
-SYSCTL_JAIL_PARAM_NODE(ip6, "Jail IPv6 address virtualization");
-SYSCTL_JAIL_PARAM(, noip6, CTLTYPE_INT | CTLFLAG_RW,
-    "BN", "Jail w/ no IP address virtualization");
+SYSCTL_JAIL_PARAM_SYS_NODE(ip6, CTLFLAG_RDTUN,
+    "Jail IPv6 address virtualization");
 SYSCTL_JAIL_PARAM_STRUCT(_ip6, addr, CTLFLAG_RW, sizeof(struct in6_addr),
     "S,in6_addr,a", "Jail IPv6 addresses");
 #endif
@@ -3921,8 +4135,6 @@ SYSCTL_JAIL_PARAM(_allow, mount, CTLTYPE_INT | CTLFLAG_RW,
     "B", "Jail may mount/unmount jail-friendly file systems");
 SYSCTL_JAIL_PARAM(_allow, quotas, CTLTYPE_INT | CTLFLAG_RW,
     "B", "Jail may set file quotas");
-SYSCTL_JAIL_PARAM(_allow, jails, CTLTYPE_INT | CTLFLAG_RW,
-    "B", "Jail may create child jails");
 SYSCTL_JAIL_PARAM(_allow, socket_af, CTLTYPE_INT | CTLFLAG_RW,
     "B", "Jail may create sockets other than just UNIX/IPv4/IPv6/route");
 
@@ -3936,6 +4148,7 @@ db_show_prison(struct prison *pr)
 #if defined(INET) || defined(INET6)
 	int ii;
 #endif
+	unsigned jsf;
 #ifdef INET6
 	char ip6buf[INET6_ADDRSTRLEN];
 #endif
@@ -3954,6 +4167,7 @@ db_show_prison(struct prison *pr)
 #endif
 	db_printf(" root            = %p\n", pr->pr_root);
 	db_printf(" securelevel     = %d\n", pr->pr_securelevel);
+	db_printf(" childcount      = %d\n", pr->pr_childcount);
 	db_printf(" child           = %p\n", LIST_FIRST(&pr->pr_children));
 	db_printf(" sibling         = %p\n", LIST_NEXT(pr, pr_sibling));
 	db_printf(" flags           = %x", pr->pr_flags);
@@ -3961,6 +4175,16 @@ db_show_prison(struct prison *pr)
 	    fi++)
 		if (pr_flag_names[fi] != NULL && (pr->pr_flags & (1 << fi)))
 			db_printf(" %s", pr_flag_names[fi]);
+	for (fi = 0; fi < sizeof(pr_flag_jailsys) / sizeof(pr_flag_jailsys[0]);
+	    fi++) {
+		jsf = pr->pr_flags &
+		    (pr_flag_jailsys[fi].disable | pr_flag_jailsys[fi].new);
+		db_printf(" %-16s= %s\n", pr_flag_jailsys[fi].name,
+		    pr_flag_jailsys[fi].disable && 
+		      (jsf == pr_flag_jailsys[fi].disable) ? "disable"
+		    : (jsf == pr_flag_jailsys[fi].new) ? "new"
+		    : "inherit");
+	}
 	db_printf(" allow           = %x", pr->pr_allow);
 	for (fi = 0; fi < sizeof(pr_allow_names) / sizeof(pr_allow_names[0]);
 	    fi++)

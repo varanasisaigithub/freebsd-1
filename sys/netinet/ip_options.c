@@ -44,7 +44,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/kernel.h>
 #include <sys/syslog.h>
 #include <sys/sysctl.h>
-#include <sys/vimage.h>
 
 #include <net/if.h>
 #include <net/if_types.h>
@@ -52,6 +51,7 @@ __FBSDID("$FreeBSD$");
 #include <net/if_dl.h>
 #include <net/route.h>
 #include <net/netisr.h>
+#include <net/vnet.h>
 
 #include <netinet/in.h>
 #include <netinet/in_systm.h>
@@ -62,7 +62,6 @@ __FBSDID("$FreeBSD$");
 #include <netinet/ip_options.h>
 #include <netinet/ip_icmp.h>
 #include <machine/in_cksum.h>
-#include <netinet/vinet.h>
 
 #include <sys/socketvar.h>
 
@@ -98,7 +97,6 @@ static void	save_rte(struct mbuf *m, u_char *, struct in_addr);
 int
 ip_dooptions(struct mbuf *m, int pass)
 {
-	INIT_VNET_INET(curvnet);
 	struct ip *ip = mtod(m, struct ip *);
 	u_char *cp;
 	struct in_ifaddr *ia;
@@ -164,9 +162,8 @@ ip_dooptions(struct mbuf *m, int pass)
 				goto bad;
 			}
 			ipaddr.sin_addr = ip->ip_dst;
-			ia = (struct in_ifaddr *)
-				ifa_ifwithaddr((struct sockaddr *)&ipaddr);
-			if (ia == NULL) {
+			if (ifa_ifwithaddr_check((struct sockaddr *)&ipaddr)
+			    == 0) {
 				if (opt == IPOPT_SSRR) {
 					type = ICMP_UNREACH;
 					code = ICMP_UNREACH_SRCFAIL;
@@ -245,6 +242,7 @@ dropit:
 			ip->ip_dst = ipaddr.sin_addr;
 			(void)memcpy(cp + off, &(IA_SIN(ia)->sin_addr),
 			    sizeof(struct in_addr));
+			ifa_free(&ia->ia_ifa);
 			cp[IPOPT_OFFSET] += sizeof(struct in_addr);
 			/*
 			 * Let ip_intr's mcast routing check handle mcast pkts
@@ -286,6 +284,7 @@ dropit:
 			}
 			(void)memcpy(cp + off, &(IA_SIN(ia)->sin_addr),
 			    sizeof(struct in_addr));
+			ifa_free(&ia->ia_ifa);
 			cp[IPOPT_OFFSET] += sizeof(struct in_addr);
 			break;
 
@@ -331,6 +330,7 @@ dropit:
 					continue;
 				(void)memcpy(sin, &IA_SIN(ia)->sin_addr,
 				    sizeof(struct in_addr));
+				ifa_free(&ia->ia_ifa);
 				cp[IPOPT_OFFSET] += sizeof(struct in_addr);
 				off += sizeof(struct in_addr);
 				break;

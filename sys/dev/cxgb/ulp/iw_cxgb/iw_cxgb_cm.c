@@ -203,7 +203,7 @@ static int set_tcpinfo(struct iwch_ep *ep)
 
 	ep->snd_seq = ti.tcpi_snd_nxt;
 	ep->rcv_seq = ti.tcpi_rcv_nxt;
-	ep->emss = ti.__tcpi_snd_mss - sizeof(struct tcpiphdr);
+	ep->emss = ti.tcpi_snd_mss - sizeof(struct tcpiphdr);
 	ep->hwtid = TOEPCB(ep->com.so)->tp_tid; /* XXX */
 	if (ti.tcpi_options & TCPI_OPT_TIMESTAMPS)
 		ep->emss -= 12;
@@ -1337,12 +1337,13 @@ static int
 is_loopback_dst(struct iw_cm_id *cm_id)
 {
 	uint16_t port = cm_id->remote_addr.sin_port;
-	struct ifaddr *ifa;
+	int ifa_present;
 
 	cm_id->remote_addr.sin_port = 0;
-	ifa = ifa_ifwithaddr((struct sockaddr *)&cm_id->remote_addr);
+	ifa_present = ifa_ifwithaddr_check(
+	    (struct sockaddr *)&cm_id->remote_addr);
 	cm_id->remote_addr.sin_port = port;
-	return (ifa != NULL);
+	return (ifa_present);
 }
 
 int

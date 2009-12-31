@@ -34,7 +34,7 @@
 .\"
 .\" $FreeBSD$
 .\"
-.Dd May 29, 2009
+.Dd October 18, 2009
 .Dt JAIL 8
 .Os
 .Sh NAME
@@ -252,14 +252,26 @@ match.
 It is only possible to start multiple jails with the same IP address,
 if none of the jails has more than this single overlapping IP address
 assigned to itself.
-.Pp
-A list of zero elements (an empty string) will stop the jail from using IPv4
-entirely; setting the boolean parameter
-.Ar noip4
-will not restrict the jail at all.
-.It Va ip6.addr
+.It Va ip4
+Control the availablity of IPv4 addresses.
+Possible values are
+.Dq inherit
+to allow unrestricted access to all system addresses,
+.Dq new
+to restrict addresses via
+.Va ip4.addr
+above, and
+.Dq disable
+to stop the jail from using IPv4 entirely.
+Setting the
+.Va ip4.addr
+parameter implies a value of
+.Dq new .
+.It Va ip6.addr , Va ip6
 A list of IPv6 addresses assigned to the prison, the counterpart to
-.Ar ip4.addr
+.Va ip4.addr
+and
+.Va ip4
 above.
 .It Va host.hostname
 Hostname of the prison.
@@ -268,9 +280,15 @@ Other similar parameters are
 .Va host.hostuuid
 and
 .Va host.hostid .
-Setting the boolean parameter
-.Va nohost
-will retain the system values of these settings.
+.It Va host
+Set the origin of hostname and related information.
+Possible values are
+.Dq inherit
+to use the system information and
+.Dq new
+for the jail to use the information from the above fields.
+Setting any of the above fields implies a value of
+.Dq new .
 .It Va securelevel
 The value of the jail's
 .Va kern.securelevel
@@ -279,6 +297,17 @@ A jail never has a lower securelevel than the default system, but by
 setting this parameter it may have a higher one.
 If the system securelevel is changed, any jail securelevels will be at
 least as secure.
+.It Va children.max
+The number of child jails allowed to be created by this jail (or by
+other jails under this jail).
+This limit is zero by default, indicating the jail is not allowed to
+create child jails.
+See the
+.Va "Hierarchical Jails"
+section for more information.
+.It Va children.cur
+The number of descendents of this jail, including its own child jails
+and any jails created under them.
 .It Va enforce_statfs
 This determines which information processes in a jail are able to get
 about mount points.
@@ -348,7 +377,7 @@ Since raw sockets can be used to configure and interact with various
 network subsystems, extra caution should be used where privileged access
 to jails is given out to untrusted parties.
 .It Va allow.chflags
-Normally, priveleged users inside a jail are treated as unprivileged by
+Normally, privileged users inside a jail are treated as unprivileged by
 .Xr chflags 2 .
 When this parameter is set, such users are treated as privileged, and
 may manipulate system file flags subject to the usual constraints on
@@ -368,10 +397,6 @@ with non-jailed parts of the system.
 Sockets within a jail are normally restricted to IPv4, IPv6, local
 (UNIX), and route.  This allows access to other protocol stacks that
 have not had jail functionality added to them.
-.It Va allow.jails
-The prison root may create child jails under this jail.  See the
-.Va "Hierarchical Jails"
-section for more information.
 .El
 .El
 .Pp
@@ -536,7 +561,7 @@ or for running a virtual server.
 Start a shell in the jail:
 .Pp
 .Bd -literal -offset indent
-jail path=/data/jail/192.0.2.100 host.hostname=testhostname \\
+jail -c path=/data/jail/192.0.2.100 host.hostname=testhostname \\
 	ip4.addr=192.0.2.100 command=/bin/sh
 .Ed
 .Pp
@@ -611,8 +636,8 @@ script from within the jail.
 .Bd -literal -offset indent
 ifconfig ed0 inet alias 192.0.2.100/32
 mount -t procfs proc /data/jail/192.0.2.100/proc
-jail path=/data/jail/192.0.2.100 host.hostname=testhostname \\
-	ip4=addr.192.0.2.100 command=/bin/sh /etc/rc
+jail -c path=/data/jail/192.0.2.100 host.hostname=testhostname \\
+	ip4.addr=192.0.2.100 command=/bin/sh /etc/rc
 .Ed
 .Pp
 A few warnings will be produced, because most
@@ -756,7 +781,7 @@ and
 .Va kern.hostuuid .
 .Ss "Hierarchical Jails"
 By setting a jail's
-.Va allow.jails
+.Va children.max
 parameter, processes within a jail may be able to create jails of their own.
 These child jails are kept in a hierarchy, with jails only able to see and/or
 modify the jails they created (or those jails' children).
@@ -782,8 +807,8 @@ and
 may not be bypassed in child jails.
 .Pp
 A child jail may in turn create its own child jails if its own
-.Va allow.jails
-parameter is set (remember it is off by default).
+.Va children.max
+parameter is set (remember it is zero by default).
 These jails are visible to and can be modified by their parent and all
 ancestors.
 .Pp

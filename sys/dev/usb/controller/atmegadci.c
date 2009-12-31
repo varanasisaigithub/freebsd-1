@@ -36,9 +36,28 @@ __FBSDID("$FreeBSD$");
  * endpoints, Function-address and more.
  */
 
+#include <sys/stdint.h>
+#include <sys/stddef.h>
+#include <sys/param.h>
+#include <sys/queue.h>
+#include <sys/types.h>
+#include <sys/systm.h>
+#include <sys/kernel.h>
+#include <sys/bus.h>
+#include <sys/linker_set.h>
+#include <sys/module.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
+#include <sys/condvar.h>
+#include <sys/sysctl.h>
+#include <sys/sx.h>
+#include <sys/unistd.h>
+#include <sys/callout.h>
+#include <sys/malloc.h>
+#include <sys/priv.h>
+
 #include <dev/usb/usb.h>
-#include <dev/usb/usb_mfunc.h>
-#include <dev/usb/usb_error.h>
+#include <dev/usb/usbdi.h>
 
 #define	USB_DEBUG_VAR atmegadci_debug
 
@@ -62,7 +81,7 @@ __FBSDID("$FreeBSD$");
 #define	ATMEGA_PC2SC(pc) \
    ATMEGA_BUS2SC(USB_DMATAG_TO_XROOT((pc)->tag_parent)->bus)
 
-#if USB_DEBUG
+#ifdef USB_DEBUG
 static int atmegadci_debug = 0;
 
 SYSCTL_NODE(_hw_usb, OID_AUTO, atmegadci, CTLFLAG_RW, 0, "USB ATMEGA DCI");
@@ -282,8 +301,8 @@ atmegadci_setup_rx(struct atmegadci_td *td)
 		sc->sc_dv_addr = 0xFF;
 	}
 
-	/* clear SETUP packet interrupt */
-	ATMEGA_WRITE_1(sc, ATMEGA_UEINTX, ~ATMEGA_UEINTX_RXSTPI);
+	/* Clear SETUP packet interrupt and all other previous interrupts */
+	ATMEGA_WRITE_1(sc, ATMEGA_UEINTX, 0);
 	return (0);			/* complete */
 
 not_complete:
@@ -778,6 +797,7 @@ atmegadci_setup_standard_chain(struct usb_xfer *xfer)
 
 	/* setup temp */
 
+	temp.pc = NULL;
 	temp.td = NULL;
 	temp.td_next = xfer->td_start[0];
 	temp.offset = 0;
@@ -1094,7 +1114,7 @@ atmegadci_device_done(struct usb_xfer *xfer, usb_error_t error)
 
 static void
 atmegadci_set_stall(struct usb_device *udev, struct usb_xfer *xfer,
-    struct usb_endpoint *ep)
+    struct usb_endpoint *ep, uint8_t *did_stall)
 {
 	struct atmegadci_softc *sc;
 	uint8_t ep_no;
@@ -1172,7 +1192,8 @@ atmegadci_clear_stall_sub(struct atmegadci_softc *sc, uint8_t ep_no,
 
 		temp = ATMEGA_READ_1(sc, ATMEGA_UESTA0X);
 		if (!(temp & ATMEGA_UESTA0X_CFGOK)) {
-			DPRINTFN(0, "Chip rejected configuration\n");
+			device_printf(sc->sc_bus.bdev,
+			    "Chip rejected configuration\n");
 		}
 	} while (0);
 }
@@ -1894,7 +1915,8 @@ tr_handle_clear_port_feature:
 		/* check valid config */
 		temp = ATMEGA_READ_1(sc, ATMEGA_UESTA0X);
 		if (!(temp & ATMEGA_UESTA0X_CFGOK)) {
-			DPRINTFN(0, "Chip rejected EP0 configuration\n");
+			device_printf(sc->sc_bus.bdev,
+			    "Chip rejected EP0 configuration\n");
 		}
 		break;
 	case UHF_C_PORT_SUSPEND:
@@ -2124,4 +2146,5 @@ struct usb_bus_methods atmegadci_bus_methods =
 	.set_stall = &atmegadci_set_stall,
 	.clear_stall = &atmegadci_clear_stall,
 	.roothub_exec = &atmegadci_roothub_exec,
+	.xfer_poll = &atmegadci_do_poll,
 };

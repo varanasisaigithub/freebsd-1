@@ -89,27 +89,7 @@ typedef	__socklen_t	socklen_t;
 #define	_SOCKLEN_T_DECLARED
 #endif
 
-/* Avoid collision with original definition in sys/socket.h. */
-#ifndef	_STRUCT_SOCKADDR_STORAGE_DECLARED
-/*
- * RFC 2553: protocol-independent placeholder for socket addresses
- */
-#define	_SS_MAXSIZE	128U
-#define	_SS_ALIGNSIZE	(sizeof(__int64_t))
-#define	_SS_PAD1SIZE	(_SS_ALIGNSIZE - sizeof(unsigned char) - \
-			    sizeof(sa_family_t))
-#define	_SS_PAD2SIZE	(_SS_MAXSIZE - sizeof(unsigned char) - \
-			    sizeof(sa_family_t) - _SS_PAD1SIZE - _SS_ALIGNSIZE)
-
-struct sockaddr_storage {
-	unsigned char	ss_len;		/* address length */
-	sa_family_t	ss_family;	/* address family */
-	char		__ss_pad1[_SS_PAD1SIZE];
-	__int64_t	__ss_align;	/* force desired struct alignment */
-	char		__ss_pad2[_SS_PAD2SIZE];
-};
-#define	_STRUCT_SOCKADDR_STORAGE_DECLARED
-#endif
+#include <sys/_sockaddr_storage.h>
 
 /* Socket address, internet style. */
 struct sockaddr_in {
@@ -443,11 +423,19 @@ __END_DECLS
 #define	IP_ONESBCAST		23   /* bool: send all-ones broadcast */
 #define	IP_BINDANY		24   /* bool: allow bind to any address */
 
+/*
+ * Options for controlling the firewall and dummynet.
+ * Historical options (from 40 to 64) will eventually be
+ * replaced by only two options, IP_FW3 and IP_DUMMYNET3.
+ */
 #define	IP_FW_TABLE_ADD		40   /* add entry */
 #define	IP_FW_TABLE_DEL		41   /* delete entry */
 #define	IP_FW_TABLE_FLUSH	42   /* flush table */
 #define	IP_FW_TABLE_GETSIZE	43   /* get table size */
 #define	IP_FW_TABLE_LIST	44   /* list table contents */
+
+#define	IP_FW3			48   /* generic ipfw v.3 sockopts */
+#define	IP_DUMMYNET3		49   /* generic dummynet v.3 sockopts */
 
 #define	IP_FW_ADD		50   /* add a firewall rule to chain */
 #define	IP_FW_DEL		51   /* delete a firewall rule from chain */
@@ -733,6 +721,7 @@ int	 in_broadcast(struct in_addr, struct ifnet *);
 int	 in_canforward(struct in_addr);
 int	 in_localaddr(struct in_addr);
 int	 in_localip(struct in_addr);
+int	 inet_aton(const char *, struct in_addr *); /* in libkern */
 char	*inet_ntoa(struct in_addr); /* in libkern */
 char	*inet_ntoa_r(struct in_addr ina, char *buf); /* in libkern */
 void	 in_ifdetach(struct ifnet *);
@@ -744,6 +733,32 @@ void	 in_ifdetach(struct ifnet *);
 #define	satosin(sa)	((struct sockaddr_in *)(sa))
 #define	sintosa(sin)	((struct sockaddr *)(sin))
 #define	ifatoia(ifa)	((struct in_ifaddr *)(ifa))
+
+/*
+ * Historically, BSD keeps ip_len and ip_off in host format
+ * when doing layer 3 processing, and this often requires
+ * to translate the format back and forth.
+ * To make the process explicit, we define a couple of macros
+ * that also take into account the fact that at some point
+ * we may want to keep those fields always in net format.
+ */
+
+#if (BYTE_ORDER == BIG_ENDIAN) || defined(HAVE_NET_IPLEN)
+#define SET_NET_IPLEN(p)	do {} while (0)
+#define SET_HOST_IPLEN(p)	do {} while (0)
+#else
+#define SET_NET_IPLEN(p)	do {		\
+	struct ip *h_ip = (p);			\
+	h_ip->ip_len = htons(h_ip->ip_len);	\
+	h_ip->ip_off = htons(h_ip->ip_off);	\
+	} while (0)
+
+#define SET_HOST_IPLEN(p)	do {		\
+	struct ip *h_ip = (p);			\
+	h_ip->ip_len = ntohs(h_ip->ip_len);	\
+	h_ip->ip_off = ntohs(h_ip->ip_off);	\
+	} while (0)
+#endif /* !HAVE_NET_IPLEN */
 
 #endif /* _KERNEL */
 

@@ -3,7 +3,7 @@
 .include <bsd.own.mk>
 
 LIB=	ssh
-SHLIB_MAJOR=	4
+SHLIB_MAJOR=	5
 SRCS=	acss.c authfd.c authfile.c bufaux.c bufbn.c buffer.c \
 	canohost.c channels.c cipher.c cipher-acss.c cipher-aes.c \
 	cipher-bf1.c cipher-ctr.c cipher-3des1.c cleanup.c \
@@ -19,7 +19,7 @@ SRCS=	acss.c authfd.c authfile.c bufaux.c bufbn.c buffer.c \
 # compiled directly into sshd instead.
 
 # Portability layer
-SRCS+=	bsd-misc.c fmt_scaled.c getrrsetbyname.c \
+SRCS+=	bsd-misc.c fmt_scaled.c getrrsetbyname.c glob.c \
 	openssl-compat.c port-tun.c strtonum.c vis.c xcrypt.c xmmap.c
 # FreeBSD additions
 SRCS+=	version.c

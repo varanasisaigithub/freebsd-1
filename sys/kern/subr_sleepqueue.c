@@ -118,6 +118,7 @@ __FBSDID("$FreeBSD$");
  */
 struct sleepqueue {
 	TAILQ_HEAD(, thread) sq_blocked[NR_SLEEPQS];	/* (c) Blocked threads. */
+	u_int sq_blockedcnt[NR_SLEEPQS];	/* (c) N. of blocked threads. */
 	LIST_ENTRY(sleepqueue) sq_hash;		/* (c) Chain and free list. */
 	LIST_HEAD(, sleepqueue) sq_free;	/* (c) Free queues. */
 	void	*sq_wchan;			/* (c) Wait channel. */
@@ -306,9 +307,12 @@ sleepq_add(void *wchan, struct lock_object *lock, const char *wmesg, int flags,
 		int i;
 
 		sq = td->td_sleepqueue;
-		for (i = 0; i < NR_SLEEPQS; i++)
+		for (i = 0; i < NR_SLEEPQS; i++) {
 			KASSERT(TAILQ_EMPTY(&sq->sq_blocked[i]),
-				("thread's sleep queue %d is not empty", i));
+			    ("thread's sleep queue %d is not empty", i));
+			KASSERT(sq->sq_blockedcnt[i] == 0,
+			    ("thread's sleep queue %d count mismatches", i));
+		}
 		KASSERT(LIST_EMPTY(&sq->sq_free),
 		    ("thread's sleep queue has a non-empty free list"));
 		KASSERT(sq->sq_wchan == NULL, ("stale sq_wchan pointer"));
@@ -334,6 +338,7 @@ sleepq_add(void *wchan, struct lock_object *lock, const char *wmesg, int flags,
 	}
 	thread_lock(td);
 	TAILQ_INSERT_TAIL(&sq->sq_blocked[queue], td, td_slpq);
+	sq->sq_blockedcnt[queue]++;
 	td->td_sleepqueue = NULL;
 	td->td_sqqueue = queue;
 	td->td_wchan = wchan;
@@ -341,6 +346,8 @@ sleepq_add(void *wchan, struct lock_object *lock, const char *wmesg, int flags,
 	if (flags & SLEEPQ_INTERRUPTIBLE) {
 		td->td_flags |= TDF_SINTR;
 		td->td_flags &= ~TDF_SLEEPABORT;
+		if (flags & SLEEPQ_STOP_ON_BDRY)
+			td->td_flags |= TDF_SBDRY;
 	}
 	thread_unlock(td);
 }
@@ -365,6 +372,22 @@ sleepq_set_timeout(void *wchan, int timo)
 }
 
 /*
+ * Return the number of actual sleepers for the specified queue.
+ */
+u_int
+sleepq_sleepcnt(void *wchan, int queue)
+{
+	struct sleepqueue *sq;
+
+	KASSERT(wchan != NULL, ("%s: invalid NULL wait channel", __func__));
+	MPASS((queue >= 0) && (queue < NR_SLEEPQS));
+	sq = sleepq_lookup(wchan);
+	if (sq == NULL)
+		return (0);
+	return (sq->sq_blockedcnt[queue]);
+}
+
+/*
  * Marks the pending sleep of the current thread as interruptible and
  * makes an initial check for pending signals before putting a thread
  * to sleep. Enters and exits with the thread lock held.  Thread lock
@@ -378,7 +401,7 @@ sleepq_catch_signals(void *wchan, int pri)
 	struct thread *td;
 	struct proc *p;
 	struct sigacts *ps;
-	int sig, ret;
+	int sig, ret, stop_allowed;
 
 	td = curthread;
 	p = curproc;
@@ -395,6 +418,8 @@ sleepq_catch_signals(void *wchan, int pri)
 		sleepq_switch(wchan, pri);
 		return (0);
 	}
+	stop_allowed = (td->td_flags & TDF_SBDRY) ? SIG_STOP_NOT_ALLOWED :
+	    SIG_STOP_ALLOWED;
 	thread_unlock(td);
 	mtx_unlock_spin(&sc->sc_lock);
 	CTR3(KTR_PROC, "sleepq catching signals: thread %p (pid %ld, %s)",
@@ -402,7 +427,7 @@ sleepq_catch_signals(void *wchan, int pri)
 	PROC_LOCK(p);
 	ps = p->p_sigacts;
 	mtx_lock(&ps->ps_mtx);
-	sig = cursig(td);
+	sig = cursig(td, stop_allowed);
 	if (sig == 0) {
 		mtx_unlock(&ps->ps_mtx);
 		ret = thread_suspend_check(1);
@@ -560,7 +585,7 @@ sleepq_check_signals(void)
 
 	/* We are no longer in an interruptible sleep. */
 	if (td->td_flags & TDF_SINTR)
-		td->td_flags &= ~TDF_SINTR;
+		td->td_flags &= ~(TDF_SINTR | TDF_SBDRY);
 
 	if (td->td_flags & TDF_SLEEPABORT) {
 		td->td_flags &= ~TDF_SLEEPABORT;
@@ -661,6 +686,7 @@ sleepq_resume_thread(struct sleepqueue *sq, struct thread *td, int pri)
 	mtx_assert(&sc->sc_lock, MA_OWNED);
 
 	/* Remove the thread from the queue. */
+	sq->sq_blockedcnt[td->td_sqqueue]--;
 	TAILQ_REMOVE(&sq->sq_blocked[td->td_sqqueue], td, td_slpq);
 
 	/*
@@ -682,7 +708,7 @@ sleepq_resume_thread(struct sleepqueue *sq, struct thread *td, int pri)
 
 	td->td_wmesg = NULL;
 	td->td_wchan = NULL;
-	td->td_flags &= ~TDF_SINTR;
+	td->td_flags &= ~(TDF_SINTR | TDF_SBDRY);
 
 	CTR3(KTR_PROC, "sleepq_wakeup: thread %p (pid %ld, %s)",
 	    (void *)td, (long)td->td_proc->p_pid, td->td_name);
@@ -716,8 +742,10 @@ sleepq_dtor(void *mem, int size, void *arg)
 	int i;
 
 	sq = mem;
-	for (i = 0; i < NR_SLEEPQS; i++)
+	for (i = 0; i < NR_SLEEPQS; i++) {
 		MPASS(TAILQ_EMPTY(&sq->sq_blocked[i]));
+		MPASS(sq->sq_blockedcnt[i] == 0);
+	}
 }
 #endif
 
@@ -732,8 +760,10 @@ sleepq_init(void *mem, int size, int flags)
 
 	bzero(mem, size);
 	sq = mem;
-	for (i = 0; i < NR_SLEEPQS; i++)
+	for (i = 0; i < NR_SLEEPQS; i++) {
 		TAILQ_INIT(&sq->sq_blocked[i]);
+		sq->sq_blockedcnt[i] = 0;
+	}
 	LIST_INIT(&sq->sq_free);
 	return (0);
 }
@@ -1166,6 +1196,7 @@ found:
 					  td->td_tid, td->td_proc->p_pid,
 					  td->td_name);
 			}
+		db_printf("(expected: %u)\n", sq->sq_blockedcnt[i]);
 	}
 }
 

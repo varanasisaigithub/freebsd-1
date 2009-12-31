@@ -152,6 +152,10 @@ SYSCTL_LONG(_vfs, OID_AUTO, wantfreevnodes, CTLFLAG_RW, &wantfreevnodes, 0, "");
 static u_long freevnodes;
 SYSCTL_LONG(_vfs, OID_AUTO, freevnodes, CTLFLAG_RD, &freevnodes, 0, "");
 
+static int vlru_allow_cache_src;
+SYSCTL_INT(_vfs, OID_AUTO, vlru_allow_cache_src, CTLFLAG_RW,
+    &vlru_allow_cache_src, 0, "Allow vlru to reclaim source vnode");
+
 /*
  * Various variables used for debugging the new implementation of
  * reassignbuf().
@@ -461,8 +465,7 @@ vfs_suser(struct mount *mp, struct thread *td)
 	 * If the file system was mounted outside the jail of the calling
 	 * thread, deny immediately.
 	 */
-	if (mp->mnt_cred->cr_prison != td->td_ucred->cr_prison &&
-	    !prison_ischild(td->td_ucred->cr_prison, mp->mnt_cred->cr_prison))
+	if (prison_check(td->td_ucred, mp->mnt_cred) != 0)
 		return (EPERM);
 
 	/*
@@ -644,7 +647,9 @@ vlrureclaim(struct mount *mp)
 		 * If it's been deconstructed already, it's still
 		 * referenced, or it exceeds the trigger, skip it.
 		 */
-		if (vp->v_usecount || !LIST_EMPTY(&(vp)->v_cache_src) ||
+		if (vp->v_usecount ||
+		    (!vlru_allow_cache_src &&
+			!LIST_EMPTY(&(vp)->v_cache_src)) ||
 		    (vp->v_iflag & VI_DOOMED) != 0 || (vp->v_object != NULL &&
 		    vp->v_object->resident_page_count > trigger)) {
 			VI_UNLOCK(vp);
@@ -669,7 +674,9 @@ vlrureclaim(struct mount *mp)
 		 * interlock, the other thread will be unable to drop the
 		 * vnode lock before our VOP_LOCK() call fails.
 		 */
-		if (vp->v_usecount || !LIST_EMPTY(&(vp)->v_cache_src) ||
+		if (vp->v_usecount ||
+		    (!vlru_allow_cache_src &&
+			!LIST_EMPTY(&(vp)->v_cache_src)) ||
 		    (vp->v_object != NULL &&
 		    vp->v_object->resident_page_count > trigger)) {
 			VOP_UNLOCK(vp, LK_INTERLOCK);
@@ -2690,14 +2697,12 @@ vn_printf(struct vnode *vp, const char *fmt, ...)
 		strlcat(buf, "|VI_DOOMED", sizeof(buf));
 	if (vp->v_iflag & VI_FREE)
 		strlcat(buf, "|VI_FREE", sizeof(buf));
-	if (vp->v_iflag & VI_OBJDIRTY)
-		strlcat(buf, "|VI_OBJDIRTY", sizeof(buf));
 	if (vp->v_iflag & VI_DOINGINACT)
 		strlcat(buf, "|VI_DOINGINACT", sizeof(buf));
 	if (vp->v_iflag & VI_OWEINACT)
 		strlcat(buf, "|VI_OWEINACT", sizeof(buf));
 	flags = vp->v_iflag & ~(VI_MOUNT | VI_AGE | VI_DOOMED | VI_FREE |
-	    VI_OBJDIRTY | VI_DOINGINACT | VI_OWEINACT);
+	    VI_DOINGINACT | VI_OWEINACT);
 	if (flags != 0) {
 		snprintf(buf2, sizeof(buf2), "|VI(0x%lx)", flags);
 		strlcat(buf, buf2, sizeof(buf));
@@ -2762,6 +2767,7 @@ DB_SHOW_COMMAND(vnode, db_show_vnode)
 DB_SHOW_COMMAND(mount, db_show_mount)
 {
 	struct mount *mp;
+	struct vfsopt *opt;
 	struct statfs *sp;
 	struct vnode *vp;
 	char buf[512];
@@ -2866,6 +2872,18 @@ DB_SHOW_COMMAND(mount, db_show_mount)
 		    "0x%08x", flags);
 	}
 	db_printf("    mnt_kern_flag = %s\n", buf);
+
+	db_printf("    mnt_opt = ");
+	opt = TAILQ_FIRST(mp->mnt_opt);
+	if (opt != NULL) {
+		db_printf("%s", opt->name);
+		opt = TAILQ_NEXT(opt, link);
+		while (opt != NULL) {
+			db_printf(", %s", opt->name);
+			opt = TAILQ_NEXT(opt, link);
+		}
+	}
+	db_printf("\n");
 
 	sp = &mp->mnt_stat;
 	db_printf("    mnt_stat = { version=%u type=%u flags=0x%016jx "
@@ -3178,7 +3196,8 @@ vfs_msync(struct mount *mp, int flags)
 	MNT_ILOCK(mp);
 	MNT_VNODE_FOREACH(vp, mp, mvp) {
 		VI_LOCK(vp);
-		if ((vp->v_iflag & VI_OBJDIRTY) &&
+		obj = vp->v_object;
+		if (obj != NULL && (obj->flags & OBJ_MIGHTBEDIRTY) != 0 &&
 		    (flags == MNT_WAIT || VOP_ISLOCKED(vp) == 0)) {
 			MNT_IUNLOCK(mp);
 			if (!vget(vp,
@@ -3520,6 +3539,11 @@ vaccess(enum vtype type, mode_t file_mode, uid_t file_uid, gid_t file_gid,
 {
 	accmode_t dac_granted;
 	accmode_t priv_granted;
+
+	KASSERT((accmode & ~(VEXEC | VWRITE | VREAD | VADMIN | VAPPEND)) == 0,
+	    ("invalid bit in accmode"));
+	KASSERT((accmode & VAPPEND) == 0 || (accmode & VWRITE),
+	    	("VAPPEND without VWRITE"));
 
 	/*
 	 * Look for a normal, non-privileged way to access the file/directory
@@ -4003,8 +4027,12 @@ static int	filt_fsattach(struct knote *kn);
 static void	filt_fsdetach(struct knote *kn);
 static int	filt_fsevent(struct knote *kn, long hint);
 
-struct filterops fs_filtops =
-	{ 0, filt_fsattach, filt_fsdetach, filt_fsevent };
+struct filterops fs_filtops = {
+	.f_isfd = 0,
+	.f_attach = filt_fsattach,
+	.f_detach = filt_fsdetach,
+	.f_event = filt_fsevent
+};
 
 static int
 filt_fsattach(struct knote *kn)
@@ -4077,12 +4105,21 @@ static int	filt_vfsread(struct knote *kn, long hint);
 static int	filt_vfswrite(struct knote *kn, long hint);
 static int	filt_vfsvnode(struct knote *kn, long hint);
 static void	filt_vfsdetach(struct knote *kn);
-static struct filterops vfsread_filtops =
-	{ 1, NULL, filt_vfsdetach, filt_vfsread };
-static struct filterops vfswrite_filtops =
-	{ 1, NULL, filt_vfsdetach, filt_vfswrite };
-static struct filterops vfsvnode_filtops =
-	{ 1, NULL, filt_vfsdetach, filt_vfsvnode };
+static struct filterops vfsread_filtops = {
+	.f_isfd = 1,
+	.f_detach = filt_vfsdetach,
+	.f_event = filt_vfsread
+};
+static struct filterops vfswrite_filtops = {
+	.f_isfd = 1,
+	.f_detach = filt_vfsdetach,
+	.f_event = filt_vfswrite
+};
+static struct filterops vfsvnode_filtops = {
+	.f_isfd = 1,
+	.f_detach = filt_vfsdetach,
+	.f_event = filt_vfsvnode
+};
 
 static void
 vfs_knllock(void *arg)
@@ -4270,8 +4307,12 @@ vfs_read_dirent(struct vop_readdir_args *ap, struct dirent *dp, off_t off)
 void
 vfs_mark_atime(struct vnode *vp, struct ucred *cred)
 {
+	struct mount *mp;
 
-	if ((vp->v_mount->mnt_flag & (MNT_NOATIME | MNT_RDONLY)) == 0)
+	mp = vp->v_mount;
+	VFS_ASSERT_GIANT(mp);
+	ASSERT_VOP_LOCKED(vp, "vfs_mark_atime");
+	if (mp != NULL && (mp->mnt_flag & (MNT_NOATIME | MNT_RDONLY)) == 0)
 		(void)VOP_MARKATIME(vp);
 }
 

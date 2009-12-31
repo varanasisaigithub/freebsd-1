@@ -75,7 +75,6 @@ __FBSDID("$FreeBSD$");
 #include <fs/nfsclient/nfs_lock.h>
 
 #include <net/if.h>
-#include <netinet/vinet.h>
 #include <netinet/in.h>
 #include <netinet/in_var.h>
 
@@ -129,10 +128,8 @@ static vop_readlink_t	nfs_readlink;
 static vop_print_t	nfs_print;
 static vop_advlock_t	nfs_advlock;
 static vop_advlockasync_t nfs_advlockasync;
-#ifdef NFS4_ACL_EXTATTR_NAME
 static vop_getacl_t nfs_getacl;
 static vop_setacl_t nfs_setacl;
-#endif
 
 /*
  * Global vfs data structures for nfs
@@ -167,10 +164,8 @@ struct vop_vector newnfs_vnodeops = {
 	.vop_strategy =		nfs_strategy,
 	.vop_symlink =		nfs_symlink,
 	.vop_write =		ncl_write,
-#ifdef NFS4_ACL_EXTATTR_NAME
 	.vop_getacl =		nfs_getacl,
 	.vop_setacl =		nfs_setacl,
-#endif
 };
 
 struct vop_vector newnfs_fifoops = {
@@ -332,12 +327,9 @@ nfs_access(struct vop_access_args *ap)
 	 * unless the file is a socket, fifo, or a block or character
 	 * device resident on the filesystem.
 	 */
-	if ((ap->a_accmode & (VWRITE | VAPPEND
-#ifdef NFS4_ACL_EXTATTR_NAME
-	    | VWRITE_NAMED_ATTRS | VDELETE_CHILD | VWRITE_ATTRIBUTES |
-	    VDELETE | VWRITE_ACL | VWRITE_OWNER
-#endif
-	    )) != 0 && (vp->v_mount->mnt_flag & MNT_RDONLY) != 0) {
+	if ((ap->a_accmode & (VWRITE | VAPPEND | VWRITE_NAMED_ATTRS |
+	    VDELETE_CHILD | VWRITE_ATTRIBUTES | VDELETE | VWRITE_ACL |
+	    VWRITE_OWNER)) != 0 && (vp->v_mount->mnt_flag & MNT_RDONLY) != 0) {
 		switch (vp->v_type) {
 		case VREG:
 		case VDIR:
@@ -367,10 +359,8 @@ nfs_access(struct vop_access_args *ap)
 				mode |= NFSACCESS_EXTEND;
 			if (ap->a_accmode & VEXEC)
 				mode |= NFSACCESS_EXECUTE;
-#ifdef NFS4_ACL_EXTATTR_NAME
 			if (ap->a_accmode & VDELETE)
 				mode |= NFSACCESS_DELETE;
-#endif
 		} else {
 			if (ap->a_accmode & VWRITE)
 				mode |= (NFSACCESS_MODIFY | NFSACCESS_EXTEND);
@@ -378,12 +368,10 @@ nfs_access(struct vop_access_args *ap)
 				mode |= NFSACCESS_EXTEND;
 			if (ap->a_accmode & VEXEC)
 				mode |= NFSACCESS_LOOKUP;
-#ifdef NFS4_ACL_EXTATTR_NAME
 			if (ap->a_accmode & VDELETE)
 				mode |= NFSACCESS_DELETE;
 			if (ap->a_accmode & VDELETE_CHILD)
 				mode |= NFSACCESS_MODIFY;
-#endif
 		}
 		/* XXX safety belt, only make blanket request if caching */
 		if (nfsaccess_cache_timeout > 0) {
@@ -688,11 +676,17 @@ nfs_close(struct vop_close_args *ap)
 		    int cm = newnfs_commit_on_close ? 1 : 0;
 		    error = ncl_flush(vp, MNT_WAIT, cred, ap->a_td, cm);
 		    /* np->n_flag &= ~NMODIFIED; */
-		} else if (NFS_ISV4(vp) && nfscl_mustflush(vp)) {
-			int cm = newnfs_commit_on_close ? 1 : 0;
-			error = ncl_flush(vp, MNT_WAIT, cred, ap->a_td, cm);
-			/* as above w.r.t. races when clearing NMODIFIED */
-			/* np->n_flag &= ~NMODIFIED; */
+		} else if (NFS_ISV4(vp)) { 
+			if (nfscl_mustflush(vp)) {
+				int cm = newnfs_commit_on_close ? 1 : 0;
+				error = ncl_flush(vp, MNT_WAIT, cred, ap->a_td,
+				    cm);
+				/*
+				 * as above w.r.t races when clearing
+				 * NMODIFIED.
+				 * np->n_flag &= ~NMODIFIED;
+				 */
+			}
 		} else
 		    error = ncl_vinvalbuf(vp, V_SAVE, ap->a_td, 1);
 		mtx_lock(&np->n_mtx);
@@ -1111,9 +1105,11 @@ nfs_lookup(struct vop_lookup_args *ap)
 		ltype = VOP_ISLOCKED(dvp);
 		error = vfs_busy(mp, MBF_NOWAIT);
 		if (error != 0) {
+			vfs_ref(mp);
 			VOP_UNLOCK(dvp, 0);
 			error = vfs_busy(mp, 0);
 			vn_lock(dvp, ltype | LK_RETRY);
+			vfs_rel(mp);
 			if (error == 0 && (dvp->v_iflag & VI_DOOMED)) {
 				vfs_unbusy(mp);
 				error = ENOENT;
@@ -1126,7 +1122,8 @@ nfs_lookup(struct vop_lookup_args *ap)
 		if (error == 0)
 			newvp = NFSTOV(np);
 		vfs_unbusy(mp);
-		vn_lock(dvp, ltype | LK_RETRY);
+		if (newvp != dvp)
+			vn_lock(dvp, ltype | LK_RETRY);
 		if (dvp->v_iflag & VI_DOOMED) {
 			if (error == 0) {
 				if (newvp == dvp)
@@ -1357,7 +1354,30 @@ nfs_mknod(struct vop_mknod_args *ap)
 	return (nfs_mknodrpc(ap->a_dvp, ap->a_vpp, ap->a_cnp, ap->a_vap));
 }
 
-static u_long create_verf;
+static struct mtx nfs_cverf_mtx;
+MTX_SYSINIT(nfs_cverf_mtx, &nfs_cverf_mtx, "NFS create verifier mutex",
+    MTX_DEF);
+
+static nfsquad_t
+nfs_get_cverf(void)
+{
+	static nfsquad_t cverf;
+	nfsquad_t ret;
+	static int cverf_initialized = 0;
+
+	mtx_lock(&nfs_cverf_mtx);
+	if (cverf_initialized == 0) {
+		cverf.lval[0] = arc4random();
+		cverf.lval[1] = arc4random();
+		cverf_initialized = 1;
+	} else
+		cverf.qval++;
+	ret = cverf;
+	mtx_unlock(&nfs_cverf_mtx);
+
+	return (ret);
+}
+
 /*
  * nfs file create call
  */
@@ -1397,16 +1417,7 @@ again:
 	}
 	mtx_unlock(&dnp->n_mtx);
 
-	CURVNET_SET(P_TO_VNET(&proc0));
-#ifdef INET
-	INIT_VNET_INET(curvnet);
-	if (!TAILQ_EMPTY(&V_in_ifaddrhead))
-		cverf.lval[0] = IA_SIN(TAILQ_FIRST(&V_in_ifaddrhead))->sin_addr.s_addr;
-	else
-#endif
-		cverf.lval[0] = create_verf;
-	cverf.lval[1] = ++create_verf;
-	CURVNET_RESTORE();
+	cverf = nfs_get_cverf();
 	error = nfsrpc_create(dvp, cnp->cn_nameptr, cnp->cn_namelen,
 	    vap, cverf, fmode, cnp->cn_cred, cnp->cn_thread, &dnfsva, &nfsva,
 	    &nfhp, &attrflag, &dattrflag, NULL);
@@ -2443,7 +2454,7 @@ ncl_flush(struct vnode *vp, int waitfor, struct ucred *cred, struct thread *td,
 	int bvecsize = 0, bveccount;
 
 	if (nmp->nm_flag & NFSMNT_INT)
-		slpflag = PCATCH;
+		slpflag = NFS_PCATCH;
 	if (!commit)
 		passone = 0;
 	bo = &vp->v_bufobj;
@@ -2641,7 +2652,7 @@ loop:
 				error = EINTR;
 				goto done;
 			}
-			if (slpflag == PCATCH) {
+			if (slpflag & PCATCH) {
 				slpflag = 0;
 				slptimeo = 2 * hz;
 			}
@@ -2679,7 +2690,7 @@ loop:
 			    error = newnfs_sigintr(nmp, td);
 			    if (error)
 				goto done;
-			    if (slpflag == PCATCH) {
+			    if (slpflag & PCATCH) {
 				slpflag = 0;
 				slptimeo = 2 * hz;
 			    }
@@ -2697,9 +2708,9 @@ loop:
 		mtx_lock(&np->n_mtx);
 		while (np->n_directio_asyncwr > 0) {
 			np->n_flag |= NFSYNCWAIT;
-			error = ncl_msleep(td, (caddr_t)&np->n_directio_asyncwr,
-					   &np->n_mtx, slpflag | (PRIBIO + 1), 
-					   "nfsfsync", 0);
+			error = newnfs_msleep(td, &np->n_directio_asyncwr,
+			    &np->n_mtx, slpflag | (PRIBIO + 1), 
+			    "nfsfsync", 0);
 			if (error) {
 				if (newnfs_sigintr(nmp, td)) {
 					mtx_unlock(&np->n_mtx);
@@ -3114,7 +3125,6 @@ nfs_lock1(struct vop_lock1_args *ap)
 	    ap->a_line));
 }
 
-#ifdef NFS4_ACL_EXTATTR_NAME
 static int
 nfs_getacl(struct vop_getacl_args *ap)
 {
@@ -3146,5 +3156,3 @@ nfs_setacl(struct vop_setacl_args *ap)
 	}
 	return (error);
 }
-
-#endif	/* NFS4_ACL_EXTATTR_NAME */

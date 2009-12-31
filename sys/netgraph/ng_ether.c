@@ -52,9 +52,9 @@
 #include <sys/malloc.h>
 #include <sys/mbuf.h>
 #include <sys/errno.h>
+#include <sys/proc.h>
 #include <sys/syslog.h>
 #include <sys/socket.h>
-#include <sys/vimage.h>
 
 #include <net/if.h>
 #include <net/if_dl.h>
@@ -63,7 +63,6 @@
 #include <net/if_var.h>
 #include <net/ethernet.h>
 #include <net/if_bridgevar.h>
-#include <net/route.h>
 #include <net/vnet.h>
 
 #include <netgraph/ng_message.h>
@@ -72,17 +71,6 @@
 #include <netgraph/ng_ether.h>
 
 #define IFP2NG(ifp)  (IFP2AC((ifp))->ac_netgraph)
-
-static vnet_attach_fn ng_ether_iattach;
-
-#ifndef VIMAGE_GLOBALS
-static vnet_modinfo_t vnet_ng_ether_modinfo = {
-	.vmi_id		= VNET_MOD_NG_ETHER,
-	.vmi_name	= "ng_ether",
-	.vmi_dependson	= VNET_MOD_NETGRAPH,
-	.vmi_iattach	= ng_ether_iattach,
-};
-#endif
 
 /* Per-node private data */
 struct private {
@@ -435,7 +423,7 @@ ng_ether_newhook(node_p node, hook_p hook, const char *name)
 	/* Disable hardware checksums while 'upper' hook is connected */
 	if (hookptr == &priv->upper)
 		priv->ifp->if_hwassist = 0;
-
+	NG_HOOK_HI_STACK(hook);
 	/* OK */
 	*hookptr = hook;
 	return (0);
@@ -552,10 +540,10 @@ ng_ether_rcvmsg(node_p node, item_p item, hook_p lasthook)
 			 * lose a race while we check if the membership
 			 * already exists.
 			 */
-			IF_ADDR_LOCK(priv->ifp);
+			if_maddr_rlock(priv->ifp);
 			ifma = if_findmulti(priv->ifp,
 			    (struct sockaddr *)&sa_dl);
-			IF_ADDR_UNLOCK(priv->ifp);
+			if_maddr_runlock(priv->ifp);
 			if (ifma != NULL) {
 				error = EADDRINUSE;
 			} else {
@@ -784,11 +772,6 @@ ng_ether_mod_event(module_t mod, int event, void *data)
 		ng_ether_input_orphan_p = ng_ether_input_orphan;
 		ng_ether_link_state_p = ng_ether_link_state;
 
-#ifndef VIMAGE_GLOBALS
-		vnet_mod_register(&vnet_ng_ether_modinfo);
-#else
-		error = ng_ether_iattach(NULL);
-#endif
 		break;
 
 	case MOD_UNLOAD:
@@ -800,10 +783,6 @@ ng_ether_mod_event(module_t mod, int event, void *data)
 		 * case, we know there are no nodes left if the action
 		 * is MOD_UNLOAD, so there's no need to detach any nodes.
 		 */
-
-#ifndef VIMAGE_GLOBALS
-		vnet_mod_deregister(&vnet_ng_ether_modinfo);
-#endif
 
 		/* Unregister function hooks */
 		ng_ether_attach_p = NULL;
@@ -822,10 +801,14 @@ ng_ether_mod_event(module_t mod, int event, void *data)
 	return (error);
 }
 
-static int ng_ether_iattach(const void *unused)
+static void
+vnet_ng_ether_init(const void *unused)
 {
-	INIT_VNET_NET(curvnet);
 	struct ifnet *ifp;
+
+	/* If module load was rejected, don't attach to vnets. */
+	if (ng_ether_attach_p != ng_ether_attach)
+		return;
 
 	/* Create nodes for any already-existing Ethernet interfaces. */
 	IFNET_RLOCK();
@@ -835,6 +818,6 @@ static int ng_ether_iattach(const void *unused)
 			ng_ether_attach(ifp);
 	}
 	IFNET_RUNLOCK();
-
-	return (0);
 }
+VNET_SYSINIT(vnet_ng_ether_init, SI_SUB_PSEUDO, SI_ORDER_ANY,
+    vnet_ng_ether_init, NULL);

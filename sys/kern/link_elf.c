@@ -40,6 +40,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/malloc.h>
 #include <sys/mutex.h>
 #include <sys/mount.h>
+#include <sys/pcpu.h>
 #include <sys/proc.h>
 #include <sys/namei.h>
 #include <sys/fcntl.h>
@@ -47,6 +48,8 @@ __FBSDID("$FreeBSD$");
 #include <sys/linker.h>
 
 #include <machine/elf.h>
+
+#include <net/vnet.h>
 
 #include <security/mac/mac_framework.h>
 
@@ -107,6 +110,14 @@ typedef struct elf_file {
     caddr_t		ctfoff;		/* CTF offset table */
     caddr_t		typoff;		/* Type offset table */
     long		typlen;		/* Number of type entries. */
+    Elf_Addr		pcpu_start;	/* Pre-relocation pcpu set start. */
+    Elf_Addr		pcpu_stop;	/* Pre-relocation pcpu set stop. */
+    Elf_Addr		pcpu_base;	/* Relocated pcpu set address. */
+#ifdef VIMAGE
+    Elf_Addr		vnet_start;	/* Pre-relocation vnet set start. */
+    Elf_Addr		vnet_stop;	/* Pre-relocation vnet set stop. */
+    Elf_Addr		vnet_base;	/* Relocated vnet set address. */
+#endif
 #ifdef GDB
     struct link_map	gdb;		/* hooks for gdb */
 #endif
@@ -475,6 +486,64 @@ parse_dynamic(elf_file_t ef)
 }
 
 static int
+parse_dpcpu(elf_file_t ef)
+{ 
+    int count;
+    int error;
+
+    ef->pcpu_start = 0;
+    ef->pcpu_stop = 0;
+    error = link_elf_lookup_set(&ef->lf, "pcpu", (void ***)&ef->pcpu_start,
+                               (void ***)&ef->pcpu_stop, &count);
+    /* Error just means there is no pcpu set to relocate. */
+    if (error)
+        return (0);
+    count *= sizeof(void *);
+    /*
+     * Allocate space in the primary pcpu area.  Copy in our initialization
+     * from the data section and then initialize all per-cpu storage from
+     * that.
+     */
+    ef->pcpu_base = (Elf_Addr)(uintptr_t)dpcpu_alloc(count);
+    if (ef->pcpu_base == (Elf_Addr)NULL)
+        return (ENOSPC);
+    memcpy((void *)ef->pcpu_base, (void *)ef->pcpu_start, count);
+    dpcpu_copy((void *)ef->pcpu_base, count);
+
+    return (0);
+}
+
+#ifdef VIMAGE
+static int
+parse_vnet(elf_file_t ef)
+{ 
+    int count;
+    int error;
+
+    ef->vnet_start = 0;
+    ef->vnet_stop = 0;
+    error = link_elf_lookup_set(&ef->lf, "vnet", (void ***)&ef->vnet_start,
+                               (void ***)&ef->vnet_stop, &count);
+    /* Error just means there is no vnet data set to relocate. */
+    if (error)
+        return (0);
+    count *= sizeof(void *);
+    /*
+     * Allocate space in the primary vnet area.  Copy in our initialization
+     * from the data section and then initialize all per-vnet storage from
+     * that.
+     */
+    ef->vnet_base = (Elf_Addr)(uintptr_t)vnet_data_alloc(count);
+    if (ef->vnet_base == (Elf_Addr)NULL)
+        return (ENOSPC);
+    memcpy((void *)ef->vnet_base, (void *)ef->vnet_start, count);
+    vnet_data_copy((void *)ef->vnet_base, count);
+
+    return (0);
+}
+#endif
+
+static int
 link_elf_link_preload(linker_class_t cls,
 		      const char* filename, linker_file_t *result)
 {
@@ -519,6 +588,12 @@ link_elf_link_preload(linker_class_t cls,
     lf->size = *(size_t *)sizeptr;
 
     error = parse_dynamic(ef);
+    if (error == 0)
+        error = parse_dpcpu(ef);
+#ifdef VIMAGE
+    if (error == 0)
+	error = parse_vnet(ef);
+#endif
     if (error) {
 	linker_file_unload(lf, LINKER_UNLOAD_FORCE);
 	return error;
@@ -801,6 +876,14 @@ link_elf_load_file(linker_class_t cls, const char* filename,
     error = parse_dynamic(ef);
     if (error)
 	goto out;
+    error = parse_dpcpu(ef);
+    if (error)
+        goto out;
+#ifdef VIMAGE
+    error = parse_vnet(ef);
+    if (error)
+        goto out;
+#endif
     link_elf_reloc_local(lf);
 
     VOP_UNLOCK(nd.ni_vp, 0);
@@ -897,11 +980,35 @@ out:
     return error;
 }
 
+Elf_Addr
+elf_relocaddr(linker_file_t lf, Elf_Addr x)
+{
+    elf_file_t ef;
+
+    ef = (elf_file_t)lf;
+    if (x >= ef->pcpu_start && x < ef->pcpu_stop)
+	return ((x - ef->pcpu_start) + ef->pcpu_base);
+#ifdef VIMAGE
+    if (x >= ef->vnet_start && x < ef->vnet_stop)
+	return ((x - ef->vnet_start) + ef->vnet_base);
+#endif
+    return (x);
+}
+
+
 static void
 link_elf_unload_file(linker_file_t file)
 {
     elf_file_t ef = (elf_file_t) file;
 
+    if (ef->pcpu_base) {
+        dpcpu_free((void *)ef->pcpu_base, ef->pcpu_stop - ef->pcpu_start);
+    }
+#ifdef VIMAGE
+    if (ef->vnet_base) {
+        vnet_data_free((void *)ef->vnet_base, ef->vnet_stop - ef->vnet_start);
+    }
+#endif
 #ifdef GDB
     if (ef->gdb.l_ld) {
 	GDB_STATE(RT_DELETE);

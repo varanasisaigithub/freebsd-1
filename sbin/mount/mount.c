@@ -111,6 +111,7 @@ static struct opt {
 	{ MNT_SOFTDEP,		"soft-updates" },
 	{ MNT_MULTILABEL,	"multilabel" },
 	{ MNT_ACLS,		"acls" },
+	{ MNT_NFS4ACLS,		"nfsv4acls" },
 	{ MNT_GJOURNAL,		"gjournal" },
 	{ 0, NULL }
 };
@@ -347,6 +348,9 @@ main(int argc, char *argv[])
 			for (i = 0; i < mntsize; i++) {
 				if (checkvfsname(mntbuf[i].f_fstypename,
 				    vfslist))
+					continue;
+				if (!verbose &&
+				    (mntbuf[i].f_flags & MNT_IGNORE) != 0)
 					continue;
 				prmount(&mntbuf[i]);
 			}
@@ -915,6 +919,7 @@ flags2opts(int flags)
 	if (flags & MNT_SUIDDIR)	res = catopt(res, "suiddir");
 	if (flags & MNT_MULTILABEL)	res = catopt(res, "multilabel");
 	if (flags & MNT_ACLS)		res = catopt(res, "acls");
+	if (flags & MNT_NFS4ACLS)	res = catopt(res, "nfsv4acls");
 
 	return (res);
 }

@@ -50,7 +50,7 @@
 #define mtspr64(reg,valhi,vallo,scratch)				\
 	__asm __volatile("						\
 		mfmsr %0; 						\
-		insrdi %0,1,1,0; 					\
+		insrdi %0,%5,1,0; 					\
 		mtmsrd %0; 						\
 		isync; 							\
 									\
@@ -62,13 +62,13 @@
 		clrldi %0,%0,1; 					\
 		mtmsrd %0; 						\
 		isync;"							\
-	: "=r"(scratch), "=r"(valhi) : "r"(vallo), "K"(reg), "r"(32))
+	: "=r"(scratch), "=r"(valhi) : "r"(vallo), "K"(reg), "r"(32), "r"(1))
 
 #define mfspr64upper(reg,scratch)					\
 	( { register_t val;						\
 	    __asm __volatile("						\
 		mfmsr %0; 						\
-		insrdi %0,1,1,0; 					\
+		insrdi %0,%4,1,0; 					\
 		mtmsrd %0; 						\
 		isync; 							\
 									\
@@ -78,7 +78,7 @@
 		clrldi %0,%0,1; 					\
 		mtmsrd %0; 						\
 		isync;" 						\
-	    : "=r"(scratch), "=r"(val) : "K"(reg), "r"(32)); 			\
+	    : "=r"(scratch), "=r"(val) : "K"(reg), "r"(32), "r"(1));	\
 	    val; } )
 
 #endif /* _LOCORE */
@@ -336,7 +336,7 @@
 #define	  SPR_MMCR0_TRIGGER	  0x00002000 /* Trigger */
 #define	  SPR_MMCR0_PMC1SEL(x)	  ((x) << 6) /* PMC1 selector */
 #define	  SPR_MMCR0_PMC2SEL(x)	  ((x) << 0) /* PMC2 selector */
-#define	  SPR_970MMCR0_PMC1SEL(x) ((x) << 6) /* PMC1 selector (970) */
+#define	  SPR_970MMCR0_PMC1SEL(x) ((x) << 8) /* PMC1 selector (970) */
 #define	  SPR_970MMCR0_PMC2SEL(x) ((x) << 1) /* PMC2 selector (970) */
 #define	SPR_SGR			0x3b9	/* 4.. Storage Guarded Register */
 #define	SPR_PMC1		0x3b9	/* .6. Performance Counter Register 1 */

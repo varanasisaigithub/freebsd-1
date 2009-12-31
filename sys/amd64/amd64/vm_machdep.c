@@ -186,6 +186,9 @@ cpu_fork(td1, p2, td2, flags)
 	/* As an i386, do not copy io permission bitmap. */
 	pcb2->pcb_tssp = NULL;
 
+	/* New segment registers. */
+	pcb2->pcb_full_iret = 1;
+
 	/* Copy the LDT, if necessary. */
 	mdp1 = &td1->td_proc->p_md;
 	mdp2 = &p2->p_md;
@@ -314,6 +317,49 @@ cpu_thread_free(struct thread *td)
 	cpu_thread_clean(td);
 }
 
+void
+cpu_set_syscall_retval(struct thread *td, int error)
+{
+
+	switch (error) {
+	case 0:
+		td->td_frame->tf_rax = td->td_retval[0];
+		td->td_frame->tf_rdx = td->td_retval[1];
+		td->td_frame->tf_rflags &= ~PSL_C;
+		break;
+
+	case ERESTART:
+		/*
+		 * Reconstruct pc, we know that 'syscall' is 2 bytes,
+		 * lcall $X,y is 7 bytes, int 0x80 is 2 bytes.
+		 * We saved this in tf_err.
+		 * We have to do a full context restore so that %r10
+		 * (which was holding the value of %rcx) is restored
+		 * for the next iteration.
+		 * r10 restore is only required for freebsd/amd64 processes,
+		 * but shall be innocent for any ia32 ABI.
+		 */
+		td->td_frame->tf_rip -= td->td_frame->tf_err;
+		td->td_frame->tf_r10 = td->td_frame->tf_rcx;
+		td->td_pcb->pcb_flags |= PCB_FULLCTX;
+		break;
+
+	case EJUSTRETURN:
+		break;
+
+	default:
+		if (td->td_proc->p_sysent->sv_errsize) {
+			if (error >= td->td_proc->p_sysent->sv_errsize)
+				error = -1;	/* XXX */
+			else
+				error = td->td_proc->p_sysent->sv_errtbl[error];
+		}
+		td->td_frame->tf_rax = error;
+		td->td_frame->tf_rflags |= PSL_C;
+		break;
+	}
+}
+
 /*
  * Initialize machine state (pcb and trap frame) for a new thread about to
  * upcall. Put enough state in the new thread's PCB to get it to go back 
@@ -336,6 +382,7 @@ cpu_set_upcall(struct thread *td, struct thread *td0)
 	 */
 	bcopy(td0->td_pcb, pcb2, sizeof(*pcb2));
 	pcb2->pcb_flags &= ~PCB_FPUINITDONE;
+	pcb2->pcb_full_iret = 1;
 
 	/*
 	 * Create a new fresh stack for the new thread.
@@ -450,6 +497,7 @@ cpu_set_user_tls(struct thread *td, void *tls_base)
 	}
 #endif
 	td->td_pcb->pcb_fsbase = (register_t)tls_base;
+	td->td_pcb->pcb_full_iret = 1;
 	return (0);
 }
 

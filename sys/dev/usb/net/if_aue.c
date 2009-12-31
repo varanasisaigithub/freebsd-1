@@ -68,20 +68,34 @@ __FBSDID("$FreeBSD$");
  * transfers are done using usbd_transfer() and friends.
  */
 
-#include "usbdevs.h"
+#include <sys/stdint.h>
+#include <sys/stddef.h>
+#include <sys/param.h>
+#include <sys/queue.h>
+#include <sys/types.h>
+#include <sys/systm.h>
+#include <sys/kernel.h>
+#include <sys/bus.h>
+#include <sys/linker_set.h>
+#include <sys/module.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
+#include <sys/condvar.h>
+#include <sys/sysctl.h>
+#include <sys/sx.h>
+#include <sys/unistd.h>
+#include <sys/callout.h>
+#include <sys/malloc.h>
+#include <sys/priv.h>
+
 #include <dev/usb/usb.h>
-#include <dev/usb/usb_mfunc.h>
-#include <dev/usb/usb_error.h>
+#include <dev/usb/usbdi.h>
+#include <dev/usb/usbdi_util.h>
+#include "usbdevs.h"
 
 #define	USB_DEBUG_VAR aue_debug
-
-#include <dev/usb/usb_core.h>
-#include <dev/usb/usb_lookup.h>
-#include <dev/usb/usb_process.h>
 #include <dev/usb/usb_debug.h>
-#include <dev/usb/usb_request.h>
-#include <dev/usb/usb_busdma.h>
-#include <dev/usb/usb_util.h>
+#include <dev/usb/usb_process.h>
 
 #include <dev/usb/net/usb_ethernet.h>
 #include <dev/usb/net/if_auereg.h>
@@ -98,74 +112,76 @@ SYSCTL_INT(_hw_usb_aue, OID_AUTO, debug, CTLFLAG_RW, &aue_debug, 0,
  * Various supported device vendors/products.
  */
 static const struct usb_device_id aue_devs[] = {
-    {USB_VPI(USB_VENDOR_3COM, USB_PRODUCT_3COM_3C460B, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_ABOCOM, USB_PRODUCT_ABOCOM_DSB650TX_PNA, 0)},
-    {USB_VPI(USB_VENDOR_ABOCOM, USB_PRODUCT_ABOCOM_UFE1000, AUE_FLAG_LSYS)},
-    {USB_VPI(USB_VENDOR_ABOCOM, USB_PRODUCT_ABOCOM_XX10, 0)},
-    {USB_VPI(USB_VENDOR_ABOCOM, USB_PRODUCT_ABOCOM_XX1, AUE_FLAG_PNA | AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_ABOCOM, USB_PRODUCT_ABOCOM_XX2, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_ABOCOM, USB_PRODUCT_ABOCOM_XX4, AUE_FLAG_PNA)},
-    {USB_VPI(USB_VENDOR_ABOCOM, USB_PRODUCT_ABOCOM_XX5, AUE_FLAG_PNA)},
-    {USB_VPI(USB_VENDOR_ABOCOM, USB_PRODUCT_ABOCOM_XX6, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_ABOCOM, USB_PRODUCT_ABOCOM_XX7, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_ABOCOM, USB_PRODUCT_ABOCOM_XX8, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_ABOCOM, USB_PRODUCT_ABOCOM_XX9, AUE_FLAG_PNA)},
-    {USB_VPI(USB_VENDOR_ACCTON, USB_PRODUCT_ACCTON_SS1001, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_ACCTON, USB_PRODUCT_ACCTON_USB320_EC, 0)},
-    {USB_VPI(USB_VENDOR_ADMTEK, USB_PRODUCT_ADMTEK_PEGASUSII_2, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_ADMTEK, USB_PRODUCT_ADMTEK_PEGASUSII_3, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_ADMTEK, USB_PRODUCT_ADMTEK_PEGASUSII_4, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_ADMTEK, USB_PRODUCT_ADMTEK_PEGASUSII, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_ADMTEK, USB_PRODUCT_ADMTEK_PEGASUS, AUE_FLAG_PNA | AUE_FLAG_DUAL_PHY)},
-    {USB_VPI(USB_VENDOR_AEI, USB_PRODUCT_AEI_FASTETHERNET, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_ALLIEDTELESYN, USB_PRODUCT_ALLIEDTELESYN_ATUSB100, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_ATEN, USB_PRODUCT_ATEN_UC110T, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_BELKIN, USB_PRODUCT_BELKIN_USB2LAN, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_BILLIONTON, USB_PRODUCT_BILLIONTON_USB100, 0)},
-    {USB_VPI(USB_VENDOR_BILLIONTON, USB_PRODUCT_BILLIONTON_USBE100, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_BILLIONTON, USB_PRODUCT_BILLIONTON_USBEL100, 0)},
-    {USB_VPI(USB_VENDOR_BILLIONTON, USB_PRODUCT_BILLIONTON_USBLP100, AUE_FLAG_PNA)},
-    {USB_VPI(USB_VENDOR_COREGA, USB_PRODUCT_COREGA_FETHER_USB_TXS, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_COREGA, USB_PRODUCT_COREGA_FETHER_USB_TX, 0)},
-    {USB_VPI(USB_VENDOR_DLINK, USB_PRODUCT_DLINK_DSB650TX1, AUE_FLAG_LSYS)},
-    {USB_VPI(USB_VENDOR_DLINK, USB_PRODUCT_DLINK_DSB650TX2, AUE_FLAG_LSYS | AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_DLINK, USB_PRODUCT_DLINK_DSB650TX3, AUE_FLAG_LSYS | AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_DLINK, USB_PRODUCT_DLINK_DSB650TX4, AUE_FLAG_LSYS | AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_DLINK, USB_PRODUCT_DLINK_DSB650TX_PNA, AUE_FLAG_PNA)},
-    {USB_VPI(USB_VENDOR_DLINK, USB_PRODUCT_DLINK_DSB650TX, AUE_FLAG_LSYS)},
-    {USB_VPI(USB_VENDOR_DLINK, USB_PRODUCT_DLINK_DSB650, AUE_FLAG_LSYS)},
-    {USB_VPI(USB_VENDOR_ELCON, USB_PRODUCT_ELCON_PLAN, AUE_FLAG_PNA | AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_ELECOM, USB_PRODUCT_ELECOM_LDUSB20, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_ELECOM, USB_PRODUCT_ELECOM_LDUSBLTX, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_ELECOM, USB_PRODUCT_ELECOM_LDUSBTX0, 0)},
-    {USB_VPI(USB_VENDOR_ELECOM, USB_PRODUCT_ELECOM_LDUSBTX1, AUE_FLAG_LSYS)},
-    {USB_VPI(USB_VENDOR_ELECOM, USB_PRODUCT_ELECOM_LDUSBTX2, 0)},
-    {USB_VPI(USB_VENDOR_ELECOM, USB_PRODUCT_ELECOM_LDUSBTX3, AUE_FLAG_LSYS)},
-    {USB_VPI(USB_VENDOR_ELSA, USB_PRODUCT_ELSA_USB2ETHERNET, 0)},
-    {USB_VPI(USB_VENDOR_GIGABYTE, USB_PRODUCT_GIGABYTE_GNBR402W, 0)},
-    {USB_VPI(USB_VENDOR_HAWKING, USB_PRODUCT_HAWKING_UF100, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_HP, USB_PRODUCT_HP_HN210E, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_IODATA, USB_PRODUCT_IODATA_USBETTXS, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_IODATA, USB_PRODUCT_IODATA_USBETTX, 0)},
-    {USB_VPI(USB_VENDOR_KINGSTON, USB_PRODUCT_KINGSTON_KNU101TX, 0)},
-    {USB_VPI(USB_VENDOR_LINKSYS, USB_PRODUCT_LINKSYS_USB100H1, AUE_FLAG_LSYS | AUE_FLAG_PNA)},
-    {USB_VPI(USB_VENDOR_LINKSYS, USB_PRODUCT_LINKSYS_USB100TX, AUE_FLAG_LSYS)},
-    {USB_VPI(USB_VENDOR_LINKSYS, USB_PRODUCT_LINKSYS_USB10TA, AUE_FLAG_LSYS)},
-    {USB_VPI(USB_VENDOR_LINKSYS, USB_PRODUCT_LINKSYS_USB10TX1, AUE_FLAG_LSYS | AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_LINKSYS, USB_PRODUCT_LINKSYS_USB10TX2, AUE_FLAG_LSYS | AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_LINKSYS, USB_PRODUCT_LINKSYS_USB10T, AUE_FLAG_LSYS)},
-    {USB_VPI(USB_VENDOR_MELCO, USB_PRODUCT_MELCO_LUA2TX5, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_MELCO, USB_PRODUCT_MELCO_LUATX1, 0)},
-    {USB_VPI(USB_VENDOR_MELCO, USB_PRODUCT_MELCO_LUATX5, 0)},
-    {USB_VPI(USB_VENDOR_MICROSOFT, USB_PRODUCT_MICROSOFT_MN110, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_NETGEAR, USB_PRODUCT_NETGEAR_FA101, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_SIEMENS, USB_PRODUCT_SIEMENS_SPEEDSTREAM, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_SIIG2, USB_PRODUCT_SIIG2_USBTOETHER, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_SMARTBRIDGES, USB_PRODUCT_SMARTBRIDGES_SMARTNIC, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_SMC, USB_PRODUCT_SMC_2202USB, 0)},
-    {USB_VPI(USB_VENDOR_SMC, USB_PRODUCT_SMC_2206USB, AUE_FLAG_PII)},
-    {USB_VPI(USB_VENDOR_SOHOWARE, USB_PRODUCT_SOHOWARE_NUB100, 0)},
-    {USB_VPI(USB_VENDOR_SOHOWARE, USB_PRODUCT_SOHOWARE_NUB110, AUE_FLAG_PII)},
+#define	AUE_DEV(v,p,i) { USB_VPI(USB_VENDOR_##v, USB_PRODUCT_##v##_##p, i) }
+    AUE_DEV(3COM, 3C460B, AUE_FLAG_PII),
+    AUE_DEV(ABOCOM, DSB650TX_PNA, 0),
+    AUE_DEV(ABOCOM, UFE1000, AUE_FLAG_LSYS),
+    AUE_DEV(ABOCOM, XX10, 0),
+    AUE_DEV(ABOCOM, XX1, AUE_FLAG_PNA | AUE_FLAG_PII),
+    AUE_DEV(ABOCOM, XX2, AUE_FLAG_PII),
+    AUE_DEV(ABOCOM, XX4, AUE_FLAG_PNA),
+    AUE_DEV(ABOCOM, XX5, AUE_FLAG_PNA),
+    AUE_DEV(ABOCOM, XX6, AUE_FLAG_PII),
+    AUE_DEV(ABOCOM, XX7, AUE_FLAG_PII),
+    AUE_DEV(ABOCOM, XX8, AUE_FLAG_PII),
+    AUE_DEV(ABOCOM, XX9, AUE_FLAG_PNA),
+    AUE_DEV(ACCTON, SS1001, AUE_FLAG_PII),
+    AUE_DEV(ACCTON, USB320_EC, 0),
+    AUE_DEV(ADMTEK, PEGASUSII_2, AUE_FLAG_PII),
+    AUE_DEV(ADMTEK, PEGASUSII_3, AUE_FLAG_PII),
+    AUE_DEV(ADMTEK, PEGASUSII_4, AUE_FLAG_PII),
+    AUE_DEV(ADMTEK, PEGASUSII, AUE_FLAG_PII),
+    AUE_DEV(ADMTEK, PEGASUS, AUE_FLAG_PNA | AUE_FLAG_DUAL_PHY),
+    AUE_DEV(AEI, FASTETHERNET, AUE_FLAG_PII),
+    AUE_DEV(ALLIEDTELESYN, ATUSB100, AUE_FLAG_PII),
+    AUE_DEV(ATEN, UC110T, AUE_FLAG_PII),
+    AUE_DEV(BELKIN, USB2LAN, AUE_FLAG_PII),
+    AUE_DEV(BILLIONTON, USB100, 0),
+    AUE_DEV(BILLIONTON, USBE100, AUE_FLAG_PII),
+    AUE_DEV(BILLIONTON, USBEL100, 0),
+    AUE_DEV(BILLIONTON, USBLP100, AUE_FLAG_PNA),
+    AUE_DEV(COREGA, FETHER_USB_TXS, AUE_FLAG_PII),
+    AUE_DEV(COREGA, FETHER_USB_TX, 0),
+    AUE_DEV(DLINK, DSB650TX1, AUE_FLAG_LSYS),
+    AUE_DEV(DLINK, DSB650TX2, AUE_FLAG_LSYS | AUE_FLAG_PII),
+    AUE_DEV(DLINK, DSB650TX3, AUE_FLAG_LSYS | AUE_FLAG_PII),
+    AUE_DEV(DLINK, DSB650TX4, AUE_FLAG_LSYS | AUE_FLAG_PII),
+    AUE_DEV(DLINK, DSB650TX_PNA, AUE_FLAG_PNA),
+    AUE_DEV(DLINK, DSB650TX, AUE_FLAG_LSYS),
+    AUE_DEV(DLINK, DSB650, AUE_FLAG_LSYS),
+    AUE_DEV(ELCON, PLAN, AUE_FLAG_PNA | AUE_FLAG_PII),
+    AUE_DEV(ELECOM, LDUSB20, AUE_FLAG_PII),
+    AUE_DEV(ELECOM, LDUSBLTX, AUE_FLAG_PII),
+    AUE_DEV(ELECOM, LDUSBTX0, 0),
+    AUE_DEV(ELECOM, LDUSBTX1, AUE_FLAG_LSYS),
+    AUE_DEV(ELECOM, LDUSBTX2, 0),
+    AUE_DEV(ELECOM, LDUSBTX3, AUE_FLAG_LSYS),
+    AUE_DEV(ELSA, USB2ETHERNET, 0),
+    AUE_DEV(GIGABYTE, GNBR402W, 0),
+    AUE_DEV(HAWKING, UF100, AUE_FLAG_PII),
+    AUE_DEV(HP, HN210E, AUE_FLAG_PII),
+    AUE_DEV(IODATA, USBETTXS, AUE_FLAG_PII),
+    AUE_DEV(IODATA, USBETTX, 0),
+    AUE_DEV(KINGSTON, KNU101TX, 0),
+    AUE_DEV(LINKSYS, USB100H1, AUE_FLAG_LSYS | AUE_FLAG_PNA),
+    AUE_DEV(LINKSYS, USB100TX, AUE_FLAG_LSYS),
+    AUE_DEV(LINKSYS, USB10TA, AUE_FLAG_LSYS),
+    AUE_DEV(LINKSYS, USB10TX1, AUE_FLAG_LSYS | AUE_FLAG_PII),
+    AUE_DEV(LINKSYS, USB10TX2, AUE_FLAG_LSYS | AUE_FLAG_PII),
+    AUE_DEV(LINKSYS, USB10T, AUE_FLAG_LSYS),
+    AUE_DEV(MELCO, LUA2TX5, AUE_FLAG_PII),
+    AUE_DEV(MELCO, LUATX1, 0),
+    AUE_DEV(MELCO, LUATX5, 0),
+    AUE_DEV(MICROSOFT, MN110, AUE_FLAG_PII),
+    AUE_DEV(NETGEAR, FA101, AUE_FLAG_PII),
+    AUE_DEV(SIEMENS, SPEEDSTREAM, AUE_FLAG_PII),
+    AUE_DEV(SIIG2, USBTOETHER, AUE_FLAG_PII),
+    AUE_DEV(SMARTBRIDGES, SMARTNIC, AUE_FLAG_PII),
+    AUE_DEV(SMC, 2202USB, 0),
+    AUE_DEV(SMC, 2206USB, AUE_FLAG_PII),
+    AUE_DEV(SOHOWARE, NUB100, 0),
+    AUE_DEV(SOHOWARE, NUB110, AUE_FLAG_PII),
+#undef AUE_DEV
 };
 
 /* prototypes */
@@ -470,7 +486,7 @@ aue_miibus_writereg(device_t dev, int phy, int reg, int data)
 	}
 
 	if (i == AUE_TIMEOUT)
-		device_printf(sc->sc_ue.ue_dev, "MII read timed out\n");
+		device_printf(sc->sc_ue.ue_dev, "MII write timed out\n");
 
 	if (!locked)
 		AUE_UNLOCK(sc);
@@ -537,7 +553,7 @@ aue_setmulti(struct usb_ether *ue)
 	AUE_CLRBIT(sc, AUE_CTL0, AUE_CTL0_ALLMULTI);
 
 	/* now program new ones */
-	IF_ADDR_LOCK(ifp);
+	if_maddr_rlock(ifp);
 	TAILQ_FOREACH(ifma, &ifp->if_multiaddrs, ifma_link) {
 		if (ifma->ifma_addr->sa_family != AF_LINK)
 			continue;
@@ -545,7 +561,7 @@ aue_setmulti(struct usb_ether *ue)
 		    ifma->ifma_addr), ETHER_ADDR_LEN) & ((1 << AUE_BITS) - 1);
 		hashtbl[(h >> 3)] |=  1 << (h & 0x7);
 	}
-	IF_ADDR_UNLOCK(ifp);
+	if_maddr_runlock(ifp);
 
 	/* write the hashtable */
 	for (i = 0; i != 8; i++)
@@ -589,11 +605,14 @@ aue_reset(struct aue_softc *sc)
 	 * to set the GPIO pins high so that the PHY(s) will
 	 * be enabled.
 	 *
-	 * Note: We force all of the GPIO pins low first, *then*
-	 * enable the ones we want.
+	 * NOTE: We used to force all of the GPIO pins low first and then
+	 * enable the ones we want. This has been changed to better
+	 * match the ADMtek's reference design to avoid setting the
+	 * power-down configuration line of the PHY at the same time
+	 * it is reset.
 	 */
-	aue_csr_write_1(sc, AUE_GPIO0, AUE_GPIO_OUT0|AUE_GPIO_SEL0);
-	aue_csr_write_1(sc, AUE_GPIO0, AUE_GPIO_OUT0|AUE_GPIO_SEL0|AUE_GPIO_SEL1);
+	aue_csr_write_1(sc, AUE_GPIO0, AUE_GPIO_SEL0|AUE_GPIO_SEL1);
+	aue_csr_write_1(sc, AUE_GPIO0, AUE_GPIO_SEL0|AUE_GPIO_SEL1|AUE_GPIO_OUT0);
 
 	if (sc->sc_flags & AUE_FLAG_LSYS) {
 		/* Grrr. LinkSys has to be different from everyone else. */
@@ -675,7 +694,7 @@ aue_attach(device_t dev)
 	    sc->sc_xfer, aue_config, AUE_N_TRANSFER,
 	    sc, &sc->sc_mtx);
 	if (error) {
-		device_printf(dev, "allocating USB transfers failed!\n");
+		device_printf(dev, "allocating USB transfers failed\n");
 		goto detach;
 	}
 
@@ -711,19 +730,24 @@ aue_detach(device_t dev)
 }
 
 static void
-aue_intr_callback(struct usb_xfer *xfer)
+aue_intr_callback(struct usb_xfer *xfer, usb_error_t error)
 {
-	struct aue_softc *sc = xfer->priv_sc;
+	struct aue_softc *sc = usbd_xfer_softc(xfer);
 	struct ifnet *ifp = uether_getifp(&sc->sc_ue);
 	struct aue_intrpkt pkt;
+	struct usb_page_cache *pc;
+	int actlen;
+
+	usbd_xfer_status(xfer, &actlen, NULL, NULL, NULL);
 
 	switch (USB_GET_STATE(xfer)) {
 	case USB_ST_TRANSFERRED:
 
 		if ((ifp->if_drv_flags & IFF_DRV_RUNNING) &&
-		    xfer->actlen >= sizeof(pkt)) {
+		    actlen >= sizeof(pkt)) {
 
-			usbd_copy_out(xfer->frbuffers, 0, &pkt, sizeof(pkt));
+			pc = usbd_xfer_get_frame(xfer, 0);
+			usbd_copy_out(pc, 0, &pkt, sizeof(pkt));
 
 			if (pkt.aue_txstat0)
 				ifp->if_oerrors++;
@@ -734,14 +758,14 @@ aue_intr_callback(struct usb_xfer *xfer)
 		/* FALLTHROUGH */
 	case USB_ST_SETUP:
 tr_setup:
-		xfer->frlengths[0] = xfer->max_data_length;
+		usbd_xfer_set_frame_len(xfer, 0, usbd_xfer_max_len(xfer));
 		usbd_transfer_submit(xfer);
 		return;
 
 	default:			/* Error */
-		if (xfer->error != USB_ERR_CANCELLED) {
+		if (error != USB_ERR_CANCELLED) {
 			/* try to clear stall first */
-			xfer->flags.stall_pipe = 1;
+			usbd_xfer_set_stall(xfer);
 			goto tr_setup;
 		}
 		return;
@@ -749,31 +773,36 @@ tr_setup:
 }
 
 static void
-aue_bulk_read_callback(struct usb_xfer *xfer)
+aue_bulk_read_callback(struct usb_xfer *xfer, usb_error_t error)
 {
-	struct aue_softc *sc = xfer->priv_sc;
+	struct aue_softc *sc = usbd_xfer_softc(xfer);
 	struct usb_ether *ue = &sc->sc_ue;
 	struct ifnet *ifp = uether_getifp(ue);
 	struct aue_rxpkt stat;
+	struct usb_page_cache *pc;
+	int actlen;
+
+	usbd_xfer_status(xfer, &actlen, NULL, NULL, NULL);
+	pc = usbd_xfer_get_frame(xfer, 0);
 
 	switch (USB_GET_STATE(xfer)) {
 	case USB_ST_TRANSFERRED:
-		DPRINTFN(11, "received %d bytes\n", xfer->actlen);
+		DPRINTFN(11, "received %d bytes\n", actlen);
 
 		if (sc->sc_flags & AUE_FLAG_VER_2) {
 
-			if (xfer->actlen == 0) {
+			if (actlen == 0) {
 				ifp->if_ierrors++;
 				goto tr_setup;
 			}
 		} else {
 
-			if (xfer->actlen <= (sizeof(stat) + ETHER_CRC_LEN)) {
+			if (actlen <= sizeof(stat) + ETHER_CRC_LEN) {
 				ifp->if_ierrors++;
 				goto tr_setup;
 			}
-			usbd_copy_out(xfer->frbuffers,
-			    xfer->actlen - sizeof(stat), &stat, sizeof(stat));
+			usbd_copy_out(pc, actlen - sizeof(stat), &stat,
+			    sizeof(stat));
 
 			/*
 			 * turn off all the non-error bits in the rx status
@@ -785,25 +814,25 @@ aue_bulk_read_callback(struct usb_xfer *xfer)
 				goto tr_setup;
 			}
 			/* No errors; receive the packet. */
-			xfer->actlen -= (sizeof(stat) + ETHER_CRC_LEN);
+			actlen -= (sizeof(stat) + ETHER_CRC_LEN);
 		}
-		uether_rxbuf(ue, xfer->frbuffers, 0, xfer->actlen);
+		uether_rxbuf(ue, pc, 0, actlen);
 
 		/* FALLTHROUGH */
 	case USB_ST_SETUP:
 tr_setup:
-		xfer->frlengths[0] = xfer->max_data_length;
+		usbd_xfer_set_frame_len(xfer, 0, usbd_xfer_max_len(xfer));
 		usbd_transfer_submit(xfer);
 		uether_rxflush(ue);
 		return;
 
 	default:			/* Error */
 		DPRINTF("bulk read error, %s\n",
-		    usbd_errstr(xfer->error));
+		    usbd_errstr(error));
 
-		if (xfer->error != USB_ERR_CANCELLED) {
+		if (error != USB_ERR_CANCELLED) {
 			/* try to clear stall first */
-			xfer->flags.stall_pipe = 1;
+			usbd_xfer_set_stall(xfer);
 			goto tr_setup;
 		}
 		return;
@@ -811,16 +840,21 @@ tr_setup:
 }
 
 static void
-aue_bulk_write_callback(struct usb_xfer *xfer)
+aue_bulk_write_callback(struct usb_xfer *xfer, usb_error_t error)
 {
-	struct aue_softc *sc = xfer->priv_sc;
+	struct aue_softc *sc = usbd_xfer_softc(xfer);
 	struct ifnet *ifp = uether_getifp(&sc->sc_ue);
+	struct usb_page_cache *pc;
 	struct mbuf *m;
 	uint8_t buf[2];
+	int actlen;
+
+	usbd_xfer_status(xfer, &actlen, NULL, NULL, NULL);
+	pc = usbd_xfer_get_frame(xfer, 0);
 
 	switch (USB_GET_STATE(xfer)) {
 	case USB_ST_TRANSFERRED:
-		DPRINTFN(11, "transfer of %d bytes complete\n", xfer->actlen);
+		DPRINTFN(11, "transfer of %d bytes complete\n", actlen);
 		ifp->if_opackets++;
 
 		/* FALLTHROUGH */
@@ -840,14 +874,13 @@ tr_setup:
 			m->m_pkthdr.len = MCLBYTES;
 		if (sc->sc_flags & AUE_FLAG_VER_2) {
 
-			xfer->frlengths[0] = m->m_pkthdr.len;
+			usbd_xfer_set_frame_len(xfer, 0, m->m_pkthdr.len);
 
-			usbd_m_copy_in(xfer->frbuffers, 0,
-			    m, 0, m->m_pkthdr.len);
+			usbd_m_copy_in(pc, 0, m, 0, m->m_pkthdr.len);
 
 		} else {
 
-			xfer->frlengths[0] = (m->m_pkthdr.len + 2);
+			usbd_xfer_set_frame_len(xfer, 0, (m->m_pkthdr.len + 2));
 
 			/*
 		         * The ADMtek documentation says that the
@@ -860,10 +893,8 @@ tr_setup:
 			buf[0] = (uint8_t)(m->m_pkthdr.len);
 			buf[1] = (uint8_t)(m->m_pkthdr.len >> 8);
 
-			usbd_copy_in(xfer->frbuffers, 0, buf, 2);
-
-			usbd_m_copy_in(xfer->frbuffers, 2,
-			    m, 0, m->m_pkthdr.len);
+			usbd_copy_in(pc, 0, buf, 2);
+			usbd_m_copy_in(pc, 2, m, 0, m->m_pkthdr.len);
 		}
 
 		/*
@@ -879,13 +910,13 @@ tr_setup:
 
 	default:			/* Error */
 		DPRINTFN(11, "transfer error, %s\n",
-		    usbd_errstr(xfer->error));
+		    usbd_errstr(error));
 
 		ifp->if_oerrors++;
 
-		if (xfer->error != USB_ERR_CANCELLED) {
+		if (error != USB_ERR_CANCELLED) {
 			/* try to clear stall first */
-			xfer->flags.stall_pipe = 1;
+			usbd_xfer_set_stall(xfer);
 			goto tr_setup;
 		}
 		return;
@@ -951,7 +982,7 @@ aue_init(struct usb_ether *ue)
 	AUE_SETBIT(sc, AUE_CTL0, AUE_CTL0_TX_ENB);
 	AUE_SETBIT(sc, AUE_CTL2, AUE_CTL2_EP3_CLR);
 
-	usbd_transfer_set_stall(sc->sc_xfer[AUE_BULK_DT_WR]);
+	usbd_xfer_set_stall(sc->sc_xfer[AUE_BULK_DT_WR]);
 
 	ifp->if_drv_flags |= IFF_DRV_RUNNING;
 	aue_start(ue);

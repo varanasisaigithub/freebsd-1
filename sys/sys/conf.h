@@ -135,13 +135,11 @@ typedef int d_read_t(struct cdev *dev, struct uio *uio, int ioflag);
 typedef int d_write_t(struct cdev *dev, struct uio *uio, int ioflag);
 typedef int d_poll_t(struct cdev *dev, int events, struct thread *td);
 typedef int d_kqfilter_t(struct cdev *dev, struct knote *kn);
-typedef int d_mmap_t(struct cdev *dev, vm_offset_t offset, vm_paddr_t *paddr,
-   		     int nprot);
+typedef int d_mmap_t(struct cdev *dev, vm_ooffset_t offset, vm_paddr_t *paddr,
+		     int nprot, vm_memattr_t *memattr);
 typedef int d_mmap_single_t(struct cdev *cdev, vm_ooffset_t *offset,
     vm_size_t size, struct vm_object **object, int nprot);
 typedef void d_purge_t(struct cdev *dev);
-
-typedef int d_spare2_t(struct cdev *dev);
 
 typedef int dumper_t(
 	void *_priv,		/* Private to the driver. */
@@ -179,7 +177,8 @@ typedef int dumper_t(
 #define D_VERSION_00	0x20011966
 #define D_VERSION_01	0x17032005	/* Add d_uid,gid,mode & kind */
 #define D_VERSION_02	0x28042009	/* Add d_mmap_single */
-#define D_VERSION	D_VERSION_02
+#define D_VERSION_03	0x17122009	/* d_mmap takes memattr,vm_ooffset_t */
+#define D_VERSION	D_VERSION_03
 
 /*
  * Flags used for internal housekeeping
@@ -206,15 +205,13 @@ struct cdevsw {
 	d_kqfilter_t		*d_kqfilter;
 	d_purge_t		*d_purge;
 	d_mmap_single_t		*d_mmap_single;
-	uid_t			d_uid;
-	gid_t			d_gid;
-	mode_t			d_mode;
-	const char		*d_kind;
+
+	int32_t			d_spare0[3];
+	void			*d_spare1[3];
 
 	/* These fields should not be messed with by drivers */
-	LIST_ENTRY(cdevsw)	d_list;
 	LIST_HEAD(, cdev)	d_devs;
-	int			d_spare3;
+	int			d_spare2;
 	union {
 		struct cdevsw		*gianttrick;
 		SLIST_ENTRY(cdevsw)	postfree_list;

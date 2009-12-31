@@ -40,31 +40,57 @@ __FBSDID("$FreeBSD$");
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <sys/stdint.h>
+#include <sys/stddef.h>
+#include <sys/param.h>
+#include <sys/queue.h>
+#include <sys/types.h>
+#include <sys/systm.h>
+#include <sys/kernel.h>
+#include <sys/bus.h>
+#include <sys/linker_set.h>
+#include <sys/module.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
+#include <sys/condvar.h>
+#include <sys/sysctl.h>
+#include <sys/sx.h>
+#include <sys/unistd.h>
+#include <sys/callout.h>
+#include <sys/malloc.h>
+#include <sys/priv.h>
+
 #include <dev/usb/usb.h>
-#include <dev/usb/usb_mfunc.h>
-#include <dev/usb/usb_error.h>
+#include <dev/usb/usbdi.h>
+#include <dev/usb/usbdi_util.h>
 #include <dev/usb/usbhid.h>
 
 #define	USB_DEBUG_VAR usb_debug
 
 #include <dev/usb/usb_core.h>
 #include <dev/usb/usb_debug.h>
-#include <dev/usb/usb_parse.h>
 #include <dev/usb/usb_process.h>
 #include <dev/usb/usb_device.h>
 #include <dev/usb/usb_request.h>
-#include <dev/usb/usb_hid.h>
 
 static void hid_clear_local(struct hid_item *);
 static uint8_t hid_get_byte(struct hid_data *s, const uint16_t wSize);
 
 #define	MAXUSAGE 64
 #define	MAXPUSH 4
+#define	MAXID 16
+
+struct hid_pos_data {
+	int32_t rid;
+	uint32_t pos;
+};
+
 struct hid_data {
 	const uint8_t *start;
 	const uint8_t *end;
 	const uint8_t *p;
 	struct hid_item cur[MAXPUSH];
+	struct hid_pos_data last_pos[MAXID];
 	int32_t	usages_min[MAXUSAGE];
 	int32_t	usages_max[MAXUSAGE];
 	int32_t usage_last;	/* last seen usage */
@@ -99,6 +125,58 @@ hid_clear_local(struct hid_item *c)
 	c->string_minimum = 0;
 	c->string_maximum = 0;
 	c->set_delimiter = 0;
+}
+
+static void
+hid_switch_rid(struct hid_data *s, struct hid_item *c, int32_t next_rID)
+{
+	uint8_t i;
+
+	/* check for same report ID - optimise */
+
+	if (c->report_ID == next_rID)
+		return;
+
+	/* save current position for current rID */
+
+	if (c->report_ID == 0) {
+		i = 0;
+	} else {
+		for (i = 1; i != MAXID; i++) {
+			if (s->last_pos[i].rid == c->report_ID)
+				break;
+			if (s->last_pos[i].rid == 0)
+				break;
+		}
+	}
+	if (i != MAXID) {
+		s->last_pos[i].rid = c->report_ID;
+		s->last_pos[i].pos = c->loc.pos;
+	}
+
+	/* store next report ID */
+
+	c->report_ID = next_rID;
+
+	/* lookup last position for next rID */
+
+	if (next_rID == 0) {
+		i = 0;
+	} else {
+		for (i = 1; i != MAXID; i++) {
+			if (s->last_pos[i].rid == next_rID)
+				break;
+			if (s->last_pos[i].rid == 0)
+				break;
+		}
+	}
+	if (i != MAXID) {
+		s->last_pos[i].rid = next_rID;
+		c->loc.pos = s->last_pos[i].pos;
+	} else {
+		DPRINTF("Out of RID entries, position is set to zero!\n");
+		c->loc.pos = 0;
+	}
 }
 
 /*------------------------------------------------------------------------*
@@ -355,9 +433,7 @@ hid_get_item(struct hid_data *s, struct hid_item *h)
 				s->loc_size = dval & mask;
 				break;
 			case 8:
-				c->report_ID = dval;
-				/* new report - reset position */
-				c->loc.pos = 0;
+				hid_switch_rid(s, c, dval);
 				break;
 			case 9:
 				/* mask because value is unsigned */
@@ -374,7 +450,7 @@ hid_get_item(struct hid_data *s, struct hid_item *h)
 					c = &s->cur[s->pushlevel];
 				} else {
 					DPRINTFN(0, "Cannot push "
-					    "item @ %d!\n", s->pushlevel);
+					    "item @ %d\n", s->pushlevel);
 				}
 				break;
 			case 11:	/* Pop */
@@ -392,7 +468,7 @@ hid_get_item(struct hid_data *s, struct hid_item *h)
 					c->loc.count = 0;
 				} else {
 					DPRINTFN(0, "Cannot pop "
-					    "item @ %d!\n", s->pushlevel);
+					    "item @ %d\n", s->pushlevel);
 				}
 				break;
 			default:
@@ -414,7 +490,7 @@ hid_get_item(struct hid_data *s, struct hid_item *h)
 					s->usages_max[s->nusage] = dval;
 					s->nusage ++;
 				} else {
-					DPRINTFN(0, "max usage reached!\n");
+					DPRINTFN(0, "max usage reached\n");
 				}
 
 				/* clear any pending usage sets */
@@ -449,7 +525,7 @@ hid_get_item(struct hid_data *s, struct hid_item *h)
 					    c->usage_maximum;
 					s->nusage ++;
 				} else {
-					DPRINTFN(0, "Usage set dropped!\n");
+					DPRINTFN(0, "Usage set dropped\n");
 				}
 				s->susage = 0;
 				break;

@@ -722,8 +722,6 @@ stge_attach(device_t dev)
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 	ifp->if_ioctl = stge_ioctl;
 	ifp->if_start = stge_start;
-	ifp->if_timer = 0;
-	ifp->if_watchdog = NULL;
 	ifp->if_init = stge_init;
 	ifp->if_mtu = ETHERMTU;
 	ifp->if_snd.ifq_drv_maxlen = STGE_TX_RING_CNT - 1;
@@ -2683,7 +2681,7 @@ stge_set_multi(struct stge_softc *sc)
 	bzero(mchash, sizeof(mchash));
 
 	count = 0;
-	IF_ADDR_LOCK(sc->sc_ifp);
+	if_maddr_rlock(sc->sc_ifp);
 	TAILQ_FOREACH(ifma, &sc->sc_ifp->if_multiaddrs, ifma_link) {
 		if (ifma->ifma_addr->sa_family != AF_LINK)
 			continue;
@@ -2697,7 +2695,7 @@ stge_set_multi(struct stge_softc *sc)
 		mchash[crc >> 5] |= 1 << (crc & 0x1f);
 		count++;
 	}
-	IF_ADDR_UNLOCK(ifp);
+	if_maddr_runlock(ifp);
 
 	mode &= ~(RM_ReceiveMulticast | RM_ReceiveAllFrames);
 	if (count > 0)

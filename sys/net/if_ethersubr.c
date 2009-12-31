@@ -50,7 +50,6 @@
 #include <sys/socket.h>
 #include <sys/sockio.h>
 #include <sys/sysctl.h>
-#include <sys/vimage.h>
 
 #include <net/if.h>
 #include <net/if_arp.h>
@@ -72,8 +71,9 @@
 #include <netinet/in_var.h>
 #include <netinet/if_ether.h>
 #include <netinet/ip_fw.h>
+#include <netinet/ipfw/ip_fw_private.h>
 #include <netinet/ip_dummynet.h>
-#include <netinet/vinet.h>
+#include <netinet/ip_var.h>
 #endif
 #ifdef INET6
 #include <netinet6/nd6.h>
@@ -148,9 +148,8 @@ MALLOC_DEFINE(M_ARPCOM, "arpcom", "802.* interface internals");
 #if defined(INET) || defined(INET6)
 int
 ether_ipfw_chk(struct mbuf **m0, struct ifnet *dst, int shared);
-#ifdef VIMAGE_GLOBALS
-static int ether_ipfw;
-#endif
+static VNET_DEFINE(int, ether_ipfw);
+#define	V_ether_ipfw	VNET(ether_ipfw)
 #endif
 
 
@@ -175,7 +174,8 @@ ether_output(struct ifnet *ifp, struct mbuf *m,
 	int hlen;	/* link layer header length */
 
 	if (ro != NULL) {
-		lle = ro->ro_lle;
+		if (!(m->m_flags & (M_BCAST | M_MCAST)))
+			lle = ro->ro_lle;
 		rt0 = ro->ro_rt;
 	}
 #ifdef MAC
@@ -261,14 +261,17 @@ ether_output(struct ifnet *ifp, struct mbuf *m,
 
 	    if ((aa = at_ifawithnet((struct sockaddr_at *)dst)) == NULL)
 		    senderr(EHOSTUNREACH); /* XXX */
-	    if (!aarpresolve(ifp, m, (struct sockaddr_at *)dst, edst))
+	    if (!aarpresolve(ifp, m, (struct sockaddr_at *)dst, edst)) {
+		    ifa_free(&aa->aa_ifa);
 		    return (0);
+	    }
 	    /*
 	     * In the phase 2 case, need to prepend an mbuf for the llc header.
 	     */
 	    if ( aa->aa_flags & AFA_PHASE2 ) {
 		struct llc llc;
 
+		ifa_free(&aa->aa_ifa);
 		M_PREPEND(m, LLC_SNAPFRAMELEN, M_DONTWAIT);
 		if (m == NULL)
 			senderr(ENOBUFS);
@@ -280,6 +283,7 @@ ether_output(struct ifnet *ifp, struct mbuf *m,
 		type = htons(m->m_pkthdr.len);
 		hlen = LLC_SNAPFRAMELEN + ETHER_HDR_LEN;
 	    } else {
+		ifa_free(&aa->aa_ifa);
 		type = htons(ETHERTYPE_AT);
 	    }
 	    break;
@@ -430,9 +434,8 @@ int
 ether_output_frame(struct ifnet *ifp, struct mbuf *m)
 {
 #if defined(INET) || defined(INET6)
-	INIT_VNET_NET(ifp->if_vnet);
 
-	if (ip_fw_chk_ptr && V_ether_ipfw != 0) {
+	if (V_ip_fw_chk_ptr && V_ether_ipfw != 0) {
 		if (ether_ipfw_chk(&m, ifp, 0) == 0) {
 			if (m) {
 				m_freem(m);
@@ -459,25 +462,29 @@ ether_output_frame(struct ifnet *ifp, struct mbuf *m)
 int
 ether_ipfw_chk(struct mbuf **m0, struct ifnet *dst, int shared)
 {
-	INIT_VNET_INET(dst->if_vnet);
 	struct ether_header *eh;
 	struct ether_header save_eh;
 	struct mbuf *m;
 	int i;
 	struct ip_fw_args args;
-	struct dn_pkt_tag *dn_tag;
+	struct m_tag *mtag;
 
-	dn_tag = ip_dn_claim_tag(*m0);
+	mtag = m_tag_find(*m0, PACKET_TAG_DUMMYNET, NULL);
+	if (mtag == NULL) {
+		args.slot = 0;
+	} else {
+		struct dn_pkt_tag *dn_tag;
 
-	if (dn_tag != NULL) {
-		if (dn_tag->rule != NULL && V_fw_one_pass)
+		mtag->m_tag_id = PACKET_TAG_NONE;
+		dn_tag = (struct dn_pkt_tag *)(mtag + 1);
+		if (dn_tag->slot != 0 && V_fw_one_pass)
 			/* dummynet packet, already partially processed */
 			return (1);
-		args.rule = dn_tag->rule;	/* matching rule to restart */
+		args.slot = dn_tag->slot;	/* matching rule to restart */
+		args.rulenum = dn_tag->rulenum;
 		args.rule_id = dn_tag->rule_id;
 		args.chain_id = dn_tag->chain_id;
-	} else
-		args.rule = NULL;
+	}
 
 	/*
 	 * I need some amt of data to be contiguous, and in case others need
@@ -501,7 +508,7 @@ ether_ipfw_chk(struct mbuf **m0, struct ifnet *dst, int shared)
 	args.next_hop = NULL;	/* we do not support forward yet	*/
 	args.eh = &save_eh;	/* MAC header for bridged/MAC packets	*/
 	args.inp = NULL;	/* used by ipfw uid/gid/jail rules	*/
-	i = ip_fw_chk_ptr(&args);
+	i = V_ip_fw_chk_ptr(&args);
 	m = args.m;
 	if (m != NULL) {
 		/*
@@ -528,6 +535,7 @@ ether_ipfw_chk(struct mbuf **m0, struct ifnet *dst, int shared)
 		return 1;
 
 	if (ip_dn_io_ptr && (i == IP_FW_DUMMYNET)) {
+		int dir;
 		/*
 		 * Pass the pkt to dummynet, which consumes it.
 		 * If shared, make a copy and keep the original.
@@ -543,7 +551,8 @@ ether_ipfw_chk(struct mbuf **m0, struct ifnet *dst, int shared)
 			 */
 			*m0 = NULL ;
 		}
-		ip_dn_io_ptr(&m, dst ? DN_TO_ETH_OUT: DN_TO_ETH_DEMUX, &args);
+		dir = PROTO_LAYER2 | (dst ? DIR_OUT : DIR_IN);
+		ip_dn_io_ptr(&m, dir, &args);
 		return 0;
 	}
 	/*
@@ -770,12 +779,11 @@ ether_demux(struct ifnet *ifp, struct mbuf *m)
 	KASSERT(ifp != NULL, ("%s: NULL interface pointer", __func__));
 
 #if defined(INET) || defined(INET6)
-	INIT_VNET_NET(ifp->if_vnet);
 	/*
 	 * Allow dummynet and/or ipfw to claim the frame.
 	 * Do not do this for PROMISC frames in case we are re-entered.
 	 */
-	if (ip_fw_chk_ptr && V_ether_ipfw != 0 && !(m->m_flags & M_PROMISC)) {
+	if (V_ip_fw_chk_ptr && V_ether_ipfw != 0 && !(m->m_flags & M_PROMISC)) {
 		if (ether_ipfw_chk(&m, NULL, 0) == 0) {
 			if (m)
 				m_freem(m);	/* dropped; free mbuf chain */
@@ -990,8 +998,8 @@ ether_ifdetach(struct ifnet *ifp)
 SYSCTL_DECL(_net_link);
 SYSCTL_NODE(_net_link, IFT_ETHER, ether, CTLFLAG_RW, 0, "Ethernet");
 #if defined(INET) || defined(INET6)
-SYSCTL_V_INT(V_NET, vnet_net, _net_link_ether, OID_AUTO, ipfw, CTLFLAG_RW,
-	     ether_ipfw, 0, "Pass ether pkts through firewall");
+SYSCTL_VNET_INT(_net_link_ether, OID_AUTO, ipfw, CTLFLAG_RW,
+	     &VNET_NAME(ether_ipfw), 0, "Pass ether pkts through firewall");
 #endif
 
 #if 0

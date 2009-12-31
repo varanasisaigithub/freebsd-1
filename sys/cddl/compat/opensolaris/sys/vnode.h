@@ -57,6 +57,8 @@ typedef	struct vop_vector	vnodeops_t;
 
 #define	v_count	v_usecount
 
+#define	V_APPEND	VAPPEND
+
 static __inline int
 vn_is_readonly(vnode_t *vp)
 {
@@ -75,7 +77,6 @@ vn_is_readonly(vnode_t *vp)
 #define	VN_HOLD(v)	vref(v)
 #define	VN_RELE(v)	vrele(v)
 #define	VN_URELE(v)	vput(v)
-#define	VN_RELE_ASYNC(v, tq)	vn_rele_async(v, tq); 
 
 #define	VOP_REALVP(vp, vpp, ct)	(*(vpp) = (vp), 0)
 
@@ -182,7 +183,7 @@ vn_openat(char *pnamep, enum uio_seg seg, int filemode, int createmode,
 		vref(startvp);
 	NDINIT_ATVP(&nd, operation, MPSAFE, UIO_SYSSPACE, pnamep, startvp, td);
 	filemode |= O_NOFOLLOW;
-	error = vn_open_cred(&nd, &filemode, createmode, td->td_ucred, NULL);
+	error = vn_open_cred(&nd, &filemode, createmode, 0, td->td_ucred, NULL);
 	NDFREE(&nd, NDF_ONLY_PNBUF);
 	if (error == 0) {
 		/* We just unlock so we hold a reference. */

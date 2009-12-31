@@ -35,9 +35,9 @@
 #include "opt_inet6.h"
 
 #include <sys/param.h>
-#include <sys/domain.h>
 #include <sys/jail.h>
 #include <sys/kernel.h>
+#include <sys/domain.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/mbuf.h>
@@ -50,7 +50,6 @@
 #include <sys/socketvar.h>
 #include <sys/sysctl.h>
 #include <sys/systm.h>
-#include <sys/vimage.h>
 
 #include <net/if.h>
 #include <net/if_dl.h>
@@ -61,6 +60,7 @@
 #include <net/vnet.h>
 
 #include <netinet/in.h>
+#include <netinet/if_ether.h>
 #ifdef INET6
 #include <netinet6/scope6_var.h>
 #endif
@@ -514,6 +514,39 @@ route_output(struct mbuf *m, struct socket *so)
 			senderr(error);
 	}
 
+	/*
+	 * The given gateway address may be an interface address.
+	 * For example, issuing a "route change" command on a route
+	 * entry that was created from a tunnel, and the gateway
+	 * address given is the local end point. In this case the 
+	 * RTF_GATEWAY flag must be cleared or the destination will
+	 * not be reachable even though there is no error message.
+	 */
+	if (info.rti_info[RTAX_GATEWAY] != NULL &&
+	    info.rti_info[RTAX_GATEWAY]->sa_family != AF_LINK) {
+		struct route gw_ro;
+
+		bzero(&gw_ro, sizeof(gw_ro));
+		gw_ro.ro_dst = *info.rti_info[RTAX_GATEWAY];
+		rtalloc_ign_fib(&gw_ro, 0, so->so_fibnum);
+		/* 
+		 * A host route through the loopback interface is 
+		 * installed for each interface adddress. In pre 8.0
+		 * releases the interface address of a PPP link type
+		 * is not reachable locally. This behavior is fixed as 
+		 * part of the new L2/L3 redesign and rewrite work. The
+		 * signature of this interface address route is the
+		 * AF_LINK sa_family type of the rt_gateway, and the
+		 * rt_ifp has the IFF_LOOPBACK flag set.
+		 */
+		if (gw_ro.ro_rt != NULL &&
+		    gw_ro.ro_rt->rt_gateway->sa_family == AF_LINK &&
+		    gw_ro.ro_rt->rt_ifp->if_flags & IFF_LOOPBACK)
+			info.rti_flags &= ~RTF_GATEWAY;
+		if (gw_ro.ro_rt != NULL)
+			RTFREE(gw_ro.ro_rt);
+	}
+
 	switch (rtm->rtm_type) {
 		struct rtentry *saved_nrt;
 
@@ -590,6 +623,27 @@ route_output(struct mbuf *m, struct socket *so)
 			}
 		}
 #endif
+		/*
+		 * If performing proxied L2 entry insertion, and
+		 * the actual PPP host entry is found, perform
+		 * another search to retrieve the prefix route of
+		 * the local end point of the PPP link.
+		 */
+		if ((rtm->rtm_flags & RTF_ANNOUNCE) &&
+		    (rt->rt_ifp->if_flags & IFF_POINTOPOINT)) {
+			struct sockaddr laddr;
+			rt_maskedcopy(rt->rt_ifa->ifa_addr,
+				      &laddr,
+				      rt->rt_ifa->ifa_netmask);
+			/* 
+			 * refactor rt and no lock operation necessary
+			 */
+			rt = (struct rtentry *)rnh->rnh_matchaddr(&laddr, rnh);
+			if (rt == NULL) {
+				RADIX_NODE_HEAD_RUNLOCK(rnh);
+				senderr(ESRCH);
+			}
+		} 
 		RT_LOCK(rt);
 		RT_ADDREF(rt);
 		RADIX_NODE_HEAD_RUNLOCK(rnh);
@@ -619,7 +673,7 @@ route_output(struct mbuf *m, struct socket *so)
 		report:
 			RT_LOCK_ASSERT(rt);
 			if ((rt->rt_flags & RTF_HOST) == 0
-			    ? jailed(curthread->td_ucred)
+			    ? jailed_without_vnet(curthread->td_ucred)
 			    : prison_if(curthread->td_ucred,
 			    rt_key(rt)) != 0) {
 				RT_UNLOCK(rt);
@@ -683,6 +737,13 @@ route_output(struct mbuf *m, struct socket *so)
 				RT_UNLOCK(rt);
 				RADIX_NODE_HEAD_LOCK(rnh);
 				error = rt_getifa_fib(&info, rt->rt_fibnum);
+				/*
+				 * XXXRW: Really we should release this
+				 * reference later, but this maintains
+				 * historical behavior.
+				 */
+				if (info.rti_ifa != NULL)
+					ifa_free(info.rti_ifa);
 				RADIX_NODE_HEAD_UNLOCK(rnh);
 				if (error != 0)
 					senderr(error);
@@ -694,7 +755,7 @@ route_output(struct mbuf *m, struct socket *so)
 			    rt->rt_ifa->ifa_rtrequest != NULL) {
 				rt->rt_ifa->ifa_rtrequest(RTM_DELETE, rt,
 				    &info);
-				IFAFREE(rt->rt_ifa);
+				ifa_free(rt->rt_ifa);
 			}
 			if (info.rti_info[RTAX_GATEWAY] != NULL) {
 				RT_UNLOCK(rt);
@@ -708,11 +769,11 @@ route_output(struct mbuf *m, struct socket *so)
 					RT_UNLOCK(rt);
 					senderr(error);
 				}
-				rt->rt_flags |= RTF_GATEWAY;
+				rt->rt_flags |= (RTF_GATEWAY & info.rti_flags);
 			}
 			if (info.rti_ifa != NULL &&
 			    info.rti_ifa != rt->rt_ifa) {
-				IFAREF(info.rti_ifa);
+				ifa_ref(info.rti_ifa);
 				rt->rt_ifa = info.rti_ifa;
 				rt->rt_ifp = info.rti_ifp;
 			}
@@ -1231,7 +1292,6 @@ rt_ifannouncemsg(struct ifnet *ifp, int what)
 static void
 rt_dispatch(struct mbuf *m, const struct sockaddr *sa)
 {
-	INIT_VNET_NET(curvnet);
 	struct m_tag *tag;
 
 	/*
@@ -1274,7 +1334,7 @@ sysctl_dumpentry(struct radix_node *rn, void *vw)
 	if (w->w_op == NET_RT_FLAGS && !(rt->rt_flags & w->w_arg))
 		return 0;
 	if ((rt->rt_flags & RTF_HOST) == 0
-	    ? jailed(w->w_req->td->td_ucred)
+	    ? jailed_without_vnet(w->w_req->td->td_ucred)
 	    : prison_if(w->w_req->td->td_ucred, rt_key(rt)) != 0)
 		return (0);
 	bzero((caddr_t)&info, sizeof(info));
@@ -1310,7 +1370,6 @@ sysctl_dumpentry(struct radix_node *rn, void *vw)
 static int
 sysctl_iflist(int af, struct walkarg *w)
 {
-	INIT_VNET_NET(curvnet);
 	struct ifnet *ifp;
 	struct ifaddr *ifa;
 	struct rt_addrinfo info;
@@ -1371,7 +1430,6 @@ done:
 static int
 sysctl_ifmalist(int af, struct walkarg *w)
 {
-	INIT_VNET_NET(curvnet);
 	struct ifnet *ifp;
 	struct ifmultiaddr *ifma;
 	struct	rt_addrinfo info;
@@ -1470,7 +1528,7 @@ sysctl_rtsock(SYSCTL_HANDLER_ARGS)
 		/*
 		 * take care of routing entries
 		 */
-		for (error = 0; error == 0 && i <= lim; i++)
+		for (error = 0; error == 0 && i <= lim; i++) {
 			rnh = rt_tables_get_rnh(req->td->td_proc->p_fibnum, i);
 			if (rnh != NULL) {
 				RADIX_NODE_HEAD_LOCK(rnh); 
@@ -1479,6 +1537,7 @@ sysctl_rtsock(SYSCTL_HANDLER_ARGS)
 				RADIX_NODE_HEAD_UNLOCK(rnh);
 			} else if (af != 0)
 				error = EAFNOSUPPORT;
+		}
 		break;
 
 	case NET_RT_IFLIST:
@@ -1521,4 +1580,4 @@ static struct domain routedomain = {
 	.dom_protoswNPROTOSW =	&routesw[sizeof(routesw)/sizeof(routesw[0])]
 };
 
-DOMAIN_SET(route);
+VNET_DOMAIN_SET(route);

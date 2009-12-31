@@ -71,7 +71,7 @@ __FBSDID("$FreeBSD$");
 static int doformat_wr(void *, const char *, int);
 
 struct output output = {NULL, 0, NULL, OUTBUFSIZ, 1, 0};
-struct output errout = {NULL, 0, NULL, 100, 2, 0};
+struct output errout = {NULL, 0, NULL, 256, 2, 0};
 struct output memout = {NULL, 0, NULL, 0, MEM_OUT, 0};
 struct output *out1 = &output;
 struct output *out2 = &errout;
@@ -124,8 +124,6 @@ outstr(const char *p, struct output *file)
 {
 	while (*p)
 		outc(*p++, file);
-	if (file == out2)
-		flushout(file);
 }
 
 /* Like outstr(), but quote for re-input into the shell. */
@@ -133,32 +131,38 @@ void
 outqstr(const char *p, struct output *file)
 {
 	char ch;
+	int inquotes;
 
 	if (p[0] == '\0') {
 		outstr("''", file);
 		return;
 	}
-	if (p[strcspn(p, "|&;<>()$`\\\"'")] == '\0' && (!ifsset() ||
-	    p[strcspn(p, ifsval())] == '\0')) {
+	/* Caller will handle '=' if necessary */
+	if (p[strcspn(p, "|&;<>()$`\\\"' \t\n*?[~#")] == '\0' ||
+			strcmp(p, "[") == 0) {
 		outstr(p, file);
 		return;
 	}
 
-	out1c('\'');
+	inquotes = 0;
 	while ((ch = *p++) != '\0') {
 		switch (ch) {
 		case '\'':
-			/*
-			 * Can't quote single quotes inside single quotes;
-			 * close them, write escaped single quote, open again.
-			 */
-			outstr("'\\''", file);
+			/* Can't quote single quotes inside single quotes. */
+			if (inquotes)
+				outc('\'', file);
+			inquotes = 0;
+			outstr("\\'", file);
 			break;
 		default:
+			if (!inquotes)
+				outc('\'', file);
+			inquotes = 1;
 			outc(ch, file);
 		}
 	}
-	out1c('\'');
+	if (inquotes)
+		outc('\'', file);
 }
 
 STATIC char out_junk[16];
@@ -249,7 +253,7 @@ out1fmt(const char *fmt, ...)
 }
 
 void
-dprintf(const char *fmt, ...)
+out2fmt_flush(const char *fmt, ...)
 {
 	va_list ap;
 
@@ -310,7 +314,7 @@ doformat(struct output *dest, const char *f, va_list ap)
  */
 
 int
-xwrite(int fd, char *buf, int nbytes)
+xwrite(int fd, const char *buf, int nbytes)
 {
 	int ntry;
 	int i;

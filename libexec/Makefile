@@ -9,7 +9,6 @@ SUBDIR=	${_atrun} \
 	fingerd \
 	ftpd \
 	getty \
-	lukemftpd \
 	${_mail.local} \
 	${_mknetid} \
 	${_pppoed} \
@@ -30,6 +29,7 @@ SUBDIR=	${_atrun} \
 	${_telnetd} \
 	tftpd \
 	${_tftp-proxy} \
+	ulog-helper \
 	${_ypxfr}
 
 .if ${MK_AT} != "no"

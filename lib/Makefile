@@ -21,6 +21,7 @@
 # librpcsvc must be built before libpam.
 # libsbuf must be built before libcam.
 # libtacplus must be built before libpam.
+# libulog must be built before libpam.
 # libutil must be built before libpam.
 # libypclnt must be built before libpam.
 # libgssapi must be built before librpcsec_gss
@@ -30,13 +31,13 @@
 SUBDIR=	${_csu} libc libbsm libauditd libcom_err libcrypt libelf libkvm msun \
 	libmd \
 	ncurses ${_libnetgraph} libradius librpcsvc libsbuf \
-	libtacplus libutil ${_libypclnt} libalias libarchive ${_libatm} \
-	libbegemot ${_libbluetooth} ${_libbsnmp} libbz2 \
+	libtacplus libulog libutil ${_libypclnt} libalias libarchive \
+	${_libatm} libbegemot ${_libbluetooth} ${_libbsnmp} libbz2 \
 	libcalendar libcam libcompat libdevinfo libdevstat libdisk \
 	libdwarf libedit libexpat libfetch libftpio libgeom ${_libgpib} \
 	${_libgssapi} ${_librpcsec_gss} libipsec \
-	${_libipx} libkiconv libmagic libmemstat ${_libmilter} ${_libmp} \
-	${_libncp} ${_libngatm} libopie libpam libpcap \
+	${_libipx} libjail libkiconv libmagic libmemstat ${_libmilter} \
+	${_libmp} ${_libncp} ${_libngatm} libopie libpam libpcap \
 	${_libpmc} libproc librt ${_libsdp} ${_libsm} ${_libsmb} \
 	${_libsmdb} \
 	${_libsmutil} libstand ${_libtelnet} ${_libthr} libthread_db libufs \
@@ -112,6 +113,7 @@ _libsmb=	libsmb
 _libncp=	libncp
 .endif
 _libsmb=	libsmb
+_libvgl=	libvgl
 .endif
 
 .if ${MACHINE_ARCH} == "powerpc"

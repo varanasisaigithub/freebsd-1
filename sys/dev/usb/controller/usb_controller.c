@@ -24,9 +24,28 @@
  * SUCH DAMAGE.
  */
 
-#include <dev/usb/usb_mfunc.h>
-#include <dev/usb/usb_error.h>
+#include <sys/stdint.h>
+#include <sys/stddef.h>
+#include <sys/param.h>
+#include <sys/queue.h>
+#include <sys/types.h>
+#include <sys/systm.h>
+#include <sys/kernel.h>
+#include <sys/bus.h>
+#include <sys/linker_set.h>
+#include <sys/module.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
+#include <sys/condvar.h>
+#include <sys/sysctl.h>
+#include <sys/sx.h>
+#include <sys/unistd.h>
+#include <sys/callout.h>
+#include <sys/malloc.h>
+#include <sys/priv.h>
+
 #include <dev/usb/usb.h>
+#include <dev/usb/usbdi.h>
 
 #define	USB_DEBUG_VAR usb_ctrl_debug
 
@@ -48,11 +67,10 @@ static device_attach_t usb_attach;
 static device_detach_t usb_detach;
 
 static void	usb_attach_sub(device_t, struct usb_bus *);
-static void	usb_post_init(void *);
 
 /* static variables */
 
-#if USB_DEBUG
+#ifdef USB_DEBUG
 static int usb_ctrl_debug = 0;
 
 SYSCTL_NODE(_hw_usb, OID_AUTO, ctrl, CTLFLAG_RW, 0, "USB controller");
@@ -60,7 +78,10 @@ SYSCTL_INT(_hw_usb_ctrl, OID_AUTO, debug, CTLFLAG_RW, &usb_ctrl_debug, 0,
     "Debug level");
 #endif
 
-static uint8_t usb_post_init_called = 0;
+static int usb_no_boot_wait = 0;
+TUNABLE_INT("hw.usb.no_boot_wait", &usb_no_boot_wait);
+SYSCTL_INT(_hw_usb, OID_AUTO, no_boot_wait, CTLFLAG_RDTUN, &usb_no_boot_wait, 0,
+    "No device enumerate waiting at boot.");
 
 static devclass_t usb_devclass;
 
@@ -109,19 +130,17 @@ usb_attach(device_t dev)
 	DPRINTF("\n");
 
 	if (bus == NULL) {
-		DPRINTFN(0, "USB device has no ivars\n");
+		device_printf(dev, "USB device has no ivars\n");
 		return (ENXIO);
 	}
 
-	/* delay vfs_mountroot until the bus is explored */
-	bus->bus_roothold = root_mount_hold(device_get_nameunit(dev));
-
-	if (usb_post_init_called) {
-		mtx_lock(&Giant);
-		usb_attach_sub(dev, bus);
-		mtx_unlock(&Giant);
-		usb_needs_explore(bus, 1);
+	if (usb_no_boot_wait == 0) {
+		/* delay vfs_mountroot until the bus is explored */
+		bus->bus_roothold = root_mount_hold(device_get_nameunit(dev));
 	}
+
+	usb_attach_sub(dev, bus);
+
 	return (0);			/* return success */
 }
 
@@ -200,22 +219,24 @@ usb_bus_explore(struct usb_proc_msg *pm)
 			/* avoid zero, hence that is memory default */
 			bus->driver_added_refcount = 1;
 		}
-		USB_BUS_UNLOCK(bus);
 
-		mtx_lock(&Giant);
+		/*
+		 * The following three lines of code are only here to
+		 * recover from DDB:
+		 */
+		usb_proc_rewakeup(&bus->control_xfer_proc);
+		usb_proc_rewakeup(&bus->giant_callback_proc);
+		usb_proc_rewakeup(&bus->non_giant_callback_proc);
+
+		USB_BUS_UNLOCK(bus);
 
 		/*
 		 * First update the USB power state!
 		 */
 		usb_bus_powerd(bus);
-		/*
-		 * Explore the Root USB HUB. This call can sleep,
-		 * exiting Giant, which is actually Giant.
-		 */
+
+		 /* Explore the Root USB HUB. */
 		(udev->hub->explore) (udev);
-
-		mtx_unlock(&Giant);
-
 		USB_BUS_LOCK(bus);
 	}
 	if (bus->bus_roothold != NULL) {
@@ -243,19 +264,16 @@ usb_bus_detach(struct usb_proc_msg *pm)
 	device_set_softc(dev, NULL);
 	USB_BUS_UNLOCK(bus);
 
-	mtx_lock(&Giant);
-
 	/* detach children first */
+	mtx_lock(&Giant);
 	bus_generic_detach(dev);
+	mtx_unlock(&Giant);
 
 	/*
-	 * Free USB Root device, but not any sub-devices, hence they
-	 * are freed by the caller of this function:
+	 * Free USB device and all subdevices, if any.
 	 */
-	usb_free_device(udev,
-	    USB_UNCFG_FLAG_FREE_EP0);
+	usb_free_device(udev, 0);
 
-	mtx_unlock(&Giant);
 	USB_BUS_LOCK(bus);
 	/* clear bdev variable last */
 	bus->bdev = NULL;
@@ -270,6 +288,12 @@ usb_power_wdog(void *arg)
 
 	usb_callout_reset(&bus->power_wdog,
 	    4 * hz, usb_power_wdog, arg);
+
+	/*
+	 * The following line of code is only here to recover from
+	 * DDB:
+	 */
+	usb_proc_rewakeup(&bus->explore_proc);	/* recover from DDB */
 
 	USB_BUS_UNLOCK(bus);
 
@@ -319,12 +343,11 @@ usb_bus_attach(struct usb_proc_msg *pm)
 		break;
 
 	default:
-		device_printf(bus->bdev, "Unsupported USB revision!\n");
+		device_printf(bus->bdev, "Unsupported USB revision\n");
 		return;
 	}
 
 	USB_BUS_UNLOCK(bus);
-	mtx_lock(&Giant);		/* XXX not required by USB */
 
 	/* default power_mask value */
 	bus->hw_power_state =
@@ -357,7 +380,6 @@ usb_bus_attach(struct usb_proc_msg *pm)
 		err = USB_ERR_NOMEM;
 	}
 
-	mtx_unlock(&Giant);
 	USB_BUS_LOCK(bus);
 
 	if (err) {
@@ -375,16 +397,17 @@ usb_bus_attach(struct usb_proc_msg *pm)
 /*------------------------------------------------------------------------*
  *	usb_attach_sub
  *
- * This function creates a thread which runs the USB attach code. It
- * is factored out, hence it can be called at two different places in
- * time. During bootup this function is called from
- * "usb_post_init". During hot-plug it is called directly from the
- * "usb_attach()" method.
+ * This function creates a thread which runs the USB attach code.
  *------------------------------------------------------------------------*/
 static void
 usb_attach_sub(device_t dev, struct usb_bus *bus)
 {
 	const char *pname = device_get_nameunit(dev);
+
+	mtx_lock(&Giant);
+	if (usb_devclass_ptr == NULL)
+		usb_devclass_ptr = devclass_find("usbus");
+	mtx_unlock(&Giant);
 
 	/* Initialise USB process messages */
 	bus->explore_msg[0].hdr.pm_callback = &usb_bus_explore;
@@ -428,55 +451,12 @@ usb_attach_sub(device_t dev, struct usb_bus *bus)
 			/* ignore */
 		}
 		USB_BUS_UNLOCK(bus);
+
+		/* Do initial explore */
+		usb_needs_explore(bus, 1);
 	}
 }
 
-/*------------------------------------------------------------------------*
- *	usb_post_init
- *
- * This function is called to attach all USB busses that were found
- * during bootup.
- *------------------------------------------------------------------------*/
-static void
-usb_post_init(void *arg)
-{
-	struct usb_bus *bus;
-	devclass_t dc;
-	device_t dev;
-	int max;
-	int n;
-
-	mtx_lock(&Giant);
-
-	usb_devclass_ptr = devclass_find("usbus");
-
-	dc = usb_devclass_ptr;
-	if (dc) {
-		max = devclass_get_maxunit(dc) + 1;
-		for (n = 0; n != max; n++) {
-			dev = devclass_get_device(dc, n);
-			if (dev && device_is_attached(dev)) {
-				bus = device_get_ivars(dev);
-				if (bus) {
-					mtx_lock(&Giant);
-					usb_attach_sub(dev, bus);
-					mtx_unlock(&Giant);
-				}
-			}
-		}
-	} else {
-		DPRINTFN(0, "no devclass\n");
-	}
-	usb_post_init_called = 1;
-
-	/* explore all USB busses in parallell */
-
-	usb_needs_explore_all();
-
-	mtx_unlock(&Giant);
-}
-
-SYSINIT(usb_post_init, SI_SUB_KICK_SCHEDULER, SI_ORDER_ANY, usb_post_init, NULL);
 SYSUNINIT(usb_bus_unload, SI_SUB_KLD, SI_ORDER_ANY, usb_bus_unload, NULL);
 
 /*------------------------------------------------------------------------*
@@ -550,7 +530,7 @@ usb_bus_mem_alloc_all(struct usb_bus *bus, bus_dma_tag_t dmat,
 	    (bus->devices_max < USB_MIN_DEVICES) ||
 	    (bus->devices == NULL)) {
 		DPRINTFN(0, "Devices field has not been "
-		    "initialised properly!\n");
+		    "initialised properly\n");
 		bus->alloc_failed = 1;		/* failure */
 	}
 #if USB_HAVE_BUSDMA

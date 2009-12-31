@@ -154,6 +154,7 @@ enum tokens {
 	TOK_BW,
 	TOK_DELAY,
 	TOK_PIPE_PROFILE,
+	TOK_BURST,
 	TOK_RED,
 	TOK_GRED,
 	TOK_DROPTAIL,
@@ -185,6 +186,7 @@ enum tokens {
 
 	TOK_FIB,
 	TOK_SETFIB,
+	TOK_LOOKUP,
 };
 /*
  * the following macro returns an error message if we run out of

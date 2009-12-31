@@ -24,11 +24,30 @@
  * SUCH DAMAGE.
  */
 
-#include <dev/usb/usb.h>
-#include <dev/usb/usb_mfunc.h>
+#include <sys/stdint.h>
+#include <sys/stddef.h>
+#include <sys/param.h>
+#include <sys/queue.h>
+#include <sys/types.h>
+#include <sys/systm.h>
+#include <sys/kernel.h>
+#include <sys/bus.h>
+#include <sys/linker_set.h>
+#include <sys/module.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
+#include <sys/condvar.h>
+#include <sys/sysctl.h>
+#include <sys/sx.h>
+#include <sys/unistd.h>
+#include <sys/callout.h>
+#include <sys/malloc.h>
+#include <sys/priv.h>
 
-#include <dev/usb/usb_core.h>
-#include <dev/usb/usb_parse.h>
+#include <dev/usb/usb.h>
+#include <dev/usb/usbdi.h>
+#include <dev/usb/usbdi_util.h>
+
 
 /*------------------------------------------------------------------------*
  *	usb_desc_foreach
@@ -196,20 +215,29 @@ usbd_get_no_descriptors(struct usb_config_descriptor *cd, uint8_t type)
  *	usbd_get_no_alts
  *
  * Return value:
- *   Number of alternate settings for the given interface descriptor pointer.
+ *   Number of alternate settings for the given interface descriptor
+ *   pointer. If the USB descriptor is corrupt, the returned value can
+ *   be greater than the actual number of alternate settings.
  *------------------------------------------------------------------------*/
 uint8_t
 usbd_get_no_alts(struct usb_config_descriptor *cd,
     struct usb_interface_descriptor *id)
 {
 	struct usb_descriptor *desc;
-	uint8_t n = 0;
+	uint8_t n;
 	uint8_t ifaceno;
+
+	/* Reset interface count */
+
+	n = 0;
+
+	/* Get the interface number */
 
 	ifaceno = id->bInterfaceNumber;
 
-	desc = (struct usb_descriptor *)id;
+	/* Iterate all the USB descriptors */
 
+	desc = NULL;
 	while ((desc = usb_desc_foreach(cd, desc))) {
 		if ((desc->bDescriptorType == UDESC_INTERFACE) &&
 		    (desc->bLength >= sizeof(*id))) {
@@ -218,8 +246,7 @@ usbd_get_no_alts(struct usb_config_descriptor *cd,
 				n++;
 				if (n == 0xFF)
 					break;		/* crazy */
-			} else
-				break;			/* end */
+			}
 		}
 	}
 	return (n);

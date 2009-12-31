@@ -69,6 +69,7 @@ LIBISC?=	${DESTDIR}${LIBDIR}/libisc.a
 LIBISCCC?=	${DESTDIR}${LIBDIR}/libisccc.a
 LIBISCCFG?=	${DESTDIR}${LIBDIR}/libisccfg.a
 .endif
+LIBJAIL?=	${DESTDIR}${LIBDIR}/libjail.a
 LIBKADM5CLNT?=	${DESTDIR}${LIBDIR}/libkadm5clnt.a
 LIBKADM5SRV?=	${DESTDIR}${LIBDIR}/libkadm5srv.a
 LIBKAFS5?=	${DESTDIR}${LIBDIR}/libkafs5.a
@@ -150,6 +151,7 @@ LIBUGIDFW?=	${DESTDIR}${LIBDIR}/libugidfw.a
 LIBUMEM?=	${DESTDIR}${LIBDIR}/libumem.a
 LIBUSBHID?=	${DESTDIR}${LIBDIR}/libusbhid.a
 LIBUSB20?=	${DESTDIR}${LIBDIR}/libusb20.a
+LIBULOG?=	${DESTDIR}${LIBDIR}/libulog.a
 LIBUTIL?=	${DESTDIR}${LIBDIR}/libutil.a
 LIBUUTIL?=	${DESTDIR}${LIBDIR}/libuutil.a
 LIBVGL?=	${DESTDIR}${LIBDIR}/libvgl.a

@@ -439,7 +439,7 @@ create_i386_diskimage ( ) (
 			-y ${NANO_HEADS}`
 	fi
 
-	trap "df -i ${MNT} ; umount ${MNT} || true ; mdconfig -d -u $MD" 1 2 15 EXIT
+	trap "echo 'Running exit trap code' ; df -i ${MNT} ; umount ${MNT} || true ; mdconfig -d -u $MD" 1 2 15 EXIT
 
 	fdisk -i -f ${NANO_OBJ}/_.fdisk ${MD}
 	fdisk ${MD}
@@ -491,6 +491,9 @@ create_i386_diskimage ( ) (
 	echo "Writing out _.disk.image..."
 	dd if=/dev/${MD}s1 of=${NANO_DISKIMGDIR}/_.disk.image bs=64k
 	mdconfig -d -u $MD
+
+	trap - 1 2 15 EXIT
+
 	) > ${NANO_OBJ}/_.di 2>&1
 )
 
@@ -664,7 +667,8 @@ late_customize_cmd () {
 #	Print $2 at level $1.
 pprint() {
     if [ "$1" -le $PPLEVEL ]; then
-	printf "%.${1}s %s\n" "#####" "$2"
+	runtime=$(( `date +%s` - $NANO_STARTTIME ))
+	printf "%s %.${1}s %s\n" "`date -u -r $runtime +%H:%M:%S`" "#####" "$2" 1>&3
     fi
 }
 
@@ -806,6 +810,10 @@ export NANO_BOOTLOADER
 #######################################################################
 # And then it is as simple as that...
 
+# File descriptor 3 is used for logging output, see pprint
+exec 3>&1
+
+NANO_STARTTIME=`date +%s`
 pprint 1 "NanoBSD image ${NANO_NAME} build starting"
 
 if $do_world ; then

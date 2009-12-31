@@ -48,12 +48,7 @@
 #include <net/bpf.h>
 
 #include <dev/usb/usb.h>
-#include <dev/usb/usb_core.h>
-#include <dev/usb/usb_busdma.h>
-#include <dev/usb/usb_debug.h>
-#include <dev/usb/usb_error.h>
-#include <dev/usb/usb_lookup.h>
-#include <dev/usb/usb_util.h>
+#include <dev/usb/usbdi.h>
 #include "usbdevs.h"
 
 #include <dev/usb/wlan/if_upgtvar.h>
@@ -297,7 +292,7 @@ upgt_attach(device_t dev)
 	/* Calculate device memory space.  */
 	if (sc->sc_memaddr_frame_start == 0 || sc->sc_memaddr_frame_end == 0) {
 		device_printf(dev,
-		    "could not find memory space addresses on FW!\n");
+		    "could not find memory space addresses on FW\n");
 		error = EIO;
 		goto fail5;
 	}
@@ -393,7 +388,7 @@ fail1:	mtx_destroy(&sc->sc_mtx);
 static void
 upgt_txeof(struct usb_xfer *xfer, struct upgt_data *data)
 {
-	struct upgt_softc *sc = xfer->priv_sc;
+	struct upgt_softc *sc = usbd_xfer_softc(xfer);
 	struct ifnet *ifp = sc->sc_ifp;
 	struct mbuf *m;
 
@@ -470,7 +465,6 @@ upgt_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 
 	switch (cmd) {
 	case SIOCSIFFLAGS:
-		mtx_lock(&Giant);
 		if (ifp->if_flags & IFF_UP) {
 			if (ifp->if_drv_flags & IFF_DRV_RUNNING) {
 				if ((ifp->if_flags ^ sc->sc_if_flags) &
@@ -487,7 +481,6 @@ upgt_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 		sc->sc_if_flags = ifp->if_flags;
 		if (startall)
 			ieee80211_start_all(ic);
-		mtx_unlock(&Giant);
 		break;
 	case SIOCGIFMEDIA:
 		error = ifmedia_ioctl(ifp, ifr, &ic->ic_media, cmd);
@@ -739,7 +732,7 @@ upgt_set_macfilter(struct upgt_softc *sc, uint8_t state)
 		break;
 	default:
 		device_printf(sc->sc_dev,
-		    "MAC filter does not know that state!\n");
+		    "MAC filter does not know that state\n");
 		break;
 	}
 
@@ -814,9 +807,7 @@ upgt_set_multi(void *arg)
 	 * XXX don't know how to set a device.  Lack of docs.  Just try to set
 	 * IFF_ALLMULTI flag here.
 	 */
-	IF_ADDR_LOCK(ifp);
 	ifp->if_flags |= IFF_ALLMULTI;
-	IF_ADDR_UNLOCK(ifp);
 }
 
 static void
@@ -1190,7 +1181,7 @@ upgt_eeprom_parse(struct upgt_softc *sc)
 			break;
 		case UPGT_EEPROM_TYPE_OFF:
 			DPRINTF(sc, UPGT_DEBUG_FW,
-			    "%s: EEPROM off without end option!\n", __func__);
+			    "%s: EEPROM off without end option\n", __func__);
 			return (EIO);
 		default:
 			DPRINTF(sc, UPGT_DEBUG_FW,
@@ -1365,7 +1356,7 @@ upgt_eeprom_read(struct upgt_softc *sc)
 		error = mtx_sleep(sc, &sc->sc_mtx, 0, "eeprom_request", hz);
 		if (error != 0) {
 			device_printf(sc->sc_dev,
-			    "timeout while waiting for EEPROM data!\n");
+			    "timeout while waiting for EEPROM data\n");
 			UPGT_UNLOCK(sc);
 			return (EIO);
 		}
@@ -1386,15 +1377,18 @@ static struct mbuf *
 upgt_rxeof(struct usb_xfer *xfer, struct upgt_data *data, int *rssi)
 {
 	struct mbuf *m = NULL;
-	struct upgt_softc *sc = xfer->priv_sc;
+	struct upgt_softc *sc = usbd_xfer_softc(xfer);
 	struct upgt_lmac_header *header;
 	struct upgt_lmac_eeprom *eeprom;
 	uint8_t h1_type;
 	uint16_t h2_type;
+	int actlen, sumlen;
+
+	usbd_xfer_status(xfer, &actlen, &sumlen, NULL, NULL);
 
 	UPGT_ASSERT_LOCKED(sc);
 
-	if (xfer->actlen < 1)
+	if (actlen < 1)
 		return (NULL);
 
 	/* Check only at the very beginning.  */
@@ -1405,7 +1399,7 @@ upgt_rxeof(struct usb_xfer *xfer, struct upgt_data *data, int *rssi)
 		return (NULL);
 	}
 
-	if (xfer->actlen < UPGT_RX_MINSZ)
+	if (actlen < UPGT_RX_MINSZ)
 		return (NULL);
 
 	/*
@@ -1496,7 +1490,7 @@ upgt_rx(struct upgt_softc *sc, uint8_t *data, int pkglen, int *rssi)
 	    ("A current mbuf storage is small (%d)", pkglen + ETHER_ALIGN));
 	m = m_getcl(M_DONTWAIT, MT_DATA, M_PKTHDR);
 	if (m == NULL) {
-		device_printf(sc->sc_dev, "could not create RX mbuf!\n");
+		device_printf(sc->sc_dev, "could not create RX mbuf\n");
 		return (NULL);
 	}
 	m_adj(m, ETHER_ALIGN);
@@ -1593,7 +1587,7 @@ upgt_mem_free(struct upgt_softc *sc, uint32_t addr)
 	}
 
 	device_printf(sc->sc_dev,
-	    "could not free memory address 0x%08x!\n", addr);
+	    "could not free memory address 0x%08x\n", addr);
 }
 
 static int
@@ -1608,7 +1602,7 @@ upgt_fw_load(struct upgt_softc *sc)
 
 	fw = firmware_get(upgt_fwname);
 	if (fw == NULL) {
-		device_printf(sc->sc_dev, "could not read microcode %s!\n",
+		device_printf(sc->sc_dev, "could not read microcode %s\n",
 		    upgt_fwname);
 		return (EIO);
 	}
@@ -1682,7 +1676,7 @@ upgt_fw_load(struct upgt_softc *sc)
 	usbd_transfer_start(sc->sc_xfer[UPGT_BULK_RX]);
 	error = mtx_sleep(sc, &sc->sc_mtx, 0, "upgtfw", 2 * hz);
 	if (error != 0) {
-		device_printf(sc->sc_dev, "firmware load failed!\n");
+		device_printf(sc->sc_dev, "firmware load failed\n");
 		error = EIO;
 	}
 
@@ -1788,7 +1782,7 @@ upgt_fw_verify(struct upgt_softc *sc)
 
 	fw = firmware_get(upgt_fwname);
 	if (fw == NULL) {
-		device_printf(sc->sc_dev, "could not read microcode %s!\n",
+		device_printf(sc->sc_dev, "could not read microcode %s\n",
 		    upgt_fwname);
 		return EIO;
 	}
@@ -1808,7 +1802,7 @@ upgt_fw_verify(struct upgt_softc *sc)
 	}
 	if (offset == fw->datasize) { 
 		device_printf(sc->sc_dev,
-		    "firmware Boot Record Area not found!\n");
+		    "firmware Boot Record Area not found\n");
 		error = EIO;
 		goto fail;
 	}
@@ -1833,7 +1827,7 @@ upgt_fw_verify(struct upgt_softc *sc)
 
 			if (bra_option_len != UPGT_BRA_FWTYPE_SIZE) {
 				device_printf(sc->sc_dev,
-				    "wrong UPGT_BRA_TYPE_FW len!\n");
+				    "wrong UPGT_BRA_TYPE_FW len\n");
 				error = EIO;
 				goto fail;
 			}
@@ -1848,7 +1842,7 @@ upgt_fw_verify(struct upgt_softc *sc)
 				break;
 			}
 			device_printf(sc->sc_dev,
-			    "unsupported firmware type!\n");
+			    "unsupported firmware type\n");
 			error = EIO;
 			goto fail;
 		case UPGT_BRA_TYPE_VERSION:
@@ -1952,7 +1946,7 @@ upgt_alloc_tx(struct upgt_softc *sc)
 		data->buf = malloc(MCLBYTES, M_USBDEV, M_NOWAIT | M_ZERO);
 		if (data->buf == NULL) {
 			device_printf(sc->sc_dev,
-			    "could not allocate TX buffer!\n");
+			    "could not allocate TX buffer\n");
 			return (ENOMEM);
 		}
 		STAILQ_INSERT_TAIL(&sc->sc_tx_inactive, data, next);
@@ -1976,7 +1970,7 @@ upgt_alloc_rx(struct upgt_softc *sc)
 		data->buf = malloc(MCLBYTES, M_USBDEV, M_NOWAIT | M_ZERO);
 		if (data->buf == NULL) {
 			device_printf(sc->sc_dev,
-			    "could not allocate RX buffer!\n");
+			    "could not allocate RX buffer\n");
 			return (ENOMEM);
 		}
 		STAILQ_INSERT_TAIL(&sc->sc_rx_inactive, data, next);
@@ -2244,9 +2238,9 @@ done:
 }
 
 static void
-upgt_bulk_rx_callback(struct usb_xfer *xfer)
+upgt_bulk_rx_callback(struct usb_xfer *xfer, usb_error_t error)
 {
-	struct upgt_softc *sc = xfer->priv_sc;
+	struct upgt_softc *sc = usbd_xfer_softc(xfer);
 	struct ifnet *ifp = sc->sc_ifp;
 	struct ieee80211com *ic = ifp->if_l2com;
 	struct ieee80211_frame *wh;
@@ -2274,8 +2268,8 @@ setup:
 			return;
 		STAILQ_REMOVE_HEAD(&sc->sc_rx_inactive, next);
 		STAILQ_INSERT_TAIL(&sc->sc_rx_active, data, next);
-		usbd_set_frame_data(xfer, data->buf, 0);
-		xfer->frlengths[0] = xfer->max_data_length;
+		usbd_xfer_set_frame_data(xfer, 0, data->buf,
+		    usbd_xfer_max_len(xfer));
 		usbd_transfer_submit(xfer);
 
 		/*
@@ -2297,6 +2291,9 @@ setup:
 				(void) ieee80211_input_all(ic, m, rssi, nf);
 			m = NULL;
 		}
+		if ((ifp->if_drv_flags & IFF_DRV_OACTIVE) == 0 &&
+		    !IFQ_IS_EMPTY(&ifp->if_snd))
+			upgt_start(ifp);
 		UPGT_LOCK(sc);
 		break;
 	default:
@@ -2306,8 +2303,8 @@ setup:
 			STAILQ_REMOVE_HEAD(&sc->sc_rx_active, next);
 			STAILQ_INSERT_TAIL(&sc->sc_rx_inactive, data, next);
 		}
-		if (xfer->error != USB_ERR_CANCELLED) {
-			xfer->flags.stall_pipe = 1;
+		if (error != USB_ERR_CANCELLED) {
+			usbd_xfer_set_stall(xfer);
 			ifp->if_ierrors++;
 			goto setup;
 		}
@@ -2316,9 +2313,9 @@ setup:
 }
 
 static void
-upgt_bulk_tx_callback(struct usb_xfer *xfer)
+upgt_bulk_tx_callback(struct usb_xfer *xfer, usb_error_t error)
 {
-	struct upgt_softc *sc = xfer->priv_sc;
+	struct upgt_softc *sc = usbd_xfer_softc(xfer);
 	struct ifnet *ifp = sc->sc_ifp;
 	struct upgt_data *data;
 
@@ -2347,8 +2344,7 @@ setup:
 		STAILQ_INSERT_TAIL(&sc->sc_tx_active, data, next);
 		UPGT_STAT_INC(sc, st_tx_active);
 
-		usbd_set_frame_data(xfer, data->buf, 0);
-		xfer->frlengths[0] = data->buflen;
+		usbd_xfer_set_frame_data(xfer, 0, data->buf, data->buflen);
 		usbd_transfer_submit(xfer);
 		UPGT_UNLOCK(sc);
 		upgt_start(ifp);
@@ -2363,8 +2359,8 @@ setup:
 			data->ni = NULL;
 			ifp->if_oerrors++;
 		}
-		if (xfer->error != USB_ERR_CANCELLED) {
-			xfer->flags.stall_pipe = 1;
+		if (error != USB_ERR_CANCELLED) {
+			usbd_xfer_set_stall(xfer);
 			goto setup;
 		}
 		break;

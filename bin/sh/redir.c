@@ -63,6 +63,7 @@ __FBSDID("$FreeBSD$");
 
 
 #define EMPTY -2		/* marks an unused slot in redirtab */
+#define CLOSED -1		/* fd was not open before redir */
 #define PIPESIZE 4096		/* amount of buffering in a pipe */
 
 
@@ -101,7 +102,6 @@ redirect(union node *redir, int flags)
 	struct redirtab *sv = NULL;
 	int i;
 	int fd;
-	int try;
 	char memory[10];	/* file descriptors to write to memory */
 
 	for (i = 10 ; --i >= 0 ; )
@@ -116,38 +116,30 @@ redirect(union node *redir, int flags)
 	}
 	for (n = redir ; n ; n = n->nfile.next) {
 		fd = n->nfile.fd;
-		try = 0;
 		if ((n->nfile.type == NTOFD || n->nfile.type == NFROMFD) &&
 		    n->ndup.dupfd == fd)
 			continue; /* redirect from/to same file descriptor */
 
 		if ((flags & REDIR_PUSH) && sv->renamed[fd] == EMPTY) {
 			INTOFF;
-again:
 			if ((i = fcntl(fd, F_DUPFD, 10)) == -1) {
 				switch (errno) {
 				case EBADF:
-					if (!try) {
-						openredirect(n, memory);
-						try++;
-						goto again;
-					}
-					/* FALLTHROUGH*/
+					i = CLOSED;
+					break;
 				default:
 					INTON;
 					error("%d: %s", fd, strerror(errno));
 					break;
 				}
-			}
-			if (!try) {
-				sv->renamed[fd] = i;
-			}
+			} else
+				(void)fcntl(i, F_SETFD, FD_CLOEXEC);
+			sv->renamed[fd] = i;
 			INTON;
 		}
 		if (fd == 0)
 			fd0_redirected++;
-		if (!try)
-			openredirect(n, memory);
+		openredirect(n, memory);
 	}
 	if (memory[1])
 		out1 = &memout;
@@ -166,8 +158,11 @@ openredirect(union node *redir, char memory[10])
 
 	/*
 	 * We suppress interrupts so that we won't leave open file
-	 * descriptors around.  This may not be such a good idea because
-	 * an open of a device or a fifo can block indefinitely.
+	 * descriptors around.  Because the signal handler remains
+	 * installed and we do not use system call restart, interrupts
+	 * will still abort blocking opens such as fifos (they will fail
+	 * with EINTR). There is, however, a race condition if an interrupt
+	 * arrives after INTOFF and before open blocks.
 	 */
 	INTOFF;
 	memory[fd] = 0;
@@ -188,13 +183,25 @@ movefd:
 			error("cannot create %s: %s", fname, strerror(errno));
 		goto movefd;
 	case NTO:
-		fname = redir->nfile.expfname;
-		if (Cflag && stat(fname, &sb) != -1 && S_ISREG(sb.st_mode))
-			error("cannot create %s: %s", fname,
-			    strerror(EEXIST));
-		if ((f = open(fname, O_WRONLY|O_CREAT|O_TRUNC, 0666)) < 0)
-			error("cannot create %s: %s", fname, strerror(errno));
-		goto movefd;
+		if (Cflag) {
+			fname = redir->nfile.expfname;
+			if (stat(fname, &sb) == -1) {
+				if ((f = open(fname, O_WRONLY|O_CREAT|O_EXCL, 0666)) < 0)
+					error("cannot create %s: %s", fname, strerror(errno));
+			} else if (!S_ISREG(sb.st_mode)) {
+				if ((f = open(fname, O_WRONLY, 0666)) < 0)
+					error("cannot create %s: %s", fname, strerror(errno));
+				if (fstat(f, &sb) != -1 && S_ISREG(sb.st_mode)) {
+					close(f);
+					error("cannot create %s: %s", fname,
+					    strerror(EEXIST));
+				}
+			} else
+				error("cannot create %s: %s", fname,
+				    strerror(EEXIST));
+			goto movefd;
+		}
+		/* FALLTHROUGH */
 	case NCLOBBER:
 		fname = redir->nfile.expfname;
 		if ((f = open(fname, O_WRONLY|O_CREAT|O_TRUNC, 0666)) < 0)

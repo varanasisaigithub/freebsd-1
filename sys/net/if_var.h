@@ -80,10 +80,12 @@ struct	vnet;
 #include <sys/mbuf.h>
 #include <sys/eventhandler.h>
 #include <sys/buf_ring.h>
+#include <net/vnet.h>
 #endif /* _KERNEL */
 #include <sys/lock.h>		/* XXX */
 #include <sys/mutex.h>		/* XXX */
 #include <sys/rwlock.h>		/* XXX */
+#include <sys/sx.h>		/* XXX */
 #include <sys/event.h>		/* XXX */
 #include <sys/_task.h>
 
@@ -135,12 +137,11 @@ struct ifnet {
 		 * However, access to the AF_LINK address through this
 		 * field is deprecated. Use if_addr or ifaddr_byindex() instead.
 		 */
-	struct	knlist if_klist;	/* events attached to this if */
 	int	if_pcount;		/* number of promiscuous listeners */
 	struct	carp_if *if_carp;	/* carp interface structure */
 	struct	bpf_if *if_bpf;		/* packet filter structure */
 	u_short	if_index;		/* numeric abbreviation for this if  */
-	short	if_timer;		/* time 'til if_watchdog called */
+	short	if_index_reserved;	/* spare space to grow if_index */
 	struct  ifvlantrunk *if_vlantrunk; /* pointer to 802.1q data */
 	int	if_flags;		/* up/down, broadcast, etc. */
 	int	if_capabilities;	/* interface features & capabilities */
@@ -160,8 +161,6 @@ struct ifnet {
 		(struct ifnet *);
 	int	(*if_ioctl)		/* ioctl routine */
 		(struct ifnet *, u_long, caddr_t);
-	void	(*if_watchdog)		/* timer routine */
-		(struct ifnet *);
 	void	(*if_init)		/* Init routine */
 		(void *);
 	int	(*if_resolvemulti)	/* validate/resolve multicast */
@@ -235,7 +234,6 @@ typedef void if_init_f_t(void *);
 #define	if_iqdrops	if_data.ifi_iqdrops
 #define	if_noproto	if_data.ifi_noproto
 #define	if_lastchange	if_data.ifi_lastchange
-#define if_rawoutput(if, m, sa) if_output(if, m, sa, (struct rtentry *)NULL)
 
 /* for compatibility with other BSDs */
 #define	if_addrlist	if_addrhead
@@ -251,6 +249,16 @@ typedef void if_init_f_t(void *);
 #define	IF_ADDR_LOCK(if)	mtx_lock(&(if)->if_addr_mtx)
 #define	IF_ADDR_UNLOCK(if)	mtx_unlock(&(if)->if_addr_mtx)
 #define	IF_ADDR_LOCK_ASSERT(if)	mtx_assert(&(if)->if_addr_mtx, MA_OWNED)
+
+/*
+ * Function variations on locking macros intended to be used by loadable
+ * kernel modules in order to divorce them from the internals of address list
+ * locking.
+ */
+void	if_addr_rlock(struct ifnet *ifp);	/* if_addrhead */
+void	if_addr_runlock(struct ifnet *ifp);	/* if_addrhead */
+void	if_maddr_rlock(struct ifnet *ifp);	/* if_multiaddrs */
+void	if_maddr_runlock(struct ifnet *ifp);	/* if_multiaddrs */
 
 /*
  * Output queues (ifp->if_snd) and slow device input queues (*ifp->if_slowq)
@@ -586,13 +594,27 @@ drbr_enqueue(struct ifnet *ifp, struct buf_ring *br, struct mbuf *m)
 }
 
 static __inline void
-drbr_free(struct buf_ring *br, struct malloc_type *type)
+drbr_flush(struct ifnet *ifp, struct buf_ring *br)
 {
 	struct mbuf *m;
 
+#ifdef ALTQ
+	if (ifp != NULL && ALTQ_IS_ENABLED(&ifp->if_snd)) {
+		while (!IFQ_IS_EMPTY(&ifp->if_snd)) {
+			IFQ_DRV_DEQUEUE(&ifp->if_snd, m);
+			m_freem(m);
+		}
+	}
+#endif	
 	while ((m = buf_ring_dequeue_sc(br)) != NULL)
 		m_freem(m);
+}
 
+static __inline void
+drbr_free(struct buf_ring *br, struct malloc_type *type)
+{
+
+	drbr_flush(NULL, br);
 	buf_ring_free(br, type);
 }
 
@@ -688,15 +710,19 @@ struct ifaddr {
 	struct mtx ifa_mtx;
 };
 #define	IFA_ROUTE	RTF_UP		/* route installed */
+#define IFA_RTSELF	RTF_HOST	/* loopback route to self installed */
 
 /* for compatibility with other BSDs */
 #define	ifa_list	ifa_link
 
-#define	IFA_LOCK_INIT(ifa)	\
-    mtx_init(&(ifa)->ifa_mtx, "ifaddr", NULL, MTX_DEF)
+#ifdef _KERNEL
 #define	IFA_LOCK(ifa)		mtx_lock(&(ifa)->ifa_mtx)
 #define	IFA_UNLOCK(ifa)		mtx_unlock(&(ifa)->ifa_mtx)
-#define	IFA_DESTROY(ifa)	mtx_destroy(&(ifa)->ifa_mtx)
+
+void	ifa_free(struct ifaddr *ifa);
+void	ifa_init(struct ifaddr *ifa);
+void	ifa_ref(struct ifaddr *ifa);
+#endif
 
 /*
  * The prefix structure contains information about one prefix
@@ -727,38 +753,40 @@ struct ifmultiaddr {
 };
 
 #ifdef _KERNEL
-#define	IFAFREE(ifa)					\
-	do {						\
-		IFA_LOCK(ifa);				\
-		KASSERT((ifa)->ifa_refcnt > 0,		\
-		    ("ifa %p !(ifa_refcnt > 0)", ifa));	\
-		if (--(ifa)->ifa_refcnt == 0) {		\
-			IFA_DESTROY(ifa);		\
-			free(ifa, M_IFADDR);		\
-		} else 					\
-			IFA_UNLOCK(ifa);		\
-	} while (0)
 
-#define IFAREF(ifa)					\
-	do {						\
-		IFA_LOCK(ifa);				\
-		++(ifa)->ifa_refcnt;			\
-		IFA_UNLOCK(ifa);			\
-	} while (0)
+extern	struct rwlock ifnet_rwlock;
+extern	struct sx ifnet_sxlock;
 
-extern	struct rwlock ifnet_lock;
-#define	IFNET_LOCK_INIT() \
-   rw_init_flags(&ifnet_lock, "ifnet",  RW_RECURSE)
-#define	IFNET_WLOCK()		rw_wlock(&ifnet_lock)
-#define	IFNET_WUNLOCK()		rw_wunlock(&ifnet_lock)
-#define	IFNET_WLOCK_ASSERT()	rw_assert(&ifnet_lock, RA_LOCKED)
-#define	IFNET_RLOCK()		rw_rlock(&ifnet_lock)
-#define	IFNET_RUNLOCK()		rw_runlock(&ifnet_lock)	
+#define	IFNET_LOCK_INIT() do {						\
+	rw_init_flags(&ifnet_rwlock, "ifnet_rw",  RW_RECURSE);		\
+	sx_init_flags(&ifnet_sxlock, "ifnet_sx",  SX_RECURSE);		\
+} while(0)
 
-struct ifindex_entry {
-	struct	ifnet *ife_ifnet;
-	struct cdev *ife_dev;
-};
+#define	IFNET_WLOCK() do {						\
+	sx_xlock(&ifnet_sxlock);					\
+	rw_wlock(&ifnet_rwlock);					\
+} while (0)
+
+#define	IFNET_WUNLOCK() do {						\
+	rw_wunlock(&ifnet_rwlock);					\
+	sx_xunlock(&ifnet_sxlock);					\
+} while (0)
+
+/*
+ * To assert the ifnet lock, you must know not only whether it's for read or
+ * write, but also whether it was acquired with sleep support or not.
+ */
+#define	IFNET_RLOCK_ASSERT()		sx_assert(&ifnet_sxlock, SA_SLOCKED)
+#define	IFNET_RLOCK_NOSLEEP_ASSERT()	rw_assert(&ifnet_rwlock, RA_RLOCKED)
+#define	IFNET_WLOCK_ASSERT() do {					\
+	sx_assert(&ifnet_sxlock, SA_XLOCKED);				\
+	rw_assert(&ifnet_rwlock, RA_WLOCKED);				\
+} while (0)
+
+#define	IFNET_RLOCK()		sx_slock(&ifnet_sxlock)
+#define	IFNET_RLOCK_NOSLEEP()	rw_rlock(&ifnet_rwlock)
+#define	IFNET_RUNLOCK()		sx_sunlock(&ifnet_sxlock)
+#define	IFNET_RUNLOCK_NOSLEEP()	rw_runlock(&ifnet_rwlock)
 
 /*
  * Look up an ifnet given its index; the _ref variant also acquires a
@@ -775,13 +803,19 @@ struct ifnet	*ifnet_byindex_ref(u_short idx);
  * it to traverse the list of addresses associated to the interface.
  */
 struct ifaddr	*ifaddr_byindex(u_short idx);
-struct cdev	*ifdev_byindex(u_short idx);
 
-#ifdef VIMAGE_GLOBALS
-extern	struct ifnethead ifnet;
-extern	struct ifnet *loif;	/* first loopback interface */
-extern	int if_index;
-#endif
+VNET_DECLARE(struct ifnethead, ifnet);
+VNET_DECLARE(struct ifgrouphead, ifg_head);
+VNET_DECLARE(int, if_index);
+VNET_DECLARE(struct ifnet *, loif);	/* first loopback interface */
+VNET_DECLARE(int, useloopback);
+
+#define	V_ifnet		VNET(ifnet)
+#define	V_ifg_head	VNET(ifg_head)
+#define	V_if_index	VNET(if_index)
+#define	V_loif		VNET(loif)
+#define	V_useloopback	VNET(useloopback)
+
 extern	int ifqmaxlen;
 
 int	if_addgroup(struct ifnet *, const char *);
@@ -791,7 +825,6 @@ int	if_allmulti(struct ifnet *, int);
 struct	ifnet* if_alloc(u_char);
 void	if_attach(struct ifnet *);
 void	if_dead(struct ifnet *);
-void	if_grow(void);
 int	if_delmulti(struct ifnet *, struct sockaddr *);
 void	if_delmulti_ifma(struct ifmultiaddr *);
 void	if_detach(struct ifnet *);
@@ -811,7 +844,6 @@ void	if_ref(struct ifnet *);
 void	if_rele(struct ifnet *);
 int	if_setlladdr(struct ifnet *, const u_char *, int);
 void	if_up(struct ifnet *);
-/*void	ifinit(void);*/ /* declared in systm.h for main() */
 int	ifioctl(struct socket *, u_long, caddr_t, struct thread *);
 int	ifpromisc(struct ifnet *, int);
 struct	ifnet *ifunit(const char *);
@@ -820,7 +852,11 @@ struct	ifnet *ifunit_ref(const char *);
 void	ifq_init(struct ifaltq *, struct ifnet *ifp);
 void	ifq_delete(struct ifaltq *);
 
+int	ifa_add_loopback_route(struct ifaddr *, struct sockaddr *);
+int	ifa_del_loopback_route(struct ifaddr *, struct sockaddr *);
+
 struct	ifaddr *ifa_ifwithaddr(struct sockaddr *);
+int		ifa_ifwithaddr_check(struct sockaddr *);
 struct	ifaddr *ifa_ifwithbroadaddr(struct sockaddr *);
 struct	ifaddr *ifa_ifwithdstaddr(struct sockaddr *);
 struct	ifaddr *ifa_ifwithnet(struct sockaddr *);

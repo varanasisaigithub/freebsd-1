@@ -61,6 +61,10 @@ options 	BOOTP_COMPAT
 #options 	PREEMPTION
 #options 	VERBOSE_SYSINIT
 
+# Hardware performance counters
+options 	HWPMC_HOOKS
+device		hwpmc
+
 #device		saarm
 
 device		pci
@@ -105,6 +109,7 @@ device		random		# Entropy device
 device		wlan		# 802.11 support
 options 	IEEE80211_DEBUG
 options 	IEEE80211_SUPPORT_TDMA
+options 	IEEE80211_SUPPORT_MESH
 device		wlan_wep	# 802.11 WEP support
 device		wlan_ccmp	# 802.11 CCMP support
 device		wlan_tkip	# 802.11 TKIP support
@@ -131,6 +136,7 @@ device		ath_rf5413
 device		ath_ar5416
 options 	AH_SUPPORT_AR5416
 device		ath_ar9160
+device		ath_ar9280
 
 device		usb
 #options 	USB_DEBUG

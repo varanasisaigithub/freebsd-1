@@ -114,6 +114,7 @@ struct vm_map_entry {
 	vm_inherit_t inheritance;	/* inheritance */
 	int wired_count;		/* can be paged if = 0 */
 	vm_pindex_t lastr;		/* last read */
+	struct uidinfo *uip;		/* tmp storage for creator ref */
 };
 
 #define MAP_ENTRY_NOSYNC		0x0001
@@ -310,15 +311,14 @@ long vmspace_wired_count(struct vmspace *vmspace);
 #define MAP_PREFAULT_MADVISE	0x0200	/* from (user) madvise request */
 #define	MAP_STACK_GROWS_DOWN	0x1000
 #define	MAP_STACK_GROWS_UP	0x2000
+#define	MAP_ACC_CHARGED		0x4000
+#define	MAP_ACC_NO_CHARGE	0x8000
 
 /*
  * vm_fault option flags
  */
 #define VM_FAULT_NORMAL 0		/* Nothing special */
 #define VM_FAULT_CHANGE_WIRING 1	/* Change the wiring as appropriate */
-#define VM_FAULT_USER_WIRE 2		/* Likewise, but for user purposes */
-#define VM_FAULT_WIRE_MASK (VM_FAULT_CHANGE_WIRING|VM_FAULT_USER_WIRE)
-#define VM_FAULT_DIRTY 8		/* Dirty the page */
 
 /*
  * The following "find_space" options are supported by vm_map_find()

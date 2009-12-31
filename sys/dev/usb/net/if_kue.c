@@ -65,20 +65,34 @@ __FBSDID("$FreeBSD$");
  * the development of this driver.
  */
 
-#include "usbdevs.h"
+#include <sys/stdint.h>
+#include <sys/stddef.h>
+#include <sys/param.h>
+#include <sys/queue.h>
+#include <sys/types.h>
+#include <sys/systm.h>
+#include <sys/kernel.h>
+#include <sys/bus.h>
+#include <sys/linker_set.h>
+#include <sys/module.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
+#include <sys/condvar.h>
+#include <sys/sysctl.h>
+#include <sys/sx.h>
+#include <sys/unistd.h>
+#include <sys/callout.h>
+#include <sys/malloc.h>
+#include <sys/priv.h>
+
 #include <dev/usb/usb.h>
-#include <dev/usb/usb_mfunc.h>
-#include <dev/usb/usb_error.h>
+#include <dev/usb/usbdi.h>
+#include <dev/usb/usbdi_util.h>
+#include "usbdevs.h"
 
 #define	USB_DEBUG_VAR kue_debug
-
-#include <dev/usb/usb_core.h>
-#include <dev/usb/usb_lookup.h>
-#include <dev/usb/usb_process.h>
 #include <dev/usb/usb_debug.h>
-#include <dev/usb/usb_request.h>
-#include <dev/usb/usb_busdma.h>
-#include <dev/usb/usb_util.h>
+#include <dev/usb/usb_process.h>
 
 #include <dev/usb/net/usb_ethernet.h>
 #include <dev/usb/net/if_kuereg.h>
@@ -88,40 +102,41 @@ __FBSDID("$FreeBSD$");
  * Various supported device vendors/products.
  */
 static const struct usb_device_id kue_devs[] = {
-	{USB_VPI(USB_VENDOR_3COM, USB_PRODUCT_3COM_3C19250, 0)},
-	{USB_VPI(USB_VENDOR_3COM, USB_PRODUCT_3COM_3C460, 0)},
-	{USB_VPI(USB_VENDOR_ABOCOM, USB_PRODUCT_ABOCOM_URE450, 0)},
-	{USB_VPI(USB_VENDOR_ADS, USB_PRODUCT_ADS_UBS10BT, 0)},
-	{USB_VPI(USB_VENDOR_ADS, USB_PRODUCT_ADS_UBS10BTX, 0)},
-	{USB_VPI(USB_VENDOR_AOX, USB_PRODUCT_AOX_USB101, 0)},
-	{USB_VPI(USB_VENDOR_ASANTE, USB_PRODUCT_ASANTE_EA, 0)},
-	{USB_VPI(USB_VENDOR_ATEN, USB_PRODUCT_ATEN_DSB650C, 0)},
-	{USB_VPI(USB_VENDOR_ATEN, USB_PRODUCT_ATEN_UC10T, 0)},
-	{USB_VPI(USB_VENDOR_COREGA, USB_PRODUCT_COREGA_ETHER_USB_T, 0)},
-	{USB_VPI(USB_VENDOR_DLINK, USB_PRODUCT_DLINK_DSB650C, 0)},
-	{USB_VPI(USB_VENDOR_ENTREGA, USB_PRODUCT_ENTREGA_E45, 0)},
-	{USB_VPI(USB_VENDOR_ENTREGA, USB_PRODUCT_ENTREGA_XX1, 0)},
-	{USB_VPI(USB_VENDOR_ENTREGA, USB_PRODUCT_ENTREGA_XX2, 0)},
-	{USB_VPI(USB_VENDOR_IODATA, USB_PRODUCT_IODATA_USBETT, 0)},
-	{USB_VPI(USB_VENDOR_JATON, USB_PRODUCT_JATON_EDA, 0)},
-	{USB_VPI(USB_VENDOR_KINGSTON, USB_PRODUCT_KINGSTON_XX1, 0)},
-	{USB_VPI(USB_VENDOR_KLSI, USB_PRODUCT_AOX_USB101, 0)},
-	{USB_VPI(USB_VENDOR_KLSI, USB_PRODUCT_KLSI_DUH3E10BT, 0)},
-	{USB_VPI(USB_VENDOR_KLSI, USB_PRODUCT_KLSI_DUH3E10BTN, 0)},
-	{USB_VPI(USB_VENDOR_LINKSYS, USB_PRODUCT_LINKSYS_USB10T, 0)},
-	{USB_VPI(USB_VENDOR_MOBILITY, USB_PRODUCT_MOBILITY_EA, 0)},
-	{USB_VPI(USB_VENDOR_NETGEAR, USB_PRODUCT_NETGEAR_EA101, 0)},
-	{USB_VPI(USB_VENDOR_NETGEAR, USB_PRODUCT_NETGEAR_EA101X, 0)},
-	{USB_VPI(USB_VENDOR_PERACOM, USB_PRODUCT_PERACOM_ENET, 0)},
-	{USB_VPI(USB_VENDOR_PERACOM, USB_PRODUCT_PERACOM_ENET2, 0)},
-	{USB_VPI(USB_VENDOR_PERACOM, USB_PRODUCT_PERACOM_ENET3, 0)},
-	{USB_VPI(USB_VENDOR_PORTGEAR, USB_PRODUCT_PORTGEAR_EA8, 0)},
-	{USB_VPI(USB_VENDOR_PORTGEAR, USB_PRODUCT_PORTGEAR_EA9, 0)},
-	{USB_VPI(USB_VENDOR_PORTSMITH, USB_PRODUCT_PORTSMITH_EEA, 0)},
-	{USB_VPI(USB_VENDOR_SHARK, USB_PRODUCT_SHARK_PA, 0)},
-	{USB_VPI(USB_VENDOR_SILICOM, USB_PRODUCT_SILICOM_GPE, 0)},
-	{USB_VPI(USB_VENDOR_SILICOM, USB_PRODUCT_SILICOM_U2E, 0)},
-	{USB_VPI(USB_VENDOR_SMC, USB_PRODUCT_SMC_2102USB, 0)},
+#define	KUE_DEV(v,p) { USB_VP(USB_VENDOR_##v, USB_PRODUCT_##v##_##p) }
+	KUE_DEV(3COM, 3C19250),
+	KUE_DEV(3COM, 3C460),
+	KUE_DEV(ABOCOM, URE450),
+	KUE_DEV(ADS, UBS10BT),
+	KUE_DEV(ADS, UBS10BTX),
+	KUE_DEV(AOX, USB101),
+	KUE_DEV(ASANTE, EA),
+	KUE_DEV(ATEN, DSB650C),
+	KUE_DEV(ATEN, UC10T),
+	KUE_DEV(COREGA, ETHER_USB_T),
+	KUE_DEV(DLINK, DSB650C),
+	KUE_DEV(ENTREGA, E45),
+	KUE_DEV(ENTREGA, XX1),
+	KUE_DEV(ENTREGA, XX2),
+	KUE_DEV(IODATA, USBETT),
+	KUE_DEV(JATON, EDA),
+	KUE_DEV(KINGSTON, XX1),
+	KUE_DEV(KLSI, DUH3E10BT),
+	KUE_DEV(KLSI, DUH3E10BTN),
+	KUE_DEV(LINKSYS, USB10T),
+	KUE_DEV(MOBILITY, EA),
+	KUE_DEV(NETGEAR, EA101),
+	KUE_DEV(NETGEAR, EA101X),
+	KUE_DEV(PERACOM, ENET),
+	KUE_DEV(PERACOM, ENET2),
+	KUE_DEV(PERACOM, ENET3),
+	KUE_DEV(PORTGEAR, EA8),
+	KUE_DEV(PORTGEAR, EA9),
+	KUE_DEV(PORTSMITH, EEA),
+	KUE_DEV(SHARK, PA),
+	KUE_DEV(SILICOM, GPE),
+	KUE_DEV(SILICOM, U2E),
+	KUE_DEV(SMC, 2102USB),
+#undef KUE_DEV
 };
 
 /* prototypes */
@@ -354,7 +369,7 @@ kue_setmulti(struct usb_ether *ue)
 
 	sc->sc_rxfilt &= ~KUE_RXFILT_ALLMULTI;
 
-	IF_ADDR_LOCK(ifp);
+	if_maddr_rlock(ifp);
 	TAILQ_FOREACH(ifma, &ifp->if_multiaddrs, ifma_link)
 	{
 		if (ifma->ifma_addr->sa_family != AF_LINK)
@@ -369,7 +384,7 @@ kue_setmulti(struct usb_ether *ue)
 		    KUE_MCFILT(sc, i), ETHER_ADDR_LEN);
 		i++;
 	}
-	IF_ADDR_UNLOCK(ifp);
+	if_maddr_runlock(ifp);
 
 	if (i == KUE_MCFILTCNT(sc))
 		sc->sc_rxfilt |= KUE_RXFILT_ALLMULTI;
@@ -466,14 +481,14 @@ kue_attach(device_t dev)
 	error = usbd_transfer_setup(uaa->device, &iface_index,
 	    sc->sc_xfer, kue_config, KUE_N_TRANSFER, sc, &sc->sc_mtx);
 	if (error) {
-		device_printf(dev, "allocating USB transfers failed!\n");
+		device_printf(dev, "allocating USB transfers failed\n");
 		goto detach;
 	}
 
 	sc->sc_mcfilters = malloc(KUE_MCFILTCNT(sc) * ETHER_ADDR_LEN,
 	    M_USBDEV, M_WAITOK);
 	if (sc->sc_mcfilters == NULL) {
-		device_printf(dev, "failed allocating USB memory!\n");
+		device_printf(dev, "failed allocating USB memory\n");
 		goto detach;
 	}
 
@@ -514,42 +529,47 @@ kue_detach(device_t dev)
  * the higher level protocols.
  */
 static void
-kue_bulk_read_callback(struct usb_xfer *xfer)
+kue_bulk_read_callback(struct usb_xfer *xfer, usb_error_t error)
 {
-	struct kue_softc *sc = xfer->priv_sc;
+	struct kue_softc *sc = usbd_xfer_softc(xfer);
 	struct usb_ether *ue = &sc->sc_ue;
 	struct ifnet *ifp = uether_getifp(ue);
+	struct usb_page_cache *pc;
 	uint8_t buf[2];
 	int len;
+	int actlen;
+
+	usbd_xfer_status(xfer, &actlen, NULL, NULL, NULL);
 
 	switch (USB_GET_STATE(xfer)) {
 	case USB_ST_TRANSFERRED:
 
-		if (xfer->actlen <= (2 + sizeof(struct ether_header))) {
+		if (actlen <= (2 + sizeof(struct ether_header))) {
 			ifp->if_ierrors++;
 			goto tr_setup;
 		}
-		usbd_copy_out(xfer->frbuffers, 0, buf, 2);
-		xfer->actlen -= 2;
+		pc = usbd_xfer_get_frame(xfer, 0);
+		usbd_copy_out(pc, 0, buf, 2);
+		actlen -= 2;
 		len = buf[0] | (buf[1] << 8);
-		len = min(xfer->actlen, len);
+		len = min(actlen, len);
 
-		uether_rxbuf(ue, xfer->frbuffers, 2, len);
+		uether_rxbuf(ue, pc, 2, len);
 		/* FALLTHROUGH */
 	case USB_ST_SETUP:
 tr_setup:
-		xfer->frlengths[0] = xfer->max_data_length;
+		usbd_xfer_set_frame_len(xfer, 0, usbd_xfer_max_len(xfer));
 		usbd_transfer_submit(xfer);
 		uether_rxflush(ue);
 		return;
 
 	default:			/* Error */
 		DPRINTF("bulk read error, %s\n",
-		    usbd_errstr(xfer->error));
+		    usbd_errstr(error));
 
-		if (xfer->error != USB_ERR_CANCELLED) {
+		if (error != USB_ERR_CANCELLED) {
 			/* try to clear stall first */
-			xfer->flags.stall_pipe = 1;
+			usbd_xfer_set_stall(xfer);
 			goto tr_setup;
 		}
 		return;
@@ -558,10 +578,11 @@ tr_setup:
 }
 
 static void
-kue_bulk_write_callback(struct usb_xfer *xfer)
+kue_bulk_write_callback(struct usb_xfer *xfer, usb_error_t error)
 {
-	struct kue_softc *sc = xfer->priv_sc;
+	struct kue_softc *sc = usbd_xfer_softc(xfer);
 	struct ifnet *ifp = uether_getifp(&sc->sc_ue);
+	struct usb_page_cache *pc;
 	struct mbuf *m;
 	int total_len;
 	int temp_len;
@@ -589,15 +610,12 @@ tr_setup:
 		buf[0] = (uint8_t)(m->m_pkthdr.len);
 		buf[1] = (uint8_t)(m->m_pkthdr.len >> 8);
 
-		usbd_copy_in(xfer->frbuffers, 0, buf, 2);
+		pc = usbd_xfer_get_frame(xfer, 0);
+		usbd_copy_in(pc, 0, buf, 2);
+		usbd_m_copy_in(pc, 2, m, 0, m->m_pkthdr.len);
 
-		usbd_m_copy_in(xfer->frbuffers, 2,
-		    m, 0, m->m_pkthdr.len);
-
-		usbd_frame_zero(xfer->frbuffers, temp_len,
-		    total_len - temp_len);
-
-		xfer->frlengths[0] = total_len;
+		usbd_frame_zero(pc, temp_len, total_len - temp_len);
+		usbd_xfer_set_frame_len(xfer, 0, total_len);
 
 		/*
 		 * if there's a BPF listener, bounce a copy
@@ -613,13 +631,13 @@ tr_setup:
 
 	default:			/* Error */
 		DPRINTFN(11, "transfer error, %s\n",
-		    usbd_errstr(xfer->error));
+		    usbd_errstr(error));
 
 		ifp->if_oerrors++;
 
-		if (xfer->error != USB_ERR_CANCELLED) {
+		if (error != USB_ERR_CANCELLED) {
 			/* try to clear stall first */
-			xfer->flags.stall_pipe = 1;
+			usbd_xfer_set_stall(xfer);
 			goto tr_setup;
 		}
 		return;
@@ -664,7 +682,7 @@ kue_init(struct usb_ether *ue)
 	/* load the multicast filter */
 	kue_setpromisc(ue);
 
-	usbd_transfer_set_stall(sc->sc_xfer[KUE_BULK_DT_WR]);
+	usbd_xfer_set_stall(sc->sc_xfer[KUE_BULK_DT_WR]);
 
 	ifp->if_drv_flags |= IFF_DRV_RUNNING;
 	kue_start(ue);

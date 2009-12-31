@@ -37,6 +37,13 @@ __FBSDID("$FreeBSD$");
 #include <sys/sched.h>
 #include <sys/smp.h>
 
+#include <vm/vm.h>
+#include <vm/vm_param.h>
+#include <vm/pmap.h>
+#include <vm/vm_map.h>
+#include <vm/vm_extern.h>
+#include <vm/vm_kern.h>
+
 #include <machine/bus.h>
 #include <machine/cpu.h>
 #include <machine/intr_machdep.h>
@@ -57,7 +64,10 @@ static u_int ipi_msg_cnt[32];
 void
 machdep_ap_bootstrap(void)
 {
+	/* Set up important bits on the CPU (HID registers, etc.) */
+	cpudep_ap_setup();
 
+	/* Set PIR */
 	PCPU_SET(pir, mfspr(SPR_PIR));
 	PCPU_SET(awake, 1);
 	__asm __volatile("msync; isync");
@@ -71,7 +81,7 @@ machdep_ap_bootstrap(void)
 	__asm __volatile("mtdec %0" :: "r"(ap_decr));
 
 	atomic_add_int(&ap_awake, 1);
-	CTR1(KTR_SMP, "SMP: AP CPU%d launched", PCPU_GET(cpuid));
+	printf("SMP: AP CPU #%d launched\n", PCPU_GET(cpuid));
 
 	/* Initialize curthread */
 	PCPU_SET(curthread, PCPU_GET(idlethread));
@@ -79,6 +89,8 @@ machdep_ap_bootstrap(void)
 
 	/* Let the DEC and external interrupts go */
 	mtmsr(mfmsr() | PSL_EE);
+
+	/* Announce ourselves awake, and enter the scheduler */
 	sched_throw(NULL);
 }
 
@@ -146,8 +158,12 @@ cpu_mp_start(void)
 			goto next;
 		}
 		if (cpu.cr_cpuid != bsp.cr_cpuid) {
+			void *dpcpu;
+
 			pc = &__pcpu[cpu.cr_cpuid];
+			dpcpu = (void *)kmem_alloc(kernel_map, DPCPU_SIZE);
 			pcpu_init(pc, cpu.cr_cpuid, sizeof(*pc));
+			dpcpu_init(dpcpu, cpu.cr_cpuid);
 		} else {
 			pc = pcpup;
 			pc->pc_cpuid = bsp.cr_cpuid;
@@ -236,6 +252,9 @@ cpu_mp_unleash(void *dummy)
 		    mp_ncpus, cpus, smp_cpus);
 	}
 
+	/* Let the APs get into the scheduler */
+	DELAY(10000);
+
 	smp_active = 1;
 	smp_started = 1;
 }
@@ -270,7 +289,13 @@ powerpc_ipi_handler(void *arg)
 			smp_rendezvous_action();
 			break;
 		case IPI_STOP:
-			CTR1(KTR_SMP, "%s: IPI_STOP (stop)", __func__);
+
+			/*
+			 * IPI_STOP_HARD is mapped to IPI_STOP so it is not
+			 * necessary to add such case in the switch.
+			 */
+			CTR1(KTR_SMP, "%s: IPI_STOP or IPI_STOP_HARD (stop)",
+			    __func__);
 			self = PCPU_GET(cpumask);
 			savectx(PCPU_GET(curpcb));
 			atomic_set_int(&stopped_cpus, self);

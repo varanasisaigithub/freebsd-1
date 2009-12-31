@@ -38,7 +38,7 @@
 #include <sys/mutex.h>
 #include <sys/condvar.h>
 #include <sys/selinfo.h>
-#include <sys/termios.h>
+#include <sys/_termios.h>
 #include <sys/ttycom.h>
 #include <sys/ttyqueue.h>
 
@@ -97,6 +97,7 @@ struct tty {
 	/* Sleeping mechanisms. */
 	struct cv	t_inwait;	/* (t) Input wait queue. */
 	struct cv	t_outwait;	/* (t) Output wait queue. */
+	struct cv	t_outserwait;	/* (t) Serial output wait queue. */
 	struct cv	t_bgwait;	/* (t) Background wait queue. */
 	struct cv	t_dcdwait;	/* (t) Carrier Detect wait queue. */
 
@@ -201,6 +202,7 @@ void	tty_info(struct tty *tp);
 void	ttyconsdev_select(const char *name);
 
 /* Pseudo-terminal hooks. */
+int	pts_alloc(int fflags, struct thread *td, struct file *fp);
 int	pts_alloc_external(int fd, struct thread *td, struct file *fp,
     struct cdev *dev, const char *name);
 

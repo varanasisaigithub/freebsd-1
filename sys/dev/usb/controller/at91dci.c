@@ -44,9 +44,28 @@ __FBSDID("$FreeBSD$");
  * endpoints, Function-address and more.
  */
 
+#include <sys/stdint.h>
+#include <sys/stddef.h>
+#include <sys/param.h>
+#include <sys/queue.h>
+#include <sys/types.h>
+#include <sys/systm.h>
+#include <sys/kernel.h>
+#include <sys/bus.h>
+#include <sys/linker_set.h>
+#include <sys/module.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
+#include <sys/condvar.h>
+#include <sys/sysctl.h>
+#include <sys/sx.h>
+#include <sys/unistd.h>
+#include <sys/callout.h>
+#include <sys/malloc.h>
+#include <sys/priv.h>
+
 #include <dev/usb/usb.h>
-#include <dev/usb/usb_mfunc.h>
-#include <dev/usb/usb_error.h>
+#include <dev/usb/usbdi.h>
 
 #define	USB_DEBUG_VAR at91dcidebug
 
@@ -70,7 +89,7 @@ __FBSDID("$FreeBSD$");
 #define	AT9100_DCI_PC2SC(pc) \
    AT9100_DCI_BUS2SC(USB_DMATAG_TO_XROOT((pc)->tag_parent)->bus)
 
-#if USB_DEBUG
+#ifdef USB_DEBUG
 static int at91dcidebug = 0;
 
 SYSCTL_NODE(_hw_usb, OID_AUTO, at91dci, CTLFLAG_RW, 0, "USB at91dci");
@@ -875,6 +894,7 @@ at91dci_setup_standard_chain(struct usb_xfer *xfer)
 
 	/* setup temp */
 
+	temp.pc = NULL;
 	temp.td = NULL;
 	temp.td_next = xfer->td_start[0];
 	temp.offset = 0;
@@ -1208,7 +1228,7 @@ at91dci_device_done(struct usb_xfer *xfer, usb_error_t error)
 
 static void
 at91dci_set_stall(struct usb_device *udev, struct usb_xfer *xfer,
-    struct usb_endpoint *ep)
+    struct usb_endpoint *ep, uint8_t *did_stall)
 {
 	struct at91dci_softc *sc;
 	uint32_t csr_val;
@@ -2307,4 +2327,5 @@ struct usb_bus_methods at91dci_bus_methods =
 	.set_stall = &at91dci_set_stall,
 	.clear_stall = &at91dci_clear_stall,
 	.roothub_exec = &at91dci_roothub_exec,
+	.xfer_poll = &at91dci_do_poll,
 };

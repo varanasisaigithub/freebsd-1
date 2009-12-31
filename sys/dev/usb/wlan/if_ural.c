@@ -68,18 +68,12 @@ __FBSDID("$FreeBSD$");
 #include <net80211/ieee80211_radiotap.h>
 #include <net80211/ieee80211_amrr.h>
 
-#define	USB_DEBUG_VAR ural_debug
-
 #include <dev/usb/usb.h>
-#include <dev/usb/usb_error.h>
-#include <dev/usb/usb_core.h>
-#include <dev/usb/usb_lookup.h>
-#include <dev/usb/usb_debug.h>
-#include <dev/usb/usb_request.h>
-#include <dev/usb/usb_busdma.h>
-#include <dev/usb/usb_util.h>
+#include <dev/usb/usbdi.h>
 #include "usbdevs.h"
 
+#define	USB_DEBUG_VAR ural_debug
+#include <dev/usb/usb_debug.h>
 
 #include <dev/usb/wlan/if_uralreg.h>
 #include <dev/usb/wlan/if_uralvar.h>
@@ -98,35 +92,37 @@ SYSCTL_INT(_hw_usb_ural, OID_AUTO, debug, CTLFLAG_RW, &ural_debug, 0,
 
 /* various supported device vendors/products */
 static const struct usb_device_id ural_devs[] = {
-	{ USB_VP(USB_VENDOR_ASUS, USB_PRODUCT_ASUS_WL167G) },
-	{ USB_VP(USB_VENDOR_ASUS, USB_PRODUCT_RALINK_RT2570) },
-	{ USB_VP(USB_VENDOR_BELKIN, USB_PRODUCT_BELKIN_F5D7050) },
-	{ USB_VP(USB_VENDOR_BELKIN, USB_PRODUCT_BELKIN_F5D7051) },
-	{ USB_VP(USB_VENDOR_CISCOLINKSYS, USB_PRODUCT_CISCOLINKSYS_HU200TS) },
-	{ USB_VP(USB_VENDOR_CISCOLINKSYS, USB_PRODUCT_CISCOLINKSYS_WUSB54G) },
-	{ USB_VP(USB_VENDOR_CISCOLINKSYS, USB_PRODUCT_CISCOLINKSYS_WUSB54GP) },
-	{ USB_VP(USB_VENDOR_CONCEPTRONIC2, USB_PRODUCT_CONCEPTRONIC2_C54RU) },
-	{ USB_VP(USB_VENDOR_DLINK, USB_PRODUCT_DLINK_DWLG122) },
-	{ USB_VP(USB_VENDOR_GIGABYTE, USB_PRODUCT_GIGABYTE_GN54G) },
-	{ USB_VP(USB_VENDOR_GIGABYTE, USB_PRODUCT_GIGABYTE_GNWBKG) },
-	{ USB_VP(USB_VENDOR_GUILLEMOT, USB_PRODUCT_GUILLEMOT_HWGUSB254) },
-	{ USB_VP(USB_VENDOR_MELCO, USB_PRODUCT_MELCO_KG54) },
-	{ USB_VP(USB_VENDOR_MELCO, USB_PRODUCT_MELCO_KG54AI) },
-	{ USB_VP(USB_VENDOR_MELCO, USB_PRODUCT_MELCO_KG54YB) },
-	{ USB_VP(USB_VENDOR_MELCO, USB_PRODUCT_MELCO_NINWIFI) },
-	{ USB_VP(USB_VENDOR_MSI, USB_PRODUCT_MSI_RT2570) },
-	{ USB_VP(USB_VENDOR_MSI, USB_PRODUCT_MSI_RT2570_2) },
-	{ USB_VP(USB_VENDOR_MSI, USB_PRODUCT_MSI_RT2570_3) },
-	{ USB_VP(USB_VENDOR_NOVATECH, USB_PRODUCT_NOVATECH_NV902) },
-	{ USB_VP(USB_VENDOR_RALINK, USB_PRODUCT_RALINK_RT2570) },
-	{ USB_VP(USB_VENDOR_RALINK, USB_PRODUCT_RALINK_RT2570_2) },
-	{ USB_VP(USB_VENDOR_RALINK, USB_PRODUCT_RALINK_RT2570_3) },
-	{ USB_VP(USB_VENDOR_SIEMENS2, USB_PRODUCT_SIEMENS2_WL54G) },
-	{ USB_VP(USB_VENDOR_SMC, USB_PRODUCT_SMC_2862WG) },
-	{ USB_VP(USB_VENDOR_SPHAIRON, USB_PRODUCT_SPHAIRON_UB801R) },
-	{ USB_VP(USB_VENDOR_SURECOM, USB_PRODUCT_SURECOM_RT2570) },
-	{ USB_VP(USB_VENDOR_VTECH, USB_PRODUCT_VTECH_RT2570) },
-	{ USB_VP(USB_VENDOR_ZINWELL, USB_PRODUCT_ZINWELL_RT2570) },
+#define	URAL_DEV(v,p)  { USB_VP(USB_VENDOR_##v, USB_PRODUCT_##v##_##p) }
+	URAL_DEV(ASUS, WL167G),
+	URAL_DEV(ASUS, RT2570),
+	URAL_DEV(BELKIN, F5D7050),
+	URAL_DEV(BELKIN, F5D7051),
+	URAL_DEV(CISCOLINKSYS, HU200TS),
+	URAL_DEV(CISCOLINKSYS, WUSB54G),
+	URAL_DEV(CISCOLINKSYS, WUSB54GP),
+	URAL_DEV(CONCEPTRONIC2, C54RU),
+	URAL_DEV(DLINK, DWLG122),
+	URAL_DEV(GIGABYTE, GN54G),
+	URAL_DEV(GIGABYTE, GNWBKG),
+	URAL_DEV(GUILLEMOT, HWGUSB254),
+	URAL_DEV(MELCO, KG54),
+	URAL_DEV(MELCO, KG54AI),
+	URAL_DEV(MELCO, KG54YB),
+	URAL_DEV(MELCO, NINWIFI),
+	URAL_DEV(MSI, RT2570),
+	URAL_DEV(MSI, RT2570_2),
+	URAL_DEV(MSI, RT2570_3),
+	URAL_DEV(NOVATECH, NV902),
+	URAL_DEV(RALINK, RT2570),
+	URAL_DEV(RALINK, RT2570_2),
+	URAL_DEV(RALINK, RT2570_3),
+	URAL_DEV(SIEMENS2, WL54G),
+	URAL_DEV(SMC, 2862WG),
+	URAL_DEV(SPHAIRON, UB801R),
+	URAL_DEV(SURECOM, RT2570),
+	URAL_DEV(VTECH, RT2570),
+	URAL_DEV(ZINWELL, RT2570),
+#undef URAL_DEV
 };
 
 static usb_callback_t ural_bulk_read_callback;
@@ -777,23 +773,26 @@ ural_newstate(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
 
 
 static void
-ural_bulk_write_callback(struct usb_xfer *xfer)
+ural_bulk_write_callback(struct usb_xfer *xfer, usb_error_t error)
 {
-	struct ural_softc *sc = xfer->priv_sc;
+	struct ural_softc *sc = usbd_xfer_softc(xfer);
 	struct ifnet *ifp = sc->sc_ifp;
 	struct ieee80211vap *vap;
 	struct ural_tx_data *data;
 	struct mbuf *m;
-	unsigned int len;
+	struct usb_page_cache *pc;
+	int len;
+
+	usbd_xfer_status(xfer, &len, NULL, NULL, NULL);
 
 	switch (USB_GET_STATE(xfer)) {
 	case USB_ST_TRANSFERRED:
-		DPRINTFN(11, "transfer complete, %d bytes\n", xfer->actlen);
+		DPRINTFN(11, "transfer complete, %d bytes\n", len);
 
 		/* free resources */
-		data = xfer->priv_fifo;
+		data = usbd_xfer_get_priv(xfer);
 		ural_tx_free(data, 0);
-		xfer->priv_fifo = NULL;
+		usbd_xfer_set_priv(xfer, NULL);
 
 		ifp->if_opackets++;
 		ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
@@ -811,9 +810,9 @@ tr_setup:
 				    m->m_pkthdr.len);
 				m->m_pkthdr.len = (RAL_FRAME_SIZE + RAL_TX_DESC_SIZE);
 			}
-			usbd_copy_in(xfer->frbuffers, 0, &data->desc,
-			    RAL_TX_DESC_SIZE);
-			usbd_m_copy_in(xfer->frbuffers, RAL_TX_DESC_SIZE, m, 0,
+			pc = usbd_xfer_get_frame(xfer, 0);
+			usbd_copy_in(pc, 0, &data->desc, RAL_TX_DESC_SIZE);
+			usbd_m_copy_in(pc, RAL_TX_DESC_SIZE, m, 0,
 			    m->m_pkthdr.len);
 
 			vap = data->ni->ni_vap;
@@ -835,53 +834,58 @@ tr_setup:
 			DPRINTFN(11, "sending frame len=%u xferlen=%u\n",
 			    m->m_pkthdr.len, len);
 
-			xfer->frlengths[0] = len;
-			xfer->priv_fifo = data;
+			usbd_xfer_set_frame_len(xfer, 0, len);
+			usbd_xfer_set_priv(xfer, data);
 
 			usbd_transfer_submit(xfer);
 		}
+		RAL_UNLOCK(sc);
+		ural_start(ifp);
+		RAL_LOCK(sc);
 		break;
 
 	default:			/* Error */
 		DPRINTFN(11, "transfer error, %s\n",
-		    usbd_errstr(xfer->error));
+		    usbd_errstr(error));
 
 		ifp->if_oerrors++;
-		data = xfer->priv_fifo;
+		data = usbd_xfer_get_priv(xfer);
 		if (data != NULL) {
-			ural_tx_free(data, xfer->error);
-			xfer->priv_fifo = NULL;
+			ural_tx_free(data, error);
+			usbd_xfer_set_priv(xfer, NULL);
 		}
 
-		if (xfer->error == USB_ERR_STALLED) {
+		if (error == USB_ERR_STALLED) {
 			/* try to clear stall first */
-			xfer->flags.stall_pipe = 1;
+			usbd_xfer_set_stall(xfer);
 			goto tr_setup;
 		}
-		if (xfer->error == USB_ERR_TIMEOUT)
+		if (error == USB_ERR_TIMEOUT)
 			device_printf(sc->sc_dev, "device timeout\n");
 		break;
 	}
 }
 
 static void
-ural_bulk_read_callback(struct usb_xfer *xfer)
+ural_bulk_read_callback(struct usb_xfer *xfer, usb_error_t error)
 {
-	struct ural_softc *sc = xfer->priv_sc;
+	struct ural_softc *sc = usbd_xfer_softc(xfer);
 	struct ifnet *ifp = sc->sc_ifp;
 	struct ieee80211com *ic = ifp->if_l2com;
 	struct ieee80211_node *ni;
 	struct mbuf *m = NULL;
+	struct usb_page_cache *pc;
 	uint32_t flags;
 	int8_t rssi = 0, nf = 0;
-	unsigned int len;
+	int len;
+
+	usbd_xfer_status(xfer, &len, NULL, NULL, NULL);
 
 	switch (USB_GET_STATE(xfer)) {
 	case USB_ST_TRANSFERRED:
 
-		DPRINTFN(15, "rx done, actlen=%d\n", xfer->actlen);
+		DPRINTFN(15, "rx done, actlen=%d\n", len);
 
-		len = xfer->actlen;
 		if (len < RAL_RX_DESC_SIZE + IEEE80211_MIN_LEN) {
 			DPRINTF("%s: xfer too short %d\n",
 			    device_get_nameunit(sc->sc_dev), len);
@@ -891,8 +895,8 @@ ural_bulk_read_callback(struct usb_xfer *xfer)
 
 		len -= RAL_RX_DESC_SIZE;
 		/* rx descriptor is located at the end */
-		usbd_copy_out(xfer->frbuffers, len, &sc->sc_rx_desc,
-		    RAL_RX_DESC_SIZE);
+		pc = usbd_xfer_get_frame(xfer, 0);
+		usbd_copy_out(pc, len, &sc->sc_rx_desc, RAL_RX_DESC_SIZE);
 
 		rssi = URAL_RSSI(sc->sc_rx_desc.rssi);
 		nf = RAL_NOISE_FLOOR;
@@ -914,7 +918,7 @@ ural_bulk_read_callback(struct usb_xfer *xfer)
 			ifp->if_ierrors++;
 			goto tr_setup;
 		}
-		usbd_copy_out(xfer->frbuffers, 0, mtod(m, uint8_t *), len);
+		usbd_copy_out(pc, 0, mtod(m, uint8_t *), len);
 
 		/* finalize mbuf */
 		m->m_pkthdr.rcvif = ifp;
@@ -938,7 +942,7 @@ ural_bulk_read_callback(struct usb_xfer *xfer)
 		/* FALLTHROUGH */
 	case USB_ST_SETUP:
 tr_setup:
-		xfer->frlengths[0] = xfer->max_data_length;
+		usbd_xfer_set_frame_len(xfer, 0, usbd_xfer_max_len(xfer));
 		usbd_transfer_submit(xfer);
 
 		/*
@@ -946,8 +950,8 @@ tr_setup:
 		 * the private mutex of a device! That is why we do the
 		 * "ieee80211_input" here, and not some lines up!
 		 */
+		RAL_UNLOCK(sc);
 		if (m) {
-			RAL_UNLOCK(sc);
 			ni = ieee80211_find_rxnode(ic,
 			    mtod(m, struct ieee80211_frame_min *));
 			if (ni != NULL) {
@@ -955,14 +959,17 @@ tr_setup:
 				ieee80211_free_node(ni);
 			} else
 				(void) ieee80211_input_all(ic, m, rssi, nf);
-			RAL_LOCK(sc);
 		}
+		if ((ifp->if_drv_flags & IFF_DRV_OACTIVE) == 0 &&
+		    !IFQ_IS_EMPTY(&ifp->if_snd))
+			ural_start(ifp);
+		RAL_LOCK(sc);
 		return;
 
 	default:			/* Error */
-		if (xfer->error != USB_ERR_CANCELLED) {
+		if (error != USB_ERR_CANCELLED) {
 			/* try to clear stall first */
-			xfer->flags.stall_pipe = 1;
+			usbd_xfer_set_stall(xfer);
 			goto tr_setup;
 		}
 		return;
@@ -2120,7 +2127,7 @@ ural_init_locked(struct ural_softc *sc)
 
 	ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
 	ifp->if_drv_flags |= IFF_DRV_RUNNING;
-	usbd_transfer_set_stall(sc->sc_xfer[URAL_BULK_WR]);
+	usbd_xfer_set_stall(sc->sc_xfer[URAL_BULK_WR]);
 	usbd_transfer_start(sc->sc_xfer[URAL_BULK_RD]);
 	return;
 

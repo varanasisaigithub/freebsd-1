@@ -374,6 +374,24 @@ typedef struct vdev_label {
 #define	VDEV_LABEL_END_SIZE	(2 * sizeof (vdev_label_t))
 #define	VDEV_LABELS		4
 
+/*
+ * Gang block headers are self-checksumming and contain an array
+ * of block pointers.
+ */
+#define SPA_GANGBLOCKSIZE	SPA_MINBLOCKSIZE
+#define SPA_GBH_NBLKPTRS	((SPA_GANGBLOCKSIZE - \
+	sizeof (zio_block_tail_t)) / sizeof (blkptr_t))
+#define SPA_GBH_FILLER		((SPA_GANGBLOCKSIZE - \
+	sizeof (zio_block_tail_t) - \
+	(SPA_GBH_NBLKPTRS * sizeof (blkptr_t))) /\
+	sizeof (uint64_t))
+
+typedef struct zio_gbh {
+	blkptr_t		zg_blkptr[SPA_GBH_NBLKPTRS];
+	uint64_t		zg_filler[SPA_GBH_FILLER];
+	zio_block_tail_t	zg_tail;
+} zio_gbh_phys_t;
+
 enum zio_checksum {
 	ZIO_CHECKSUM_INHERIT = 0,
 	ZIO_CHECKSUM_ON,
@@ -461,13 +479,14 @@ typedef enum {
 #define	SPA_VERSION_11			11ULL
 #define	SPA_VERSION_12			12ULL
 #define	SPA_VERSION_13			13ULL
+#define	SPA_VERSION_14			14ULL
 /*
  * When bumping up SPA_VERSION, make sure GRUB ZFS understand the on-disk
  * format change. Go to usr/src/grub/grub-0.95/stage2/{zfs-include/, fsys_zfs*},
  * and do the appropriate changes.
  */
-#define	SPA_VERSION			SPA_VERSION_13
-#define	SPA_VERSION_STRING		"13"
+#define	SPA_VERSION			SPA_VERSION_14
+#define	SPA_VERSION_STRING		"14"
 
 /*
  * Symbolic names for the changes that caused a SPA_VERSION switch.
@@ -502,6 +521,7 @@ typedef enum {
 #define	SPA_VERSION_DSL_SCRUB		SPA_VERSION_11
 #define	SPA_VERSION_SNAP_PROPS		SPA_VERSION_12
 #define	SPA_VERSION_USED_BREAKDOWN	SPA_VERSION_13
+#define	SPA_VERSION_PASSTHROUGH_X	SPA_VERSION_14
 
 /*
  * The following are configuration names used in the nvlist describing a pool's

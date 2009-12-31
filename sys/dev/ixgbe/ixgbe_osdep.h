@@ -83,6 +83,8 @@
 #define true                1
 #define CMD_MEM_WRT_INVALIDATE          0x0010  /* BIT_4 */
 #define PCI_COMMAND_REGISTER            PCIR_COMMAND
+#define UNREFERENCED_PARAMETER(_p)
+
 
 #define IXGBE_HTONL	htonl
 
@@ -106,6 +108,16 @@ typedef boolean_t	bool;
 #define rmb()
 #define wmb()
 #endif
+#endif
+
+#if defined(__i386__) || defined(__amd64__)
+static __inline
+void prefetch(void *x)
+{
+	__asm volatile("prefetcht0 %0" :: "m" (*(unsigned long *)x));
+}
+#else
+#define prefetch(x)
 #endif
 
 struct ixgbe_osdep

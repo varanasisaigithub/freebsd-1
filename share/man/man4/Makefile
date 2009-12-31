@@ -7,12 +7,15 @@ MAN=	aac.4 \
 	${_acpi_asus.4} \
 	${_acpi_dock.4} \
 	${_acpi_fujitsu.4} \
+	${_acpi_hp.4} \
 	${_acpi_ibm.4} \
 	${_acpi_panasonic.4} \
 	${_acpi_sony.4} \
 	acpi_thermal.4 \
 	${_acpi_toshiba.4} \
 	acpi_video.4 \
+	${_acpi_wmi.4} \
+	ada.4 \
 	adv.4 \
 	adw.4 \
 	ae.4 \
@@ -21,14 +24,16 @@ MAN=	aac.4 \
 	aha.4 \
 	ahb.4 \
 	ahc.4 \
+	ahci.4 \
 	ahd.4 \
 	aio.4 \
 	alc.4 \
 	ale.4 \
 	altq.4 \
 	amd.4 \
-	${_amdtemp.4} \
+	${_amdsbwd.4} \
 	${_amdsmb.4} \
+	${_amdtemp.4} \
 	amr.4 \
 	an.4 \
 	arcmsr.4 \
@@ -41,6 +46,7 @@ MAN=	aac.4 \
 	ath_hal.4 \
 	atkbd.4 \
 	atkbdc.4 \
+	${_atp.4} \
 	audit.4 \
 	auditpipe.4 \
 	aue.4 \
@@ -51,6 +57,7 @@ MAN=	aac.4 \
 	bktr.4 \
 	blackhole.4 \
 	bpf.4 \
+	bridge.4 \
 	bt.4 \
 	bwi.4 \
 	cardbus.4 \
@@ -81,6 +88,7 @@ MAN=	aac.4 \
 	digi.4 \
 	disc.4 \
 	divert.4 \
+	${_dpms.4} \
 	dpt.4 \
 	dummynet.4 \
 	ed.4 \
@@ -90,6 +98,7 @@ MAN=	aac.4 \
 	em.4 \
 	en.4 \
 	enc.4 \
+	epair.4 \
 	esp.4 \
 	et.4 \
 	exca.4 \
@@ -127,8 +136,6 @@ MAN=	aac.4 \
 	icmp6.4 \
 	ida.4 \
 	idt.4 \
-	ieee80211.4 \
-	if_bridge.4 \
 	ifmib.4 \
 	igb.4 \
 	igmp.4 \
@@ -169,6 +176,7 @@ MAN=	aac.4 \
 	le.4 \
 	led.4 \
 	lge.4 \
+	${_lindev.4} \
 	${_linux.4} \
 	lmc.4 \
 	lo.4 \
@@ -193,6 +201,7 @@ MAN=	aac.4 \
 	meteor.4 \
 	mfi.4 \
 	miibus.4 \
+	mk48txx.4 \
 	mld.4 \
 	mlx.4 \
 	mly.4 \
@@ -213,6 +222,7 @@ MAN=	aac.4 \
 	ncr.4 \
 	ncv.4 \
 	${_ndis.4} \
+	net80211.4 \
 	netgraph.4 \
 	netintro.4 \
 	${_nfe.4} \
@@ -329,6 +339,7 @@ MAN=	aac.4 \
 	sf.4 \
 	si.4 \
 	sio.4 \
+	siis.4 \
 	sis.4 \
 	sk.4 \
 	smb.4 \
@@ -472,6 +483,7 @@ MLINKS+=bce.4 if_bce.4
 MLINKS+=bfe.4 if_bfe.4
 MLINKS+=bge.4 if_bge.4
 MLINKS+=bktr.4 brooktree.4
+MLINKS+=bridge.4 if_bridge.4
 MLINKS+=bwi.4 if_bwi.4
 MLINKS+=cas.4 if_cas.4
 MLINKS+=crypto.4 cryptodev.4
@@ -485,6 +497,7 @@ MLINKS+=ef.4 if_ef.4
 MLINKS+=em.4 if_em.4
 MLINKS+=en.4 if_en.4
 MLINKS+=enc.4 if_enc.4
+MLINKS+=epair.4 if_epair.4
 MLINKS+=et.4 if_et.4
 MLINKS+=faith.4 if_faith.4
 MLINKS+=fatm.4 if_fatm.4
@@ -504,7 +517,6 @@ MLINKS+=hatm.4 if_hatm.4
 MLINKS+=hme.4 if_hme.4
 MLINKS+=${_hptrr.4} ${_rr232x.4}
 MLINKS+=idt.4 if_idt.4
-MLINKS+=if_bridge.4 bridge.4
 MLINKS+=igb.4 if_igb.4
 MLINKS+=ip.4 rawip.4
 MLINKS+=ipfirewall.4 ipaccounting.4 \
@@ -594,15 +606,20 @@ _acpi_aiboost.4=acpi_aiboost.4
 _acpi_asus.4=	acpi_asus.4
 _acpi_dock.4=	acpi_dock.4
 _acpi_fujitsu.4=acpi_fujitsu.4
+_acpi_hp.4=	acpi_hp.4
 _acpi_ibm.4=	acpi_ibm.4
 _acpi_panasonic.4=acpi_panasonic.4
 _acpi_sony.4=	acpi_sony.4
 _acpi_toshiba.4=acpi_toshiba.4
+_acpi_wmi.4=	acpi_wmi.4
+_amdsbwd.4=	amdsbwd.4
 _amdsmb.4=	amdsmb.4
 _amdtemp.4=	amdtemp.4
 _asmc.4=	asmc.4
+_atp.4=		atp.4
 _coretemp.4=	coretemp.4
 _cpuctl.4=	cpuctl.4
+_dpms.4=	dpms.4
 _hptiop.4=	hptiop.4
 _hptmv.4=	hptmv.4
 _hptrr.4=	hptrr.4
@@ -615,6 +632,7 @@ _if_urtw.4=	if_urtw.4
 _if_wpi.4=	if_wpi.4
 _ipmi.4=	ipmi.4
 _io.4=		io.4
+_lindev.4=	lindev.4
 _linux.4=	linux.4
 _ndis.4=	ndis.4
 _nfe.4=		nfe.4
@@ -626,6 +644,12 @@ _speaker.4=	speaker.4
 _spkr.4=	spkr.4
 _urtw.4=	urtw.4
 _wpi.4=		wpi.4
+
+MLINKS+=lindev.4 full.4
+.endif
+
+.if ${MACHINE_ARCH} == "powerpc"
+_atp.4=		atp.4
 .endif
 
 .if exists(${.CURDIR}/man4.${MACHINE_ARCH})

@@ -129,7 +129,6 @@ typedef struct drm_i915_private {
 	int page_flipping;
 
 	wait_queue_head_t irq_queue;
-	atomic_t irq_received;
 	/** Protects user_irq_refcount and irq_mask_reg */
 	DRM_SPINTYPE user_irq_lock;
 	/** Refcount for i915_user_irq_get() versus i915_user_irq_put(). */
@@ -453,7 +452,7 @@ extern int i915_vblank_pipe_get(struct drm_device *dev, void *data,
 extern int i915_enable_vblank(struct drm_device *dev, int crtc);
 extern void i915_disable_vblank(struct drm_device *dev, int crtc);
 extern u32 i915_get_vblank_counter(struct drm_device *dev, int crtc);
-extern u32 gm45_get_vblank_counter(struct drm_device *dev, int crtc);
+extern u32 g45_get_vblank_counter(struct drm_device *dev, int crtc);
 extern int i915_vblank_swap(struct drm_device *dev, void *data,
 			    struct drm_file *file_priv);
 
@@ -645,7 +644,8 @@ extern int i915_wait_ring(struct drm_device * dev, int n, const char *caller);
 		       (dev)->pci_device == 0x2A42 || \
 		       (dev)->pci_device == 0x2E02 || \
 		       (dev)->pci_device == 0x2E12 || \
-		       (dev)->pci_device == 0x2E22)
+		       (dev)->pci_device == 0x2E22 || \
+		       (dev)->pci_device == 0x2E32)
 
 #define IS_I965GM(dev) ((dev)->pci_device == 0x2A02)
 
@@ -654,6 +654,7 @@ extern int i915_wait_ring(struct drm_device * dev, int n, const char *caller);
 #define IS_G4X(dev) ((dev)->pci_device == 0x2E02 || \
 		     (dev)->pci_device == 0x2E12 || \
 		     (dev)->pci_device == 0x2E22 || \
+		     (dev)->pci_device == 0x2E32 || \
 		     IS_GM45(dev))
 
 #define IS_G33(dev)    ((dev)->pci_device == 0x29C2 ||	\

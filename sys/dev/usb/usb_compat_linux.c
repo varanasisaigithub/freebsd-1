@@ -25,10 +25,30 @@
  * SUCH DAMAGE.
  */
 
-#include <dev/usb/usb_mfunc.h>
+#include <sys/stdint.h>
+#include <sys/stddef.h>
+#include <sys/param.h>
+#include <sys/queue.h>
+#include <sys/types.h>
+#include <sys/systm.h>
+#include <sys/kernel.h>
+#include <sys/bus.h>
+#include <sys/linker_set.h>
+#include <sys/module.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
+#include <sys/condvar.h>
+#include <sys/sysctl.h>
+#include <sys/sx.h>
+#include <sys/unistd.h>
+#include <sys/callout.h>
+#include <sys/malloc.h>
+#include <sys/priv.h>
+
 #include <dev/usb/usb.h>
-#include <dev/usb/usb_error.h>
 #include <dev/usb/usb_ioctl.h>
+#include <dev/usb/usbdi.h>
+#include <dev/usb/usbdi_util.h>
 
 #define	USB_DEBUG_VAR usb_debug
 
@@ -39,7 +59,6 @@
 #include <dev/usb/usb_util.h>
 #include <dev/usb/usb_busdma.h>
 #include <dev/usb/usb_transfer.h>
-#include <dev/usb/usb_parse.h>
 #include <dev/usb/usb_hub.h>
 #include <dev/usb/usb_request.h>
 #include <dev/usb/usb_debug.h>
@@ -379,15 +398,32 @@ int
 usb_submit_urb(struct urb *urb, uint16_t mem_flags)
 {
 	struct usb_host_endpoint *uhe;
+	uint8_t do_unlock;
+	int err;
 
-	if (urb == NULL) {
+	if (urb == NULL)
 		return (-EINVAL);
-	}
-	mtx_assert(&Giant, MA_OWNED);
+
+	do_unlock = mtx_owned(&Giant) ? 0 : 1;
+	if (do_unlock)
+		mtx_lock(&Giant);
 
 	if (urb->endpoint == NULL) {
-		return (-EINVAL);
+		err = -EINVAL;
+		goto done;
 	}
+
+	/*
+         * Check to see if the urb is in the process of being killed
+         * and stop a urb that is in the process of being killed from
+         * being re-submitted (e.g. from its completion callback
+         * function).
+         */
+	if (urb->kill_count != 0) {
+		err = -EPERM;
+		goto done;
+	}
+
 	uhe = urb->endpoint;
 
 	/*
@@ -405,12 +441,16 @@ usb_submit_urb(struct urb *urb, uint16_t mem_flags)
 
 		usbd_transfer_start(uhe->bsd_xfer[0]);
 		usbd_transfer_start(uhe->bsd_xfer[1]);
+		err = 0;
 	} else {
 		/* no pipes have been setup yet! */
 		urb->status = -EINVAL;
-		return (-EINVAL);
+		err = -EINVAL;
 	}
-	return (0);
+done:
+	if (do_unlock)
+		mtx_unlock(&Giant);
+	return (err);
 }
 
 /*------------------------------------------------------------------------*
@@ -429,9 +469,11 @@ static void
 usb_unlink_bsd(struct usb_xfer *xfer,
     struct urb *urb, uint8_t drain)
 {
-	if (xfer &&
-	    usbd_transfer_pending(xfer) &&
-	    (xfer->priv_fifo == (void *)urb)) {
+	if (xfer == NULL)
+		return;
+	if (!usbd_transfer_pending(xfer))
+		return;
+	if (xfer->priv_fifo == (void *)urb) {
 		if (drain) {
 			mtx_unlock(&Giant);
 			usbd_transfer_drain(xfer);
@@ -448,14 +490,21 @@ usb_unlink_urb_sub(struct urb *urb, uint8_t drain)
 {
 	struct usb_host_endpoint *uhe;
 	uint16_t x;
+	uint8_t do_unlock;
+	int err;
 
-	if (urb == NULL) {
+	if (urb == NULL)
 		return (-EINVAL);
-	}
-	mtx_assert(&Giant, MA_OWNED);
+
+	do_unlock = mtx_owned(&Giant) ? 0 : 1;
+	if (do_unlock)
+		mtx_lock(&Giant);
+	if (drain)
+		urb->kill_count++;
 
 	if (urb->endpoint == NULL) {
-		return (-EINVAL);
+		err = -EINVAL;
+		goto done;
 	}
 	uhe = urb->endpoint;
 
@@ -485,7 +534,13 @@ usb_unlink_urb_sub(struct urb *urb, uint8_t drain)
 		usb_unlink_bsd(uhe->bsd_xfer[0], urb, drain);
 		usb_unlink_bsd(uhe->bsd_xfer[1], urb, drain);
 	}
-	return (0);
+	err = 0;
+done:
+	if (drain)
+		urb->kill_count--;
+	if (do_unlock)
+		mtx_unlock(&Giant);
+	return (err);
 }
 
 /*------------------------------------------------------------------------*
@@ -536,6 +591,7 @@ static int
 usb_start_wait_urb(struct urb *urb, usb_timeout_t timeout, uint16_t *p_actlen)
 {
 	int err;
+	uint8_t do_unlock;
 
 	/* you must have a timeout! */
 	if (timeout == 0) {
@@ -546,6 +602,9 @@ usb_start_wait_urb(struct urb *urb, usb_timeout_t timeout, uint16_t *p_actlen)
 	urb->transfer_flags |= URB_WAIT_WAKEUP;
 	urb->transfer_flags &= ~URB_IS_SLEEPING;
 
+	do_unlock = mtx_owned(&Giant) ? 0 : 1;
+	if (do_unlock)
+		mtx_lock(&Giant);
 	err = usb_submit_urb(urb, 0);
 	if (err)
 		goto done;
@@ -563,10 +622,13 @@ usb_start_wait_urb(struct urb *urb, usb_timeout_t timeout, uint16_t *p_actlen)
 	err = urb->status;
 
 done:
-	if (err) {
-		*p_actlen = 0;
-	} else {
-		*p_actlen = urb->actual_length;
+	if (do_unlock)
+		mtx_unlock(&Giant);
+	if (p_actlen != NULL) {
+		if (err)
+			*p_actlen = 0;
+		else
+			*p_actlen = urb->actual_length;
 	}
 	return (err);
 }
@@ -619,7 +681,7 @@ usb_control_msg(struct usb_device *dev, struct usb_host_endpoint *uhe,
 		 * transfers on control endpoint zero:
 		 */
 		err = usbd_do_request_flags(dev,
-		    &Giant, &req, data, USB_SHORT_XFER_OK,
+		    NULL, &req, data, USB_SHORT_XFER_OK,
 		    &actlen, timeout);
 		if (err) {
 			err = -EPIPE;
@@ -1197,9 +1259,7 @@ usb_init_urb(struct urb *urb)
 void
 usb_kill_urb(struct urb *urb)
 {
-	if (usb_unlink_urb_sub(urb, 1)) {
-		/* ignore */
-	}
+	usb_unlink_urb_sub(urb, 1);
 }
 
 /*------------------------------------------------------------------------*
@@ -1265,8 +1325,8 @@ usb_linux_complete(struct usb_xfer *xfer)
 {
 	struct urb *urb;
 
-	urb = xfer->priv_fifo;
-	xfer->priv_fifo = NULL;
+	urb = usbd_xfer_get_priv(xfer);
+	usbd_xfer_set_priv(xfer, NULL);
 	if (urb->complete) {
 		(urb->complete) (urb);
 	}
@@ -1281,13 +1341,13 @@ usb_linux_complete(struct usb_xfer *xfer)
  * used.
  *------------------------------------------------------------------------*/
 static void
-usb_linux_isoc_callback(struct usb_xfer *xfer)
+usb_linux_isoc_callback(struct usb_xfer *xfer, usb_error_t error)
 {
 	usb_frlength_t max_frame = xfer->max_frame_size;
 	usb_frlength_t offset;
 	usb_frcount_t x;
-	struct urb *urb = xfer->priv_fifo;
-	struct usb_host_endpoint *uhe = xfer->priv_sc;
+	struct urb *urb = usbd_xfer_get_priv(xfer);
+	struct usb_host_endpoint *uhe = usbd_xfer_softc(xfer);
 	struct usb_iso_packet_descriptor *uipd;
 
 	DPRINTF("\n");
@@ -1303,8 +1363,17 @@ usb_linux_isoc_callback(struct usb_xfer *xfer)
 
 			for (x = 0; x < urb->number_of_packets; x++) {
 				uipd = urb->iso_frame_desc + x;
+				if (uipd->length > xfer->frlengths[x]) {
+					if (urb->transfer_flags & URB_SHORT_NOT_OK) {
+						/* XXX should be EREMOTEIO */
+						uipd->status = -EPIPE;
+					} else {
+						uipd->status = 0;
+					}
+				} else {
+					uipd->status = 0;
+				}
 				uipd->actual_length = xfer->frlengths[x];
-				uipd->status = 0;
 				if (!xfer->flags.ext_buffer) {
 					usbd_copy_out(xfer->frbuffers, offset,
 					    USB_ADD_BYTES(urb->transfer_buffer,
@@ -1326,8 +1395,8 @@ usb_linux_isoc_callback(struct usb_xfer *xfer)
 		if (xfer->actlen < xfer->sumlen) {
 			/* short transfer */
 			if (urb->transfer_flags & URB_SHORT_NOT_OK) {
-				urb->status = -EPIPE;	/* XXX should be
-							 * EREMOTEIO */
+				/* XXX should be EREMOTEIO */
+				urb->status = -EPIPE;
 			} else {
 				urb->status = 0;
 			}
@@ -1362,11 +1431,15 @@ tr_setup:
 			DPRINTF("Already got a transfer\n");
 
 			/* already got a transfer (should not happen) */
-			urb = xfer->priv_fifo;
+			urb = usbd_xfer_get_priv(xfer);
 		}
 
 		urb->bsd_isread = (uhe->desc.bEndpointAddress & UE_DIR_IN) ? 1 : 0;
 
+		if (xfer->flags.ext_buffer) {
+			/* set virtual address to load */
+			usbd_xfer_set_frame_data(xfer, 0, urb->transfer_buffer, 0);
+		}
 		if (!(urb->bsd_isread)) {
 
 			/* copy out data with regard to the URB */
@@ -1375,7 +1448,7 @@ tr_setup:
 
 			for (x = 0; x < urb->number_of_packets; x++) {
 				uipd = urb->iso_frame_desc + x;
-				xfer->frlengths[x] = uipd->length;
+				usbd_xfer_set_frame_len(xfer, x, uipd->length);
 				if (!xfer->flags.ext_buffer) {
 					usbd_copy_in(xfer->frbuffers, offset,
 					    USB_ADD_BYTES(urb->transfer_buffer,
@@ -1396,16 +1469,10 @@ tr_setup:
 
 			for (x = 0; x < urb->number_of_packets; x++) {
 				uipd = urb->iso_frame_desc + x;
-				xfer->frlengths[x] = max_frame;
+				usbd_xfer_set_frame_len(xfer, x, max_frame);
 			}
 		}
-
-		if (xfer->flags.ext_buffer) {
-			/* set virtual address to load */
-			usbd_set_frame_data(xfer,
-			    urb->transfer_buffer, 0);
-		}
-		xfer->priv_fifo = urb;
+		usbd_xfer_set_priv(xfer, urb);
 		xfer->flags.force_short_xfer = 0;
 		xfer->timeout = urb->timeout;
 		xfer->nframes = urb->number_of_packets;
@@ -1425,6 +1492,7 @@ tr_setup:
 		/* Set zero for "actual_length" */
 		for (x = 0; x < urb->number_of_packets; x++) {
 			urb->iso_frame_desc[x].actual_length = 0;
+			urb->iso_frame_desc[x].status = urb->status;
 		}
 
 		/* call callback */
@@ -1449,15 +1517,15 @@ tr_setup:
  * callback is called.
  *------------------------------------------------------------------------*/
 static void
-usb_linux_non_isoc_callback(struct usb_xfer *xfer)
+usb_linux_non_isoc_callback(struct usb_xfer *xfer, usb_error_t error)
 {
 	enum {
 		REQ_SIZE = sizeof(struct usb_device_request)
 	};
-	struct urb *urb = xfer->priv_fifo;
-	struct usb_host_endpoint *uhe = xfer->priv_sc;
+	struct urb *urb = usbd_xfer_get_priv(xfer);
+	struct usb_host_endpoint *uhe = usbd_xfer_softc(xfer);
 	uint8_t *ptr;
-	usb_frlength_t max_bulk = xfer->max_data_length;
+	usb_frlength_t max_bulk = usbd_xfer_max_len(xfer);
 	uint8_t data_frame = xfer->flags_int.control_xfr ? 1 : 0;
 
 	DPRINTF("\n");
@@ -1469,7 +1537,7 @@ usb_linux_non_isoc_callback(struct usb_xfer *xfer)
 
 			/* don't transfer the setup packet again: */
 
-			xfer->frlengths[0] = 0;
+			usbd_xfer_set_frame_len(xfer, 0, 0);
 		}
 		if (urb->bsd_isread && (!xfer->flags.ext_buffer)) {
 			/* copy in data with regard to the URB */
@@ -1513,7 +1581,7 @@ tr_setup:
 		TAILQ_REMOVE(&uhe->bsd_urb_list, urb, bsd_urb_list);
 		urb->bsd_urb_list.tqe_prev = NULL;
 
-		xfer->priv_fifo = urb;
+		usbd_xfer_set_priv(xfer, urb);
 		xfer->flags.force_short_xfer = 0;
 		xfer->timeout = urb->timeout;
 
@@ -1526,13 +1594,12 @@ tr_setup:
 			if (!xfer->flags.ext_buffer) {
 				usbd_copy_in(xfer->frbuffers, 0,
 				    urb->setup_packet, REQ_SIZE);
+				usbd_xfer_set_frame_len(xfer, 0, REQ_SIZE);
 			} else {
 				/* set virtual address to load */
-				usbd_set_frame_data(xfer,
-				    urb->setup_packet, 0);
+				usbd_xfer_set_frame_data(xfer, 0,
+				    urb->setup_packet, REQ_SIZE);
 			}
-
-			xfer->frlengths[0] = REQ_SIZE;
 
 			ptr = urb->setup_packet;
 
@@ -1567,14 +1634,14 @@ setup_bulk:
 
 		if (xfer->flags.ext_buffer) {
 			/* set virtual address to load */
-			usbd_set_frame_data(xfer, urb->bsd_data_ptr,
-			    data_frame);
+			usbd_xfer_set_frame_data(xfer, data_frame,
+			    urb->bsd_data_ptr, max_bulk);
 		} else if (!urb->bsd_isread) {
 			/* copy out data with regard to the URB */
 			usbd_copy_in(xfer->frbuffers + data_frame, 0,
 			    urb->bsd_data_ptr, max_bulk);
+			usbd_xfer_set_frame_len(xfer, data_frame, max_bulk);
 		}
-		xfer->frlengths[data_frame] = max_bulk;
 		if (xfer->flags_int.control_xfr) {
 			if (max_bulk > 0) {
 				xfer->nframes = 2;
@@ -1606,4 +1673,59 @@ setup_bulk:
 		}
 		goto tr_setup;
 	}
+}
+
+/*------------------------------------------------------------------------*
+ *	usb_fill_bulk_urb
+ *------------------------------------------------------------------------*/
+void
+usb_fill_bulk_urb(struct urb *urb, struct usb_device *udev,
+    struct usb_host_endpoint *uhe, void *buf,
+    int length, usb_complete_t callback, void *arg)
+{
+	urb->dev = udev;
+	urb->endpoint = uhe;
+	urb->transfer_buffer = buf;
+	urb->transfer_buffer_length = length;
+	urb->complete = callback;
+	urb->context = arg;
+}
+
+/*------------------------------------------------------------------------*
+ *	usb_bulk_msg
+ *
+ * NOTE: This function can also be used for interrupt endpoints!
+ *
+ * Return values:
+ *    0: Success
+ * Else: Failure
+ *------------------------------------------------------------------------*/
+int
+usb_bulk_msg(struct usb_device *udev, struct usb_host_endpoint *uhe,
+    void *data, int len, uint16_t *pactlen, usb_timeout_t timeout)
+{
+	struct urb *urb;
+	int err;
+
+	if (uhe == NULL)
+		return (-EINVAL);
+	if (len < 0)
+		return (-EINVAL);
+
+	err = usb_setup_endpoint(udev, uhe, 4096 /* bytes */);
+	if (err)
+		return (err);
+
+	urb = usb_alloc_urb(0, 0);
+	if (urb == NULL)
+		return (-ENOMEM);
+
+        usb_fill_bulk_urb(urb, udev, uhe, data, len,
+	    usb_linux_wait_complete, NULL);
+
+	err = usb_start_wait_urb(urb, timeout, pactlen);
+
+	usb_free_urb(urb);
+
+	return (err);
 }
