@@ -147,7 +147,7 @@ struct svc_rpc_gss_client {
 	int			cl_rpcflavor;	/* RPC pseudo sec flavor */
 	bool_t			cl_done_callback; /* TRUE after call */
 	void			*cl_cookie;	/* user cookie from callback */
-	gid_t			cl_gid_storage[NGROUPS];
+	gid_t			*cl_gid_storage;
 	gss_OID			cl_mech;	/* mechanism */
 	gss_qop_t		cl_qop;		/* quality of protection */
 	uint32_t		cl_seqlast;	/* sequence window origin */
@@ -542,6 +542,7 @@ svc_rpc_gss_create_client(void)
 
 	client = mem_alloc(sizeof(struct svc_rpc_gss_client));
 	memset(client, 0, sizeof(struct svc_rpc_gss_client));
+	client->cl_gid_storage = mem_alloc((ngroups_max + 1) * sizeof(gid_t));
 	refcount_init(&client->cl_refs, 1);
 	sx_init(&client->cl_lock, "GSS-client");
 	getcredhostid(curthread->td_ucred, &hostid);
@@ -589,6 +590,8 @@ svc_rpc_gss_destroy_client(struct svc_rpc_gss_client *client)
 		crfree(client->cl_cred);
 
 	sx_destroy(&client->cl_lock);
+	mem_free(client->cl_gid_storage,
+	    (ngroups_max + 1) * sizeof(gid_t));
 	mem_free(client, sizeof(*client));
 }
 
@@ -734,7 +737,7 @@ svc_rpc_gss_build_ucred(struct svc_rpc_gss_client *client,
 	uc->gid = 65534;
 	uc->gidlist = client->cl_gid_storage;
 
-	numgroups = NGROUPS;
+	numgroups = ngroups_max + 1;
 	maj_stat = gss_pname_to_unix_cred(&min_stat, name, client->cl_mech,
 	    &uc->uid, &uc->gid, &numgroups, &uc->gidlist[0]);
 	if (GSS_ERROR(maj_stat))

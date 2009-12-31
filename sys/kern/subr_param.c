@@ -88,6 +88,7 @@ int	maxfiles;			/* sys. wide open files limit */
 int	maxfilesperproc;		/* per-proc open files limit */
 int	ncallout;			/* maximum # of timer events */
 int	nbuf;
+int	ngroups_max;			/* max # groups per process */
 int	nswbuf;
 long	maxswzone;			/* max swmeta KVA storage */
 long	maxbcache;			/* max buffer cache KVA storage */
@@ -228,6 +229,15 @@ init_param1(void)
 	TUNABLE_ULONG_FETCH("kern.maxssiz", &maxssiz);
 	sgrowsiz = SGROWSIZ;
 	TUNABLE_ULONG_FETCH("kern.sgrowsiz", &sgrowsiz);
+
+	/*
+	 * Let the user set ngroups_max, but don't let it go below
+	 * NGROUPS_MAX which would violate POSIX.1-2008.
+	 */
+	ngroups_max = NGROUPS_MAX;
+	TUNABLE_INT_FETCH("kern.ngroups", &ngroups_max);
+	if (ngroups_max < NGROUPS_MAX)
+		ngroups_max = NGROUPS_MAX;
 }
 
 /*

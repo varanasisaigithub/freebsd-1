@@ -406,11 +406,11 @@ typedef struct {
 /*
  * Store uid, gid creds that handle maps to.
  * Since some BSDen define cr_gid as cr_groups[0], I'll just keep them
- * all in nfsc_groups[NGROUPS + 1].
+ * all in nfsc_groups[NFS_MAXGRPS + 1].
  */
 struct nfscred {
 	uid_t 		nfsc_uid;
-	gid_t		nfsc_groups[NGROUPS + 1];
+	gid_t		nfsc_groups[NFS_MAXGRPS + 1];
 	int		nfsc_ngroups;
 };
 

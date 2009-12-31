@@ -285,7 +285,7 @@ getgroups(struct thread *td, register struct getgroups_args *uap)
 	u_int ngrp;
 	int error;
 
-	ngrp = MIN(uap->gidsetsize, NGROUPS);
+	ngrp = MIN(uap->gidsetsize, ngroups_max + 1);
 	groups = malloc(ngrp * sizeof(*groups), M_TEMP, M_WAITOK);
 	error = kern_getgroups(td, &ngrp, groups);
 	if (error)
@@ -799,7 +799,7 @@ setgroups(struct thread *td, struct setgroups_args *uap)
 	gid_t *groups = NULL;
 	int error;
 
-	if (uap->gidsetsize > NGROUPS)
+	if (uap->gidsetsize > ngroups_max + 1)
 		return (EINVAL);
 	groups = malloc(uap->gidsetsize * sizeof(gid_t), M_TEMP, M_WAITOK);
 	error = copyin(uap->gidset, groups, uap->gidsetsize * sizeof(gid_t));
@@ -818,7 +818,7 @@ kern_setgroups(struct thread *td, u_int ngrp, gid_t *groups)
 	struct ucred *newcred, *oldcred;
 	int error;
 
-	if (ngrp > NGROUPS)
+	if (ngrp > ngroups_max + 1)
 		return (EINVAL);
 	AUDIT_ARG(groupset, groups, ngrp);
 	newcred = crget();
@@ -2038,14 +2038,14 @@ crsetgroups_locked(struct ucred *cr, int ngrp, gid_t *groups)
 
 /*
  * Copy groups in to a credential after expanding it if required.
- * Truncate the list to NGROUPS if it is too large.
+ * Truncate the list to (ngroups_max + 1) if it is too large.
  */
 void
 crsetgroups(struct ucred *cr, int ngrp, gid_t *groups)
 {
 
-	if (ngrp > NGROUPS)
-		ngrp = NGROUPS;
+	if (ngrp > ngroups_max + 1)
+		ngrp = ngroups_max + 1;
 
 	crextend(cr, ngrp);
 	crsetgroups_locked(cr, ngrp, groups);
