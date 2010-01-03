@@ -646,7 +646,7 @@ evalcommand(union node *cmd, int flags, struct backcmd *backcmd)
 		out2str(ps4val());
 		for (sp = varlist.list ; sp ; sp = sp->next) {
 			if (sep != 0)
-				outc(' ', &errout);
+				out2c(' ');
 			p = sp->text;
 			while (*p != '=' && *p != '\0')
 				out2c(*p++);
@@ -658,7 +658,7 @@ evalcommand(union node *cmd, int flags, struct backcmd *backcmd)
 		}
 		for (sp = arglist.list ; sp ; sp = sp->next) {
 			if (sep != 0)
-				outc(' ', &errout);
+				out2c(' ');
 			/* Disambiguate command looking like assignment. */
 			if (sp == arglist.list &&
 					strchr(sp->text, '=') != NULL &&
@@ -670,7 +670,7 @@ evalcommand(union node *cmd, int flags, struct backcmd *backcmd)
 				out2qstr(sp->text);
 			sep = ' ';
 		}
-		outc('\n', &errout);
+		out2c('\n');
 		flushout(&errout);
 	}
 
@@ -722,10 +722,10 @@ evalcommand(union node *cmd, int flags, struct backcmd *backcmd)
 					break;
 				if ((cmdentry.u.index = find_builtin(*argv,
 				    &cmdentry.special)) < 0) {
-					outfmt(&errout, "%s: not found\n", *argv);
-					exitstatus = 127;
-					flushout(&errout);
-					return;
+					cmdentry.u.index = BLTINCMD;
+					argv--;
+					argc++;
+					break;
 				}
 				if (cmdentry.u.index != BLTINCMD)
 					break;
@@ -832,6 +832,7 @@ evalcommand(union node *cmd, int flags, struct backcmd *backcmd)
 			memout.nextc = memout.buf;
 			memout.bufsize = 64;
 			mode |= REDIR_BACKQ;
+			cmdentry.special = 0;
 		}
 		savecmdname = commandname;
 		savetopfile = getcurrentfile();
@@ -865,20 +866,21 @@ cmddone:
 			}
 		}
 		handler = savehandler;
-		if (e != -1) {
-			if ((e != EXERROR && e != EXEXEC)
-			    || cmdentry.special)
-				exraise(e);
-			popfilesupto(savetopfile);
-			FORCEINTON;
-		}
-		if (cmdentry.u.index != EXECCMD)
-			popredir();
 		if (flags == EV_BACKCMD) {
 			backcmd->buf = memout.buf;
 			backcmd->nleft = memout.nextc - memout.buf;
 			memout.buf = NULL;
 		}
+		if (e != -1) {
+			if ((e != EXERROR && e != EXEXEC)
+			    || cmdentry.special)
+				exraise(e);
+			popfilesupto(savetopfile);
+			if (flags != EV_BACKCMD)
+				FORCEINTON;
+		}
+		if (cmdentry.u.index != EXECCMD)
+			popredir();
 	} else {
 #ifdef DEBUG
 		trputs("normal command:  ");  trargs(argv);
@@ -943,12 +945,17 @@ prehash(union node *n)
  */
 
 /*
- * No command given, or a bltin command with no arguments.
+ * No command given, a bltin command with no arguments, or a bltin command
+ * with an invalid name.
  */
 
 int
-bltincmd(int argc __unused, char **argv __unused)
+bltincmd(int argc, char **argv)
 {
+	if (argc > 1) {
+		out2fmt_flush("%s: not found\n", argv[1]);
+		return 127;
+	}
 	/*
 	 * Preserve exitstatus of a previous possible redirection
 	 * as POSIX mandates
