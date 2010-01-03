@@ -452,7 +452,7 @@ struct bsdcred {
 	short uid;		/* cached uid */
 	short gid;		/* cached gid */
 	short grouplen;	/* length of cached groups */
-	short groups[NGROUPS];	/* cached groups */
+	short groups[NGRPS];	/* cached groups */
 };
 
 /*
