@@ -968,17 +968,21 @@ dummynet_send(struct mbuf *m)
 	for (; m != NULL; m = n) {
 		struct ifnet *ifp;
 		int dst;
+        	struct m_tag *tag;
 
 		n = m->m_nextpkt;
 		m->m_nextpkt = NULL;
-		if (m_tag_first(m) == NULL) {
+		tag = m_tag_first(m);
+		if (tag == NULL) {
 			dst = DIR_DROP;
 		} else {
 			struct dn_pkt_tag *pkt = dn_tag_get(m);
 			/* extract the dummynet info, rename the tag */
 			dst = pkt->dn_dir;
 			ifp = pkt->ifp;
-			// XXX rename the tag
+			/* rename the tag so it carries reinject info */
+			tag->m_tag_cookie = MTAG_IPFW_RULE;
+			tag->m_tag_id = 0;
 		}
 
 		switch (dst) {

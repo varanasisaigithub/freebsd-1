@@ -81,7 +81,7 @@ ip_divert_packet_t *ip_divert_ptr = NULL;
 ng_ipfw_input_t *ng_ipfw_input_p = NULL;
 
 /* Forward declarations. */
-static void	ipfw_divert(struct mbuf **, int, int);
+static int ipfw_divert(struct mbuf **, int, struct ipfw_rule_ref *, int);
 
 #ifdef SYSCTL_NODE
 SYSCTL_DECL(_net_inet_ip_fw);
@@ -205,17 +205,9 @@ again:
 			ret = EACCES;
 			break; /* i.e. drop */
 		}
-		tag = m_tag_alloc(MTAG_IPFW_RULE, 0,
-		    sizeof(struct ipfw_rule_ref), M_NOWAIT);
-		if (tag == NULL) {
-			ret = EACCES;
-			break; /* i.e. drop */
-		}
-		*((struct ipfw_rule_ref *)(tag+1)) = args.rule;
-		m_tag_prepend(*m0, tag);
-
-		ipfw_divert(m0, dir, (ipfw == IP_FW_TEE) ? 1 : 0);
-		/* continue processing for the original packet (tee) */
+		ret = ipfw_divert(m0, dir, &args.rule,
+			(ipfw == IP_FW_TEE) ? 1 : 0);
+		/* continue processing for the original packet (tee). */
 		if (*m0)
 			goto again;
 		break;
@@ -250,8 +242,10 @@ again:
 	return ret;
 }
 
-static void
-ipfw_divert(struct mbuf **m0, int incoming, int tee)
+/* do the divert, return 1 on error 0 on success */
+static int
+ipfw_divert(struct mbuf **m0, int incoming, struct ipfw_rule_ref *rule,
+	int tee)
 {
 	/*
 	 * ipfw_chk() has already tagged the packet with the divert tag.
@@ -260,6 +254,7 @@ ipfw_divert(struct mbuf **m0, int incoming, int tee)
 	 */
 	struct mbuf *clone;
 	struct ip *ip;
+	struct m_tag *tag;
 
 	/* Cloning needed for tee? */
 	if (tee == 0) {
@@ -271,7 +266,7 @@ ipfw_divert(struct mbuf **m0, int incoming, int tee)
 		 * chain and continue with the tee-ed packet.
 		 */
 		if (clone == NULL)
-			return;
+			return 1;
 	}
 
 	/*
@@ -290,7 +285,7 @@ ipfw_divert(struct mbuf **m0, int incoming, int tee)
 		SET_HOST_IPLEN(ip); /* ip_reass wants host order */
 		reass = ip_reass(clone); /* Reassemble packet. */
 		if (reass == NULL)
-			return;
+			return 0; /* not an error */
 		/* if reass = NULL then it was consumed by ip_reass */
 		/*
 		 * IP header checksum fixup after reassembly and leave header
@@ -306,9 +301,19 @@ ipfw_divert(struct mbuf **m0, int incoming, int tee)
 			ip->ip_sum = in_cksum(reass, hlen);
 		clone = reass;
 	}
+	/* attach a tag to the packet with the reinject info */
+	tag = m_tag_alloc(MTAG_IPFW_RULE, 0,
+		    sizeof(struct ipfw_rule_ref), M_NOWAIT);
+	if (tag == NULL) {
+		FREE_PKT(clone);
+		return 1;
+	}
+	*((struct ipfw_rule_ref *)(tag+1)) = *rule;
+	m_tag_prepend(clone, tag);
 
 	/* Do the dirty job... */
 	ip_divert_ptr(clone, incoming);
+	return 0;
 }
 
 /*
