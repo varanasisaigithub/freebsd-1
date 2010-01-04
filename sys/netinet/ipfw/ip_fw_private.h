@@ -289,6 +289,9 @@ int ipfw_del_table_entry(struct ip_fw_chain *ch, uint16_t tbl, in_addr_t addr,
 int ipfw_count_table(struct ip_fw_chain *ch, uint32_t tbl, uint32_t *cnt);
 int ipfw_dump_table(struct ip_fw_chain *ch, ipfw_table *tbl);
 
+/* hooks for divert */
+extern void (*ip_divert_ptr)(struct mbuf *m, int incoming);
+
 /* In ip_fw_nat.c */
 
 extern struct cfg_nat *(*lookup_nat_ptr)(struct nat_list *, int);

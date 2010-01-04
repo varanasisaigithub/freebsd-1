@@ -59,7 +59,6 @@ __FBSDID("$FreeBSD$");
 #include <netinet/ip_var.h>
 #include <netinet/ip_fw.h>
 #include <netinet/ipfw/ip_fw_private.h>
-#include <netinet/ip_divert.h>
 #include <netinet/ip_dummynet.h>
 #include <netgraph/ng_ipfw.h>
 
@@ -76,7 +75,7 @@ static VNET_DEFINE(int, fw6_enable) = 1;
 int ipfw_chg_hook(SYSCTL_HANDLER_ARGS);
 
 /* Divert hooks. */
-ip_divert_packet_t *ip_divert_ptr = NULL;
+void (*ip_divert_ptr)(struct mbuf *m, int incoming);
 
 /* ng_ipfw hooks. */
 ng_ipfw_input_t *ng_ipfw_input_p = NULL;

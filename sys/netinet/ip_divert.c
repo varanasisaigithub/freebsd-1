@@ -75,7 +75,6 @@ __FBSDID("$FreeBSD$");
 #include <netinet/ip_var.h>
 #include <netinet/ip_fw.h>
 #include <netinet/ipfw/ip_fw_private.h>
-#include <netinet/ip_divert.h>
 #ifdef SCTP
 #include <netinet/sctp_crc32.h>
 #endif
@@ -194,7 +193,7 @@ div_destroy(void)
  * IPPROTO_DIVERT is not in the real IP protocol number space; this
  * function should never be called.  Just in case, drop any packets.
  */
-void
+static void
 div_input(struct mbuf *m, int off)
 {
 
@@ -596,7 +595,7 @@ div_send(struct socket *so, int flags, struct mbuf *m, struct sockaddr *nam,
 	return div_output(so, m, (struct sockaddr_in *)nam, control);
 }
 
-void
+static void
 div_ctlinput(int cmd, struct sockaddr *sa, void *vip)
 {
         struct in_addr faddr;
@@ -809,5 +808,5 @@ static moduledata_t ipdivertmod = {
 };
 
 DECLARE_MODULE(ipdivert, ipdivertmod, SI_SUB_PROTO_IFATTACHDOMAIN, SI_ORDER_ANY);
-MODULE_DEPEND(dummynet, ipfw, 2, 2, 2);
+MODULE_DEPEND(ipdivert, ipfw, 2, 2, 2);
 MODULE_VERSION(ipdivert, 1);
