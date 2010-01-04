@@ -303,6 +303,8 @@ del_entry(struct ip_fw_chain *chain, u_int32_t arg)
 					n++;
 			}
 		}
+		if (n == 0 && arg == 0)
+			break; /* special case, flush on empty ruleset */
 		/* allocate the map, if needed */
 		if (n > 0)
 			map = get_map(chain, -n, 1 /* locked */);

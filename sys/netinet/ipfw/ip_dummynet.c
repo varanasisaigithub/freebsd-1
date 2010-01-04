@@ -462,15 +462,10 @@ heap_free(struct dn_heap *h)
  */
 
 /*
- * Dispose a packet in dummynet. Use an inline functions so if we
+ * Dispose a list of packet. Use an inline functions so if we
  * need to free extra state associated to a packet, this is a
  * central point to do it.
  */
-static __inline void *dn_free_pkt(struct mbuf *m)
-{
-	FREE_PKT(m);
-	return NULL;
-}
 
 static __inline void dn_free_pkts(struct mbuf *mnext)
 {
@@ -478,7 +473,7 @@ static __inline void dn_free_pkts(struct mbuf *mnext)
 
 	while ((m = mnext) != NULL) {
 		mnext = m->m_nextpkt;
-		dn_free_pkt(m);
+		FREE_PKT(m);
 	}
 }
 
@@ -1032,12 +1027,12 @@ dummynet_send(struct mbuf *m)
 
 		case DIR_DROP:
 			/* drop the packet after some time */
-			dn_free_pkt(m);
+			FREE_PKT(m);
 			break;
 
 		default:
 			printf("dummynet: bad switch %d!\n", dst);
-			dn_free_pkt(m);
+			FREE_PKT(m);
 			break;
 		}
 	}
@@ -1564,7 +1559,8 @@ dropit:
 	if (q)
 		q->drops++;
 	DUMMYNET_UNLOCK();
-	*m0 = dn_free_pkt(m);
+	FREE_PKT(m);
+	*m0 = NULL;
 	return ((fs && (fs->flags_fs & DN_NOERROR)) ? 0 : ENOBUFS);
 }
 

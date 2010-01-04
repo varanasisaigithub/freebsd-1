@@ -221,22 +221,23 @@ ng_ipfw_findhook1(node_p node, u_int16_t rulenum)
 static int
 ng_ipfw_rcvdata(hook_p hook, item_p item)
 {
-	struct ipfw_start_info	*ngit;
+	struct ipfw_rule_ref	*tag;
 	struct mbuf *m;
 
 	NGI_GET_M(item, m);
 	NG_FREE_ITEM(item);
 
-	ngit = (struct ipfw_start_info *)
-		m_tag_locate(m, NGM_IPFW_COOKIE, 0, NULL);
-	if (ngit == NULL) {
+	tag = (struct ipfw_rule_ref *)
+		m_tag_locate(m, MTAG_IPFW_RULE, 0, NULL);
+	if (tag == NULL) {
 		NG_FREE_M(m);
 		return (EINVAL);	/* XXX: find smth better */
 	};
 
-	switch (ngit->info) {
-	case DIR_OUT:
-	    {
+	if (tag->info & IPFW_INFO_IN) {
+		ip_input(m);
+		return (0);
+	} else {
 		struct ip *ip;
 
 		if (m->m_len < sizeof(struct ip) &&
@@ -248,23 +249,13 @@ ng_ipfw_rcvdata(hook_p hook, item_p item)
 		SET_HOST_IPLEN(ip);
 
 		return ip_output(m, NULL, NULL, IP_FORWARDING, NULL, NULL);
-	    }
-	case DIR_IN:
-		ip_input(m);
-		return (0);
-	default:
-		panic("ng_ipfw_rcvdata: bad dir %u", ngit->dir);
 	}	
-
-	/* not reached */
-	return (0);
 }
 
 static int
 ng_ipfw_input(struct mbuf **m0, int dir, struct ip_fw_args *fwa, int tee)
 {
 	struct mbuf *m;
-	struct ipfw_start_info *ngit;
 	struct ip *ip;
 	hook_p	hook;
 	int error = 0;
@@ -273,7 +264,7 @@ ng_ipfw_input(struct mbuf **m0, int dir, struct ip_fw_args *fwa, int tee)
 	 * Node must be loaded and corresponding hook must be present.
 	 */
 	if (fw_node == NULL || 
-	   (hook = ng_ipfw_findhook1(fw_node, fwa->cookie)) == NULL) {
+	   (hook = ng_ipfw_findhook1(fw_node, fwa->rule.info)) == NULL) {
 		if (tee == 0)
 			m_freem(*m0);
 		return (ESRCH);		/* no hook associated with this rule */
@@ -286,19 +277,19 @@ ng_ipfw_input(struct mbuf **m0, int dir, struct ip_fw_args *fwa, int tee)
 	 */
 	if (tee == 0) {
 		struct m_tag *tag;
-		struct ipfw_start_info *ngit;
+		struct ipfw_rule_ref *r;
 		m = *m0;
 		*m0 = NULL;	/* it belongs now to netgraph */
 
-		tag = m_tag_alloc(NGM_IPFW_COOKIE, sizeof(*mt),
+		tag = m_tag_alloc(MTAG_IPFW_RULE, 0, sizeof(*r),
 			M_NOWAIT|M_ZERO);
-		if (tagn == NULL) {
+		if (tag == NULL) {
 			m_freem(m);
 			return (ENOMEM);
 		}
-		ngit = (struct ipfw_start_info *)(tag + 1);
-		*ngit = fwa->start
-		ngit->info = dir;
+		r = (struct ipfw_rule_ref *)(tag + 1);
+		*r = fwa->rule;
+		r->info = dir ? IPFW_INFO_IN : IPFW_INFO_OUT;
 		m_tag_prepend(m, tag);
 
 	} else
