@@ -62,6 +62,7 @@ __FBSDID("$FreeBSD$");
 #include <netinet/ip_divert.h>
 #include <netinet/ip_dummynet.h>
 #include <netgraph/ng_ipfw.h>
+
 #include <machine/in_cksum.h>
 
 static VNET_DEFINE(int, fw_enable) = 1;
