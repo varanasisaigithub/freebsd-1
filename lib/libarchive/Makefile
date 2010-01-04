@@ -22,8 +22,6 @@ DPADD+=	${LIBCRYPTO}
 LDADD+=	-lcrypto
 .endif
 
-WARNS?=	6
-
 # Headers to be installed in /usr/include
 INCS=	archive.h archive_entry.h
 
@@ -51,6 +49,7 @@ SRCS=	archive_check_magic.c				\
 	archive_read_support_compression_gzip.c		\
 	archive_read_support_compression_none.c		\
 	archive_read_support_compression_program.c	\
+	archive_read_support_compression_uu.c		\
 	archive_read_support_compression_xz.c		\
 	archive_read_support_format_all.c		\
 	archive_read_support_format_ar.c		\
@@ -87,6 +86,7 @@ SRCS=	archive_check_magic.c				\
 	archive_write_set_format_pax.c			\
 	archive_write_set_format_shar.c			\
 	archive_write_set_format_ustar.c		\
+	archive_write_set_format_zip.c			\
 	filter_fork.c
 
 # Man pages to be installed.

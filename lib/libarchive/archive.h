@@ -127,13 +127,13 @@ extern "C" {
  *             (ARCHIVE_API_VERSION * 1000000 + ARCHIVE_API_FEATURE * 1000)
  * #endif
  */
-#define	ARCHIVE_VERSION_NUMBER 2007000
+#define	ARCHIVE_VERSION_NUMBER 2007901
 __LA_DECL int		archive_version_number(void);
 
 /*
  * Textual name/version of the library, useful for version displays.
  */
-#define	ARCHIVE_VERSION_STRING "libarchive 2.7.0"
+#define	ARCHIVE_VERSION_STRING "libarchive 2.7.901a"
 __LA_DECL const char *	archive_version_string(void);
 
 #if ARCHIVE_VERSION_NUMBER < 3000000
@@ -241,6 +241,8 @@ typedef int	archive_close_callback(struct archive *, void *_client_data);
 #define	ARCHIVE_COMPRESSION_PROGRAM	4
 #define	ARCHIVE_COMPRESSION_LZMA	5
 #define	ARCHIVE_COMPRESSION_XZ		6
+#define	ARCHIVE_COMPRESSION_UU		7
+#define	ARCHIVE_COMPRESSION_RPM		8
 
 /*
  * Codes returned by archive_format.
@@ -282,6 +284,7 @@ typedef int	archive_close_callback(struct archive *, void *_client_data);
 #define	ARCHIVE_FORMAT_AR_BSD			(ARCHIVE_FORMAT_AR | 2)
 #define	ARCHIVE_FORMAT_MTREE			0x80000
 #define	ARCHIVE_FORMAT_RAW			0x90000
+#define	ARCHIVE_FORMAT_XAR			0xA0000
 
 /*-
  * Basic outline for reading an archive:
@@ -316,6 +319,7 @@ __LA_DECL int		 archive_read_support_compression_program_signature
 				(struct archive *, const char *,
 				    const void * /* match */, size_t);
 
+__LA_DECL int		 archive_read_support_compression_uu(struct archive *);
 __LA_DECL int		 archive_read_support_compression_xz(struct archive *);
 
 __LA_DECL int		 archive_read_support_format_all(struct archive *);
@@ -538,6 +542,7 @@ __LA_DECL int		 archive_write_set_format_pax_restricted(struct archive *);
 __LA_DECL int		 archive_write_set_format_shar(struct archive *);
 __LA_DECL int		 archive_write_set_format_shar_dump(struct archive *);
 __LA_DECL int		 archive_write_set_format_ustar(struct archive *);
+__LA_DECL int		 archive_write_set_format_zip(struct archive *);
 __LA_DECL int		 archive_write_open(struct archive *, void *,
 		     archive_open_callback *, archive_write_callback *,
 		     archive_close_callback *);
