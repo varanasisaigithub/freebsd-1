@@ -55,15 +55,6 @@ divert_cookie(struct m_tag *mtag)
 	return ((struct ipfw_rule_ref *)(mtag+1))->rulenum;
 }
 
-/*
- * Return the divert info associated with the mbuf; if any.
- */
-static __inline u_int32_t
-divert_info(struct m_tag *mtag)
-{
-	return ((struct ipfw_rule_ref *)(mtag+1))->info;
-}
-
 typedef	void ip_divert_packet_t(struct mbuf *m, int incoming);
 extern	ip_divert_packet_t *ip_divert_ptr;
 

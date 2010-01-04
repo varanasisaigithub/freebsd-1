@@ -799,14 +799,6 @@ ipfw_chk(struct ip_fw_args *args)
 	int ucred_lookup = 0;
 
 	/*
-	 * divinput_flags	If non-zero, set to the IP_FW_DIVERT_*_FLAG
-	 *	associated with a packet input on a divert socket.  This
-	 *	will allow to distinguish traffic and its direction when
-	 *	it originates from a divert socket.
-	 */
-	u_int divinput_flags = 0;
-
-	/*
 	 * oif | args->oif	If NULL, ipfw_chk has been called on the
 	 *	inbound path (ether_input, ip_input).
 	 *	If non-NULL, ipfw_chk has been called on the outbound path
@@ -864,7 +856,6 @@ ipfw_chk(struct ip_fw_args *args)
 	int dyn_dir = MATCH_UNKNOWN;
 	ipfw_dyn_rule *q = NULL;
 	struct ip_fw_chain *chain = &V_layer3_chain;
-	struct m_tag *mtag;
 
 	/*
 	 * We store in ulp a pointer to the upper layer protocol header.
@@ -1152,10 +1143,6 @@ do {								\
 	} else {
 		f_pos = 0;
 	}
-#if 0 // XXX to be fixed
-		divinput_flags = divert_info(mtag) &
-		    (IP_FW_DIVERT_OUTPUT_FLAG | IP_FW_DIVERT_LOOPBACK_FLAG);
-#endif
 
 	/*
 	 * Now scan the rules, and parse microinstructions for each rule.
@@ -1306,10 +1293,15 @@ do {								\
 				break;
 
 			case O_DIVERTED:
-				match = (cmd->arg1 & 1 && divinput_flags &
-				    IP_FW_DIVERT_LOOPBACK_FLAG) ||
-					(cmd->arg1 & 2 && divinput_flags &
-				    IP_FW_DIVERT_OUTPUT_FLAG);
+			    {
+				/* For diverted packets, args->rule.info
+				 * contains the divert port (in host format)
+				 * reason and direction.
+	 			 */
+				uint32_t i = args->rule.info;
+				match = (i&IPFW_IS_MASK) == IPFW_IS_DIVERT &&
+				    cmd->arg1 & ((i & IPFW_INFO_IN) ? 1 : 2);
+			    }
 				break;
 
 			case O_PROTO:
@@ -1729,6 +1721,7 @@ do {								\
 				break;
 
 			case O_TAG: {
+				struct m_tag *mtag;
 				uint32_t tag = (cmd->arg1 == IP_FW_TABLEARG) ?
 				    tablearg : cmd->arg1;
 
@@ -1761,6 +1754,7 @@ do {								\
 				break;
 
 			case O_TAGGED: {
+				struct m_tag *mtag;
 				uint32_t tag = (cmd->arg1 == IP_FW_TABLEARG) ?
 				    tablearg : cmd->arg1;
 
@@ -1903,8 +1897,10 @@ do {								\
 				set_match(args, f_pos, chain);
 				args->rule.info = (cmd->arg1 == IP_FW_TABLEARG) ?
 					tablearg : cmd->arg1;
-				if (cmd->opcode == O_QUEUE)
-					args->rule.info |= 0x80000000;
+				if (cmd->opcode == O_PIPE)
+					args->rule.info |= IPFW_IS_PIPE;
+				if (V_fw_one_pass)
+					args->rule.info |= IPFW_ONEPASS;
 				retval = IP_FW_DUMMYNET;
 				l = 0;          /* exit inner loop */
 				done = 1;       /* exit outer loop */
@@ -1917,6 +1913,8 @@ do {								\
 				/* otherwise this is terminal */
 				l = 0;		/* exit inner loop */
 				done = 1;	/* exit outer loop */
+				retval = (cmd->opcode == O_DIVERT) ?
+					IP_FW_DIVERT : IP_FW_TEE;
 				set_match(args, f_pos, chain);
 				args->rule.info = (cmd->arg1 == IP_FW_TABLEARG) ?
 				    tablearg : cmd->arg1;

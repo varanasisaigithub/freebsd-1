@@ -110,33 +110,35 @@ ipfw_check_hook(void *arg, struct mbuf **m0, struct ifnet *ifp, int dir,
 	struct m_tag *tag;
 	int ipfw;
 	int ret;
-#ifdef IPFIREWALL_FORWARD
-	struct m_tag *fwd_tag;
-#endif
+
+	/* all the processing now uses ip_len in net format */
+	SET_NET_IPLEN(mtod(*m0, struct ip *));
 
 	/* convert dir to IPFW values */
 	dir = (dir == PFIL_IN) ? DIR_IN : DIR_OUT;
 	bzero(&args, sizeof(args));
 
 again:
+	/*
+	 * extract and remove the tag if present. If we are left
+	 * with onepass, optimize the outgoing path.
+	 */
 	tag = m_tag_locate(*m0, MTAG_IPFW_RULE, 0, NULL);
 	if (tag != NULL) {
 		args.rule = *((struct ipfw_rule_ref *)(tag+1));
 		m_tag_delete(*m0, tag);
+		if (args.rule.info & IPFW_ONEPASS) {
+			SET_HOST_IPLEN(mtod(*m0, struct ip *));
+			return 0;
+		}
 	}
 
 	args.m = *m0;
 	args.oif = dir == DIR_OUT ? ifp : NULL;
 	args.inp = inp;
 
-	/* all the processing now uses ip_len in net format */
-	SET_NET_IPLEN(mtod(*m0, struct ip *));
-
-	if (V_fw_one_pass == 0 || args.rule.slot == 0) {
-		ipfw = ipfw_chk(&args);
-		*m0 = args.m;
-	} else
-		ipfw = IP_FW_PASS;
+	ipfw = ipfw_chk(&args);
+	*m0 = args.m;
 
 	KASSERT(*m0 != NULL || ipfw == IP_FW_DENY, ("%s: m0 is NULL",
 	    __func__));
@@ -151,6 +153,9 @@ again:
 #ifndef IPFIREWALL_FORWARD
 		ret = EACCES;
 #else
+	    {
+		struct m_tag *fwd_tag;
+
 		/* Incoming packets should not be tagged so we do not
 		 * m_tag_find. Outgoing packets may be tagged, so we
 		 * reuse the tag if present.
@@ -172,6 +177,7 @@ again:
 
 		if (in_localip(args.next_hop->sin_addr))
 			(*m0)->m_flags |= M_FASTFWD_OURS;
+	    }
 #endif
 		break;
 
