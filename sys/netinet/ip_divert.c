@@ -220,7 +220,6 @@ divert_packet(struct mbuf *m, int incoming)
 
 	mtag = m_tag_find(m, PACKET_TAG_DIVERT, NULL);
 	if (mtag == NULL) {
-		printf("%s: no divert tag\n", __func__);
 		m_freem(m);
 		return;
 	}
@@ -301,9 +300,6 @@ divert_packet(struct mbuf *m, int incoming)
 	/* Put packet on socket queue, if any */
 	sa = NULL;
 	nport = htons((u_int16_t)divert_info(mtag));
-	printf("divert rule %d %s to port %d\n", divsrc.sin_port,
-		incoming ? "in" : "out",
-		ntohs(nport));
 	INP_INFO_RLOCK(&V_divcbinfo);
 	LIST_FOREACH(inp, &V_divcb, inp_list) {
 		/* XXX why does only one socket match? */
@@ -360,7 +356,6 @@ div_output(struct socket *so, struct mbuf *m, struct sockaddr_in *sin,
 	mtag = m_tag_locate(m, MTAG_IPFW_RULE, 0, NULL);
 	if (mtag == NULL) {
 		/* this should be normal */
-		printf("create divert tag\n");
 		mtag = m_tag_alloc(MTAG_IPFW_RULE, 0,
 		    sizeof(struct ipfw_rule_ref), M_NOWAIT | M_ZERO);
 		if (mtag == NULL) {
@@ -371,9 +366,6 @@ div_output(struct socket *so, struct mbuf *m, struct sockaddr_in *sin,
 	}
 	dt = (struct ipfw_rule_ref *)(mtag+1);
 
-	printf("%s sin %p dst rule %d addr 0x%x\n", __FUNCTION__,
-		sin, sin? sin->sin_port : -1,
-		sin ? sin->sin_addr.s_addr : 0xdeaddead);
 	/* Loopback avoidance and state recovery */
 	if (sin) {
 		int i;
@@ -470,7 +462,6 @@ div_output(struct socket *so, struct mbuf *m, struct sockaddr_in *sin,
 		}
 	} else {
 		dt->info |= IP_FW_DIVERT_LOOPBACK_FLAG;
-		printf("divert to loopback\n");
 		if (m->m_pkthdr.rcvif == NULL) {
 			/*
 			 * No luck with the name, check by IP address.
@@ -483,7 +474,6 @@ div_output(struct socket *so, struct mbuf *m, struct sockaddr_in *sin,
 			sin->sin_port = 0;
 			ifa = ifa_ifwithaddr((struct sockaddr *) sin);
 			if (ifa == NULL) {
-				printf("%s ifa not found ???\n", __FUNCTION__);
 				error = EADDRNOTAVAIL;
 				goto cantsend;
 			}
