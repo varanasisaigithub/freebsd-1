@@ -145,7 +145,8 @@ evalcmd(int argc, char **argv)
                         p = grabstackstr(concat);
                 }
                 evalstring(p, builtin_flags & EV_TESTED);
-        }
+        } else
+                exitstatus = 0;
         return exitstatus;
 }
 
@@ -160,9 +161,11 @@ evalstring(char *s, int flags)
 	union node *n;
 	struct stackmark smark;
 	int flags_exit;
+	int any;
 
 	flags_exit = flags & EV_EXIT;
 	flags &= ~EV_EXIT;
+	any = 0;
 	setstackmark(&smark);
 	setinputstring(s, 1);
 	while ((n = parsecmd(0)) != NEOF) {
@@ -171,11 +174,14 @@ evalstring(char *s, int flags)
 				evaltree(n, flags | EV_EXIT);
 			else
 				evaltree(n, flags);
+			any = 1;
 		}
 		popstackmark(&smark);
 	}
 	popfile();
 	popstackmark(&smark);
+	if (!any)
+		exitstatus = 0;
 	if (flags_exit)
 		exitshell(exitstatus);
 }
@@ -635,7 +641,7 @@ evalcommand(union node *cmd, int flags, struct backcmd *backcmd)
 	char *lastarg;
 	int realstatus;
 	int do_clearcmdentry;
-	char *path = pathval();
+	const char *path = pathval();
 
 	/* First expand the arguments. */
 	TRACE(("evalcommand(%p, %d) called\n", (void *)cmd, flags));

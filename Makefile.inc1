@@ -127,7 +127,7 @@ TARGET=		${TARGET_ARCH:C/mipse[lb]/mips/:C/armeb/arm}
 TARGET?=	${MACHINE}
 TARGET_ARCH?=	${MACHINE_ARCH}
 
-KNOWN_ARCHES?=	amd64 arm armeb/arm i386 i386/pc98 ia64 mipsel/mips mipseb/mips powerpc sparc64 sparc64/sun4v
+KNOWN_ARCHES?=	amd64 arm armeb/arm i386 i386/pc98 ia64 mipsel/mips mipseb/mips powerpc powerpc65/powerpc sparc64 sparc64/sun4v
 .if ${TARGET} == ${TARGET_ARCH}
 _t=		${TARGET}
 .else
@@ -261,34 +261,47 @@ WMAKEENV+=	NO_CTF=1
 .endif
 WMAKE=		${WMAKEENV} ${MAKE} -f Makefile.inc1 DESTDIR=${WORLDTMP}
 
-.if ${TARGET_ARCH} == "amd64"
+.if ${TARGET_ARCH} == "amd64" || ${TARGET_ARCH} == "powerpc64"
 # 32 bit world
 LIB32TMP=	${OBJTREE}${.CURDIR}/lib32
 
+.if ${TARGET_ARCH} == "amd64"
 .if empty(TARGET_CPUTYPE)
 LIB32CPUFLAGS=	-march=i686 -mmmx -msse -msse2
 .else
 LIB32CPUFLAGS=	-march=${TARGET_CPUTYPE}
 .endif
-LIB32FLAGS=	-m32 ${LIB32CPUFLAGS} -mfancy-math-387 -DCOMPAT_32BIT \
+LIB32CPUFLAGS+=	-mfancy-math-387
+LIB32WMAKEENV=	MACHINE=i386 MACHINE_ARCH=i386 \
+		MACHINE_CPU="i686 mmx sse sse2" \
+		LD="${LD} -m elf_i386_fbsd -Y P,${LIB32TMP}/usr/lib32" \
+		AS="${AS} --32"
+
+.elif ${TARGET_ARCH} == "powerpc64"
+.if empty(TARGET_CPUTYPE)
+LIB32CPUFLAGS=	-mcpu=powerpc
+.else
+LIB32CPUFLAGS=	-mcpu=${TARGET_CPUTYPE}
+.endif
+LIB32WMAKEENV=	MACHINE=powerpc MACHINE_ARCH=powerpc \
+		LD="${LD} -m elf32ppc"
+.endif
+
+
+LIB32FLAGS=	-m32 ${LIB32CPUFLAGS} -DCOMPAT_32BIT \
 		-isystem ${LIB32TMP}/usr/include/ \
 		-L${LIB32TMP}/usr/lib32 \
 		-B${LIB32TMP}/usr/lib32
 
 # Yes, the flags are redundant.
-LIB32WMAKEENV=	MAKEOBJDIRPREFIX=${OBJTREE}/lib32 \
+LIB32WMAKEENV+=	MAKEOBJDIRPREFIX=${OBJTREE}/lib32 \
 		_SHLIBDIRPREFIX=${LIB32TMP} \
 		VERSION="${VERSION}" \
-		MACHINE=i386 \
-		MACHINE_ARCH=i386 \
-		MACHINE_CPU="i686 mmx sse sse2" \
 		INSTALL="sh ${.CURDIR}/tools/install.sh" \
 		PATH=${TMPPATH} \
 		CC="${CC} ${LIB32FLAGS}" \
 		CXX="${CXX} ${LIB32FLAGS}" \
 		OBJC="${OBJC} ${LIB32FLAGS}" \
-		LD="${LD} -m elf_i386_fbsd -Y P,${LIB32TMP}/usr/lib32" \
-		AS="${AS} --32" \
 		LIBDIR=/usr/lib32 \
 		SHLIBDIR=/usr/lib32
 
@@ -335,7 +348,7 @@ _worldtmp:
 	@echo "--------------------------------------------------------------"
 .if !defined(NO_CLEAN)
 	rm -rf ${WORLDTMP}
-.if ${TARGET_ARCH} == "amd64"
+.if defined(LIB32TMP)
 	rm -rf ${LIB32TMP}
 .endif
 .else
@@ -379,7 +392,7 @@ _cleanobj:
 	@echo ">>> stage 2.1: cleaning up the object tree"
 	@echo "--------------------------------------------------------------"
 	${_+_}cd ${.CURDIR}; ${WMAKE} ${CLEANDIR:S/^/par-/}
-.if ${TARGET_ARCH} == "amd64"
+.if defined(LIB32TMP)
 	${_+_}cd ${.CURDIR}; ${LIB32WMAKE} -f Makefile.inc1 ${CLEANDIR:S/^/par-/}
 .endif
 .endif
@@ -427,7 +440,7 @@ everything:
 	@echo ">>> stage 4.4: building everything"
 	@echo "--------------------------------------------------------------"
 	${_+_}cd ${.CURDIR}; ${WMAKE} par-all
-.if ${TARGET_ARCH} == "amd64"
+.if defined(LIB32TMP)
 build32:
 	@echo
 	@echo "--------------------------------------------------------------"
@@ -509,7 +522,7 @@ WMAKE_TGTS+=	_cleanobj _obj _build-tools
 WMAKE_TGTS+=	_cross-tools
 .endif
 WMAKE_TGTS+=	_includes _libraries _depend everything
-.if ${TARGET_ARCH} == "amd64" && ${MK_LIB32} != "no"
+.if defined(LIB32TMP) && ${MK_LIB32} != "no"
 WMAKE_TGTS+=	build32
 .endif
 
@@ -659,7 +672,7 @@ reinstall:
 	@echo ">>> Installing everything"
 	@echo "--------------------------------------------------------------"
 	${_+_}cd ${.CURDIR}; ${MAKE} -f Makefile.inc1 install
-.if ${TARGET_ARCH} == "amd64" && ${MK_LIB32} != "no"
+.if defined(LIB32TMP) && ${MK_LIB32} != "no"
 	${_+_}cd ${.CURDIR}; ${MAKE} -f Makefile.inc1 install32
 .endif
 
@@ -668,7 +681,7 @@ redistribute:
 	@echo ">>> Distributing everything"
 	@echo "--------------------------------------------------------------"
 	${_+_}cd ${.CURDIR}; ${MAKE} -f Makefile.inc1 distribute
-.if ${TARGET_ARCH} == "amd64" && ${MK_LIB32} != "no"
+.if defined(LIB32TMP) && ${MK_LIB32} != "no"
 	${_+_}cd ${.CURDIR}; ${MAKE} -f Makefile.inc1 distribute32 \
 	    DISTRIBUTION=lib32
 .endif
@@ -704,7 +717,11 @@ KERNCONF=${KERNFAST}
 KERNCONF=	${KERNEL}
 KERNWARN=
 .else
+.if ${TARGET_ARCH} == "powerpc64"
+KERNCONF?=	GENERIC64
+.else
 KERNCONF?=	GENERIC
+.endif
 .endif
 INSTKERNNAME?=	kernel
 
@@ -965,6 +982,10 @@ _dtrace_tools= cddl/usr.bin/sgsmsg cddl/lib/libctf lib/libelf \
     lib/libdwarf cddl/usr.bin/ctfconvert cddl/usr.bin/ctfmerge
 .endif
 
+.if ${MK_FDT} != "no"
+_dtc= gnu/usr.bin/dtc
+.endif
+
 bootstrap-tools:
 .for _tool in \
     ${_clang_tblgen} \
@@ -973,6 +994,7 @@ bootstrap-tools:
     ${_gperf} \
     ${_groff} \
     ${_ar} \
+    ${_dtc} \
     usr.bin/lorder \
     usr.bin/makewhatis \
     ${_mklocale} \
@@ -1055,8 +1077,15 @@ _kgzip=		usr.sbin/kgzip
 .endif
 .endif
 
+.if ${CC:T:Mclang} == "clang"
+_clang=		usr.bin/clang
+_clang_libs=	lib/clang
+.endif
+
 cross-tools:
 .for _tool in \
+    ${_clang_libs} \
+    ${_clang} \
     gnu/usr.bin/binutils \
     gnu/usr.bin/cc \
     usr.bin/xlint/lint1 usr.bin/xlint/lint2 usr.bin/xlint/xlint \
@@ -1104,6 +1133,10 @@ _prereq_libs= gnu/lib/libssp/libssp_nonshared gnu/lib/libgcc
 _startup_libs=	gnu/lib/csu
 .if exists(${.CURDIR}/lib/csu/${MACHINE_CPUARCH}-elf)
 _startup_libs+=	lib/csu/${MACHINE_CPUARCH}-elf
+.elif exists(${.CURDIR}/lib/csu/${MACHINE_CPUARCH}-elf)
+_startup_libs+=	lib/csu/${MACHINE_CPUARCH}-elf
+.elif exists(${.CURDIR}/lib/csu/${MACHINE_ARCH})
+_startup_libs+=	lib/csu/${MACHINE_ARCH}
 .else
 _startup_libs+=	lib/csu/${MACHINE_CPUARCH}
 .endif
@@ -1445,3 +1478,41 @@ _xi-links:
 			    ../../../../usr/bin/${XDDIR}${OSREL}-$$i; \
 		done
 .endif
+
+.if !empty(KRNLOBJDIR) && !empty(KERNCONF)
+DTBOUTPUTPATH= ${KRNLOBJDIR}/${KERNCONF}/
+
+.if !defined(FDT_DTS_FILE) || empty(FDT_DTS_FILE)
+.if exists(${KERNCONFDIR}/${KERNCONF})
+FDT_DTS_FILE!= awk 'BEGIN {FS="="} /^makeoptions[[:space:]]+FDT_DTS_FILE/ {print $$2}' \
+	${KERNCONFDIR}/${KERNCONF}
+.endif
+.endif
+
+.endif
+
+.if !defined(DTBOUTPUTPATH) || !exists(${DTBOUTPUTPATH})
+DTBOUTPUTPATH= ${.CURDIR}
+.endif
+
+#
+# Build 'standalone' Device Tree Blob
+#
+builddtb:
+	@if [ "${FDT_DTS_FILE}" = "" ]; then \
+		echo "ERROR: FDT_DTS_FILE must be specified!"; \
+		exit 1; \
+	fi;	\
+	if [ ! -f ${.CURDIR}/sys/boot/fdt/dts/${FDT_DTS_FILE} ]; then \
+		echo "ERROR: Specified DTS file (${FDT_DTS_FILE}) does not \
+			exist!"; \
+		exit 1;	\
+	fi;	\
+	if [ "${DTBOUTPUTPATH}" = "${.CURDIR}" ]; then	\
+		echo "WARNING: DTB will be placed in the current working \
+			directory"; \
+	fi
+	@PATH=${TMPPATH} \
+	dtc -O dtb -o \
+	    ${DTBOUTPUTPATH}/`echo ${FDT_DTS_FILE} | cut -d. -f1`.dtb -b 0 \
+	    -p 1024 ${.CURDIR}/sys/boot/fdt/dts/${FDT_DTS_FILE}

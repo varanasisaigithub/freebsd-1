@@ -30,6 +30,9 @@
   #define WIN32_LEAN_AND_MEAN 1
   #include <windows.h>
 #endif
+#ifndef CLANG_PREFIX
+#define CLANG_PREFIX
+#endif
 using namespace clang;
 using namespace clang::frontend;
 
@@ -408,9 +411,10 @@ static bool getWindowsSDKDir(std::string &path) {
 
 void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
                                             const HeaderSearchOptions &HSOpts) {
-#if 0 /* Remove unneeded include paths. */
   // FIXME: temporary hack: hard-coded paths.
-  AddPath("/usr/local/include", System, true, false, false);
+#ifndef __FreeBSD__
+  AddPath(CLANG_PREFIX "/usr/local/include", System, true, false, false);
+#endif
 
   // Builtin includes use #include_next directives and should be positioned
   // just prior C include dirs.
@@ -421,7 +425,6 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
     P.appendComponent("include");
     AddPath(P.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
   }
-#endif
 
   // Add dirs specified via 'configure --with-c-include-dirs'.
   llvm::StringRef CIncludeDirs(C_INCLUDE_DIRS);
@@ -518,13 +521,15 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
   case llvm::Triple::MinGW32:
     AddPath("c:/mingw/include", System, true, false, false);
     break;
+  case llvm::Triple::FreeBSD:
+    AddPath(CLANG_PREFIX "/usr/include/clang/" CLANG_VERSION_STRING,
+      System, false, false, false);
+    break;
   default:
     break;
   }
 
-  AddPath("/usr/include/clang/" CLANG_VERSION_STRING,
-    System, false, false, false);
-  AddPath("/usr/include", System, false, false, false);
+  AddPath(CLANG_PREFIX "/usr/include", System, false, false, false);
 }
 
 void InitHeaderSearch::
@@ -550,6 +555,8 @@ AddDefaultCPlusPlusIncludePaths(const llvm::Triple &triple) {
         System, true, false, false);
     AddPath("/lib/gcc/i686-pc-cygwin/3.4.4/include/c++",
         System, true, false, false);
+    AddPath("/lib/gcc/i686-pc-cygwin/3.4.4/include/c++/i686-pc-cygwin",
+        System, true, false, false);
     break;
   case llvm::Triple::MinGW64:
     // Try gcc 4.4.0
@@ -564,10 +571,35 @@ AddDefaultCPlusPlusIncludePaths(const llvm::Triple &triple) {
     AddMinGWCPlusPlusIncludePaths("c:/MinGW/lib/gcc", "mingw32", "4.3.0");
     break;
   case llvm::Triple::Darwin:
-    AddGnuCPlusPlusIncludePaths("/usr/include/c++/4.2.1",
-                                "i686-apple-darwin10", "", "x86_64", triple);
-    AddGnuCPlusPlusIncludePaths("/usr/include/c++/4.0.0",
-                                "i686-apple-darwin8", "", "", triple);
+    switch (triple.getArch()) {
+    default: break;
+
+    case llvm::Triple::ppc: 
+    case llvm::Triple::ppc64:
+      AddGnuCPlusPlusIncludePaths("/usr/include/c++/4.2.1",
+                                  "powerpc-apple-darwin10", "", "ppc64", 
+                                  triple);
+      AddGnuCPlusPlusIncludePaths("/usr/include/c++/4.0.0",
+                                  "powerpc-apple-darwin10", "", "ppc64", 
+                                  triple);
+      break;
+
+    case llvm::Triple::x86:
+    case llvm::Triple::x86_64:
+      AddGnuCPlusPlusIncludePaths("/usr/include/c++/4.2.1",
+                                  "i686-apple-darwin10", "", "x86_64", triple);
+      AddGnuCPlusPlusIncludePaths("/usr/include/c++/4.0.0",
+                                  "i686-apple-darwin8", "", "", triple);
+      break;
+
+    case llvm::Triple::arm:
+    case llvm::Triple::thumb:
+      AddGnuCPlusPlusIncludePaths("/usr/include/c++/4.2.1",
+                                  "arm-apple-darwin10", "v7", "", triple);
+      AddGnuCPlusPlusIncludePaths("/usr/include/c++/4.2.1",
+                                  "arm-apple-darwin10", "v6", "", triple);
+      break;
+    }
     break;
   case llvm::Triple::DragonFly:
     AddPath("/usr/include/c++/4.1", System, true, false, false);
@@ -591,6 +623,8 @@ AddDefaultCPlusPlusIncludePaths(const llvm::Triple &triple) {
                                 "x86_64-linux-gnu", "32", "", triple);
     AddGnuCPlusPlusIncludePaths("/usr/include/c++/4.3",
                                 "i486-linux-gnu", "", "64", triple);
+    AddGnuCPlusPlusIncludePaths("/usr/include/c++/4.3",
+                                "arm-linux-gnueabi", "", "", triple);
     // Ubuntu 8.04.4 LTS "Hardy Heron"     -- gcc-4.2.4
     // Ubuntu 8.04.[0-3] LTS "Hardy Heron" -- gcc-4.2.3
     AddGnuCPlusPlusIncludePaths("/usr/include/c++/4.2",
@@ -607,6 +641,10 @@ AddDefaultCPlusPlusIncludePaths(const llvm::Triple &triple) {
     // Redhat based distros.
     //===------------------------------------------------------------------===//
     // Fedora 13
+    AddGnuCPlusPlusIncludePaths("/usr/include/c++/4.4.4",
+                                "x86_64-redhat-linux", "32", "", triple);
+    AddGnuCPlusPlusIncludePaths("/usr/include/c++/4.4.4",
+                                "i686-redhat-linux","", "", triple);
     // Fedora 12
     AddGnuCPlusPlusIncludePaths("/usr/include/c++/4.4.3",
                                 "x86_64-redhat-linux", "32", "", triple);
@@ -693,7 +731,14 @@ AddDefaultCPlusPlusIncludePaths(const llvm::Triple &triple) {
   case llvm::Triple::FreeBSD:
     // FreeBSD 8.0
     // FreeBSD 7.3
-    AddGnuCPlusPlusIncludePaths("/usr/include/c++/4.2", "", "", "", triple);
+    AddGnuCPlusPlusIncludePaths(CLANG_PREFIX "/usr/include/c++/4.2",
+                                "", "", "", triple);
+    AddGnuCPlusPlusIncludePaths(CLANG_PREFIX "/usr/include/c++/4.2/backward",
+                                "", "", "", triple);
+    break;
+  case llvm::Triple::Minix:
+    AddGnuCPlusPlusIncludePaths("/usr/gnu/include/c++/4.4.3",
+                                "", "", "", triple);
     break;
   case llvm::Triple::Solaris:
     // Solaris - Fall though..
