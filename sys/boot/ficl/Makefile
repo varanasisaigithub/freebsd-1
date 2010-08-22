@@ -45,6 +45,10 @@ SOFTWORDS=	softcore.fr jhlocal.fr marker.fr freebsd.fr ficllocal.fr \
 CFLAGS+=	-m32 -march=i386 -I.
 .endif
 
+.if ${MACHINE_ARCH} == "powerpc64"
+CFLAGS+=	-m32 -mcpu=powerpc -I.
+.endif
+
 CFLAGS+=	-I${.CURDIR} -I${.CURDIR}/${MACHINE_CPUARCH:S/amd64/i386/} \
 		-I${.CURDIR}/../common
 

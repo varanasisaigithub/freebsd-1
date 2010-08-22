@@ -60,6 +60,9 @@
 #		Unload a module.
 #
 
+# backwards compat option for older systems.
+MACHINE_CPUARCH?=${MACHINE_ARCH:C/mipse[lb]/mips/:C/armeb/arm/:C/powerpc64/powerpc/}
+
 AWK?=		awk
 KMODLOAD?=	/sbin/kldload
 KMODUNLOAD?=	/sbin/kldunload
@@ -78,7 +81,7 @@ OBJCOPY?=	objcopy
 
 .SUFFIXES: .out .o .c .cc .cxx .C .y .l .s .S
 
-.if ${CC} == "icc"
+.if ${CC:T:Micc} == "icc"
 CFLAGS:=	${CFLAGS:C/(-x[^M^K^W]+)[MKW]+|-x[MKW]+/\1/}
 .else
 . if !empty(CFLAGS:M-O[23s]) && empty(CFLAGS:M-fno-strict-aliasing)
@@ -91,7 +94,7 @@ CFLAGS+=	-D_KERNEL
 CFLAGS+=	-DKLD_MODULE
 
 # Don't use any standard or source-relative include directories.
-.if ${CC} == "icc"
+.if ${CC:T:Micc} == "icc"
 NOSTDINC=	-X
 .else
 CSTD=		c99
@@ -111,7 +114,7 @@ CFLAGS+=	-I. -I@
 # for example.
 CFLAGS+=	-I@/contrib/altq
 
-.if ${CC} != "icc"
+.if ${CC:T:Micc} != "icc" && ${CC:T:Mclang} != "clang"
 CFLAGS+=	-finline-limit=${INLINE_LIMIT}
 CFLAGS+= --param inline-unit-growth=100
 CFLAGS+= --param large-function-growth=1000
@@ -119,7 +122,7 @@ CFLAGS+= --param large-function-growth=1000
 
 # Disallow common variables, and if we end up with commons from
 # somewhere unexpected, allocate storage for them in the module itself.
-.if ${CC} != "icc"
+.if ${CC:T:Micc} != "icc"
 CFLAGS+=	-fno-common
 .endif
 LDFLAGS+=	-d -warn-common
@@ -187,7 +190,7 @@ ${PROG}.symbols: ${FULLPROG}
 	${OBJCOPY} --only-keep-debug ${FULLPROG} ${.TARGET}
 .endif
 
-.if ${MACHINE_CPUARCH} != amd64 && ${MACHINE_ARCH} != mips
+.if ${MACHINE_CPUARCH} != amd64 && ${MACHINE_CPUARCH} != mips
 ${FULLPROG}: ${KMOD}.kld
 	${LD} -Bshareable ${LDFLAGS} -o ${.TARGET} ${KMOD}.kld
 .if !defined(DEBUG_FLAGS)
@@ -221,7 +224,7 @@ ${FULLPROG}: ${OBJS}
 .endif
 .endif
 .if !defined(DEBUG_FLAGS) && \
-    (${MACHINE_CPUARCH} == amd64 || ${MACHINE_CPUARCH} == mips)
+    (${MACHINE_ARCH} == amd64 || ${MACHINE_ARCH} == mips)
 	${OBJCOPY} --strip-debug ${.TARGET}
 .endif
 

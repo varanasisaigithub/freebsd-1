@@ -55,6 +55,18 @@ emu10k1-alsa%diked.h		optional snd_emu10k1 | snd_emu10kx	   \
 	compile-with	"CC='${CC}' AWK=${AWK} sh $S/tools/sound/emu10k1-mkalsa.sh $S/gnu/dev/sound/pci/emu10k1-alsa.h emu10k1-alsa%diked.h" \
 	no-obj no-implicit-rule before-depend				   \
 	clean		"emu10k1-alsa%diked.h"
+#
+# The 'fdt_dtb_file' target covers an actual DTB file name, which is derived
+# from the specified source (DTS) file: <platform>.dts -> <platform>.dtb
+#
+fdt_dtb_file			optional fdt \
+	compile-with "if [ -f $S/boot/fdt/dts/${FDT_DTS_FILE} ]; then dtc -O dtb -o `echo ${FDT_DTS_FILE} | cut -d. -f1`.dtb -b 0 -p 1024 $S/boot/fdt/dts/${FDT_DTS_FILE}; fi" \
+	no-obj no-implicit-rule before-depend	\
+	clean		"`echo ${FDT_DTS_FILE} | cut -d. -f1`.dtb"
+fdt_static_dtb.h		optional fdt fdt_dtb_static \
+	compile-with "sh $S/tools/fdt/make_dtbh.sh ${FDT_DTS_FILE} ." \
+	no-obj no-implicit-rule before-depend \
+	clean		"fdt_static_dtb.h"
 p16v-alsa%diked.h		optional snd_emu10kx pci			   \
 	dependency	"$S/tools/sound/emu10k1-mkalsa.sh $S/gnu/dev/sound/pci/p16v-alsa.h" \
 	compile-with	"CC='${CC}' AWK=${AWK} sh $S/tools/sound/emu10k1-mkalsa.sh $S/gnu/dev/sound/pci/p16v-alsa.h p16v-alsa%diked.h" \
@@ -273,6 +285,7 @@ contrib/dev/acpica/utilities/utmath.c		optional acpi
 contrib/dev/acpica/utilities/utmisc.c		optional acpi
 contrib/dev/acpica/utilities/utmutex.c		optional acpi
 contrib/dev/acpica/utilities/utobject.c		optional acpi
+contrib/dev/acpica/utilities/utosi.c		optional acpi
 contrib/dev/acpica/utilities/utresrc.c		optional acpi
 contrib/dev/acpica/utilities/utstate.c		optional acpi
 contrib/dev/acpica/utilities/utxface.c		optional acpi
@@ -302,6 +315,12 @@ contrib/ipfilter/netinet/ip_sync.c optional ipfilter inet \
 	compile-with "${NORMAL_C} -I$S/contrib/ipfilter"
 contrib/ipfilter/netinet/mlfk_ipl.c optional ipfilter inet \
 	compile-with "${NORMAL_C} -I$S/contrib/ipfilter"
+contrib/libfdt/fdt.c			optional	fdt
+contrib/libfdt/fdt_ro.c			optional	fdt
+contrib/libfdt/fdt_rw.c			optional	fdt
+contrib/libfdt/fdt_strerror.c		optional	fdt
+contrib/libfdt/fdt_sw.c			optional	fdt
+contrib/libfdt/fdt_wip.c		optional	fdt
 contrib/ngatm/netnatm/api/cc_conn.c optional ngatm_ccatm \
 	compile-with "${NORMAL_C_NOWERROR} -I$S/contrib/ngatm"
 contrib/ngatm/netnatm/api/cc_data.c optional ngatm_ccatm \
@@ -410,7 +429,6 @@ dev/aac/aac_disk.c		optional aac
 dev/aac/aac_linux.c		optional aac compat_linux
 dev/aac/aac_pci.c		optional aac pci
 dev/acpi_support/acpi_wmi.c	optional acpi_wmi acpi
-dev/acpi_support/acpi_aiboost.c	optional acpi_aiboost acpi
 dev/acpi_support/acpi_asus.c	optional acpi_asus acpi
 dev/acpi_support/acpi_fujitsu.c	optional acpi_fujitsu acpi
 dev/acpi_support/acpi_hp.c	optional acpi_hp acpi
@@ -418,6 +436,7 @@ dev/acpi_support/acpi_ibm.c	optional acpi_ibm acpi
 dev/acpi_support/acpi_panasonic.c optional acpi_panasonic acpi
 dev/acpi_support/acpi_sony.c	optional acpi_sony acpi
 dev/acpi_support/acpi_toshiba.c	optional acpi_toshiba acpi
+dev/acpi_support/atk0110.c	optional aibs acpi
 dev/acpica/Osd/OsdDebug.c	optional acpi
 dev/acpica/Osd/OsdHardware.c	optional acpi
 dev/acpica/Osd/OsdInterrupt.c	optional acpi
@@ -944,6 +963,10 @@ dev/e1000/e1000_nvm.c		optional em | igb \
 	compile-with "${NORMAL_C} -I$S/dev/e1000"
 dev/e1000/e1000_phy.c		optional em | igb \
 	compile-with "${NORMAL_C} -I$S/dev/e1000"
+dev/e1000/e1000_vf.c		optional em | igb \
+	compile-with "${NORMAL_C} -I$S/dev/e1000"
+dev/e1000/e1000_mbx.c		optional em | igb \
+	compile-with "${NORMAL_C} -I$S/dev/e1000"
 dev/e1000/e1000_osdep.c		optional em | igb \
 	compile-with "${NORMAL_C} -I$S/dev/e1000"
 dev/et/if_et.c			optional et
@@ -961,6 +984,11 @@ dev/ex/if_ex_pccard.c		optional ex pccard
 dev/exca/exca.c			optional cbb
 dev/fatm/if_fatm.c		optional fatm pci
 dev/fb/splash.c			optional splash
+dev/fdt/fdt_common.c		optional fdt
+dev/fdt/fdt_pci.c		optional fdt pci
+dev/fdt/fdt_static_dtb.S	optional fdt fdt_dtb_static
+dev/fdt/fdtbus.c		optional fdt
+dev/fdt/simplebus.c		optional fdt
 dev/fe/if_fe.c			optional fe
 dev/fe/if_fe_pccard.c		optional fe pccard
 dev/firewire/firewire.c		optional firewire
@@ -1192,7 +1220,21 @@ iwn6000fw.fwo			optional iwn6000fw | iwnfw		\
 	clean		"iwn6000fw.fwo"
 iwn6000.fw			optional iwn6000fw | iwnfw		\
 	dependency	".PHONY"					\
-	compile-with	"uudecode -o ${.TARGET} $S/contrib/dev/iwn/iwlwifi-6000-9.193.4.1.fw.uu" \
+	compile-with	"uudecode -o ${.TARGET} $S/contrib/dev/iwn/iwlwifi-6000-9.221.4.1.fw.uu" \
+	no-obj no-implicit-rule						\
+	clean		"iwn6000.fw"
+iwn6050fw.c			optional iwn6050fw | iwnfw		\
+	compile-with	"${AWK} -f $S/tools/fw_stub.awk iwn6050.fw:iwn6050fw -miwn6050fw -c${.TARGET}" \
+	no-implicit-rule before-depend local				\
+	clean		"iwn6050fw.c"
+iwn6050fw.fwo			optional iwn6050fw | iwnfw		\
+	dependency	"iwn6050.fw"					\
+	compile-with	"${LD} -b binary -d -warn-common -r -d -o ${.TARGET} iwn6050.fw" \
+	no-implicit-rule						\
+	clean		"iwn6050fw.fwo"
+iwn6050.fw			optional iwn6050fw | iwnfw		\
+	dependency	".PHONY"					\
+	compile-with	"uudecode -o ${.TARGET} $S/contrib/dev/iwn/iwlwifi-6050-9.201.4.1.fw.uu" \
 	no-obj no-implicit-rule						\
 	clean		"iwn6000.fw"
 dev/ixgb/if_ixgb.c		optional ixgb
@@ -1659,6 +1701,7 @@ dev/txp/if_txp.c		optional txp inet
 dev/uart/uart_bus_acpi.c	optional uart acpi
 #dev/uart/uart_bus_cbus.c	optional uart cbus
 dev/uart/uart_bus_ebus.c	optional uart ebus
+dev/uart/uart_bus_fdt.c		optional uart fdt
 dev/uart/uart_bus_isa.c		optional uart isa
 dev/uart/uart_bus_pccard.c	optional uart pccard
 dev/uart/uart_bus_pci.c		optional uart pci
@@ -1816,7 +1859,7 @@ dev/wi/if_wi_pccard.c		optional wi pccard
 dev/wi/if_wi_pci.c		optional wi pci
 dev/wl/if_wl.c			optional wl isa
 wpifw.c			optional wpifw					\
-	compile-with	"${AWK} -f $S/tools/fw_stub.awk wpi.fw:wpifw:2144 -lintel_wpi -mwpi -c${.TARGET}" \
+	compile-with	"${AWK} -f $S/tools/fw_stub.awk wpi.fw:wpifw:2144 -mwpi -c${.TARGET}" \
 	no-implicit-rule before-depend local				\
 	clean		"wpifw.c"
 wpifw.fwo			optional wpifw				\
@@ -1871,7 +1914,6 @@ fs/nfsclient/nfs_clrpcops.c	optional nfscl
 fs/nfsclient/nfs_clvnops.c	optional nfscl
 fs/nfsclient/nfs_clnode.c	optional nfscl
 fs/nfsclient/nfs_clvfsops.c	optional nfscl
-fs/nfsclient/nfs_cllock.c	optional nfscl
 fs/nfsclient/nfs_clport.c	optional nfscl
 fs/nfsclient/nfs_clbio.c	optional nfscl
 fs/nfsclient/nfs_clnfsiod.c	optional nfscl
@@ -2061,6 +2103,7 @@ kern/kern_context.c		standard
 kern/kern_descrip.c		standard
 kern/kern_dtrace.c		optional kdtrace_hooks
 kern/kern_environment.c		standard
+kern/kern_et.c			standard
 kern/kern_event.c		standard
 kern/kern_exec.c		standard
 kern/kern_exit.c		standard
@@ -2636,6 +2679,7 @@ netsmb/smb_subr.c		optional netsmb
 netsmb/smb_trantcp.c		optional netsmb
 netsmb/smb_usr.c		optional netsmb
 nfs/nfs_common.c		optional nfsclient | nfsserver
+nfs/nfs_lock.c			optional nfsclient | nfscl
 nfsclient/bootp_subr.c		optional bootp nfsclient
 nfsclient/krpc_subr.c		optional bootp nfsclient
 nfsclient/nfs_bio.c		optional nfsclient
@@ -2646,7 +2690,6 @@ nfsclient/nfs_subs.c		optional nfsclient
 nfsclient/nfs_nfsiod.c		optional nfsclient
 nfsclient/nfs_vfsops.c		optional nfsclient
 nfsclient/nfs_vnops.c		optional nfsclient
-nfsclient/nfs_lock.c		optional nfsclient
 nfsserver/nfs_fha.c		optional nfsserver
 nfsserver/nfs_serv.c		optional nfsserver
 nfsserver/nfs_srvkrpc.c		optional nfsserver

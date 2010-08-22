@@ -50,7 +50,6 @@ __FBSDID("$FreeBSD$");
 #include "opt_isa.h"
 #include "opt_kdb.h"
 #include "opt_kdtrace.h"
-#include "opt_ktrace.h"
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -70,9 +69,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/sysent.h>
 #include <sys/uio.h>
 #include <sys/vmmeter.h>
-#ifdef KTRACE
-#include <sys/ktrace.h>
-#endif
 #ifdef HWPMC_HOOKS
 #include <sys/pmckern.h>
 #endif
@@ -268,9 +264,9 @@ trap(struct trapframe *frame)
 
 			/*
 			 * We shouldn't enable interrupts while holding a
-			 * spin lock or servicing an NMI.
+			 * spin lock.
 			 */
-			if (type != T_NMI && td->td_md.md_spinlock_count == 0)
+			if (td->td_md.md_spinlock_count == 0)
 				enable_intr();
 		}
 	}

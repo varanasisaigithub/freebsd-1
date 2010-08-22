@@ -265,8 +265,10 @@ cpu_thread_exit(struct thread *td)
 {
 	struct pcb *pcb;
 
+	critical_enter();
 	if (td == PCPU_GET(fpcurthread))
 		fpudrop();
+	critical_exit();
 
 	pcb = td->td_pcb;
 
@@ -525,7 +527,8 @@ void
 cpu_reset()
 {
 #ifdef SMP
-	u_int cnt, map;
+	cpumask_t map;
+	u_int cnt;
 
 	if (smp_active) {
 		map = PCPU_GET(other_cpus) & ~stopped_cpus;

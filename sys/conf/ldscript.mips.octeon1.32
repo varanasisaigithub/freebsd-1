@@ -10,6 +10,7 @@ PROVIDE (_DYNAMIC = 0);
 SECTIONS {
 	. = KERNLOADADDR;
 
+
 	.text . : {
 	    	*(.text)
 		*(.dynamic)

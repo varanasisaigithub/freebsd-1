@@ -1368,7 +1368,7 @@ pmap_fix_cache(struct vm_page *pg, pmap_t pm, vm_offset_t va)
 		 * check for kernel uncachable conditions
 		 * kernel writable or kernel readable with writable user entry
 		 */
-		if ((kwritable && entries) ||
+		if ((kwritable && (entries || kentries > 1)) ||
 		    (kwritable > 1) ||
 		    ((kwritable != writable) && kentries &&
 		     (pv->pv_pmap == pmap_kernel() ||
@@ -3326,7 +3326,8 @@ pmap_enter_locked(pmap_t pmap, vm_offset_t va, vm_page_t m, vm_prot_t prot,
 		pa = systempage.pv_pa;
 		m = NULL;
 	} else {
-		KASSERT((m->oflags & VPO_BUSY) != 0 || (flags & M_NOWAIT) != 0,
+		KASSERT((m->flags & (PG_FICTITIOUS | PG_UNMANAGED)) != 0 ||
+		    (m->oflags & VPO_BUSY) != 0 || (flags & M_NOWAIT) != 0,
 		    ("pmap_enter_locked: page %p is not busy", m));
 		pa = VM_PAGE_TO_PHYS(m);
 	}
