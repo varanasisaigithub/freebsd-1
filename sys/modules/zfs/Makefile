@@ -23,15 +23,18 @@ SRCS+=	opensolaris_lookup.c
 SRCS+=	opensolaris_policy.c
 SRCS+=	opensolaris_string.c
 SRCS+=	opensolaris_taskq.c
+SRCS+=	opensolaris_uio.c
 SRCS+=	opensolaris_vfs.c
 SRCS+=	opensolaris_zone.c
 
 .if ${MACHINE_CPUARCH} == "i386" || ${MACHINE_CPUARCH} == "amd64" || ${MACHINE_CPUARCH} == "ia64" || ${MACHINE_CPUARCH} == "sparc64"
-.PATH:	${SUNW}/common/atomic/${MACHINE_CPUARCH}
-SRCS+=	opensolaris_atomic.S
+.PATH:	${.CURDIR}/../../cddl/contrib/opensolaris/common/atomic/${MACHINE_CPUARCH}
+SRCS+=		opensolaris_atomic.S
+.elif ${MACHINE_ARCH} == "powerpc64"
+.PATH:	${.CURDIR}/../../cddl/contrib/opensolaris/common/atomic/${MACHINE_ARCH}
+SRCS+=		opensolaris_atomic.S
 .else
-.PATH:	${.CURDIR}/../../cddl/compat/opensolaris/kern
-SRCS+=	opensolaris_atomic.c
+SRCS+=		opensolaris_atomic.c
 .endif
 
 .PATH:	${SUNW}/uts/common/fs

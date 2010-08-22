@@ -1823,6 +1823,7 @@
 #define	BGE_MISCCFG_BOARD_ID_5788	0x00010000
 #define	BGE_MISCCFG_BOARD_ID_5788M	0x00018000
 #define	BGE_MISCCFG_EPHY_IDDQ		0x00200000
+#define	BGE_MISCCFG_GPHY_PD_OVERRIDE	0x04000000
 
 #define	BGE_32BITTIME_66MHZ		(0x41 << 1)
 
@@ -2643,6 +2644,8 @@ struct bge_softc {
 	int			bge_link_evt;	/* pending link event */
 	int			bge_timer;
 	int			bge_forced_collapse;
+	int			bge_forced_udpcsum;
+	int			bge_csum_features;
 	struct callout		bge_stat_ch;
 	uint32_t		bge_rx_discards;
 	uint32_t		bge_tx_discards;

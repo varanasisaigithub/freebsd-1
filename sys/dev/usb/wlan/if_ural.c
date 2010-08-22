@@ -485,6 +485,7 @@ ural_attach(device_t self)
 	    | IEEE80211_C_SHSLOT	/* short slot time supported */
 	    | IEEE80211_C_BGSCAN	/* bg scanning supported */
 	    | IEEE80211_C_WPA		/* 802.11i */
+	    | IEEE80211_C_RATECTL	/* use ratectl */
 	    ;
 
 	bands = 0;
@@ -1157,7 +1158,7 @@ ural_sendprot(struct ural_softc *sc,
 	ackrate = ieee80211_ack_rate(ic->ic_rt, rate);
 
 	isshort = (ic->ic_flags & IEEE80211_F_SHPREAMBLE) != 0;
-	dur = ieee80211_compute_duration(ic->ic_rt, pktlen, rate, isshort);
+	dur = ieee80211_compute_duration(ic->ic_rt, pktlen, rate, isshort)
 	    + ieee80211_ack_duration(ic->ic_rt, rate, isshort);
 	flags = RAL_TX_RETRY(7);
 	if (prot == IEEE80211_PROT_RTSCTS) {

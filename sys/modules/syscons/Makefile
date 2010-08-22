@@ -20,6 +20,7 @@ _apm=		apm
 
 .if ${MACHINE_CPUARCH} != "sparc64"
 _beastie=	beastie
+_beastie=	beastie
 _daemon=	daemon
 _dragon=	dragon
 _fire=		fire

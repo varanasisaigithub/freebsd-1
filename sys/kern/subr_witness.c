@@ -135,7 +135,7 @@ __FBSDID("$FreeBSD$");
 #define	WITNESS_COUNT 		1024
 #define	WITNESS_CHILDCOUNT 	(WITNESS_COUNT * 4)
 #define	WITNESS_HASH_SIZE	251	/* Prime, gives load factor < 2 */
-#define	WITNESS_PENDLIST	512
+#define	WITNESS_PENDLIST	768
 
 /* Allocate 256 KB of stack data space */
 #define	WITNESS_LO_DATA_COUNT	2048
@@ -495,6 +495,7 @@ static struct witness_order_list_entry order_lists[] = {
 #ifdef	HWPMC_HOOKS
 	{ "pmc-sleep", &lock_class_mtx_sleep },
 #endif
+	{ "time lock", &lock_class_mtx_sleep },
 	{ NULL, NULL },
 	/*
 	 * Sockets
@@ -654,7 +655,6 @@ static struct witness_order_list_entry order_lists[] = {
 	{ "callout", &lock_class_mtx_spin },
 	{ "entropy harvest mutex", &lock_class_mtx_spin },
 	{ "syscons video lock", &lock_class_mtx_spin },
-	{ "time lock", &lock_class_mtx_spin },
 #ifdef SMP
 	{ "smp rendezvous", &lock_class_mtx_spin },
 #endif

@@ -77,7 +77,6 @@ __FBSDID("$FreeBSD$");
 #include <vm/vm_pager.h>
 #include <vm/uma.h>
 
-#include <machine/bootinfo.h>
 #include <machine/cpu.h>
 #include <machine/pcb.h>
 #include <machine/platform.h>
@@ -1506,8 +1505,6 @@ static void
 mmu_booke_release(mmu_t mmu, pmap_t pmap)
 {
 
-	printf("mmu_booke_release: s\n");
-
 	KASSERT(pmap->pm_stats.resident_count == 0,
 	    ("pmap_release: pmap resident count %ld != 0",
 	    pmap->pm_stats.resident_count));
@@ -1558,7 +1555,8 @@ mmu_booke_enter_locked(mmu_t mmu, pmap_t pmap, vm_offset_t va, vm_page_t m,
 		KASSERT((va <= VM_MAXUSER_ADDRESS),
 		    ("mmu_booke_enter_locked: user pmap, non user va"));
 	}
-	KASSERT((m->oflags & VPO_BUSY) != 0 || VM_OBJECT_LOCKED(m->object),
+	KASSERT((m->flags & (PG_FICTITIOUS | PG_UNMANAGED)) != 0 ||
+	    (m->oflags & VPO_BUSY) != 0 || VM_OBJECT_LOCKED(m->object),
 	    ("mmu_booke_enter_locked: page %p is not busy", m));
 
 	PMAP_LOCK_ASSERT(pmap, MA_OWNED);
@@ -2508,7 +2506,6 @@ struct pmap_md *
 mmu_booke_scan_md(mmu_t mmu, struct pmap_md *prev)
 {
 	static struct pmap_md md;
-	struct bi_mem_region *mr;
 	pte_t *pte;
 	vm_offset_t va;
  
@@ -2566,16 +2563,18 @@ mmu_booke_scan_md(mmu_t mmu, struct pmap_md *prev)
 			return (NULL);
 		}
 	} else { /* minidumps */
-		mr = bootinfo_mr();
+		mem_regions(&physmem_regions, &physmem_regions_sz,
+		    &availmem_regions, &availmem_regions_sz);
+
 		if (prev == NULL) {
 			/* first physical chunk. */
-			md.md_paddr = mr->mem_base;
-			md.md_size = mr->mem_size;
+			md.md_paddr = physmem_regions[0].mr_start;
+			md.md_size = physmem_regions[0].mr_size;
 			md.md_vaddr = ~0UL;
 			md.md_index = 1;
-		} else if (md.md_index < bootinfo->bi_mem_reg_no) {
-			md.md_paddr = mr[md.md_index].mem_base;
-			md.md_size = mr[md.md_index].mem_size;
+		} else if (md.md_index < physmem_regions_sz) {
+			md.md_paddr = physmem_regions[md.md_index].mr_start;
+			md.md_size = physmem_regions[md.md_index].mr_size;
 			md.md_vaddr = ~0UL;
 			md.md_index++;
 		} else {

@@ -408,6 +408,13 @@ sleepq_catch_signals(void *wchan, int pri)
 	sc = SC_LOOKUP(wchan);
 	mtx_assert(&sc->sc_lock, MA_OWNED);
 	MPASS(wchan != NULL);
+	if ((td->td_pflags & TDP_WAKEUP) != 0) {
+		td->td_pflags &= ~TDP_WAKEUP;
+		ret = EINTR;
+		thread_lock(td);
+		goto out;
+	}
+
 	/*
 	 * See if there are any pending signals for this thread.  If not
 	 * we can switch immediately.  Otherwise do the signal processing
@@ -442,7 +449,7 @@ sleepq_catch_signals(void *wchan, int pri)
 	/*
 	 * Lock the per-process spinlock prior to dropping the PROC_LOCK
 	 * to avoid a signal delivery race.  PROC_LOCK, PROC_SLOCK, and
-	 * thread_lock() are currently held in tdsignal().
+	 * thread_lock() are currently held in tdsendsignal().
 	 */
 	PROC_SLOCK(p);
 	mtx_lock_spin(&sc->sc_lock);
@@ -453,6 +460,7 @@ sleepq_catch_signals(void *wchan, int pri)
 		sleepq_switch(wchan, pri);
 		return (0);
 	}
+out:
 	/*
 	 * There were pending signals and this thread is still
 	 * on the sleep queue, remove it from the sleep queue.

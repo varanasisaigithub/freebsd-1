@@ -123,6 +123,10 @@ init_TSC(void)
 void
 init_TSC_tc(void)
 {
+
+	if (!tsc_present) 
+		return;
+
 	/*
 	 * We can not use the TSC if we support APM.  Precise timekeeping
 	 * on an APM'ed machine is at best a fools pursuit, since 
@@ -152,7 +156,7 @@ init_TSC_tc(void)
 		tsc_timecounter.tc_quality = -100;
 #endif
 
-	if (tsc_present && tsc_freq != 0 && !tsc_is_broken) {
+	if (tsc_freq != 0 && !tsc_is_broken) {
 		tsc_timecounter.tc_frequency = tsc_freq;
 		tc_init(&tsc_timecounter);
 	}
@@ -246,7 +250,7 @@ sysctl_machdep_tsc_freq(SYSCTL_HANDLER_ARGS)
 }
 
 SYSCTL_PROC(_machdep, OID_AUTO, tsc_freq, CTLTYPE_QUAD | CTLFLAG_RW,
-    0, sizeof(u_int), sysctl_machdep_tsc_freq, "QU", "");
+    0, 0, sysctl_machdep_tsc_freq, "QU", "");
 
 static unsigned
 tsc_get_timecount(struct timecounter *tc)

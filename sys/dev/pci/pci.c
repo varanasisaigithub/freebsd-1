@@ -69,13 +69,6 @@ __FBSDID("$FreeBSD$");
 #include "pcib_if.h"
 #include "pci_if.h"
 
-#ifdef __HAVE_ACPI
-#include <contrib/dev/acpica/include/acpi.h>
-#include "acpi_if.h"
-#else
-#define	ACPI_PWR_FOR_SLEEP(x, y, z)
-#endif
-
 static pci_addr_t	pci_mapbase(uint64_t mapreg);
 static const char	*pci_maptype(uint64_t mapreg);
 static int		pci_mapsize(uint64_t testval);
@@ -118,6 +111,8 @@ static void		pci_unmask_msix(device_t dev, u_int index);
 static int		pci_msi_blacklisted(void);
 static void		pci_resume_msi(device_t dev);
 static void		pci_resume_msix(device_t dev);
+static int		pci_remap_intr_method(device_t bus, device_t dev,
+			    u_int irq);
 
 static device_method_t pci_methods[] = {
 	/* Device interface */
@@ -147,6 +142,7 @@ static device_method_t pci_methods[] = {
 	DEVMETHOD(bus_deactivate_resource, pci_deactivate_resource),
 	DEVMETHOD(bus_child_pnpinfo_str, pci_child_pnpinfo_str_method),
 	DEVMETHOD(bus_child_location_str, pci_child_location_str_method),
+	DEVMETHOD(bus_remap_intr,	pci_remap_intr_method),
 
 	/* PCI interface */
 	DEVMETHOD(pci_read_config,	pci_read_config_method),
@@ -447,12 +443,12 @@ pci_maprange(uint64_t mapreg)
 static void
 pci_fixancient(pcicfgregs *cfg)
 {
-	if (cfg->hdrtype != 0)
+	if ((cfg->hdrtype & PCIM_HDRTYPE) != PCIM_HDRTYPE_NORMAL)
 		return;
 
 	/* PCI to PCI bridges use header type 1 */
 	if (cfg->baseclass == PCIC_BRIDGE && cfg->subclass == PCIS_BRIDGE_PCI)
-		cfg->hdrtype = 1;
+		cfg->hdrtype = PCIM_HDRTYPE_BRIDGE;
 }
 
 /* extract header type specific config data */
@@ -461,16 +457,16 @@ static void
 pci_hdrtypedata(device_t pcib, int b, int s, int f, pcicfgregs *cfg)
 {
 #define	REG(n, w)	PCIB_READ_CONFIG(pcib, b, s, f, n, w)
-	switch (cfg->hdrtype) {
-	case 0:
+	switch (cfg->hdrtype & PCIM_HDRTYPE) {
+	case PCIM_HDRTYPE_NORMAL:
 		cfg->subvendor      = REG(PCIR_SUBVEND_0, 2);
 		cfg->subdevice      = REG(PCIR_SUBDEV_0, 2);
 		cfg->nummaps	    = PCI_MAXMAPS_0;
 		break;
-	case 1:
+	case PCIM_HDRTYPE_BRIDGE:
 		cfg->nummaps	    = PCI_MAXMAPS_1;
 		break;
-	case 2:
+	case PCIM_HDRTYPE_CARDBUS:
 		cfg->subvendor      = REG(PCIR_SUBVEND_2, 2);
 		cfg->subdevice      = REG(PCIR_SUBDEV_2, 2);
 		cfg->nummaps	    = PCI_MAXMAPS_2;
@@ -566,11 +562,11 @@ pci_read_extcap(device_t pcib, pcicfgregs *cfg)
 	int	ptr, nextptr, ptrptr;
 
 	switch (cfg->hdrtype & PCIM_HDRTYPE) {
-	case 0:
-	case 1:
+	case PCIM_HDRTYPE_NORMAL:
+	case PCIM_HDRTYPE_BRIDGE:
 		ptrptr = PCIR_CAP_PTR;
 		break;
-	case 2:
+	case PCIM_HDRTYPE_CARDBUS:
 		ptrptr = PCIR_CAP_PTR_2;	/* cardbus capabilities ptr */
 		break;
 	default:
@@ -657,7 +653,8 @@ pci_read_extcap(device_t pcib, pcicfgregs *cfg)
 			break;
 		case PCIY_SUBVENDOR:
 			/* Should always be true. */
-			if ((cfg->hdrtype & PCIM_HDRTYPE) == 1) {
+			if ((cfg->hdrtype & PCIM_HDRTYPE) ==
+			    PCIM_HDRTYPE_BRIDGE) {
 				val = REG(ptr + PCIR_SUBVENDCAP_ID, 4);
 				cfg->subvendor = val & 0xffff;
 				cfg->subdevice = val >> 16;
@@ -671,7 +668,8 @@ pci_read_extcap(device_t pcib, pcicfgregs *cfg)
 			 * PCI-express or HT chipsets might match on
 			 * this check as well.
 			 */
-			if ((cfg->hdrtype & PCIM_HDRTYPE) == 1)
+			if ((cfg->hdrtype & PCIM_HDRTYPE) ==
+			    PCIM_HDRTYPE_BRIDGE)
 				pcix_chipset = 1;
 			break;
 		case PCIY_EXPRESS:	/* PCI-express */
@@ -1114,11 +1112,11 @@ pci_find_extcap_method(device_t dev, device_t child, int capability,
 	 * Determine the start pointer of the capabilities list.
 	 */
 	switch (cfg->hdrtype & PCIM_HDRTYPE) {
-	case 0:
-	case 1:
+	case PCIM_HDRTYPE_NORMAL:
+	case PCIM_HDRTYPE_BRIDGE:
 		ptr = PCIR_CAP_PTR;
 		break;
-	case 2:
+	case PCIM_HDRTYPE_CARDBUS:
 		ptr = PCIR_CAP_PTR_2;
 		break;
 	default:
@@ -1736,20 +1734,17 @@ pci_resume_msi(device_t dev)
 	    2);
 }
 
-int
-pci_remap_msi_irq(device_t dev, u_int irq)
+static int
+pci_remap_intr_method(device_t bus, device_t dev, u_int irq)
 {
 	struct pci_devinfo *dinfo = device_get_ivars(dev);
 	pcicfgregs *cfg = &dinfo->cfg;
 	struct resource_list_entry *rle;
 	struct msix_table_entry *mte;
 	struct msix_vector *mv;
-	device_t bus;
 	uint64_t addr;
 	uint32_t data;	
 	int error, i, j;
-
-	bus = device_get_parent(dev);
 
 	/*
 	 * Handle MSI first.  We try to find this IRQ among our list
@@ -2912,16 +2907,13 @@ int
 pci_suspend(device_t dev)
 {
 	int dstate, error, i, numdevs;
-	device_t acpi_dev, child, *devlist;
+	device_t child, *devlist, pcib;
 	struct pci_devinfo *dinfo;
 
 	/*
 	 * Save the PCI configuration space for each child and set the
 	 * device in the appropriate power state for this sleep state.
 	 */
-	acpi_dev = NULL;
-	if (pci_do_power_resume)
-		acpi_dev = devclass_get_device(devclass_find("acpi"), 0);
 	if ((error = device_get_children(dev, &devlist, &numdevs)) != 0)
 		return (error);
 	for (i = 0; i < numdevs; i++) {
@@ -2938,20 +2930,23 @@ pci_suspend(device_t dev)
 	}
 
 	/*
-	 * Always set the device to D3.  If ACPI suggests a different
-	 * power state, use it instead.  If ACPI is not present, the
-	 * firmware is responsible for managing device power.  Skip
-	 * children who aren't attached since they are powered down
-	 * separately.  Only manage type 0 devices for now.
+	 * Always set the device to D3.  If the firmware suggests a
+	 * different power state, use it instead.  If power management
+	 * is not present, the firmware is responsible for managing
+	 * device power.  Skip children who aren't attached since they
+	 * are powered down separately.  Only manage type 0 devices
+	 * for now.
 	 */
-	for (i = 0; acpi_dev && i < numdevs; i++) {
+	pcib = device_get_parent(dev);
+	for (i = 0; pci_do_power_resume && i < numdevs; i++) {
 		child = devlist[i];
 		dinfo = (struct pci_devinfo *) device_get_ivars(child);
-		if (device_is_attached(child) && dinfo->cfg.hdrtype == 0) {
-			dstate = PCI_POWERSTATE_D3;
-			ACPI_PWR_FOR_SLEEP(acpi_dev, child, &dstate);
+		dstate = PCI_POWERSTATE_D3;
+		if (device_is_attached(child) &&
+		    (dinfo->cfg.hdrtype & PCIM_HDRTYPE) ==
+		    PCIM_HDRTYPE_NORMAL &&
+		    PCIB_POWER_FOR_SLEEP(pcib, dev, &dstate) == 0)
 			pci_set_powerstate(child, dstate);
-		}
 	}
 	free(devlist, M_TEMP);
 	return (0);
@@ -2961,30 +2956,29 @@ int
 pci_resume(device_t dev)
 {
 	int i, numdevs, error;
-	device_t acpi_dev, child, *devlist;
+	device_t child, *devlist, pcib;
 	struct pci_devinfo *dinfo;
 
 	/*
 	 * Set each child to D0 and restore its PCI configuration space.
 	 */
-	acpi_dev = NULL;
-	if (pci_do_power_resume)
-		acpi_dev = devclass_get_device(devclass_find("acpi"), 0);
 	if ((error = device_get_children(dev, &devlist, &numdevs)) != 0)
 		return (error);
+	pcib = device_get_parent(dev);
 	for (i = 0; i < numdevs; i++) {
 		/*
-		 * Notify ACPI we're going to D0 but ignore the result.  If
-		 * ACPI is not present, the firmware is responsible for
-		 * managing device power.  Only manage type 0 devices for now.
+		 * Notify power managment we're going to D0 but ignore
+		 * the result.  If power management is not present,
+		 * the firmware is responsible for managing device
+		 * power.  Only manage type 0 devices for now.
 		 */
 		child = devlist[i];
 		dinfo = (struct pci_devinfo *) device_get_ivars(child);
-		if (acpi_dev && device_is_attached(child) &&
-		    dinfo->cfg.hdrtype == 0) {
-			ACPI_PWR_FOR_SLEEP(acpi_dev, child, NULL);
+		if (device_is_attached(child) &&
+		    (dinfo->cfg.hdrtype & PCIM_HDRTYPE) ==
+		    PCIM_HDRTYPE_NORMAL &&
+		    PCIB_POWER_FOR_SLEEP(pcib, dev, NULL) == 0)
 			pci_set_powerstate(child, PCI_POWERSTATE_D0);
-		}
 
 		/* Now the device is powered up, restore its config space. */
 		pci_cfg_restore(child, dinfo);
@@ -4014,7 +4008,7 @@ pci_cfg_restore(device_t dev, struct pci_devinfo *dinfo)
 	 * Other types are unknown, and we err on the side of safety
 	 * by ignoring them.
 	 */
-	if (dinfo->cfg.hdrtype != 0)
+	if ((dinfo->cfg.hdrtype & PCIM_HDRTYPE) != PCIM_HDRTYPE_NORMAL)
 		return;
 
 	/*
@@ -4062,7 +4056,7 @@ pci_cfg_save(device_t dev, struct pci_devinfo *dinfo, int setstate)
 	 * we err on the side of safety by ignoring them.  Powering down
 	 * bridges should not be undertaken lightly.
 	 */
-	if (dinfo->cfg.hdrtype != 0)
+	if ((dinfo->cfg.hdrtype & PCIM_HDRTYPE) != PCIM_HDRTYPE_NORMAL)
 		return;
 	for (i = 0; i < dinfo->cfg.nummaps; i++)
 		dinfo->cfg.bar[i] = pci_read_config(dev, PCIR_BAR(i), 4);

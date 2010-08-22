@@ -11,6 +11,9 @@ SRCS=		opensolaris.c		\
 .if ${MACHINE_CPUARCH} == "i386" || ${MACHINE_CPUARCH} == "amd64" || ${MACHINE_CPUARCH} == "ia64" || ${MACHINE_CPUARCH} == "sparc64"
 .PATH:	${.CURDIR}/../../cddl/contrib/opensolaris/common/atomic/${MACHINE_CPUARCH}
 SRCS+=		opensolaris_atomic.S
+.elif ${MACHINE_ARCH} == "powerpc64"
+.PATH:	${.CURDIR}/../../cddl/contrib/opensolaris/common/atomic/${MACHINE_ARCH}
+SRCS+=		opensolaris_atomic.S
 .else
 SRCS+=		opensolaris_atomic.c
 .endif

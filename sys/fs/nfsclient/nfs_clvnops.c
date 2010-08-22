@@ -67,16 +67,16 @@ __FBSDID("$FreeBSD$");
 #include <vm/vm_extern.h>
 #include <vm/vm_object.h>
 
-
 #include <fs/nfs/nfsport.h>
 #include <fs/nfsclient/nfsnode.h>
 #include <fs/nfsclient/nfsmount.h>
 #include <fs/nfsclient/nfs.h>
-#include <fs/nfsclient/nfs_lock.h>
 
 #include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/in_var.h>
+
+#include <nfs/nfs_lock.h>
 
 /* Defs */
 #define	TRUE	1
@@ -84,7 +84,7 @@ __FBSDID("$FreeBSD$");
 
 extern struct nfsstats newnfsstats;
 MALLOC_DECLARE(M_NEWNFSREQ);
-vop_advlock_t	*ncl_advlock_p = ncl_dolock;
+vop_advlock_t	*ncl_advlock_p = nfs_dolock;
 
 /*
  * Ifdef for FreeBSD-current merged buffer cache. It is unfortunate that these
@@ -495,7 +495,8 @@ nfs_open(struct vop_open_args *ap)
 	 * Now, if this Open will be doing reading, re-validate/flush the
 	 * cache, so that Close/Open coherency is maintained.
 	 */
-	if ((fmode & FREAD) && (!NFS_ISV4(vp) || nfscl_mustflush(vp))) {
+	if ((fmode & FREAD) != 0 &&
+	    (!NFS_ISV4(vp) || nfscl_mustflush(vp) != 0)) {
 		mtx_lock(&np->n_mtx);
 		if (np->n_flag & NMODIFIED) {
 			mtx_unlock(&np->n_mtx);			
@@ -505,9 +506,11 @@ nfs_open(struct vop_open_args *ap)
 					(void) nfsrpc_close(vp, 0, ap->a_td);
 				return (error);
 			}
+			mtx_lock(&np->n_mtx);
 			np->n_attrstamp = 0;
 			if (vp->v_type == VDIR)
 				np->n_direofoffset = 0;
+			mtx_unlock(&np->n_mtx);
 			error = VOP_GETATTR(vp, &vattr, ap->a_cred);
 			if (error) {
 				if (NFS_ISV4(vp))
@@ -520,14 +523,6 @@ nfs_open(struct vop_open_args *ap)
 				np->n_change = vattr.va_filerev;
 			mtx_unlock(&np->n_mtx);
 		} else {
-			struct thread *td = curthread;
-	
-			if (np->n_ac_ts_syscalls != td->td_syscalls ||
-			    np->n_ac_ts_tid != td->td_tid || 
-			    td->td_proc == NULL ||
-			    np->n_ac_ts_pid != td->td_proc->p_pid) {
-				np->n_attrstamp = 0;
-			}
 			mtx_unlock(&np->n_mtx);						
 			error = VOP_GETATTR(vp, &vattr, ap->a_cred);
 			if (error) {
@@ -673,7 +668,7 @@ nfs_close(struct vop_close_args *ap)
 		    error = ncl_flush(vp, MNT_WAIT, cred, ap->a_td, cm, 0);
 		    /* np->n_flag &= ~NMODIFIED; */
 		} else if (NFS_ISV4(vp)) { 
-			if (nfscl_mustflush(vp)) {
+			if (nfscl_mustflush(vp) != 0) {
 				int cm = newnfs_commit_on_close ? 1 : 0;
 				error = ncl_flush(vp, MNT_WAIT, cred, ap->a_td,
 				    cm, 0);
@@ -715,7 +710,7 @@ nfs_close(struct vop_close_args *ap)
 		/*
 		 * Get attributes so "change" is up to date.
 		 */
-		if (!error) {
+		if (error == 0 && nfscl_mustflush(vp) != 0) {
 			ret = nfsrpc_getattr(vp, cred, ap->a_td, &nfsva,
 			    NULL);
 			if (!ret) {
@@ -987,7 +982,7 @@ nfs_lookup(struct vop_lookup_args *ap)
 	int flags = cnp->cn_flags;
 	struct vnode *newvp;
 	struct nfsmount *nmp;
-	struct nfsnode *np;
+	struct nfsnode *np, *newnp;
 	int error = 0, attrflag, dattrflag, ltype;
 	struct thread *td = cnp->cn_thread;
 	struct nfsfh *nfhp;
@@ -1023,11 +1018,27 @@ nfs_lookup(struct vop_lookup_args *ap)
 		 * change time of the file matches our cached copy.
 		 * Otherwise, we discard the cache entry and fallback
 		 * to doing a lookup RPC.
+		 *
+		 * To better handle stale file handles and attributes,
+		 * clear the attribute cache of this node if it is a
+		 * leaf component, part of an open() call, and not
+		 * locally modified before fetching the attributes.
+		 * This should allow stale file handles to be detected
+		 * here where we can fall back to a LOOKUP RPC to
+		 * recover rather than having nfs_open() detect the
+		 * stale file handle and failing open(2) with ESTALE.
 		 */
 		newvp = *vpp;
+		newnp = VTONFS(newvp);
+		if ((flags & (ISLASTCN | ISOPEN)) == (ISLASTCN | ISOPEN) &&
+		    !(newnp->n_flag & NMODIFIED)) {
+			mtx_lock(&newnp->n_mtx);
+			newnp->n_attrstamp = 0;
+			mtx_unlock(&newnp->n_mtx);
+		}
 		if (nfscl_nodeleg(newvp, 0) == 0 ||
-		    (!VOP_GETATTR(newvp, &vattr, cnp->cn_cred)
-		    && vattr.va_ctime.tv_sec == VTONFS(newvp)->n_ctime)) {
+		    (VOP_GETATTR(newvp, &vattr, cnp->cn_cred) == 0 &&
+		    vattr.va_ctime.tv_sec == newnp->n_ctime)) {
 			NFSINCRGLOBAL(newnfsstats.lookupcache_hits);
 			if (cnp->cn_nameiop != LOOKUP &&
 			    (flags & ISLASTCN))
@@ -1213,6 +1224,18 @@ nfs_lookup(struct vop_lookup_args *ap)
 		if (attrflag)
 			(void) nfscl_loadattrcache(&newvp, &nfsva, NULL, NULL,
 			    0, 1);
+		else if ((flags & (ISLASTCN | ISOPEN)) == (ISLASTCN | ISOPEN) &&
+		    !(np->n_flag & NMODIFIED)) {			
+			/*
+			 * Flush the attribute cache when opening a
+			 * leaf node to ensure that fresh attributes
+			 * are fetched in nfs_open() since we did not
+			 * fetch attributes from the LOOKUP reply.
+			 */
+			mtx_lock(&np->n_mtx);
+			np->n_attrstamp = 0;
+			mtx_unlock(&np->n_mtx);
+		}
 	}
 	if (cnp->cn_nameiop != LOOKUP && (flags & ISLASTCN))
 		cnp->cn_flags |= SAVENAME;
@@ -1564,12 +1587,8 @@ nfs_remove(struct vop_remove_args *ap)
 	int error = 0;
 	struct vattr vattr;
 
-#ifndef DIAGNOSTIC
-	if ((cnp->cn_flags & HASBUF) == 0)
-		panic("nfs_remove: no name");
-	if (vrefcnt(vp) < 1)
-		panic("nfs_remove: bad v_usecount");
-#endif
+	KASSERT((cnp->cn_flags & HASBUF) != 0, ("nfs_remove: no name"));
+	KASSERT(vrefcnt(vp) > 0, ("nfs_remove: bad v_usecount"));
 	if (vp->v_type == VDIR)
 		error = EPERM;
 	else if (vrefcnt(vp) == 1 || (np->n_sillyrename &&
@@ -1676,11 +1695,8 @@ nfs_rename(struct vop_rename_args *ap)
 	struct nfsv4node *newv4 = NULL;
 	int error;
 
-#ifndef DIAGNOSTIC
-	if ((tcnp->cn_flags & HASBUF) == 0 ||
-	    (fcnp->cn_flags & HASBUF) == 0)
-		panic("nfs_rename: no name");
-#endif
+	KASSERT((tcnp->cn_flags & HASBUF) != 0 &&
+	    (fcnp->cn_flags & HASBUF) != 0, ("nfs_rename: no name"));
 	/* Check for cross-device rename */
 	if ((fvp->v_mount != tdvp->v_mount) ||
 	    (tvp && (fvp->v_mount != tvp->v_mount))) {
@@ -2137,11 +2153,10 @@ ncl_readdirrpc(struct vnode *vp, struct uio *uiop, struct ucred *cred,
 	struct nfsmount *nmp = VFSTONFS(vp->v_mount);
 	int error = 0, eof, attrflag;
 
-#ifndef DIAGNOSTIC
-	if (uiop->uio_iovcnt != 1 || (uiop->uio_offset & (DIRBLKSIZ - 1)) ||
-		(uiop->uio_resid & (DIRBLKSIZ - 1)))
-		panic("nfs readdirrpc bad uio");
-#endif
+	KASSERT(uiop->uio_iovcnt == 1 &&
+	    (uiop->uio_offset & (DIRBLKSIZ - 1)) == 0 &&
+	    (uiop->uio_resid & (DIRBLKSIZ - 1)) == 0,
+	    ("nfs readdirrpc bad uio"));
 
 	/*
 	 * If there is no cookie, assume directory was stale.
@@ -2198,11 +2213,10 @@ ncl_readdirplusrpc(struct vnode *vp, struct uio *uiop, struct ucred *cred,
 	struct nfsmount *nmp = VFSTONFS(vp->v_mount);
 	int error = 0, attrflag, eof;
 
-#ifndef DIAGNOSTIC
-	if (uiop->uio_iovcnt != 1 || (uiop->uio_offset & (DIRBLKSIZ - 1)) ||
-		(uiop->uio_resid & (DIRBLKSIZ - 1)))
-		panic("nfs readdirplusrpc bad uio");
-#endif
+	KASSERT(uiop->uio_iovcnt == 1 &&
+	    (uiop->uio_offset & (DIRBLKSIZ - 1)) == 0 &&
+	    (uiop->uio_resid & (DIRBLKSIZ - 1)) == 0,
+	    ("nfs readdirplusrpc bad uio"));
 
 	/*
 	 * If there is no cookie, assume directory was stale.
@@ -2264,10 +2278,7 @@ nfs_sillyrename(struct vnode *dvp, struct vnode *vp, struct componentname *cnp)
 
 	cache_purge(dvp);
 	np = VTONFS(vp);
-#ifndef DIAGNOSTIC
-	if (vp->v_type == VDIR)
-		panic("nfs: sillyrename dir");
-#endif
+	KASSERT(vp->v_type != VDIR, ("nfs: sillyrename dir"));
 	MALLOC(sp, struct sillyrename *, sizeof (struct sillyrename),
 	    M_NEWNFSREQ, M_WAITOK);
 	sp->s_cred = crhold(cnp->cn_cred);

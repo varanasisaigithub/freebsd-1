@@ -57,10 +57,10 @@ __FBSDID("$FreeBSD$");
 #include <sys/smp.h>
 
 SDT_PROVIDER_DEFINE(callout_execute);
-SDT_PROBE_DEFINE(callout_execute, kernel, , callout_start);
+SDT_PROBE_DEFINE(callout_execute, kernel, , callout_start, callout-start);
 SDT_PROBE_ARGTYPE(callout_execute, kernel, , callout_start, 0,
     "struct callout *");
-SDT_PROBE_DEFINE(callout_execute, kernel, , callout_end); 
+SDT_PROBE_DEFINE(callout_execute, kernel, , callout_end, callout-end); 
 SDT_PROBE_ARGTYPE(callout_execute, kernel, , callout_end, 0,
     "struct callout *");
 
@@ -228,10 +228,8 @@ start_softclock(void *dummy)
 		panic("died while creating standard software ithreads");
 	cc->cc_cookie = softclock_ih;
 #ifdef SMP
-	for (cpu = 0; cpu <= mp_maxid; cpu++) {
+	CPU_FOREACH(cpu) {
 		if (cpu == timeout_cpu)
-			continue;
-		if (CPU_ABSENT(cpu))
 			continue;
 		cc = CC_CPU(cpu);
 		if (swi_add(NULL, "clock", softclock, cc, SWI_CLOCK,

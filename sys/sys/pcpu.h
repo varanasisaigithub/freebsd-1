@@ -106,6 +106,41 @@ extern uintptr_t dpcpu_off[];
 #define	DPCPU_ID_GET(i, n)	(*DPCPU_ID_PTR(i, n))
 #define	DPCPU_ID_SET(i, n, v)	(*DPCPU_ID_PTR(i, n) = v)
 
+/*
+ * Utility macros.
+ */
+#define	DPCPU_SUM(n) __extension__					\
+({									\
+	u_int _i;							\
+	__typeof(*DPCPU_PTR(n)) sum;					\
+									\
+	sum = 0;							\
+	CPU_FOREACH(_i) {						\
+		sum += *DPCPU_ID_PTR(_i, n);				\
+	}								\
+	sum;								\
+})
+
+#define	DPCPU_VARSUM(n, var) __extension__				\
+({									\
+	u_int _i;							\
+	__typeof((DPCPU_PTR(n))->var) sum;				\
+									\
+	sum = 0;							\
+	CPU_FOREACH(_i) {						\
+		sum += (DPCPU_ID_PTR(_i, n))->var;			\
+	}								\
+	sum;								\
+})
+
+#define	DPCPU_ZERO(n) do {						\
+	u_int _i;							\
+									\
+	CPU_FOREACH(_i) {						\
+		bzero(DPCPU_ID_PTR(_i, n), sizeof(*DPCPU_PTR(n)));	\
+	}								\
+} while(0)
+
 /* 
  * XXXUPS remove as soon as we have per cpu variable
  * linker sets and can define rm_queue in _rm_lock.h
@@ -144,6 +179,7 @@ struct pcpu {
 	struct device	*pc_device;
 	void		*pc_netisr;		/* netisr SWI cookie */
 	int		pc_dnweight;		/* vm_page_dontneed() */
+	int		pc_domain;		/* Memory domain. */
 
 	/*
 	 * Stuff for read mostly lock

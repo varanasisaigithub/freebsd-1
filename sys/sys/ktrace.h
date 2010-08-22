@@ -73,10 +73,6 @@ struct ktr_header {
 	if (KTRCHECKDRAIN(td))						\
 		ktruserret(td);						\
 } while (0)
-#define	KTRPROCEXIT(td) do {						\
-	if (KTRCHECKDRAIN(td))						\
-		ktrprocexit(td);					\
-} while (0)
 
 /*
  * ktrace record types
@@ -154,6 +150,10 @@ struct ktr_csw {
  * KTR_STRUCT - misc. structs
  */
 #define KTR_STRUCT	8
+	/*
+	 * record contains null-terminated struct name followed by
+	 * struct contents
+	 */
 struct sockaddr;
 struct stat;
 
@@ -202,11 +202,11 @@ void	ktrsysctl(int *name, u_int namelen);
 void	ktrsysret(int, int, register_t);
 void	ktrprocexit(struct thread *);
 void	ktruserret(struct thread *);
-void	ktrstruct(const char *, size_t, void *, size_t);
+void	ktrstruct(const char *, void *, size_t);
 #define ktrsockaddr(s) \
-	ktrstruct("sockaddr", 8, (s), ((struct sockaddr *)(s))->sa_len)
+	ktrstruct("sockaddr", (s), ((struct sockaddr *)(s))->sa_len)
 #define ktrstat(s) \
-	ktrstruct("stat", 4, (s), sizeof(struct stat))
+	ktrstruct("stat", (s), sizeof(struct stat))
 
 #else
 

@@ -1084,7 +1084,8 @@ pmap_enter(pmap_t pmap, vm_offset_t va, vm_prot_t access, vm_page_t m,
 	vm_page_t om;
 	int invlva;
 
-	KASSERT((m->oflags & VPO_BUSY) != 0,
+	KASSERT((m->flags & (PG_FICTITIOUS | PG_UNMANAGED)) != 0 ||
+	    (m->oflags & VPO_BUSY) != 0,
 	    ("pmap_enter: page %p is not busy", m));
 	if (pmap->pm_context)
 		DPRINTF("pmap_enter(va=%lx, pa=0x%lx, prot=%x)\n", va, 
@@ -1450,7 +1451,7 @@ pmap_ipi(pmap_t pmap, char *func, uint64_t arg1, uint64_t arg2)
 {
 
 	int i, cpu_count, retried;
-	u_int cpus;
+	cpumask_t cpus;
 	cpumask_t cpumask, active, curactive;
 	cpumask_t active_total, ackmask;
 	uint16_t *cpulist;

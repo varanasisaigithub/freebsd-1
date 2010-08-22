@@ -46,7 +46,7 @@ int             ixgbe_display_debug_stats = 0;
 /*********************************************************************
  *  Driver version
  *********************************************************************/
-char ixgbe_driver_version[] = "2.2.1";
+char ixgbe_driver_version[] = "2.2.3";
 
 /*********************************************************************
  *  PCI Device ID Table
@@ -154,6 +154,7 @@ static int      ixgbe_xmit(struct tx_ring *, struct mbuf **);
 static int      ixgbe_sysctl_stats(SYSCTL_HANDLER_ARGS);
 static int	ixgbe_sysctl_debug(SYSCTL_HANDLER_ARGS);
 static int	ixgbe_set_flowcntl(SYSCTL_HANDLER_ARGS);
+static int	ixgbe_set_advertise(SYSCTL_HANDLER_ARGS);
 static int	ixgbe_dma_malloc(struct adapter *, bus_size_t,
 		    struct ixgbe_dma_alloc *, int);
 static void     ixgbe_dma_free(struct adapter *, struct ixgbe_dma_alloc *);
@@ -463,6 +464,11 @@ ixgbe_attach(device_t dev)
 			SYSCTL_CHILDREN(device_get_sysctl_tree(dev)),
 			OID_AUTO, "flow_control", CTLTYPE_INT | CTLFLAG_RW,
 			adapter, 0, ixgbe_set_flowcntl, "I", "Flow Control");
+
+	SYSCTL_ADD_PROC(device_get_sysctl_ctx(dev),
+			SYSCTL_CHILDREN(device_get_sysctl_tree(dev)),
+			OID_AUTO, "advertise_gig", CTLTYPE_INT | CTLFLAG_RW,
+			adapter, 0, ixgbe_set_advertise, "I", "1G Link");
 
         SYSCTL_ADD_INT(device_get_sysctl_ctx(dev),
 			SYSCTL_CHILDREN(device_get_sysctl_tree(dev)),
@@ -1365,7 +1371,6 @@ ixgbe_msix_que(void *arg)
 	bool		more_tx, more_rx;
 	u32		newitr = 0;
 
-	ixgbe_disable_queue(adapter, que->msix);
 	++que->irqs;
 
 	more_rx = ixgbe_rxeof(que, adapter->rx_process_limit);
@@ -2121,6 +2126,9 @@ ixgbe_allocate_msix(struct adapter *adapter)
 			device_printf(dev, "Failed to register QUE handler");
 			return (error);
 		}
+#if __FreeBSD_version >= 800504
+		bus_describe_intr(dev, que->res, que->tag, "que %d", i);
+#endif
 		que->msix = vector;
         	adapter->que_mask |= (u64)(1 << que->msix);
 		/*
@@ -2155,6 +2163,9 @@ ixgbe_allocate_msix(struct adapter *adapter)
 		device_printf(dev, "Failed to register LINK handler");
 		return (error);
 	}
+#if __FreeBSD_version >= 800504
+	bus_describe_intr(dev, adapter->res, adapter->tag, "link");
+#endif
 	adapter->linkvec = vector;
 	/* Tasklets for Link, SFP and Multispeed Fiber */
 	TASK_INIT(&adapter->link_task, 0, ixgbe_handle_link, adapter);
@@ -3637,7 +3648,7 @@ ixgbe_setup_receive_ring(struct rx_ring *rxr)
 			goto skip_head;
 
 		/* First the header */
-		rxbuf->m_head = m_gethdr(M_WAITOK, MT_DATA);
+		rxbuf->m_head = m_gethdr(M_NOWAIT, MT_DATA);
 		if (rxbuf->m_head == NULL) {
 			error = ENOBUFS;
 			goto fail;
@@ -3659,7 +3670,7 @@ ixgbe_setup_receive_ring(struct rx_ring *rxr)
 
 skip_head:
 		/* Now the payload cluster */
-		rxbuf->m_pack = m_getjcl(M_WAITOK, MT_DATA,
+		rxbuf->m_pack = m_getjcl(M_NOWAIT, MT_DATA,
 		    M_PKTHDR, adapter->rx_mbuf_sz);
 		if (rxbuf->m_pack == NULL) {
 			error = ENOBUFS;
@@ -4979,4 +4990,45 @@ ixgbe_add_rx_process_limit(struct adapter *adapter, const char *name,
         SYSCTL_ADD_INT(device_get_sysctl_ctx(adapter->dev),
             SYSCTL_CHILDREN(device_get_sysctl_tree(adapter->dev)),
             OID_AUTO, name, CTLTYPE_INT|CTLFLAG_RW, limit, value, description);
+}
+
+/*
+** Control link advertise speed:
+** 	0 - normal
+**	1 - advertise only 1G
+*/
+static int
+ixgbe_set_advertise(SYSCTL_HANDLER_ARGS)
+{
+	int			error;
+	struct adapter		*adapter;
+	struct ixgbe_hw		*hw;
+	ixgbe_link_speed	speed, last;
+
+	adapter = (struct adapter *) arg1;
+	hw = &adapter->hw;
+	last = hw->phy.autoneg_advertised;
+
+	error = sysctl_handle_int(oidp, &adapter->advertise, 0, req);
+
+	if ((error) || (adapter->advertise == -1))
+		return (error);
+
+	if (!((hw->phy.media_type == ixgbe_media_type_copper) ||
+            (hw->phy.multispeed_fiber)))
+		return (error);
+
+	if (adapter->advertise == 1)
+                speed = IXGBE_LINK_SPEED_1GB_FULL;
+	else
+                speed = IXGBE_LINK_SPEED_1GB_FULL |
+			IXGBE_LINK_SPEED_10GB_FULL;
+
+	if (speed == last) /* no change */
+		return (error);
+
+	hw->mac.autotry_restart = TRUE;
+	hw->mac.ops.setup_link(hw, speed, TRUE, TRUE);
+
+	return (error);
 }
