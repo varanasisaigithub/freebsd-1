@@ -31,9 +31,9 @@ CFLAGS+=	-mno-sse3
 CFLAGS+=	-Os
 .endif
 .if ${MACHINE_CPUARCH} == "powerpc"
-CFLAGS+=	-msoft-float -D_STANDALONE
+CFLAGS+=	-msoft-float -D_STANDALONE -DNETIF_DEBUG
 .endif
-.if ${MACHINE_CPUARCH} == "amd64"
+.if ${MACHINE_ARCH} == "amd64" || ${MACHINE_ARCH} == "powerpc64"
 CFLAGS+=	-m32 -I.
 .endif
 .if ${MACHINE_CPUARCH} == "arm"
@@ -92,6 +92,8 @@ SRCS+= uuid_equal.c uuid_is_nil.c
 # _setjmp/_longjmp
 .if ${MACHINE_CPUARCH} == "amd64"
 .PATH: ${.CURDIR}/i386
+.elif ${MACHINE_ARCH} == "powerpc64"
+.PATH: ${.CURDIR}/powerpc
 .else
 .PATH: ${.CURDIR}/${MACHINE_CPUARCH}
 .endif

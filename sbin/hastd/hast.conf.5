@@ -27,14 +27,14 @@
 .\"
 .\" $FreeBSD$
 .\"
-.Dd February 1, 2010
+.Dd August 5, 2010
 .Dt HAST.CONF 5
 .Os
 .Sh NAME
 .Nm hast.conf
 .Nd configuration file for the
 .Xr hastd 8
-deamon and the
+daemon and the
 .Xr hastctl 8
 utility.
 .Sh DESCRIPTION
@@ -169,14 +169,16 @@ The only situation where some small amount of data could be lost is when
 the data is stored on primary node and sent to the secondary.
 Secondary node then acknowledges data receipt and primary reports
 success to an application.
-However, it may happen that the seconderay goes down before the received
+However, it may happen that the secondary goes down before the received
 data is really stored locally.
 Before secondary node returns, primary node dies entirely.
 When the secondary node comes back to life it becomes the new primary.
 Unfortunately some small amount of data which was confirmed to be stored
 to the application was lost.
-The risk of such a situation is very small, which is the reason for this
-mode to be the default.
+The risk of such a situation is very small.
+The
+.Ic memsync
+replication mode is currently not implemented.
 .It Ic fullsync
 .Pp
 Mark the write operation as completed when local as well as remote
@@ -184,7 +186,7 @@ write completes.
 This is the safest and the slowest replication mode.
 The
 .Ic fullsync
-replication mode is currently not implemented.
+replication mode is the default.
 .It Ic async
 .Pp
 The write operation is reported as complete right after the local write
@@ -223,6 +225,11 @@ When operating as a primary node this address will be used to connect to
 the secondary node.
 When operating as a secondary node only connections from this address
 will be accepted.
+.Pp
+A special value of
+.Va none
+can be used when the remote address is not yet known (eg. the other node is not
+set up yet).
 .El
 .Sh FILES
 .Bl -tag -width ".Pa /var/run/hastctl" -compact

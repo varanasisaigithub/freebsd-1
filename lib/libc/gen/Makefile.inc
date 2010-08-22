@@ -7,7 +7,7 @@
 SRCS+=  __getosreldate.c __xuname.c \
 	_once_stub.c _pthread_stubs.c _rand48.c _spinlock_stub.c \
 	_thread_init.c \
-	alarm.c arc4random.c assert.c basename.c check_utility_compat.c \
+	alarm.c arc4random.c assert.c aux.c basename.c check_utility_compat.c \
 	clock.c closedir.c confstr.c \
 	crypt.c ctermid.c daemon.c devname.c dirname.c disklabel.c \
 	dlfcn.c drand48.c erand48.c err.c errlst.c errno.c \
@@ -129,7 +129,7 @@ MLINKS+=getusershell.3 endusershell.3 getusershell.3 setusershell.3
 MLINKS+=getutxent.3 endutxent.3 getutxent.3 getutxid.3 \
 	getutxent.3 getutxline.3 getutxent.3 getutxuser.3 \
 	getutxent.3 pututxline.3 getutxent.3 setutxdb.3 \
-	getutxent.3 setutxent.3
+	getutxent.3 setutxent.3 getutxent.3 utmpx.3
 MLINKS+=glob.3 globfree.3
 MLINKS+=isgreater.3 isgreaterequal.3 isgreater.3 isless.3 \
 	isgreater.3 islessequal.3 isgreater.3 islessgreater.3 \

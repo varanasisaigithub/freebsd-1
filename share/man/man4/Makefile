@@ -3,7 +3,6 @@
 
 MAN=	aac.4 \
 	acpi.4 \
-	${_acpi_aiboost.4} \
 	${_acpi_asus.4} \
 	${_acpi_dock.4} \
 	${_acpi_fujitsu.4} \
@@ -26,6 +25,7 @@ MAN=	aac.4 \
 	ahc.4 \
 	ahci.4 \
 	ahd.4 \
+	${_aibs.4} \
 	aio.4 \
 	alc.4 \
 	ale.4 \
@@ -109,6 +109,8 @@ MAN=	aac.4 \
 	fatm.4 \
 	fd.4 \
 	fdc.4 \
+	fdt.4 \
+	fdtbus.4 \
 	firewire.4 \
 	fpa.4 \
 	fwe.4 \
@@ -355,8 +357,10 @@ MAN=	aac.4 \
 	sge.4 \
 	si.4 \
 	siba.4 \
-	sio.4 \
+	siftr.4 \
 	siis.4 \
+	simplebus.4 \
+	sio.4 \
 	sis.4 \
 	sk.4 \
 	smb.4 \
@@ -415,6 +419,7 @@ MAN=	aac.4 \
 	ti.4 \
 	tl.4 \
 	tnt4882.4 \
+	${_tpm.4} \
 	trm.4 \
 	tty.4 \
 	tun.4 \
@@ -525,6 +530,7 @@ MLINKS+=fatm.4 if_fatm.4
 MLINKS+=fd.4 stderr.4 \
 	fd.4 stdin.4 \
 	fd.4 stdout.4
+MLINKS+=fdt.4 FDT.4
 MLINKS+=firewire.4 ieee1394.4
 MLINKS+=fpa.4 fea.4
 MLINKS+=fwe.4 if_fwe.4
@@ -623,7 +629,6 @@ MLINKS+=xl.4 if_xl.4
 MLINKS+=zyd.4 if_zyd.4
 
 .if ${MACHINE_CPUARCH} == "amd64" || ${MACHINE_CPUARCH} == "i386"
-_acpi_aiboost.4=acpi_aiboost.4
 _acpi_asus.4=	acpi_asus.4
 _acpi_dock.4=	acpi_dock.4
 _acpi_fujitsu.4=acpi_fujitsu.4
@@ -633,6 +638,7 @@ _acpi_panasonic.4=acpi_panasonic.4
 _acpi_sony.4=	acpi_sony.4
 _acpi_toshiba.4=acpi_toshiba.4
 _acpi_wmi.4=	acpi_wmi.4
+_aibs.4=	aibs.4
 _amdsbwd.4=	amdsbwd.4
 _amdsmb.4=	amdsmb.4
 _amdtemp.4=	amdtemp.4
@@ -665,6 +671,7 @@ _padlock.4=	padlock.4
 _rr232x.4=	rr232x.4
 _speaker.4=	speaker.4
 _spkr.4=	spkr.4
+_tpm.4=		tpm.4
 _urtw.4=	urtw.4
 _wpi.4=		wpi.4
 

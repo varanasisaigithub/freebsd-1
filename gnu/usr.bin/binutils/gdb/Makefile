@@ -8,8 +8,7 @@ GDBDIR= ${.CURDIR}/../../../../contrib/gdb
 .PATH: ${SRCDIR}/opcodes ${SRCDIR}/binutils
 
 #	For FSF GDB files, use their CPU (arch) name; for our files use ours.
-GDB_CPU=${TARGET_CPUARCH:C/amd64/i386/:C/powerpc/rs6000/:C/sparc64/sparc/}
-
+GDB_CPU=${TARGET_CPUARCH:C/amd64/i386/:C/powerpc.*/rs6000/:C/sparc64/sparc/}
 NO_SHARED?=yes
 PROG=	gdb
 XSRCS=	annotate.c arch-utils.c ax-general.c ax-gdb.c bcache.c		\

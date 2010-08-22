@@ -121,6 +121,8 @@ _CPUCFLAGS = -Wa,-me500 -msoft-float
 .  else
 _CPUCFLAGS = -mcpu=${CPUTYPE} -mno-powerpc64
 .  endif
+. elif ${MACHINE_ARCH} == "powerpc64"
+_CPUCFLAGS = -mcpu=${CPUTYPE}
 . elif ${MACHINE_CPUARCH} == "mips"
 .  if ${CPUTYPE} == "mips32"
 _CPUCFLAGS = -march=mips32

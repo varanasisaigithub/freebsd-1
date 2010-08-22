@@ -278,15 +278,6 @@ WITH_HESIOD=
 WITH_IDEA=
 .endif
 
-# Enable FDT by default for selected platforms.
-.if ${MACHINE_ARCH} == "arm" || ${MACHINE_ARCH} == "powerpc"
-# XXX this is temporarily disabled until all FDT support code is in place.
-#_fdt=	FDT
-_no_fdt= FDT
-.else
-_no_fdt= FDT
-.endif
-
 #
 # Default behaviour of MK_CLANG depends on the architecture.
 #
@@ -335,7 +326,6 @@ _clang_no=CLANG
     DICT \
     DYNAMICROOT \
     EXAMPLES \
-    ${_fdt} \
     FLOPPY \
     FORTH \
     FP_LIBC \
@@ -344,7 +334,6 @@ _clang_no=CLANG
     GCOV \
     GDB \
     GNU \
-    GNU_GREP \
     GPIB \
     GROFF \
     HTML \
@@ -431,7 +420,8 @@ MK_${var}:=	yes
     BIND_SIGCHASE \
     BIND_XML \
     ${_clang_no} \
-    ${_no_fdt} \
+    FDT \
+    GNU_GREP \
     HESIOD \
     IDEA
 .if defined(WITH_${var}) && defined(WITHOUT_${var})

@@ -88,8 +88,9 @@ SUBDIR=	${SUBDIR_ORDERED} \
 	libpcap \
 	${_libpkg} \
 	${_libpmc} \
-	libproc \
+	${_libproc} \
 	librt \
+	${_librtld_db} \
 	${_libsdp} \
 	${_libsm} \
 	${_libsmb} \
@@ -138,7 +139,7 @@ _libsdp=	libsdp
 _libbsnmp=	libbsnmp
 .endif
 
-.if ${MK_CLANG} != "no"
+.if ${MK_CLANG} != "no" && !defined(COMPAT_32BIT)
 _clang=		clang
 .endif
 
@@ -167,12 +168,14 @@ _libnetgraph=	libnetgraph
 _libypclnt=	libypclnt
 .endif
 
-.if ${MACHINE_CPUARCH} == "i386"
+.if ${MACHINE_CPUARCH} == "i386" || ${MACHINE_CPUARCH} == "amd64"
 .if ${MK_NCP} != "no"
 _libncp=	libncp
 .endif
 _libsmb=	libsmb
 _libvgl=	libvgl
+_libproc=	libproc
+_librtld_db=	librtld_db
 .endif
 
 .if ${MACHINE_CPUARCH} == "ia64"
@@ -183,9 +186,6 @@ _libsmb=	libsmb
 .if ${MACHINE_CPUARCH} == "amd64"
 .if ${MK_NCP} != "no"
 _libncp=	libncp
-.endif
-_libsmb=	libsmb
-_libvgl=	libvgl
 .endif
 
 .if ${MACHINE_CPUARCH} == "powerpc"

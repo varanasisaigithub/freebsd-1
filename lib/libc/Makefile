@@ -51,7 +51,13 @@ NOASM=
 .include "${.CURDIR}/posix1e/Makefile.inc"
 .if ${MACHINE_CPUARCH} != "amd64" && \
     ${MACHINE_CPUARCH} != "ia64" && \
-    ${MACHINE_CPUARCH} != "sparc64"
+    ${MACHINE_ARCH} != "powerpc64" && \
+    ${MACHINE_CPUARCH} != "sparc64" && \
+    ${MACHINE_CPUARCH} != "mips"
+.include "${.CURDIR}/quad/Makefile.inc"
+.endif
+.if ${MACHINE_ARCH} == "mips" && \
+    (!defined(TARGET_ABI) || ${TARGET_ABI} == "o32")
 .include "${.CURDIR}/quad/Makefile.inc"
 .endif
 .include "${.CURDIR}/regex/Makefile.inc"
@@ -122,7 +128,7 @@ libkern.${MACHINE_CPUARCH}:: ${KMSRCS}
 .include <bsd.lib.mk>
 
 # Disable warnings in contributed sources.
-CWARNFLAGS:=	${.IMPSRC:Ngdtoa_*.c:C/^.+$/${CWARNFLAGS}/}
+CWARNFLAGS:=	${.IMPSRC:Ngdtoa_*.c:C/^.+$/${CWARNFLAGS}/:C/^$/-w/}
 # XXX For now, we don't allow libc to be compiled with
 # -fstack-protector-all because it breaks rtld.  We may want to make a librtld
 # in the future to circumvent this.

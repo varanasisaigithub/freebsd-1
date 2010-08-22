@@ -67,8 +67,6 @@ sigcancel_handler(int sig __unused,
 {
 	struct pthread *curthread = _get_curthread();
 
-	if (curthread->cancel_defer && curthread->cancel_pending)
-		thr_wake(curthread->tid);
 	curthread->in_sigcancel_handler++;
 	_thr_ast(curthread);
 	curthread->in_sigcancel_handler--;
@@ -77,13 +75,50 @@ sigcancel_handler(int sig __unused,
 void
 _thr_ast(struct pthread *curthread)
 {
-	if (!THR_IN_CRITICAL(curthread)) {
-		_thr_testcancel(curthread);
-		if (__predict_false((curthread->flags &
-		    (THR_FLAGS_NEED_SUSPEND | THR_FLAGS_SUSPENDED))
-			== THR_FLAGS_NEED_SUSPEND))
-			_thr_suspend_check(curthread);
+
+	if (THR_IN_CRITICAL(curthread))
+		return;
+
+	if (curthread->cancel_pending && curthread->cancel_enable
+		&& !curthread->cancelling) {
+		if (curthread->cancel_async) {
+			/*
+		 	 * asynchronous cancellation mode, act upon
+			 * immediately.
+		 	 */
+			_pthread_exit(PTHREAD_CANCELED);
+		} else {
+			/*
+		 	 * Otherwise, we are in defer mode, and we are at
+			 * cancel point, tell kernel to not block the current
+			 * thread on next cancelable system call.
+			 * 
+			 * There are two cases we should call thr_wake() to 
+			 * turn on TDP_WAKEUP in kernel:
+			 * 1) we are going to call a cancelable system call,
+			 *    non-zero cancel_point means we are already in
+			 *    cancelable state, next system call is cancelable.
+			 * 2) because _thr_ast() may be called by
+			 *    THR_CRITICAL_LEAVE() which is used by rtld rwlock
+			 *    and any libthr internal locks, when rtld rwlock
+			 *    is used, it is mostly caused my an unresolved PLT.
+			 *    those routines may clear the TDP_WAKEUP flag by
+			 *    invoking some system calls, in those cases, we
+			 *    also should reenable the flag.
+		 	 */
+			if (curthread->cancel_point) {
+				if (curthread->cancel_defer)
+					thr_wake(curthread->tid);
+				else
+					_pthread_exit(PTHREAD_CANCELED);
+			}
+		}
 	}
+
+	if (__predict_false((curthread->flags &
+	    (THR_FLAGS_NEED_SUSPEND | THR_FLAGS_SUSPENDED))
+		== THR_FLAGS_NEED_SUSPEND))
+		_thr_suspend_check(curthread);
 }
 
 void
@@ -194,7 +229,7 @@ int
 _sigaction(int sig, const struct sigaction * act, struct sigaction * oact)
 {
 	/* Check if the signal number is out of range: */
-	if (sig < 1 || sig > _SIG_MAXSIG || sig == SIGCANCEL) {
+	if (!_SIG_VALID(sig) || sig == SIGCANCEL) {
 		/* Return an invalid argument: */
 		errno = EINVAL;
 		return (-1);
@@ -233,23 +268,26 @@ _pthread_sigmask(int how, const sigset_t *set, sigset_t *oset)
 
 __weak_reference(__sigsuspend, sigsuspend);
 
+static const sigset_t *
+thr_remove_thr_signals(const sigset_t *set, sigset_t *newset)
+{
+	const sigset_t *pset;
+
+	if (SIGISMEMBER(*set, SIGCANCEL)) {
+		*newset = *set;
+		SIGDELSET(*newset, SIGCANCEL);
+		pset = newset;
+	} else
+		pset = set;
+	return (pset);
+}
+
 int
 _sigsuspend(const sigset_t * set)
 {
 	sigset_t newset;
-	const sigset_t *pset;
-	int ret;
 
-	if (SIGISMEMBER(*set, SIGCANCEL)) {
-		newset = *set;
-		SIGDELSET(newset, SIGCANCEL);
-		pset = &newset;
-	} else
-		pset = set;
-
-	ret = __sys_sigsuspend(pset);
-
-	return (ret);
+	return (__sys_sigsuspend(thr_remove_thr_signals(set, &newset)));
 }
 
 int
@@ -257,18 +295,10 @@ __sigsuspend(const sigset_t * set)
 {
 	struct pthread *curthread = _get_curthread();
 	sigset_t newset;
-	const sigset_t *pset;
 	int ret;
 
-	if (SIGISMEMBER(*set, SIGCANCEL)) {
-		newset = *set;
-		SIGDELSET(newset, SIGCANCEL);
-		pset = &newset;
-	} else
-		pset = set;
-
 	_thr_cancel_enter(curthread);
-	ret = __sys_sigsuspend(pset);
+	ret = __sys_sigsuspend(thr_remove_thr_signals(set, &newset));
 	_thr_cancel_leave(curthread);
 
 	return (ret);
@@ -283,37 +313,28 @@ _sigtimedwait(const sigset_t *set, siginfo_t *info,
 	const struct timespec * timeout)
 {
 	sigset_t newset;
-	const sigset_t *pset;
-	int ret;
 
-	if (SIGISMEMBER(*set, SIGCANCEL)) {
-		newset = *set;
-		SIGDELSET(newset, SIGCANCEL);
-		pset = &newset;
-	} else
-		pset = set;
-	ret = __sys_sigtimedwait(pset, info, timeout);
-	return (ret);
+	return (__sys_sigtimedwait(thr_remove_thr_signals(set, &newset), info,
+	    timeout));
 }
 
+/*
+ * Cancellation behavior:
+ *   Thread may be canceled at start, if thread got signal,
+ *   it is not canceled.
+ */
 int
 __sigtimedwait(const sigset_t *set, siginfo_t *info,
 	const struct timespec * timeout)
 {
 	struct pthread	*curthread = _get_curthread();
 	sigset_t newset;
-	const sigset_t *pset;
 	int ret;
 
-	if (SIGISMEMBER(*set, SIGCANCEL)) {
-		newset = *set;
-		SIGDELSET(newset, SIGCANCEL);
-		pset = &newset;
-	} else
-		pset = set;
-	_thr_cancel_enter(curthread);
-	ret = __sys_sigtimedwait(pset, info, timeout);
-	_thr_cancel_leave(curthread);
+	_thr_cancel_enter_defer(curthread, 1);
+	ret = __sys_sigtimedwait(thr_remove_thr_signals(set, &newset), info,
+	    timeout);
+	_thr_cancel_leave_defer(curthread, (ret == -1));
 	return (ret);
 }
 
@@ -321,38 +342,25 @@ int
 _sigwaitinfo(const sigset_t *set, siginfo_t *info)
 {
 	sigset_t newset;
-	const sigset_t *pset;
-	int ret;
 
-	if (SIGISMEMBER(*set, SIGCANCEL)) {
-		newset = *set;
-		SIGDELSET(newset, SIGCANCEL);
-		pset = &newset;
-	} else
-		pset = set;
-
-	ret = __sys_sigwaitinfo(pset, info);
-	return (ret);
+	return (__sys_sigwaitinfo(thr_remove_thr_signals(set, &newset), info));
 }
 
+/*
+ * Cancellation behavior:
+ *   Thread may be canceled at start, if thread got signal,
+ *   it is not canceled.
+ */ 
 int
 __sigwaitinfo(const sigset_t *set, siginfo_t *info)
 {
 	struct pthread	*curthread = _get_curthread();
 	sigset_t newset;
-	const sigset_t *pset;
 	int ret;
 
-	if (SIGISMEMBER(*set, SIGCANCEL)) {
-		newset = *set;
-		SIGDELSET(newset, SIGCANCEL);
-		pset = &newset;
-	} else
-		pset = set;
-
-	_thr_cancel_enter(curthread);
-	ret = __sys_sigwaitinfo(pset, info);
-	_thr_cancel_leave(curthread);
+	_thr_cancel_enter_defer(curthread, 1);
+	ret = __sys_sigwaitinfo(thr_remove_thr_signals(set, &newset), info);
+	_thr_cancel_leave_defer(curthread, ret == -1);
 	return (ret);
 }
 
@@ -360,37 +368,24 @@ int
 _sigwait(const sigset_t *set, int *sig)
 {
 	sigset_t newset;
-	const sigset_t *pset;
-	int ret;
 
-	if (SIGISMEMBER(*set, SIGCANCEL)) {
-		newset = *set;
-		SIGDELSET(newset, SIGCANCEL);
-		pset = &newset;
-	} else 
-		pset = set;
-
-	ret = __sys_sigwait(pset, sig);
-	return (ret);
+	return (__sys_sigwait(thr_remove_thr_signals(set, &newset), sig));
 }
 
+/*
+ * Cancellation behavior:
+ *   Thread may be canceled at start, if thread got signal,
+ *   it is not canceled.
+ */ 
 int
 __sigwait(const sigset_t *set, int *sig)
 {
 	struct pthread	*curthread = _get_curthread();
 	sigset_t newset;
-	const sigset_t *pset;
 	int ret;
 
-	if (SIGISMEMBER(*set, SIGCANCEL)) {
-		newset = *set;
-		SIGDELSET(newset, SIGCANCEL);
-		pset = &newset;
-	} else 
-		pset = set;
-
-	_thr_cancel_enter(curthread);
-	ret = __sys_sigwait(pset, sig);
-	_thr_cancel_leave(curthread);
+	_thr_cancel_enter_defer(curthread, 1);
+	ret = __sys_sigwait(thr_remove_thr_signals(set, &newset), sig);
+	_thr_cancel_leave_defer(curthread, (ret != 0));
 	return (ret);
 }

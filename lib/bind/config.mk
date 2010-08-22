@@ -1,7 +1,6 @@
 # $FreeBSD$
 
 .include <bsd.own.mk>
-.include <bsd.endian.mk>
 
 # BIND version number
 .if defined(BIND_DIR) && exists(${BIND_DIR}/version)
@@ -46,7 +45,7 @@ CFLAGS+=	-DOPENSSL
 CFLAGS+=	-DUSE_MD5
 
 # Endianness
-.if ${TARGET_ENDIANNESS} == 4321
+.if ${MACHINE_CPUARCH} == "powerpc" || ${MACHINE_CPUARCH} == "sparc64"
 CFLAGS+=	-DWORDS_BIGENDIAN
 .endif
 
@@ -65,7 +64,7 @@ CFLAGS+=	-I${LIB_BIND_DIR}
 .endif
 
 # Use the right version of the atomic.h file from lib/isc
-.if ${MACHINE_CPUARCH} == "amd64" || ${MACHINE_CPUARCH} == "i386"
+.if ${MACHINE_ARCH} == "amd64" || ${MACHINE_ARCH} == "i386"
 ISC_ATOMIC_ARCH=	x86_32
 .else
 ISC_ATOMIC_ARCH=	${MACHINE_CPUARCH}

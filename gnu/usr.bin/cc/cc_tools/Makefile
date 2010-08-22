@@ -52,6 +52,10 @@ TARGET_INC+=	${GCC_CPU}/elf.h
 .if ${TARGET_CPUARCH} == "arm"
 TARGET_INC+=	${GCC_CPU}/aout.h
 .endif
+.if ${TARGET_ARCH} == "powerpc64"
+TARGET_INC+=	${GCC_CPU}/biarch64.h
+TARGET_INC+=    ${GCC_CPU}/default64.h
+.endif
 TARGET_INC+=	${GCC_CPU}/freebsd.h
 .if ${TARGET_CPUARCH} == "amd64"
 TARGET_INC+=	${GCC_CPU}/freebsd64.h
@@ -303,12 +307,22 @@ GENSRCS+=	gcov-iov.h
 
 # Multilib config file
 multilib.h:
+.if ${TARGET_ARCH} == "powerpc64"
+	echo 'static const char *const multilib_raw[] = { \
+	    ". !m64 !m32;", \
+	    "64:../lib m64 !m32;", \
+	    "32:../lib32 !m64 m32;", NULL };'			> ${.TARGET}
+	echo 'static const char *multilib_options = "m64/m32";'	>> ${.TARGET}
+	echo 'static const char *const multilib_matches_raw[] = { \
+	    "m64 m64;", "m32 m32;", NULL };'			>> ${.TARGET}
+.else
 	echo 'static const char *const multilib_raw[] = { \
 	    ". ;", NULL };'					> ${.TARGET}
+	echo 'static const char *multilib_options = "";'	>> ${.TARGET}
 	echo 'static const char *const multilib_matches_raw[] = { \
 	    NULL };'						>> ${.TARGET}
+.endif
 	echo 'static const char *multilib_extra = "";'		>> ${.TARGET}
-	echo 'static const char *multilib_options = "";'	>> ${.TARGET}
 	echo 'static const char *const multilib_exclusions_raw[] = { \
 	    NULL };'						>> ${.TARGET}
 

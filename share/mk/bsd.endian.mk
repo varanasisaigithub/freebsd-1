@@ -7,6 +7,7 @@
     ${MACHINE_ARCH} == "mipsel"
 TARGET_ENDIANNESS= 1234
 .elif ${MACHINE_ARCH} == "powerpc" || \
+    ${MACHINE_ARCH} == "powerpc64" || \
     ${MACHINE_ARCH} == "sparc64" || \
     ${MACHINE_ARCH} == "armeb" || \
     ${MACHINE_ARCH} == "mipseb"

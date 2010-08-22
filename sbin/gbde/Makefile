@@ -9,10 +9,7 @@ SRCS+=	g_bde_lock.c
 
 # rijndael-fst.c does evil casting things which results in warnings on
 # 64 bit machines, the test-vectors check out however, so it works right.
-#XXX All the world isn't amd64 or i386
-.if ${MACHINE_CPUARCH} == "i386"
-WARNS?=	5
-.else
+.if ${MACHINE_CPUARCH} != "i386"
 WARNS?=	3
 .endif
 
