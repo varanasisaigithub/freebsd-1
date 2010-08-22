@@ -5,7 +5,7 @@
 
 # XXX MISSING:		deroff diction graph learn plot
 #			spell spline struct xsend
-# XXX Use GNU versions: apropos diff grep ld man patch whatis
+# XXX Use GNU versions: apropos diff ld man patch whatis
 # Moved to secure: bdes
 #
 
@@ -57,6 +57,7 @@ SUBDIR=	alias \
 	getconf \
 	getent \
 	getopt \
+	${_grep} \
 	gzip \
 	head \
 	hexdump \
@@ -227,6 +228,10 @@ SUBDIR+=	calendar
 
 .if ${MK_CLANG} != "no"
 _clang=		clang
+.endif
+
+.if ${MK_GNU_GREP} != "yes"
+_grep=		grep
 .endif
 
 .if ${MK_HESIOD} != "no"
