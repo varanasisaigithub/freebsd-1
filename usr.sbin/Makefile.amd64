@@ -25,9 +25,6 @@ SUBDIR+=	mptable
 .if ${MK_NDIS} != "no"
 SUBDIR+=	ndiscvt
 .endif
-.if ${MK_SYSINSTALL} != "no"
-SUBDIR+=	sade
-.endif
 SUBDIR+=	sicontrol
 SUBDIR+=	spkrtest
 SUBDIR+=	zzz

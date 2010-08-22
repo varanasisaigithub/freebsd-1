@@ -18,7 +18,8 @@ CFLAGS+=-DNLIST_AOUT
 SRCS+=	exec_aout.c
 .endif
 
-.if ${TARGET_CPUARCH} == ia64 || \
+# nb: TARGET_ARCH for powerpc64 is correct here
+.if ${TARGET_CPUARCH} == ia64 || ${TARGET_ARCH} == powerpc64 || \
     ${TARGET_CPUARCH} == sparc64 || ${TARGET_CPUARCH} == amd64
 CFLAGS+=-DNLIST_ELF64
 SRCS+=	exec_elf64.c

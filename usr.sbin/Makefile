@@ -36,7 +36,7 @@ SUBDIR= adduser \
 	lastlogin \
 	mailwrapper \
 	makefs \
-	${_manctl} \
+	manctl \
 	memcontrol \
 	mergemaster \
 	mfiutil \
@@ -54,6 +54,7 @@ SUBDIR= adduser \
 	nfsrevoke \
 	nfsuserd \
 	nologin \
+	pc-sysinstall \
 	pciconf \
 	periodic \
 	powerd \
@@ -207,7 +208,7 @@ SUBDIR+=	lpr
 .endif
 
 .if ${MK_MAN_UTILS} != "no"
-_manctl=	manctl
+SUBDIR+=	manctl
 .endif
 
 .if ${MK_NETGRAPH} != "no"
