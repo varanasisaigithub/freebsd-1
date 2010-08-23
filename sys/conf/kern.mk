@@ -11,7 +11,7 @@
 CWARNFLAGS=
 .else
 CWARNFLAGS?=	-Wall -Wredundant-decls -Wnested-externs -Wstrict-prototypes \
-		-Wmissing-prototypes -Wpointer-arith -Wcast-qual \
+		-Wmissing-prototypes -Wpointer-arith -Winline -Wcast-qual \
 		-Wundef -Wno-pointer-sign -fformat-extensions
 .endif
 #
