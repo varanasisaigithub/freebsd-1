@@ -27,11 +27,12 @@ SRCS+=	opensolaris_uio.c
 SRCS+=	opensolaris_vfs.c
 SRCS+=	opensolaris_zone.c
 
-.if ${MACHINE_CPUARCH} == "i386" || ${MACHINE_CPUARCH} == "amd64" || ${MACHINE_CPUARCH} == "ia64" || ${MACHINE_CPUARCH} == "sparc64"
-.PATH:	${.CURDIR}/../../cddl/contrib/opensolaris/common/atomic/${MACHINE_CPUARCH}
+_A=${.CURDIR}/../../cddl/contrib/opensolaris/common/atomic
+.if exists(${_A}/${MACHINE_CPUARCH}/opensolaris_atomic.S)
+.PATH:	${_A}/${MACHINE_CPUARCH}
 SRCS+=		opensolaris_atomic.S
-.elif ${MACHINE_ARCH} == "powerpc64"
-.PATH:	${.CURDIR}/../../cddl/contrib/opensolaris/common/atomic/${MACHINE_ARCH}
+.elif exists(${_A}/${MACHINE_ARCH}/opensolaris_atomic.S)
+.PATH:	${_A}/${MACHINE_ARCH}
 SRCS+=		opensolaris_atomic.S
 .else
 SRCS+=		opensolaris_atomic.c
