@@ -827,7 +827,7 @@ static int
 sysctl_sysctl_name2oid(SYSCTL_HANDLER_ARGS)
 {
 	char *p;
-	int error, oid[CTL_MAXNAME], len = 0;
+	int error, oid[CTL_MAXNAME], len;
 	struct sysctl_oid *op = 0;
 
 	SYSCTL_ASSERT_LOCKED();
