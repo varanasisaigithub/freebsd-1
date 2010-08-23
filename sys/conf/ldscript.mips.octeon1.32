@@ -8,7 +8,7 @@ ENTRY(_start)
 PROVIDE (_DYNAMIC = 0);
 
 SECTIONS {
-	. = KERNLOADADDR;
+	. = KERNLOADADDR + SIZEOF_HEADERS;
 
 
 	.text . : {
