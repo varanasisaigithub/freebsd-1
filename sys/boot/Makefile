@@ -1,29 +1,11 @@
 # $FreeBSD$
 
 .include <bsd.own.mk>
+.include <bsd.arch.inc.mk>
 
 .if ${MK_FORTH} != "no"
 # Build the add-in FORTH interpreter.
 SUBDIR+=		ficl
-.endif
-
-# Build EFI library.
-.if ${MACHINE_CPUARCH} == "amd64" || ${MACHINE} == "i386" || ${MACHINE_CPUARCH} == "ia64"
-SUBDIR+=		efi
-.endif
-
-# Build Open Firmware library.
-.if ${MACHINE_CPUARCH} == "powerpc" || ${MACHINE_CPUARCH} == "sparc64"
-SUBDIR+=		ofw
-.endif
-
-# Build U-Boot library.
-.if ${MACHINE_CPUARCH} == "powerpc" || ${MACHINE_CPUARCH} == "arm"
-SUBDIR+=		uboot
-.endif
-
-.if ${MACHINE_CPUARCH} == "amd64" || ${MACHINE} == "i386"
-SUBDIR+=		zfs
 .endif
 
 .if ${MK_FDT} != "no"

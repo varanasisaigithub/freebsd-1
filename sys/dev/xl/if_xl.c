@@ -2247,6 +2247,7 @@ xl_intr(void *arg)
 
 		if (status & XL_STAT_ADFAIL) {
 			xl_reset(sc);
+			ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
 			xl_init_locked(sc);
 		}
 
@@ -2318,6 +2319,7 @@ xl_poll_locked(struct ifnet *ifp, enum poll_cmd cmd, int count)
 
 			if (status & XL_STAT_ADFAIL) {
 				xl_reset(sc);
+				ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
 				xl_init_locked(sc);
 			}
 
@@ -2745,6 +2747,8 @@ xl_init_locked(struct xl_softc *sc)
 
 	XL_LOCK_ASSERT(sc);
 
+	if ((ifp->if_drv_flags & IFF_DRV_RUNNING) != 0)
+		return;
 	/*
 	 * Cancel pending I/O and free all RX/TX buffers.
 	 */
@@ -2993,6 +2997,7 @@ xl_ifmedia_upd(struct ifnet *ifp)
 	if (sc->xl_media & XL_MEDIAOPT_MII ||
 	    sc->xl_media & XL_MEDIAOPT_BTX ||
 	    sc->xl_media & XL_MEDIAOPT_BT4) {
+		ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
 		xl_init_locked(sc);
 	} else {
 		xl_setmode(sc, ifm->ifm_media);
@@ -3083,7 +3088,7 @@ xl_ioctl(struct ifnet *ifp, u_long command, caddr_t data)
 {
 	struct xl_softc		*sc = ifp->if_softc;
 	struct ifreq		*ifr = (struct ifreq *) data;
-	int			error = 0;
+	int			error = 0, mask;
 	struct mii_data		*mii = NULL;
 	u_int8_t		rxfilt;
 
@@ -3108,10 +3113,8 @@ xl_ioctl(struct ifnet *ifp, u_long command, caddr_t data)
 				CSR_WRITE_2(sc, XL_COMMAND,
 				    XL_CMD_RX_SET_FILT|rxfilt);
 				XL_SEL_WIN(7);
-			} else {
-				if ((ifp->if_drv_flags & IFF_DRV_RUNNING) == 0)
-					xl_init_locked(sc);
-			}
+			} else
+				xl_init_locked(sc);
 		} else {
 			if (ifp->if_drv_flags & IFF_DRV_RUNNING)
 				xl_stop(sc);
@@ -3143,40 +3146,47 @@ xl_ioctl(struct ifnet *ifp, u_long command, caddr_t data)
 			    &mii->mii_media, command);
 		break;
 	case SIOCSIFCAP:
+		mask = ifr->ifr_reqcap ^ ifp->if_capenable;
 #ifdef DEVICE_POLLING
-		if (ifr->ifr_reqcap & IFCAP_POLLING &&
-		    !(ifp->if_capenable & IFCAP_POLLING)) {
-			error = ether_poll_register(xl_poll, ifp);
-			if (error)
-				return(error);
-			XL_LOCK(sc);
-			/* Disable interrupts */
-			CSR_WRITE_2(sc, XL_COMMAND, XL_CMD_INTR_ENB|0);
-			ifp->if_capenable |= IFCAP_POLLING;
-			XL_UNLOCK(sc);
-			return (error);
-		}
-		if (!(ifr->ifr_reqcap & IFCAP_POLLING) &&
-		    ifp->if_capenable & IFCAP_POLLING) {
-			error = ether_poll_deregister(ifp);
-			/* Enable interrupts. */
-			XL_LOCK(sc);
-			CSR_WRITE_2(sc, XL_COMMAND, XL_CMD_INTR_ACK|0xFF);
-			CSR_WRITE_2(sc, XL_COMMAND, XL_CMD_INTR_ENB|XL_INTRS);
-			if (sc->xl_flags & XL_FLAG_FUNCREG)
-				bus_space_write_4(sc->xl_ftag, sc->xl_fhandle,
-				    4, 0x8000);
-			ifp->if_capenable &= ~IFCAP_POLLING;
-			XL_UNLOCK(sc);
-			return (error);
+		if ((mask & IFCAP_POLLING) != 0 &&
+		    (ifp->if_capabilities & IFCAP_POLLING) != 0) {
+			ifp->if_capenable ^= IFCAP_POLLING;
+			if ((ifp->if_capenable & IFCAP_POLLING) != 0) {
+				error = ether_poll_register(xl_poll, ifp);
+				if (error)
+					break;
+				XL_LOCK(sc);
+				/* Disable interrupts */
+				CSR_WRITE_2(sc, XL_COMMAND, XL_CMD_INTR_ENB|0);
+				ifp->if_capenable |= IFCAP_POLLING;
+				XL_UNLOCK(sc);
+			} else {
+				error = ether_poll_deregister(ifp);
+				/* Enable interrupts. */
+				XL_LOCK(sc);
+				CSR_WRITE_2(sc, XL_COMMAND,
+				    XL_CMD_INTR_ACK | 0xFF);
+				CSR_WRITE_2(sc, XL_COMMAND,
+				    XL_CMD_INTR_ENB | XL_INTRS);
+				if (sc->xl_flags & XL_FLAG_FUNCREG)
+					bus_space_write_4(sc->xl_ftag,
+					    sc->xl_fhandle, 4, 0x8000);
+				XL_UNLOCK(sc);
+			}
 		}
 #endif /* DEVICE_POLLING */
 		XL_LOCK(sc);
-		ifp->if_capenable = ifr->ifr_reqcap;
-		if (ifp->if_capenable & IFCAP_TXCSUM)
-			ifp->if_hwassist = XL905B_CSUM_FEATURES;
-		else
-			ifp->if_hwassist = 0;
+		if ((mask & IFCAP_TXCSUM) != 0 &&
+		    (ifp->if_capabilities & IFCAP_TXCSUM) != 0) {
+			ifp->if_capenable ^= IFCAP_TXCSUM;
+			if ((ifp->if_capenable & IFCAP_TXCSUM) != 0)
+				ifp->if_hwassist |= XL905B_CSUM_FEATURES;
+			else
+				ifp->if_hwassist &= ~XL905B_CSUM_FEATURES;
+		}
+		if ((mask & IFCAP_RXCSUM) != 0 &&
+		    (ifp->if_capabilities & IFCAP_RXCSUM) != 0)
+			ifp->if_capenable ^= IFCAP_RXCSUM;
 		XL_UNLOCK(sc);
 		break;
 	default:
@@ -3227,6 +3237,7 @@ xl_watchdog(struct xl_softc *sc)
 		    "no carrier - transceiver cable problem?\n");
 
 	xl_reset(sc);
+	ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
 	xl_init_locked(sc);
 
 	if (!IFQ_DRV_IS_EMPTY(&ifp->if_snd)) {
@@ -3357,8 +3368,10 @@ xl_resume(device_t dev)
 	XL_LOCK(sc);
 
 	xl_reset(sc);
-	if (ifp->if_flags & IFF_UP)
+	if (ifp->if_flags & IFF_UP) {
+		ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
 		xl_init_locked(sc);
+	}
 
 	XL_UNLOCK(sc);
 
