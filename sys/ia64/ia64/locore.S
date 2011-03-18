@@ -44,7 +44,6 @@
 	.align	PAGE_SIZE
 	.global	kstack
 kstack:	.space	FW_STACK_SIZE
-	.align	PAGE_SIZE
 	.global	kstack_top
 kstack_top:
 
