@@ -285,7 +285,7 @@ ar5416Reset(struct ath_hal *ah, HAL_OPMODE opmode,
 
 	ahp->ah_intrTxqs = 0;
 	for (i = 0; i < AH_PRIVATE(ah)->ah_caps.halTotalQueues; i++)
-		ar5212ResetTxQueue(ah, i);
+		ah->ah_resetTxQueue(ah, i);
 
 	ar5416InitIMR(ah, opmode);
 	ar5212SetCoverageClass(ah, AH_PRIVATE(ah)->ah_coverageClass, 1);
@@ -581,7 +581,7 @@ ar5416InitUserSettings(struct ath_hal *ah)
 
 	/* Restore user-specified settings */
 	if (ahp->ah_miscMode != 0)
-		OS_REG_WRITE(ah, AR_MISC_MODE, ahp->ah_miscMode);
+		OS_REG_WRITE(ah, AR_MISC_MODE, OS_REG_READ(ah, AR_MISC_MODE) | ahp->ah_miscMode);
 	if (ahp->ah_sifstime != (u_int) -1)
 		ar5212SetSifsTime(ah, ahp->ah_sifstime);
 	if (ahp->ah_slottime != (u_int) -1)

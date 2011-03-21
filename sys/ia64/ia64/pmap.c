@@ -102,11 +102,11 @@ __FBSDID("$FreeBSD$");
  * We reserve region ID 0 for the kernel and allocate the remaining
  * IDs for user pmaps.
  *
- * Region 0..3:	User virtually mapped [VHPT]
- * Region 4:	Pre-Boot Virtual Memory (PBVM) and wired mappings [non-VHPT]
- * Region 5:	Kernel Virtual Memory (KVM) [VHPT]
- * Region 6:	Uncacheable identity mappings [non-VHPT]
- * Region 7:	Cacheable identity mappings [non-VHPT]
+ * Region 0-3:	User virtually mapped
+ * Region 4:	PBVM and special mappings
+ * Region 5:	Kernel virtual memory
+ * Region 6:	Direct-mapped uncacheable
+ * Region 7:	Direct-mapped cacheable
  */
 
 /* XXX move to a header. */
@@ -450,12 +450,12 @@ pmap_bootstrap()
 	 * Initialize the kernel pmap (which is statically allocated).
 	 */
 	PMAP_LOCK_INIT(kernel_pmap);
-	for (i = 0; i < 4; i++)
+	for (i = 0; i < IA64_VM_MINKERN_REGION; i++)
 		kernel_pmap->pm_rid[i] = 0;
 	TAILQ_INIT(&kernel_pmap->pm_pvlist);
 	PCPU_SET(md.current_pmap, kernel_pmap);
 
-	/* Region 5 is mapped via the vhpt. */
+	/* Region 5 is mapped via the VHPT. */
 	ia64_set_rr(IA64_RR_BASE(5), (5 << 8) | (PAGE_SHIFT << 2) | 1);
 
 	/*
@@ -664,7 +664,7 @@ pmap_pinit(struct pmap *pmap)
 	int i;
 
 	PMAP_LOCK_INIT(pmap);
-	for (i = 0; i < 4; i++)
+	for (i = 0; i < IA64_VM_MINKERN_REGION; i++)
 		pmap->pm_rid[i] = pmap_allocate_rid();
 	TAILQ_INIT(&pmap->pm_pvlist);
 	bzero(&pmap->pm_stats, sizeof pmap->pm_stats);
@@ -685,7 +685,7 @@ pmap_release(pmap_t pmap)
 {
 	int i;
 
-	for (i = 0; i < 4; i++)
+	for (i = 0; i < IA64_VM_MINKERN_REGION; i++)
 		if (pmap->pm_rid[i])
 			pmap_free_rid(pmap->pm_rid[i]);
 	PMAP_LOCK_DESTROY(pmap);
@@ -1206,7 +1206,7 @@ pmap_kextract(vm_offset_t va)
 {
 	struct ia64_lpte *pte;
 
-	KASSERT(va >= IA64_RR_BASE(5), ("Must be kernel VA"));
+	KASSERT(va >= VM_MAXUSER_ADDRESS, ("Must be kernel VA"));
 
 	/* Regions 6 and 7 are direct mapped. */
 	if (va >= IA64_RR_BASE(6))
@@ -2267,12 +2267,12 @@ pmap_switch(pmap_t pm)
 	if (prevpm == pm)
 		goto out;
 	if (pm == NULL) {
-		for (i = 0; i < 4; i++) {
+		for (i = 0; i < IA64_VM_MINKERN_REGION; i++) {
 			ia64_set_rr(IA64_RR_BASE(i),
 			    (i << 8)|(PAGE_SHIFT << 2)|1);
 		}
 	} else {
-		for (i = 0; i < 4; i++) {
+		for (i = 0; i < IA64_VM_MINKERN_REGION; i++) {
 			ia64_set_rr(IA64_RR_BASE(i),
 			    (pm->pm_rid[i] << 8)|(PAGE_SHIFT << 2)|1);
 		}

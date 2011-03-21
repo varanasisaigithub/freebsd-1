@@ -112,6 +112,8 @@ ar5416InitState(struct ath_hal_5416 *ahp5416, uint16_t devid, HAL_SOFTC sc,
 	ah->ah_fillTxDesc		= ar5416FillTxDesc;
 	ah->ah_procTxDesc		= ar5416ProcTxDesc;
 	ah->ah_getTxCompletionRates	= ar5416GetTxCompletionRates;
+	ah->ah_setupTxQueue		= ar5416SetupTxQueue;
+	ah->ah_resetTxQueue		= ar5416ResetTxQueue;
 
 	/* Receive Functions */
 	ah->ah_startPcuReceive		= ar5416StartPcuReceive;
@@ -372,7 +374,7 @@ ar5416Attach(uint16_t devid, HAL_SOFTC sc,
 	 * placed into hardware.
 	 */
 	if (ahp->ah_miscMode != 0)
-		OS_REG_WRITE(ah, AR_MISC_MODE, ahp->ah_miscMode);
+		OS_REG_WRITE(ah, AR_MISC_MODE, OS_REG_READ(ah, AR_MISC_MODE) | ahp->ah_miscMode);
 
 	rfStatus = ar2133RfAttach(ah, &ecode);
 	if (!rfStatus) {
