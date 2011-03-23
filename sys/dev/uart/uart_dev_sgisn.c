@@ -34,6 +34,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/endian.h>
 #include <machine/bus.h>
 #include <machine/sal.h>
+#include <machine/sgisn.h>
 
 #include <dev/uart/uart.h>
 #include <dev/uart/uart_cpu.h>

@@ -28,6 +28,17 @@
 #ifndef _MACHINE_SGISN_H_
 #define _MACHINE_SGISN_H_
 
+/* SAL functions */
+#define	SAL_SGISN_SAPIC_INFO		0x0200001d
+#define	SAL_SGISN_SN_INFO		0x0200001e
+#define	SAL_SGISN_PUTC			0x02000021
+#define	SAL_SGISN_GETC			0x02000022
+#define	SAL_SGISN_POLL			0x02000026
+#define	SAL_SGISN_TXBUF			0x02000028
+#define	SAL_SGISN_IOHUB_INFO		0x02000055
+#define	SAL_SGISN_IOBUS_INFO		0x02000056
+#define	SAL_SGISN_IODEV_INFO		0x02000057
+
 #define	SGISN_GEOID_MODULE(id)		(((id) >> 0) & 0xffffffffu)
 #define	SGISN_GEOID_TYPE(id)		(((id) >> 32) & 0xff)
 #define	SGISN_GEOID_SLAB(id)		(((id) >> 40) & 0xff)

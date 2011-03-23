@@ -91,6 +91,7 @@ __FBSDID("$FreeBSD$");
 #include <machine/pcb.h>
 #include <machine/reg.h>
 #include <machine/sal.h>
+#include <machine/sgisn.h>
 #include <machine/sigframe.h>
 #ifdef SMP
 #include <machine/smp.h>
