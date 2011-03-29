@@ -196,7 +196,8 @@ typedef struct {
 			halEnhancedPmSupport		: 1,
 			halMbssidAggrSupport		: 1,
 			halBssidMatchSupport		: 1,
-			hal4kbSplitTransSupport		: 1;
+			hal4kbSplitTransSupport		: 1,
+			halHasPsPollSupport		: 1;
 	uint32_t	halWirelessModes;
 	uint16_t	halTotalQueues;
 	uint16_t	halKeyCacheSize;
@@ -476,6 +477,7 @@ isBigEndian(void)
 extern	int ath_hal_dma_beacon_response_time;	/* in TU's */
 extern	int ath_hal_sw_beacon_response_time;	/* in TU's */
 extern	int ath_hal_additional_swba_backoff;	/* in TU's */
+extern	int ath_hal_ar5416_biasadj;		/* 1 or 0 */
 
 /* wait for the register contents to have the specified value */
 extern	HAL_BOOL ath_hal_wait(struct ath_hal *, u_int reg,

@@ -307,8 +307,11 @@ ar5416Reset(struct ath_hal *ah, HAL_OPMODE opmode,
 
 #ifdef AR5416_INT_MITIGATION
 	OS_REG_WRITE(ah, AR_MIRT, 0);
+
 	OS_REG_RMW_FIELD(ah, AR_RIMT, AR_RIMT_LAST, 500);
 	OS_REG_RMW_FIELD(ah, AR_RIMT, AR_RIMT_FIRST, 2000);
+	OS_REG_RMW_FIELD(ah, AR_TIMT, AR_TIMT_LAST, 300);
+	OS_REG_RMW_FIELD(ah, AR_TIMT, AR_TIMT_FIRST, 750);
 #endif	    
 	
 	ar5416InitBB(ah, chan);
@@ -598,6 +601,29 @@ ar5416InitUserSettings(struct ath_hal *ah)
 #endif
 }
 
+static void
+ar5416SetRfMode(struct ath_hal *ah, const struct ieee80211_channel *chan)
+{
+	uint32_t rfMode;
+
+	if (chan == AH_NULL)
+		return;
+
+	/* treat channel B as channel G , no  B mode suport in owl */
+	rfMode = IEEE80211_IS_CHAN_CCK(chan) ?
+	    AR_PHY_MODE_DYNAMIC : AR_PHY_MODE_OFDM;
+
+	if (AR_SREV_MERLIN_20(ah) && IS_5GHZ_FAST_CLOCK_EN(ah, chan)) {
+		/* phy mode bits for 5GHz channels require Fast Clock */
+		rfMode |= AR_PHY_MODE_DYNAMIC
+		       |  AR_PHY_MODE_DYN_CCK_DISABLE;
+	} else if (!AR_SREV_MERLIN_10_OR_LATER(ah)) {
+		rfMode |= IEEE80211_IS_CHAN_5GHZ(chan) ?
+			AR_PHY_MODE_RF5GHZ : AR_PHY_MODE_RF2GHZ;
+	}
+	OS_REG_WRITE(ah, AR_PHY_MODE, rfMode);
+}
+
 /*
  * Places the hardware into reset and then pulls it out of reset
  */
@@ -629,22 +655,9 @@ ar5416ChipReset(struct ath_hal *ah, const struct ieee80211_channel *chan)
 	 * with an active radio can result in corrupted shifts to the
 	 * radio device.
 	 */
-	if (chan != AH_NULL) { 
-		uint32_t rfMode;
+	if (chan != AH_NULL)
+		ar5416SetRfMode(ah, chan);
 
-		/* treat channel B as channel G , no  B mode suport in owl */
-		rfMode = IEEE80211_IS_CHAN_CCK(chan) ?
-		    AR_PHY_MODE_DYNAMIC : AR_PHY_MODE_OFDM;
-		if (AR_SREV_MERLIN_20(ah) && IS_5GHZ_FAST_CLOCK_EN(ah, chan)) {
-			/* phy mode bits for 5GHz channels require Fast Clock */
-			rfMode |= AR_PHY_MODE_DYNAMIC
-			       |  AR_PHY_MODE_DYN_CCK_DISABLE;
-		} else if (!AR_SREV_MERLIN_10_OR_LATER(ah)) {
-			rfMode |= IEEE80211_IS_CHAN_5GHZ(chan) ?
-				AR_PHY_MODE_RF5GHZ : AR_PHY_MODE_RF2GHZ;
-		}
-		OS_REG_WRITE(ah, AR_PHY_MODE, rfMode);
-	}
 	return AH_TRUE;	
 }
 
@@ -1317,16 +1330,12 @@ ar5416SetDefGainValues(struct ath_hal *ah,
 			      AR_PHY_GAIN_2GHZ_XATTEN2_DB,
 			      pModal->xatten2Db[i]);
 		} else {
-			OS_REG_WRITE(ah, AR_PHY_GAIN_2GHZ + regChainOffset,
-			  (OS_REG_READ(ah, AR_PHY_GAIN_2GHZ + regChainOffset) &
-			   ~AR_PHY_GAIN_2GHZ_BSW_MARGIN)
-			  | SM(pModal-> bswMargin[i],
-			       AR_PHY_GAIN_2GHZ_BSW_MARGIN));
-			OS_REG_WRITE(ah, AR_PHY_GAIN_2GHZ + regChainOffset,
-			  (OS_REG_READ(ah, AR_PHY_GAIN_2GHZ + regChainOffset) &
-			   ~AR_PHY_GAIN_2GHZ_BSW_ATTEN)
-			  | SM(pModal->bswAtten[i],
-			       AR_PHY_GAIN_2GHZ_BSW_ATTEN));
+			OS_REG_RMW_FIELD(ah, AR_PHY_GAIN_2GHZ + regChainOffset,
+			      AR_PHY_GAIN_2GHZ_BSW_MARGIN,
+			      pModal->bswMargin[i]);
+			OS_REG_RMW_FIELD(ah, AR_PHY_GAIN_2GHZ + regChainOffset,
+			      AR_PHY_GAIN_2GHZ_BSW_ATTEN,
+			      pModal->bswAtten[i]);
 		}
 	}
 
@@ -1338,16 +1347,12 @@ ar5416SetDefGainValues(struct ath_hal *ah,
 		      AR_PHY_RXGAIN + regChainOffset,
 		      AR9280_PHY_RXGAIN_TXRX_MARGIN, pModal->rxTxMarginCh[i]);
 	} else {
-		OS_REG_WRITE(ah,
+		OS_REG_RMW_FIELD(ah,
 			  AR_PHY_RXGAIN + regChainOffset,
-			  (OS_REG_READ(ah, AR_PHY_RXGAIN + regChainOffset) &
-			   ~AR_PHY_RXGAIN_TXRX_ATTEN)
-			  | SM(txRxAttenLocal, AR_PHY_RXGAIN_TXRX_ATTEN));
-		OS_REG_WRITE(ah,
+			  AR_PHY_RXGAIN_TXRX_ATTEN, txRxAttenLocal);
+		OS_REG_RMW_FIELD(ah,
 			  AR_PHY_GAIN_2GHZ + regChainOffset,
-			  (OS_REG_READ(ah, AR_PHY_GAIN_2GHZ + regChainOffset) &
-			   ~AR_PHY_GAIN_2GHZ_RXTX_MARGIN) |
-			  SM(pModal->rxTxMarginCh[i], AR_PHY_GAIN_2GHZ_RXTX_MARGIN));
+			  AR_PHY_GAIN_2GHZ_RXTX_MARGIN, pModal->rxTxMarginCh[i]);
 	}
 }
 
@@ -1461,7 +1466,7 @@ ar5416SetBoardValues(struct ath_hal *ah, const struct ieee80211_channel *chan)
     } else {
 	OS_REG_RMW_FIELD(ah, AR_PHY_CCA, AR_PHY_CCA_THRESH62,
 	    pModal->thresh62);
-	OS_REG_RMW_FIELD(ah, AR_PHY_EXT_CCA0, AR_PHY_EXT_CCA_THRESH62,
+	OS_REG_RMW_FIELD(ah, AR_PHY_EXT_CCA, AR_PHY_EXT_CCA_THRESH62,
 	    pModal->thresh62);
     }
     
@@ -2423,3 +2428,76 @@ ar5416OverrideIni(struct ath_hal *ah, const struct ieee80211_channel *chan)
 		OS_REG_WRITE(ah, AR_PHY_HEAVY_CLIP_FACTOR_RIFS, val);
 	}
 }
+
+struct ini {
+	uint32_t        *data;          /* NB: !const */
+	int             rows, cols;
+};
+
+/*
+ * Override XPA bias level based on operating frequency.
+ * This is a v14 EEPROM specific thing for the AR9160.
+ */
+void
+ar5416EepromSetAddac(struct ath_hal *ah, const struct ieee80211_channel *chan)
+{
+#define	XPA_LVL_FREQ(cnt)	(pModal->xpaBiasLvlFreq[cnt])
+	MODAL_EEP_HEADER	*pModal;
+	HAL_EEPROM_v14 *ee = AH_PRIVATE(ah)->ah_eeprom;
+	struct ar5416eeprom	*eep = &ee->ee_base;
+	uint8_t biaslevel;
+
+	if (! AR_SREV_SOWL(ah))
+		return;
+
+        if (EEP_MINOR(ah) < AR5416_EEP_MINOR_VER_7)
+                return;
+
+	pModal = &(eep->modalHeader[IEEE80211_IS_CHAN_2GHZ(chan)]);
+
+	if (pModal->xpaBiasLvl != 0xff)
+		biaslevel = pModal->xpaBiasLvl;
+	else {
+		uint16_t resetFreqBin, freqBin, freqCount = 0;
+		CHAN_CENTERS centers;
+
+		ar5416GetChannelCenters(ah, chan, &centers);
+
+		resetFreqBin = FREQ2FBIN(centers.synth_center, IEEE80211_IS_CHAN_2GHZ(chan));
+		freqBin = XPA_LVL_FREQ(0) & 0xff;
+		biaslevel = (uint8_t) (XPA_LVL_FREQ(0) >> 14);
+
+		freqCount++;
+
+		while (freqCount < 3) {
+			if (XPA_LVL_FREQ(freqCount) == 0x0)
+			break;
+
+			freqBin = XPA_LVL_FREQ(freqCount) & 0xff;
+			if (resetFreqBin >= freqBin)
+				biaslevel = (uint8_t)(XPA_LVL_FREQ(freqCount) >> 14);
+			else
+				break;
+			freqCount++;
+		}
+	}
+
+	HALDEBUG(ah, HAL_DEBUG_EEPROM, "%s: overriding XPA bias level = %d\n",
+	    __func__, biaslevel);
+
+	/*
+	 * This is a dirty workaround for the const initval data,
+	 * which will upset multiple AR9160's on the same board.
+	 *
+	 * The HAL should likely just have a private copy of the addac
+	 * data per instance.
+	 */
+	if (IEEE80211_IS_CHAN_2GHZ(chan))
+                HAL_INI_VAL((struct ini *) &AH5416(ah)->ah_ini_addac, 7, 1) =
+		    (HAL_INI_VAL(&AH5416(ah)->ah_ini_addac, 7, 1) & (~0x18)) | biaslevel << 3;
+        else
+                HAL_INI_VAL((struct ini *) &AH5416(ah)->ah_ini_addac, 6, 1) =
+		    (HAL_INI_VAL(&AH5416(ah)->ah_ini_addac, 6, 1) & (~0xc0)) | biaslevel << 6;
+#undef XPA_LVL_FREQ
+}
+

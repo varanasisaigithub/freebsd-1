@@ -102,6 +102,7 @@ GEOM_PART_MBR	opt_geom.h
 GEOM_PART_PC98	opt_geom.h
 GEOM_PART_VTOC8	opt_geom.h
 GEOM_PC98	opt_geom.h
+GEOM_RAID	opt_geom.h
 GEOM_RAID3	opt_geom.h
 GEOM_SHSEC	opt_geom.h
 GEOM_STRIPE	opt_geom.h
@@ -767,6 +768,7 @@ ATH_TXBUF		opt_ath.h
 ATH_RXBUF		opt_ath.h
 ATH_DIAGAPI		opt_ath.h
 ATH_TX99_DIAG		opt_ath.h
+ATH_ENABLE_11N		opt_ah.h
 
 # options for the Atheros hal
 AH_SUPPORT_AR5416	opt_ah.h
@@ -870,3 +872,9 @@ SDP		opt_ofed.h
 SDP_DEBUG	opt_ofed.h
 IPOIB_DEBUG	opt_ofed.h
 IPOIB_CM	opt_ofed.h
+
+# At least one of the AR71XX ubiquiti boards has a Redboot configuration
+# that "lies" about the amount of RAM it has. Until a cleaner method is
+# defined, this option will suffice in overriding what Redboot says.
+AR71XX_REALMEM    opt_global.h
+

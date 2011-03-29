@@ -185,9 +185,9 @@ SUBDIR=	${_3dfx} \
 	mfi \
 	mii \
 	mlx \
-	mlx4 \
-	mlx4ib \
-	mlxen \
+	${_mlx4} \
+	${_mlx4ib} \
+	${_mlxen} \
 	${_mly} \
 	mmc \
 	mmcsd \
@@ -198,7 +198,7 @@ SUBDIR=	${_3dfx} \
 	msdosfs_iconv \
 	${_mse} \
 	msk \
-	mthca \
+	${_mthca} \
 	mvs \
 	mwl \
 	mwlfw \
@@ -418,6 +418,12 @@ _linprocfs=	linprocfs
 _linsysfs=	linsysfs
 _linux=		linux
 _mse=		mse
+.if ${MK_OFED} != "no" || defined(ALL_MODULES)
+_mlx4=		mlx4
+_mlx4ib=	mlx4ib
+_mlxen=		mlxen
+_mthca=		mthca
+.endif
 .if ${MK_NCP} != "no"
 _ncp=		ncp
 .endif
@@ -566,6 +572,12 @@ _linprocfs=	linprocfs
 _linsysfs=	linsysfs
 _linux=		linux
 _mly=		mly
+.if ${MK_OFED} != "no" || defined(ALL_MODULES)
+_mlx4=		mlx4
+_mlx4ib=	mlx4ib
+_mlxen=		mlxen
+_mthca=		mthca
+.endif
 _ndis=		ndis
 _nfe=		nfe
 _nve=		nve

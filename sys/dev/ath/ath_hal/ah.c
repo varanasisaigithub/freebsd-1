@@ -599,8 +599,10 @@ ath_hal_getcapability(struct ath_hal *ah, HAL_CAPABILITY_TYPE type,
 		default:
 			return HAL_ENOTSUPP;
 		}
-	case HAP_CAP_SPLIT_4KB_TRANS:	/* hardware handles descriptors straddling 4k page boundary */
+	case HAL_CAP_SPLIT_4KB_TRANS:	/* hardware handles descriptors straddling 4k page boundary */
 		return pCap->hal4kbSplitTransSupport ? HAL_OK : HAL_ENOTSUPP;
+	case HAL_CAP_HAS_PSPOLL:	/* hardware has ps-poll support */
+		return pCap->halHasPsPollSupport ? HAL_OK : HAL_ENOTSUPP;
 	default:
 		return HAL_EINVAL;
 	}
@@ -976,12 +978,6 @@ ath_hal_ini_bank_write(struct ath_hal *ah, const HAL_INI_ARRAY *ia,
 
 	for (r = 0; r < ia->rows; r++) {
 		OS_REG_WRITE(ah, HAL_INI_VAL(ia, r, 0), data[r]);
-
-		/* Analog shift register delay seems needed for Merlin - PR kern/154220 */
-		/* XXX verify whether any analog radio bank writes will hit up this */
-		/* XXX since this is a merlin work-around; and merlin doesn't use radio banks */
-		if (HAL_INI_VAL(ia, r, 0) >= 0x7800 && HAL_INI_VAL(ia, r, 0) < 0x78a0)
-			OS_DELAY(100);
 		DMA_YIELD(regWr);
 	}
 	return regWr;

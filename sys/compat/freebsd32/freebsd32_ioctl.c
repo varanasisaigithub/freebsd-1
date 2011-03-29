@@ -38,7 +38,9 @@ __FBSDID("$FreeBSD$");
 #include <sys/filio.h>
 #include <sys/file.h>
 #include <sys/ioccom.h>
+#include <sys/malloc.h>
 #include <sys/mdioctl.h>
+#include <sys/memrange.h>
 #include <sys/proc.h>
 #include <sys/syscall.h>
 #include <sys/syscallsubr.h>
@@ -55,6 +57,7 @@ __FBSDID("$FreeBSD$");
 CTASSERT((sizeof(struct md_ioctl32)+4) == 436);
 CTASSERT(sizeof(struct ioc_read_toc_entry32) == 8);
 CTASSERT(sizeof(struct ioc_toc_header32) == 4);
+CTASSERT(sizeof(struct mem_range_op32) == 12);
 
 
 static int
@@ -64,13 +67,10 @@ freebsd32_ioctl_md(struct thread *td, struct freebsd32_ioctl_args *uap,
 	struct md_ioctl mdv;
 	struct md_ioctl32 md32;
 	u_long com = 0;
-	int error;
+	int i, error;
 
-	if (uap->data == NULL)
-		panic("%s: where is my ioctl data??", __func__);
 	if (uap->com & IOC_IN) {
 		if ((error = copyin(uap->data, &md32, sizeof(md32)))) {
-			fdrop(fp, td);
 			return (error);
 		}
 		CP(md32, mdv, md_version);
@@ -119,9 +119,16 @@ freebsd32_ioctl_md(struct thread *td, struct freebsd32_ioctl_args *uap,
 		CP(mdv, md32, md_base);
 		CP(mdv, md32, md_fwheads);
 		CP(mdv, md32, md_fwsectors);
+		if (com == MDIOCLIST) {
+			/*
+			 * Use MDNPAD, and not MDNPAD32.  Padding is
+			 * allocated and used by compat32 ABI.
+			 */
+			for (i = 0; i < MDNPAD; i++)
+				CP(mdv, md32, md_pad[i]);
+		}
 		error = copyout(&md32, uap->data, sizeof(md32));
 	}
-	fdrop(fp, td);
 	return error;
 }
 
@@ -134,9 +141,6 @@ freebsd32_ioctl_ioc_toc_header(struct thread *td,
 	struct ioc_toc_header32 toch32;
 	int error;
 
-	if (uap->data == NULL)
-		panic("%s: where is my ioctl data??", __func__);
-
 	if ((error = copyin(uap->data, &toch32, sizeof(toch32))))
 		return (error);
 	CP(toch32, toch, len);
@@ -144,7 +148,6 @@ freebsd32_ioctl_ioc_toc_header(struct thread *td,
 	CP(toch32, toch, ending_track);
 	error = fo_ioctl(fp, CDIOREADTOCHEADER, (caddr_t)&toch,
 	    td->td_ucred, td);
-	fdrop(fp, td);
 	return (error);
 }
 
@@ -156,9 +159,6 @@ freebsd32_ioctl_ioc_read_toc(struct thread *td,
 	struct ioc_read_toc_entry toce;
 	struct ioc_read_toc_entry32 toce32;
 	int error;
-
-	if (uap->data == NULL)
-		panic("%s: where is my ioctl data??", __func__);
 
 	if ((error = copyin(uap->data, &toce32, sizeof(toce32))))
 		return (error);
@@ -175,7 +175,6 @@ freebsd32_ioctl_ioc_read_toc(struct thread *td,
 		PTROUT_CP(toce, toce32, data);
 		error = copyout(&toce32, uap->data, sizeof(toce32));
 	}
-	fdrop(fp, td);
 	return error;
 }
 
@@ -192,7 +191,49 @@ freebsd32_ioctl_fiodgname(struct thread *td,
 	CP(fgn32, fgn, len);
 	PTRIN_CP(fgn32, fgn, buf);
 	error = fo_ioctl(fp, FIODGNAME, (caddr_t)&fgn, td->td_ucred, td);
-	fdrop(fp, td);
+	return (error);
+}
+
+static int
+freebsd32_ioctl_memrange(struct thread *td,
+    struct freebsd32_ioctl_args *uap, struct file *fp)
+{
+	struct mem_range_op mro;
+	struct mem_range_op32 mro32;
+	int error;
+	u_long com;
+
+	if ((error = copyin(uap->data, &mro32, sizeof(mro32))) != 0)
+		return (error);
+
+	PTRIN_CP(mro32, mro, mo_desc);
+	CP(mro32, mro, mo_arg[0]);
+	CP(mro32, mro, mo_arg[1]);
+
+	com = 0;
+	switch (uap->com) {
+	case MEMRANGE_GET32:
+		com = MEMRANGE_GET;
+		break;
+
+	case MEMRANGE_SET32:
+		com = MEMRANGE_SET;
+		break;
+
+	default:
+		panic("%s: unknown MEMRANGE %#x", __func__, uap->com);
+	}
+
+	if ((error = fo_ioctl(fp, com, (caddr_t)&mro, td->td_ucred, td)) != 0)
+		return (error);
+
+	if ( (com & IOC_OUT) ) {
+		CP(mro, mro32, mo_arg[0]);
+		CP(mro, mro32, mo_arg[1]);
+
+		error = copyout(&mro32, uap->data, sizeof(mro32));
+	}
+
 	return (error);
 }
 
@@ -219,16 +260,25 @@ freebsd32_ioctl(struct thread *td, struct freebsd32_ioctl_args *uap)
 	case MDIOCDETACH_32:	/* FALLTHROUGH */
 	case MDIOCQUERY_32:	/* FALLTHROUGH */
 	case MDIOCLIST_32:
-		return freebsd32_ioctl_md(td, uap, fp);
+		error = freebsd32_ioctl_md(td, uap, fp);
+		break;
 
 	case CDIOREADTOCENTRYS_32:
-		return freebsd32_ioctl_ioc_read_toc(td, uap, fp);
+		error = freebsd32_ioctl_ioc_read_toc(td, uap, fp);
+		break;
 
 	case CDIOREADTOCHEADER_32:
-		return freebsd32_ioctl_ioc_toc_header(td, uap, fp);
+		error = freebsd32_ioctl_ioc_toc_header(td, uap, fp);
+		break;
 
 	case FIODGNAME_32:
-		return freebsd32_ioctl_fiodgname(td, uap, fp);
+		error = freebsd32_ioctl_fiodgname(td, uap, fp);
+		break;
+
+	case MEMRANGE_GET32:	/* FALLTHROUGH */
+	case MEMRANGE_SET32:
+		error = freebsd32_ioctl_memrange(td, uap, fp);
+		break;
 
 	default:
 		fdrop(fp, td);
@@ -237,4 +287,7 @@ freebsd32_ioctl(struct thread *td, struct freebsd32_ioctl_args *uap)
 		PTRIN_CP(*uap, ap, data);
 		return ioctl(td, &ap);
 	}
+
+	fdrop(fp, td);
+	return error;
 }

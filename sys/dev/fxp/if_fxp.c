@@ -521,7 +521,7 @@ fxp_attach(device_t dev)
 	    sc->revision != FXP_REV_82559S_A) {
 		fxp_read_eeprom(sc, &data, 10, 1);
 		if ((data & 0x20) != 0 &&
-		    pci_find_extcap(sc->dev, PCIY_PMG, &pmc) == 0)
+		    pci_find_cap(sc->dev, PCIY_PMG, &pmc) == 0)
 			sc->flags |= FXP_FLAG_WOLCAP;
 	}
 
@@ -1054,7 +1054,7 @@ fxp_suspend(device_t dev)
 	FXP_LOCK(sc);
 
 	ifp = sc->ifp;
-	if (pci_find_extcap(sc->dev, PCIY_PMG, &pmc) == 0) {
+	if (pci_find_cap(sc->dev, PCIY_PMG, &pmc) == 0) {
 		pmstat = pci_read_config(sc->dev, pmc + PCIR_POWER_STATUS, 2);
 		pmstat &= ~(PCIM_PSTAT_PME | PCIM_PSTAT_PMEENABLE);
 		if ((ifp->if_capenable & IFCAP_WOL_MAGIC) != 0) {
@@ -1088,7 +1088,7 @@ fxp_resume(device_t dev)
 
 	FXP_LOCK(sc);
 
-	if (pci_find_extcap(sc->dev, PCIY_PMG, &pmc) == 0) {
+	if (pci_find_cap(sc->dev, PCIY_PMG, &pmc) == 0) {
 		sc->flags &= ~FXP_FLAG_WOL;
 		pmstat = pci_read_config(sc->dev, pmc + PCIR_POWER_STATUS, 2);
 		/* Disable PME and clear PME status. */
@@ -1941,11 +1941,11 @@ fxp_intr_body(struct fxp_softc *sc, struct ifnet *ifp, uint8_t statack,
 				/* Adjust for appended checksum bytes. */
 				total_len -= 2;
 			}
-			if (total_len < sizeof(struct ether_header) ||
+			if (total_len < (int)sizeof(struct ether_header) ||
 			    total_len > (MCLBYTES - RFA_ALIGNMENT_FUDGE -
 			    sc->rfa_size) ||
 			    status & (FXP_RFA_STATUS_CRC |
-			    FXP_RFA_STATUS_ALIGN)) {
+			    FXP_RFA_STATUS_ALIGN | FXP_RFA_STATUS_OVERRUN)) {
 				m_freem(m);
 				fxp_add_rfabuf(sc, rxp);
 				continue;

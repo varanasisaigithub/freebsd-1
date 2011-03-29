@@ -164,7 +164,7 @@ enum {
 #define MLX4_EN_DEF_TX_RING_SIZE	512
 #define MLX4_EN_DEF_TX_QUEUE_SIZE	4096
 #define MLX4_EN_DEF_RX_RING_SIZE  	1024
-#define	MLX4_EN_MAX_RX_POLL		16
+#define	MLX4_EN_MAX_RX_POLL		1024
 
 /* Target number of bytes to coalesce with interrupt moderation */
 #define MLX4_EN_RX_COAL_TARGET	0x20000
@@ -335,7 +335,6 @@ struct mlx4_en_rx_ring {
 	unsigned long bytes;
 	unsigned long packets;
 	unsigned long errors;
-	unsigned int use_frags;
 	struct lro_ctrl lro;
 	struct mlx4_en_ipfrag ipfrag[MLX4_EN_NUM_IPFRAG_SESSIONS];
 };
@@ -383,9 +382,9 @@ struct mlx4_en_port_profile {
 	u32 tx_ring_size;
 	u32 rx_ring_size;
 	u8 rx_pause;
-	u8 rx_ppp;
 	u8 tx_pause;
-	u8 tx_ppp;
+	u32 rx_ppp;
+	u32 tx_ppp;
 };
 
 struct mlx4_en_profile {
@@ -533,11 +532,12 @@ struct mlx4_en_priv {
 #define MLX4_EN_FLAG_PROMISC	0x1
 	u32 tx_ring_num;
 	u32 rx_ring_num;
-	u32 udp_rings;
 	u32 rx_mb_size;
 	struct mlx4_en_frag_info frag_info[MLX4_EN_MAX_RX_FRAGS];
 	u16 num_frags;
 	u16 log_rx_info;
+	int ip_reasm;
+	bool wol;
 
 	struct mlx4_en_tx_ring tx_ring[MAX_TX_RINGS];
 	struct mlx4_en_rx_ring rx_ring[MAX_RX_RINGS];
@@ -562,6 +562,11 @@ struct mlx4_en_priv {
 	struct sysctl_ctx_list stat_ctx;
 };
 
+enum mlx4_en_wol {
+	MLX4_EN_WOL_MAGIC = (1ULL << 61),
+	MLX4_EN_WOL_ENABLED = (1ULL << 62),
+	MLX4_EN_WOL_DO_MODIFY = (1ULL << 63),
+};
 
 int mlx4_en_transmit(struct net_device *dev, struct mbuf *mb);
 void mlx4_en_qflush(struct net_device *dev);

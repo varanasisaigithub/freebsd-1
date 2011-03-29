@@ -80,8 +80,10 @@ ar9160AniSetup(struct ath_hal *ah)
 		.rssiThrLow		= 7,
 		.period			= 100,
 	};
-	/* NB: ANI is not enabled yet */
-	ar5416AniAttach(ah, &aniparams, &aniparams, AH_FALSE);
+
+	/* NB: disable ANI noise immmunity for reliable RIFS rx */
+	AH5416(ah)->ah_ani_function &= ~ HAL_ANI_NOISE_IMMUNITY_LEVEL;
+	ar5416AniAttach(ah, &aniparams, &aniparams, AH_TRUE);
 }
 
 /*
@@ -247,7 +249,7 @@ ar9160Attach(uint16_t devid, HAL_SOFTC sc,
 	 * placed into hardware.
 	 */
 	if (ahp->ah_miscMode != 0)
-		OS_REG_WRITE(ah, AR_MISC_MODE, ahp->ah_miscMode);
+		OS_REG_WRITE(ah, AR_MISC_MODE, OS_REG_READ(ah, AR_MISC_MODE) | ahp->ah_miscMode);
 
 	ar9160AniSetup(ah);			/* Anti Noise Immunity */
 

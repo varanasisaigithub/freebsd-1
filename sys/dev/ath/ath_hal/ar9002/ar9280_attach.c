@@ -96,7 +96,7 @@ ar9280AniSetup(struct ath_hal *ah)
 	AH5416(ah)->ah_ani_function &= ~ HAL_ANI_NOISE_IMMUNITY_LEVEL;
 
         /* NB: ANI is not enabled yet */
-        ar5416AniAttach(ah, &aniparams, &aniparams, AH_FALSE);
+        ar5416AniAttach(ah, &aniparams, &aniparams, AH_TRUE);
 }
 
 /*
@@ -333,7 +333,7 @@ ar9280Attach(uint16_t devid, HAL_SOFTC sc,
 	 * placed into hardware.
 	 */
 	if (ahp->ah_miscMode != 0)
-		OS_REG_WRITE(ah, AR_MISC_MODE, ahp->ah_miscMode);
+		OS_REG_WRITE(ah, AR_MISC_MODE, OS_REG_READ(ah, AR_MISC_MODE) | ahp->ah_miscMode);
 
 	ar9280AniSetup(ah);			/* Anti Noise Immunity */
 
@@ -780,6 +780,8 @@ ar9280FillCapabilityInfo(struct ath_hal *ah)
 #endif
 	pCap->halAutoSleepSupport = AH_FALSE;	/* XXX? */
 	pCap->hal4kbSplitTransSupport = AH_FALSE;
+	if (AR_SREV_MERLIN_20_OR_LATER(ah))
+		pCap->halHasPsPollSupport = AH_TRUE;
 	pCap->halRxStbcSupport = 1;
 	pCap->halTxStbcSupport = 1;
 

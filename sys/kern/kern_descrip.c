@@ -1516,7 +1516,7 @@ fdavail(struct thread *td, int n)
  * release the FILEDESC lock.
  */
 int
-falloc(struct thread *td, struct file **resultfp, int *resultfd)
+fallocf(struct thread *td, struct file **resultfp, int *resultfd, int flags)
 {
 	struct proc *p = td->td_proc;
 	struct file *fp;
@@ -1559,12 +1559,21 @@ falloc(struct thread *td, struct file **resultfp, int *resultfd)
 		return (error);
 	}
 	p->p_fd->fd_ofiles[i] = fp;
+	if ((flags & O_CLOEXEC) != 0)
+		p->p_fd->fd_ofileflags[i] |= UF_EXCLOSE;
 	FILEDESC_XUNLOCK(p->p_fd);
 	if (resultfp)
 		*resultfp = fp;
 	if (resultfd)
 		*resultfd = i;
 	return (0);
+}
+
+int
+falloc(struct thread *td, struct file **resultfp, int *resultfd)
+{
+
+	return (fallocf(td, resultfp, resultfd, 0));
 }
 
 /*
@@ -2634,9 +2643,11 @@ sysctl_kern_file(SYSCTL_HANDLER_ARGS)
 	xf.xf_size = sizeof(xf);
 	sx_slock(&allproc_lock);
 	FOREACH_PROC_IN_SYSTEM(p) {
-		if (p->p_state == PRS_NEW)
-			continue;
 		PROC_LOCK(p);
+		if (p->p_state == PRS_NEW) {
+			PROC_UNLOCK(p);
+			continue;
+		}
 		if (p_cansee(req->td, p) != 0) {
 			PROC_UNLOCK(p);
 			continue;

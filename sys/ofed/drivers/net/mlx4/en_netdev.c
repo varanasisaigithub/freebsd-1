@@ -53,13 +53,11 @@ static void mlx4_en_vlan_rx_add_vid(void *arg, struct net_device *dev, u16 vid)
 
 	if ((vid == 0) || (vid > 4095))    /* Invalid */
 		return;
-
 	en_dbg(HW, priv, "adding VLAN:%d\n", vid);
-
-	spin_lock(&priv->vlan_lock);
-	priv->vlgrp_modified = true;
 	idx = vid >> 5;
 	field = 1 << (vid & 0x1f);
+	spin_lock(&priv->vlan_lock);
+	priv->vlgrp_modified = true;
 	if (priv->vlan_unregister[idx] & field)
 		priv->vlan_unregister[idx] &= ~field;
 	else
@@ -77,10 +75,10 @@ static void mlx4_en_vlan_rx_kill_vid(void *arg, struct net_device *dev, u16 vid)
 	if ((vid == 0) || (vid > 4095))    /* Invalid */
 		return;
 	en_dbg(HW, priv, "Killing VID:%d\n", vid);
-	spin_lock(&priv->vlan_lock);
-	priv->vlgrp_modified = true;
 	idx = vid >> 5;
 	field = 1 << (vid & 0x1f);
+	spin_lock(&priv->vlan_lock);
+	priv->vlgrp_modified = true;
 	if (priv->vlan_register[idx] & field)
 		priv->vlan_register[idx] &= ~field;
 	else
@@ -277,10 +275,7 @@ static void mlx4_en_netpoll(struct net_device *dev)
 		cq = &priv->rx_cq[i];
 		spin_lock_irqsave(&cq->lock, flags);
 		napi_synchronize(&cq->napi);
-		if (priv->rx_ring[i].use_frags)
-			mlx4_en_process_rx_cq(dev, cq, 0);
-		else
-			mlx4_en_process_rx_cq_mb(dev, cq, 0);
+		mlx4_en_process_rx_cq(dev, cq, 0);
 		spin_unlock_irqrestore(&cq->lock, flags);
 	}
 }
@@ -537,6 +532,7 @@ int mlx4_en_start_port(struct net_device *dev)
 	struct mlx4_en_dev *mdev = priv->mdev;
 	struct mlx4_en_cq *cq;
 	struct mlx4_en_tx_ring *tx_ring;
+	u64 config;
 	int rx_index = 0;
 	int tx_index = 0;
 	int err = 0;
@@ -667,6 +663,25 @@ int mlx4_en_start_port(struct net_device *dev)
 	else
 		priv->rx_csum = 0;
 
+	err = mlx4_wol_read(priv->mdev->dev, &config, priv->port);
+	if (err) {
+		en_err(priv, "Failed to get WoL info, unable to modify\n");
+		goto wol_err;
+	}
+	if (dev->if_capenable & IFCAP_WOL_MAGIC) {
+		config |= MLX4_EN_WOL_DO_MODIFY | MLX4_EN_WOL_ENABLED |
+		    MLX4_EN_WOL_MAGIC;
+	} else {
+		config &= ~(MLX4_EN_WOL_ENABLED | MLX4_EN_WOL_MAGIC);
+		config |= MLX4_EN_WOL_DO_MODIFY;
+	}
+
+	err = mlx4_wol_write(priv->mdev->dev, config, priv->port);
+	if (err) {
+		en_err(priv, "Failed to set WoL information\n");
+		goto wol_err;
+	}
+
 	priv->port_up = true;
 
 	/* Populate multicast list */
@@ -680,6 +695,10 @@ int mlx4_en_start_port(struct net_device *dev)
 	    mlx4_en_watchdog_timeout, priv);
 
 	return 0;
+
+wol_err:
+	/* close port*/
+	mlx4_CLOSE_PORT(mdev->dev, priv->port);
 
 mac_err:
 	mlx4_unregister_mac(mdev->dev, priv->port, priv->mac_index);
@@ -866,10 +885,6 @@ int mlx4_en_alloc_resources(struct mlx4_en_priv *priv)
 				      prof->rx_ring_size, i, RX))
 			goto err;
 
-		if (i > priv->rx_ring_num - priv->udp_rings - 1)
-			priv->rx_ring[i].use_frags = 0;
-		else
-			priv->rx_ring[i].use_frags = 1;
 		if (mlx4_en_create_rx_ring(priv, &priv->rx_ring[i],
 					   prof->rx_ring_size))
 			goto err;
@@ -880,7 +895,7 @@ int mlx4_en_alloc_resources(struct mlx4_en_priv *priv)
 
 	/* Populate Tx priority mappings */
 	mlx4_en_set_prio_map(priv, priv->tx_prio_map,
-			     prof->tx_ring_num - MLX4_EN_NUM_HASH_RINGS);
+			     priv->tx_ring_num - MLX4_EN_NUM_HASH_RINGS);
 
 	return 0;
 
@@ -1104,6 +1119,8 @@ static int mlx4_en_ioctl(struct ifnet *dev, u_long command, caddr_t data)
 			dev->if_capenable ^= IFCAP_VLAN_HWTAGGING;
 		if (mask & IFCAP_VLAN_HWFILTER)
 			dev->if_capenable ^= IFCAP_VLAN_HWFILTER;
+		if (mask & IFCAP_WOL_MAGIC)
+			dev->if_capenable ^= IFCAP_WOL_MAGIC;
 		if (dev->if_drv_flags & IFF_DRV_RUNNING)
 			mlx4_en_init(priv);
 		VLAN_CAPABILITIES(dev);
@@ -1193,6 +1210,83 @@ static int mlx4_en_set_tx_ring_size(SYSCTL_HANDLER_ARGS)
 	return (error);
 }
 
+static int mlx4_en_set_tx_ppp(SYSCTL_HANDLER_ARGS)
+{
+	struct mlx4_en_priv *priv;
+	int ppp;
+	int error;
+
+	priv = arg1;
+	ppp = priv->prof->tx_ppp;
+	error = sysctl_handle_int(oidp, &ppp, 0, req);
+	if (error || !req->newptr)
+		return (error);
+	if (ppp > 0xff || ppp < 0)
+		return (-EINVAL);
+	priv->prof->tx_ppp = ppp;
+	error = -mlx4_SET_PORT_general(priv->mdev->dev, priv->port,
+				       priv->rx_mb_size + ETHER_CRC_LEN,
+				       priv->prof->tx_pause,
+				       priv->prof->tx_ppp,
+				       priv->prof->rx_pause,
+				       priv->prof->rx_ppp);
+
+	return (error);
+}
+
+static int mlx4_en_set_rx_ppp(SYSCTL_HANDLER_ARGS)
+{
+	struct mlx4_en_priv *priv;
+	struct mlx4_en_dev *mdev;
+	int tx_ring_num;
+	int ppp;
+	int error;
+	int port_up;
+
+	port_up = 0;
+	priv = arg1;
+	mdev = priv->mdev;
+	ppp = priv->prof->rx_ppp;
+	error = sysctl_handle_int(oidp, &ppp, 0, req);
+	if (error || !req->newptr)
+		return (error);
+	if (ppp > 0xff || ppp < 0)
+		return (-EINVAL);
+	/* See if we have to change the number of tx queues. */
+	if (!ppp != !priv->prof->rx_ppp) {
+		tx_ring_num = MLX4_EN_NUM_HASH_RINGS + 1 +
+		    (!!ppp) * MLX4_EN_NUM_PPP_RINGS;
+		mutex_lock(&mdev->state_lock);
+		if (priv->port_up) {
+			port_up = 1;
+			mlx4_en_stop_port(priv->dev);
+		}
+		mlx4_en_free_resources(priv);
+		priv->tx_ring_num = tx_ring_num;
+		priv->prof->rx_ppp = ppp;
+		error = -mlx4_en_alloc_resources(priv);
+		if (error)
+			en_err(priv, "Failed reallocating port resources\n");
+		if (error == 0 && port_up) {
+			error = -mlx4_en_start_port(priv->dev);
+			if (error)
+				en_err(priv, "Failed starting port\n");
+		}
+		mutex_unlock(&mdev->state_lock);
+		return (error);
+
+	}
+	priv->prof->rx_ppp = ppp;
+	error = -mlx4_SET_PORT_general(priv->mdev->dev, priv->port,
+				       priv->rx_mb_size + ETHER_CRC_LEN,
+				       priv->prof->tx_pause,
+				       priv->prof->tx_ppp,
+				       priv->prof->rx_pause,
+				       priv->prof->rx_ppp);
+
+	return (error);
+}
+
 static void mlx4_en_sysctl_conf(struct mlx4_en_priv *priv)
 {
 	struct net_device *dev;
@@ -1222,14 +1316,20 @@ static void mlx4_en_sysctl_conf(struct mlx4_en_priv *priv)
 	    CTLTYPE_INT | CTLFLAG_RD, &priv->tx_ring_num, 0,
 	    "Number of transmit rings");
 	SYSCTL_ADD_PROC(ctx, node_list, OID_AUTO, "rx_size",
-	    CTLTYPE_INT | CTLFLAG_RW, priv, 0, mlx4_en_set_rx_ring_size, "I",
-	    "Receive ring size");
+	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, priv, 0,
+	    mlx4_en_set_rx_ring_size, "I", "Receive ring size");
 	SYSCTL_ADD_PROC(ctx, node_list, OID_AUTO, "tx_size",
-	    CTLTYPE_INT | CTLFLAG_RW, priv, 0, mlx4_en_set_tx_ring_size, "I",
-	    "Transmit ring size");
+	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, priv, 0,
+	    mlx4_en_set_tx_ring_size, "I", "Transmit ring size");
 	SYSCTL_ADD_UINT(ctx, node_list, OID_AUTO, "ip_reasm",
-	    CTLFLAG_RD, &priv->mdev->profile.ip_reasm, 0,
+	    CTLFLAG_RW, &priv->ip_reasm, 0,
 	    "Allow reassembly of IP fragments.");
+	SYSCTL_ADD_PROC(ctx, node_list, OID_AUTO, "tx_ppp",
+	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, priv, 0,
+	    mlx4_en_set_tx_ppp, "I", "TX Per-priority pause");
+	SYSCTL_ADD_PROC(ctx, node_list, OID_AUTO, "rx_ppp",
+	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, priv, 0,
+	    mlx4_en_set_rx_ppp, "I", "RX Per-priority pause");
 
 	/* Add coalescer configuration. */
 	coal = SYSCTL_ADD_NODE(ctx, node_list, OID_AUTO,
@@ -1416,9 +1516,9 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
 	priv->flags = prof->flags;
 	priv->tx_ring_num = prof->tx_ring_num;
 	priv->rx_ring_num = prof->rx_ring_num;
-	priv->udp_rings = mdev->profile.udp_rss ? prof->rx_ring_num / 2 : 1;
 	priv->mac_index = -1;
 	priv->msg_enable = MLX4_EN_MSG_LEVEL;
+	priv->ip_reasm = priv->mdev->profile.ip_reasm;
 	mtx_init(&priv->stats_lock.m, "mlx4 stats", NULL, MTX_DEF);
 	mtx_init(&priv->vlan_lock.m, "mlx4 vlan", NULL, MTX_DEF);
 	INIT_WORK(&priv->mcast_task, mlx4_en_do_set_multicast);
@@ -1460,17 +1560,23 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
 	dev->if_capabilities |= IFCAP_VLAN_MTU | IFCAP_VLAN_HWTAGGING;
 	dev->if_capabilities |= IFCAP_VLAN_HWCSUM | IFCAP_VLAN_HWFILTER;
 	dev->if_capabilities |= IFCAP_LINKSTATE | IFCAP_JUMBO_MTU;
-#if 0 /* Not yet */
-	dev->if_capabilities |= IFCAP_WOL;
-#endif
 	if (mdev->LSO_support)
 		dev->if_capabilities |= IFCAP_TSO | IFCAP_VLAN_HWTSO;
-
-	/* Don't enable LOR unless the user requests. */
-	dev->if_capenable = dev->if_capabilities;
-
 	if (mdev->profile.num_lro)
 		dev->if_capabilities |= IFCAP_LRO;
+	dev->if_capenable = dev->if_capabilities;
+	/*
+	 * Setup wake-on-lan.
+	 */
+	if (priv->mdev->dev->caps.wol) {
+		u64 config;
+		if (mlx4_wol_read(priv->mdev->dev, &config, priv->port) == 0) {
+			if (config & MLX4_EN_WOL_MAGIC)
+				dev->if_capabilities |= IFCAP_WOL_MAGIC;
+			if (config & MLX4_EN_WOL_ENABLED)
+				dev->if_capenable |= IFCAP_WOL_MAGIC;
+		}
+	}
 
         /* Register for VLAN events */
 	priv->vlan_attach = EVENTHANDLER_REGISTER(vlan_config,
