@@ -50,9 +50,8 @@ __FBSDID("$FreeBSD$");
 #include <machine/sal.h>
 #include <machine/sgisn.h>
 
-static struct sgisn_hub sgisn_hub;
-static struct sgisn_dev sgisn_dev;
-static struct sgisn_irq sgisn_irq;
+static struct sgisn_fwdev sgisn_dev;
+static struct sgisn_fwirq sgisn_irq;
 
 struct sgisn_pcib_softc {
 	device_t	sc_dev;
@@ -62,7 +61,6 @@ struct sgisn_pcib_softc {
 };
 
 static int sgisn_pcib_attach(device_t);
-static void sgisn_pcib_identify(driver_t *, device_t);
 static int sgisn_pcib_probe(device_t);
 
 static int sgisn_pcib_activate_resource(device_t, device_t, int, int,
@@ -84,7 +82,6 @@ static int sgisn_pcib_scan(struct sgisn_pcib_softc *, u_int, u_int);
  */
 static device_method_t sgisn_pcib_methods[] = {
 	/* Device interface */
-	DEVMETHOD(device_identify,	sgisn_pcib_identify),
 	DEVMETHOD(device_probe,		sgisn_pcib_probe),
 	DEVMETHOD(device_attach,	sgisn_pcib_attach),
 
@@ -116,7 +113,7 @@ static driver_t sgisn_pcib_driver = {
 
 devclass_t pcib_devclass;
 
-DRIVER_MODULE(pcib, nexus, sgisn_pcib_driver, pcib_devclass, 0, 0);
+DRIVER_MODULE(pcib, shub, sgisn_pcib_driver, pcib_devclass, 0, 0);
 
 static int
 sgisn_pcib_maxslots(device_t dev)
@@ -184,9 +181,30 @@ sgisn_pcib_activate_resource(device_t dev, device_t child, int type, int rid,
 
 	if (type == SYS_RES_IRQ) {
 		/* For now, only warn when there's a mismatch. */
-		if (paddr != sgisn_irq.irq_no)
+		if (paddr != sgisn_irq.irq_nr)
 			device_printf(dev, "interrupt mismatch: (actual=%u)\n",
-			    sgisn_irq.irq_no);
+			    sgisn_irq.irq_nr);
+
+	printf("XXX: %s: %u, %u, %u, %u, %u, %#lx\n", __func__,
+	    sgisn_irq.irq_tgt_nasid, sgisn_irq.irq_tgt_slice,
+	    sgisn_irq.irq_cpuid, sgisn_irq.irq_nr, sgisn_irq.irq_pin,
+	    sgisn_irq.irq_tgt_xtaddr);
+	printf("\t%u, %p, %p, %u, %#x, %#x, %u\n", sgisn_irq.irq_br_type,
+	    sgisn_irq.irq_bridge, sgisn_irq.irq_io_info, sgisn_irq.irq_last,
+	    sgisn_irq.irq_cookie, sgisn_irq.irq_flags, sgisn_irq.irq_refcnt);
+
+#if 0
+		r = ia64_sal_entry(SAL_SGISN_INTERRUPT, 1 /*alloc*/,
+		    sgisn_irq.irq_tgt_nasid,
+		    (sgisn_irq.irq_bridge >> 24) & 15
+		    ia64_tpa((uintptr_t)&sgisn_irq),
+		    paddr,
+		    sgisn_irq.irq_tgt_nasid,
+		    sgisn_irq.irq_tgt_slice);
+		if (r.status != 0)
+			return (ENXIO);
+#endif
+
 		goto out;
 	}
 
@@ -209,44 +227,19 @@ sgisn_pcib_activate_resource(device_t dev, device_t child, int type, int rid,
 	return (rman_activate_resource(res));
 }
 
-static void
-sgisn_pcib_identify(driver_t *drv, device_t bus)
-{
-	struct ia64_sal_result r;
-	device_t dev;
-	struct sgisn_pcib_softc *sc;
-	void *addr;
-	u_int busno, segno;
-
-	sgisn_hub.hub_pci_maxseg = 0xffffffff;
-	sgisn_hub.hub_pci_maxbus = 0xff;
-	r = ia64_sal_entry(SAL_SGISN_IOHUB_INFO, PCPU_GET(md.sgisn_nasid),
-	    ia64_tpa((uintptr_t)&sgisn_hub), 0, 0, 0, 0, 0);
-	if (r.sal_status != 0)
-		return;
-
-	for (segno = 0; segno <= sgisn_hub.hub_pci_maxseg; segno++) {
-		for (busno = 0; busno <= sgisn_hub.hub_pci_maxbus; busno++) {
-			r = ia64_sal_entry(SAL_SGISN_IOBUS_INFO, segno, busno,
-			    ia64_tpa((uintptr_t)&addr), 0, 0, 0, 0);
-
-			if (r.sal_status == 0 && addr != NULL) {
-				dev = BUS_ADD_CHILD(bus, 0, drv->name, -1);
-				if (dev == NULL)
-					continue;
-				device_set_driver(dev, drv);
-				sc = device_get_softc(dev);
-				sc->sc_promaddr = addr;
-				sc->sc_domain = segno;
-				sc->sc_busnr = busno;
-			}
-		}
-	}
-}
-
 static int
 sgisn_pcib_probe(device_t dev)
 {
+	device_t parent;
+	uintptr_t bus, seg;
+
+	parent = device_get_parent(dev);
+	if (parent == NULL)
+		return (ENXIO);
+
+	if (BUS_READ_IVAR(parent, dev, SHUB_IVAR_PCISEG, &seg) ||
+	    BUS_READ_IVAR(parent, dev, SHUB_IVAR_PCIBUS, &bus))
+		return (ENXIO);
 
 	device_set_desc(dev, "SGI PCI-X host controller");
 	return (BUS_PROBE_DEFAULT);
@@ -256,9 +249,17 @@ static int
 sgisn_pcib_attach(device_t dev)
 {
 	struct sgisn_pcib_softc *sc;
+	device_t parent;
+	uintptr_t bus, seg;
 
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
+
+	parent = device_get_parent(dev);
+	BUS_READ_IVAR(parent, dev, SHUB_IVAR_PCIBUS, &bus);
+	sc->sc_busnr = bus;
+	BUS_READ_IVAR(parent, dev, SHUB_IVAR_PCISEG, &seg);
+	sc->sc_domain = seg;
 
 #if 0
 	sgisn_pcib_scan(sc, sc->sc_busnr, sgisn_pcib_maxslots(dev));
@@ -301,8 +302,8 @@ sgisn_pcib_write_ivar(device_t dev, device_t child, int which, uintptr_t value)
 static int
 sgisn_pcib_scan(struct sgisn_pcib_softc *sc, u_int bus, u_int maxslot)
 {
-	static struct sgisn_dev dev;
-	static struct sgisn_irq irq;
+	static struct sgisn_fwdev dev;
+	static struct sgisn_fwirq irq;
 	struct ia64_sal_result r;
 	u_int devfn, func, maxfunc, slot;
 	uint8_t hdrtype;

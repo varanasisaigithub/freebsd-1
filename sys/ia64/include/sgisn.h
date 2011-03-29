@@ -29,6 +29,7 @@
 #define _MACHINE_SGISN_H_
 
 /* SAL functions */
+#define	SAL_SGISN_KLCONFIG_ADDR		0x02000005
 #define	SAL_SGISN_SAPIC_INFO		0x0200001d
 #define	SAL_SGISN_SN_INFO		0x0200001e
 #define	SAL_SGISN_PUTC			0x02000021
@@ -38,6 +39,8 @@
 #define	SAL_SGISN_IOHUB_INFO		0x02000055
 #define	SAL_SGISN_IOBUS_INFO		0x02000056
 #define	SAL_SGISN_IODEV_INFO		0x02000057
+#define	SAL_SGISN_FEATURE_GET_PROM	0x02000065
+#define	SAL_SGISN_FEATURE_SET_OS	0x02000066
 
 #define	SGISN_GEOID_MODULE(id)		(((id) >> 0) & 0xffffffffu)
 #define	SGISN_GEOID_TYPE(id)		(((id) >> 32) & 0xff)
@@ -61,23 +64,39 @@
 #define	SGISN_HUB_NITTES	8
 #define	SGISN_HUB_NWIDGETS	16
 
+#define	SHUB_IVAR_PCIBUS	1
+#define	SHUB_IVAR_PCISEG	2
+
+struct sgisn_fwhub;
+
 struct sgisn_widget {
 	uint32_t		wgt_hwmfg;
 	uint32_t		wgt_hwrev;
 	uint32_t		wgt_hwpn;
 	uint8_t			wgt_port;
-	char	_pad[3];
-	uint64_t		wgt_private;
-	uint64_t		wgt_provider;
+	uint8_t			_pad[3];
+	struct sgisn_fwhub	*wgt_hub;
+	uint64_t		wgt_funcs;
 	uint64_t		wgt_vertex;
 };
 
-struct sgisn_hub {
+struct sgisn_fwbus {
+	uint32_t		bus_asic;
+	uint32_t		bus_xid;
+	uint32_t		bus_busnr;
+	uint32_t		bus_segment;
+	uint64_t		bus_ioport_addr;
+	uint64_t		bus_memio_addr;
+	uint64_t		bus_base;
+	struct sgisn_widget	*bus_wgt_info;
+};
+
+struct sgisn_fwhub {
 	uint64_t		hub_geoid;
 	uint16_t		hub_nasid;
 	uint16_t		hub_peer_nasid;
-	char	_pad[4];
-	uint64_t		hub_pointer;
+	uint32_t		_pad;
+	void 			*hub_widgets;
 	uint64_t		hub_dma_itte[SGISN_HUB_NITTES];
 	struct sgisn_widget	hub_widget[SGISN_HUB_NWIDGETS];
 
@@ -88,29 +107,33 @@ struct sgisn_hub {
 	uint32_t		hub_pci_maxbus;
 };
 
-struct sgisn_irq {
-	uint64_t		irq_unused;
-	uint16_t		irq_nasid;
-	char	_pad1[2];
-	u_int			irq_slice;
-	u_int			irq_cpuid;
-	u_int			irq_no;
-	u_int			irq_pin;
-	uint64_t		irq_xtaddr;
-	u_int			irq_br_type;
-	char	_pad2[4];
-	uint64_t		irq_bridge;
-	uint64_t		irq_io_info;
-	u_int			irq_last;
-	u_int			irq_cookie;
-	u_int			irq_flags;
-	u_int			irq_refcnt;
+struct sgisn_fwirq {
+	uint64_t		_obsolete;
+	uint16_t		irq_tgt_nasid;
+	uint16_t		_pad1;
+	uint32_t		irq_tgt_slice;
+	uint32_t		irq_cpuid;
+	uint32_t		irq_nr;
+	uint32_t		irq_pin;
+	uint64_t		irq_tgt_xtaddr;
+	uint32_t		irq_br_type;
+	uint32_t		_pad2;
+	void			*irq_bridge;	/* Originating */
+	void			*irq_io_info;
+	uint32_t		irq_last;
+	uint32_t		irq_cookie;
+	uint32_t		irq_flags;
+	uint32_t		irq_refcnt;
 };
 
-struct sgisn_dev {
+struct sgisn_fwdev {
 	uint64_t		dev_bar[6];
-	uint64_t		dev_rom;
+	uint64_t		dev_romaddr;
 	uint64_t		dev_handle;
+	struct sgisn_fwbus	*dev_bus_softc;
+	struct sgisn_fwdev	*dev_parent;
+	void			*dev_os_devptr;
+	struct sgisn_fwirq	*dev_irq;
 };
 
 #endif /* !_MACHINE_SGISN_H_ */

@@ -32,6 +32,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/kernel.h>
 #include <sys/module.h>
 #include <sys/bus.h>
+#include <sys/malloc.h>
 #include <sys/pcpu.h>
 #include <sys/rman.h>
 
@@ -48,14 +49,16 @@ __FBSDID("$FreeBSD$");
 #include <contrib/dev/acpica/include/actables.h>
 #include <dev/acpica/acpivar.h>
 
-// XXX static struct sgisn_hub sgisn_hub;
-
 struct sgisn_shub_softc {
-	struct sgisn_hub	sc_prom_hub;
+	struct sgisn_fwhub *sc_fwhub;
 	device_t	sc_dev;
-	void		*sc_promaddr;
+	vm_paddr_t	sc_membase;
+	vm_size_t	sc_memsize;
 	u_int		sc_domain;
-	u_int		sc_busnr;
+	u_int		sc_hubtype;	/* SHub type (0=SHub1, 1=SHub2) */
+	u_int		sc_nasid_mask;
+	u_int		sc_nasid_shft;
+	u_int		sc_nasid;
 };
 
 static int sgisn_shub_attach(device_t);
@@ -204,7 +207,7 @@ sgisn_shub_dump_sn_info(struct ia64_sal_result *r)
 }
 
 static void
-sgisn_shub_srat_parse(ACPI_SUBTABLE_HEADER *entry, void *arg)
+sgisn_shub_identify_srat_cb(ACPI_SUBTABLE_HEADER *entry, void *arg)
 {
 	ACPI_SRAT_CPU_AFFINITY *cpu;
 	ACPI_SRAT_MEM_AFFINITY *mem;
@@ -215,7 +218,7 @@ sgisn_shub_srat_parse(ACPI_SUBTABLE_HEADER *entry, void *arg)
 
 	/*
 	 * Use all possible entry types for learning about domains.
-	 * This probably is highly redundant and could possible be
+	 * This probably is highly redundant and could possibly be
 	 * wrong, but it seems more harmful to miss a domain than
 	 * anything else.
 	 */
@@ -244,7 +247,7 @@ sgisn_shub_srat_parse(ACPI_SUBTABLE_HEADER *entry, void *arg)
 		return;
 
 	if (bootverbose)
-		printf("%s: found now domain %u\n", sgisn_shub_name, domain);
+		printf("%s: new domain %u\n", sgisn_shub_name, domain);
 
 	/*
 	 * First encounter of this domain. Add a SHub device with a unit
@@ -285,37 +288,175 @@ sgisn_shub_identify(driver_t *drv, device_t bus)
 	}
 
 	acpi_walk_subtables((uint8_t *)ptr + sizeof(ACPI_TABLE_SRAT),
-	    (uint8_t *)ptr + tbl->Length, sgisn_shub_srat_parse, bus);
+	    (uint8_t *)ptr + tbl->Length, sgisn_shub_identify_srat_cb, bus);
 }
 
 static int
 sgisn_shub_probe(device_t dev)
 {
+	struct ia64_sal_result r;
+	char desc[80];
+	u_int v;
+
+	/*
+	 * NOTICE: This can only be done on a CPU that's connected to the
+	 * FSB of the SHub ASIC. As such, the BSP can only validly probe
+	 * the SHub it's connected to.
+	 *
+	 * In order to probe and attach SHubs in other domains, we need to
+	 * defer to some CPU connected to that SHub.
+	 *
+	 * XXX For now, we assume that SHub types are the same across the
+	 * system, so we simply query the SHub in our domain and pretend
+	 * we queried the one corresponding to the domain this instance
+	 * refers to.
+	 */
+	r = ia64_sal_entry(SAL_SGISN_SN_INFO, 0, 0, 0, 0, 0, 0, 0);
+	if (r.sal_status != 0)
+		return (ENXIO);
+
+	v = (r.sal_result[0] & 0xff) + 1;;
+	snprintf(desc, sizeof(desc), "SGI SHub%u ASIC", v);
+	device_set_desc_copy(dev, desc);
+	return (BUS_PROBE_DEFAULT);
+}
+
+static void
+sgisn_shub_attach_srat_cb(ACPI_SUBTABLE_HEADER *entry, void *arg)
+{
+	device_t dev = arg;
+	ACPI_SRAT_MEM_AFFINITY *mem;
 	struct sgisn_shub_softc *sc;
+ 
+	if (entry->Type != ACPI_SRAT_TYPE_MEMORY_AFFINITY)
+		return;
 
 	sc = device_get_softc(dev);
 
-	device_set_desc(dev, "SGI SHub ASIC ");
-	return (BUS_PROBE_DEFAULT);
+	mem = (ACPI_SRAT_MEM_AFFINITY *)(void *)entry;
+	if (mem->ProximityDomain != sc->sc_domain)
+		return;
+	if ((mem->Flags & ACPI_SRAT_MEM_ENABLED) == 0)
+		return;
+
+	sc->sc_membase = mem->BaseAddress;
+	sc->sc_memsize = mem->Length;
 }
 
 static int
 sgisn_shub_attach(device_t dev)
 {
+	struct ia64_sal_result r;
 	struct sgisn_shub_softc *sc;
+	ACPI_TABLE_HEADER *tbl;
+	device_t child;
+	void *ptr;
+	u_long addr;
+	u_int bus, seg, wdgt;
 
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
+	sc->sc_domain = device_get_unit(dev);
 
-	device_add_child(dev, "pci", -1);
+	/*
+	 * Get the physical memory region that is connected to the MD I/F
+	 * of this SHub. It allows us to allocate memory that's close to
+	 * this SHub. Fail the attach if we don't have local memory, as
+	 * we really depend on it.
+	 */
+	tbl = ptr = acpi_find_table(ACPI_SIG_SRAT);
+	acpi_walk_subtables((uint8_t *)ptr + sizeof(ACPI_TABLE_SRAT),
+	    (uint8_t *)ptr + tbl->Length, sgisn_shub_attach_srat_cb, dev);
+	if (sc->sc_memsize == 0)
+		return (ENXIO);
+
+	if (bootverbose)
+		device_printf(dev, "%#lx bytes of attached memory at %#lx\n",
+		    sc->sc_memsize, sc->sc_membase);
+
+	/*
+	 * Obtain our NASID.
+	 */
+	r = ia64_sal_entry(SAL_SGISN_SN_INFO, 0, 0, 0, 0, 0, 0, 0);
+	if (r.sal_status != 0)
+		return (ENXIO);
+
+	sc->sc_hubtype = r.sal_result[0] & 0xff;
+	sc->sc_nasid_mask = r.sal_result[1] & 0xffff;
+	sc->sc_nasid_shft = (r.sal_result[1] >> 16) & 0xff;
+	sc->sc_nasid = (sc->sc_membase >> sc->sc_nasid_shft) &
+	    sc->sc_nasid_mask;
+
+	if (bootverbose)
+		device_printf(dev, "NASID=%#x\n", sc->sc_nasid);
+
+	/*
+	 * Allocate contiguous memory, local to the SHub, for collecting
+	 * SHub information from the PROM and for discovering the PCI
+	 * host controllers connected to the SHub.
+	 */
+	sc->sc_fwhub = contigmalloc(sizeof(struct sgisn_fwhub), M_DEVBUF,
+	    M_ZERO, sc->sc_membase, sc->sc_membase + sc->sc_memsize, 16, 0);
+
+	sc->sc_fwhub->hub_pci_maxseg = 0xffffffff;
+	sc->sc_fwhub->hub_pci_maxbus = 0xff;
+	r = ia64_sal_entry(SAL_SGISN_IOHUB_INFO, sc->sc_nasid,
+	    ia64_tpa((uintptr_t)sc->sc_fwhub), 0, 0, 0, 0, 0);
+	if (r.sal_status != 0) {
+		contigfree(sc->sc_fwhub, sizeof(struct sgisn_fwhub), M_DEVBUF);
+		return (ENXIO);
+	}
+
+	for (wdgt = 0; wdgt < SGISN_HUB_NWIDGETS; wdgt++)
+		sc->sc_fwhub->hub_widget[wdgt].wgt_hub = sc->sc_fwhub;
+
+	r = ia64_sal_entry(SAL_SGISN_KLCONFIG_ADDR, sc->sc_nasid,
+	    0, 0, 0, 0, 0, 0);
+	device_printf(dev, "KLCONFIG: status=%#lx, addr=%#lx\n",
+	    r.sal_status, r.sal_result[0]);
+
+	/*
+	 * XXX Hack to avoid having the same PCI busses as children of any
+	 * SHub we have. The problem is that we can't pass the nasid to the
+	 * the SAL function. So either we get all the busses, irrespective
+	 * of the node in which they live or we always get the busses local
+	 * to the CPU. I can't tell the difference, because I don't have
+	 * busses on the other brick right now.
+	 * In any case: we don't have a good way yet to figure out if the
+	 * bus connects to the SHub in question.
+         */
+	if (sc->sc_nasid != 0)
+		return (0);
+
+	for (seg = 0; seg <= sc->sc_fwhub->hub_pci_maxseg; seg++) {
+		for (bus = 0; bus <= sc->sc_fwhub->hub_pci_maxbus; bus++) {
+			r = ia64_sal_entry(SAL_SGISN_IOBUS_INFO, seg, bus,
+			    ia64_tpa((uintptr_t)&addr), 0, 0, 0, 0);
+			if (r.sal_status == 0 && addr != 0) {
+				child = device_add_child(dev, "pcib", -1);
+				device_set_ivars(child, (void *)(uintptr_t)
+				  ((seg << 8) | (bus & 0xff)));
+			}
+		}
+	}
+
 	return (bus_generic_attach(dev));
 }
 
 static int
 sgisn_shub_read_ivar(device_t dev, device_t child, int which, uintptr_t *res)
 {
-// XXX	struct sgisn_shub_softc *sc = device_get_softc(dev);
+	uintptr_t ivars;
 
+	ivars = (uintptr_t)device_get_ivars(child);
+	switch (which) {
+	case SHUB_IVAR_PCIBUS:
+		*res = ivars & 0xff;
+		return (0);
+	case SHUB_IVAR_PCISEG:
+		*res = ivars >> 8;
+		return (0);
+	}
 	return (ENOENT);
 }
 
