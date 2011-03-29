@@ -174,70 +174,6 @@ struct kva_md_info kmi;
 #define	Mhz	1000000L
 #define	Ghz	(1000L*Mhz)
 
-#define	SN_SAL_SET_OS_FEATURE_SET	0x02000066
-
-#define	OSF_ACPI_ENABLE		2
-#define	OSF_PCISEGMENT_ENABLE	3
-
-#include <contrib/dev/acpica/include/acpi.h>
-#include <contrib/dev/acpica/include/actables.h>
-#include <dev/acpica/acpivar.h>
-
-static void
-srat_dump_entry(ACPI_SUBTABLE_HEADER *entry, void *arg)
-{
-	ACPI_SRAT_CPU_AFFINITY *cpu;
-	ACPI_SRAT_MEM_AFFINITY *mem;
-	uint32_t domain;
-	uint16_t sapicid;
-
-	switch (entry->Type) {
-	case ACPI_SRAT_TYPE_CPU_AFFINITY:
-		cpu = (ACPI_SRAT_CPU_AFFINITY *)entry;
-		domain = cpu->ProximityDomainLo |
-		    cpu->ProximityDomainHi[0] << 8 |
-		    cpu->ProximityDomainHi[1] << 16 |
-		    cpu->ProximityDomainHi[2] << 24;
-		sapicid = (cpu->ApicId << 8) | cpu->LocalSapicEid;
-		printf("SRAT: Sapic ID %u domain %d: %s\n", sapicid, domain,
-		    (cpu->Flags & ACPI_SRAT_CPU_ENABLED) ? "enabled" :
-		    "disabled");
-		break;
-	case ACPI_SRAT_TYPE_MEMORY_AFFINITY:
-		mem = (ACPI_SRAT_MEM_AFFINITY *)entry;
-		printf("SRAT: memory domain %d addr %lx len %lx: %s\n",
-		    mem->ProximityDomain, mem->BaseAddress, mem->Length,
-		    (mem->Flags & ACPI_SRAT_MEM_ENABLED) ? "enabled" :
-		    "disabled");
-		break;
-	default:
-		printf("SRAT: unknown type (%u)\n", entry->Type);
-		break;
-	}
-}
-
-static void
-check_sn_sal(void)
-{
-	struct ia64_sal_result r;
-	ACPI_TABLE_HEADER *tbl;
-	void *ptr;
-
-	r = ia64_sal_entry(SAL_SGISN_SN_INFO, 0, 0, 0, 0, 0, 0, 0);
-	printf("XXX: %s: stat=%ld, res0=%#lx, res1=%#lx, res2=%#lx\n",
-	    __func__, r.sal_status, r.sal_result[0], r.sal_result[1],
-	    r.sal_result[2]);
-	if (r.sal_status != 0)
-		return;
-
-	tbl = ptr = acpi_find_table(ACPI_SIG_SRAT);
-	printf("XXX: %s: SRAT table at %p\n", __func__, ptr);
-	acpi_walk_subtables((char *)ptr + sizeof(ACPI_TABLE_SRAT), 
-	    (char *)ptr + tbl->Length, srat_dump_entry, ptr);
-	tbl = acpi_find_table(ACPI_SIG_SLIT);
-	printf("XXX: %s: SLIT table at %p\n", __func__, tbl);
-}
-
 static void
 identifycpu(void)
 {
@@ -866,8 +802,6 @@ ia64_init(struct bootinfo *bi)
 
 	if (metadata_missing)
 		printf("WARNING: loader(8) metadata is missing!\n");
-
-	check_sn_sal();
 
 	/* Get FPSWA interface */
 	fpswa_iface = (bootinfo->bi_fpswa == 0) ? NULL :
