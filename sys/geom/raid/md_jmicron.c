@@ -431,7 +431,10 @@ g_raid_md_jmicron_start_disk(struct g_raid_disk *disk)
 	olddisk = NULL;
 
 	/* Find disk position in metadata by it's serial. */
-	disk_pos = jmicron_meta_find_disk(meta, pd->pd_disk_id);
+	if (pd->pd_meta != NULL)
+		disk_pos = jmicron_meta_find_disk(meta, pd->pd_disk_id);
+	else
+		disk_pos = -1;
 	if (disk_pos < 0) {
 		G_RAID_DEBUG1(1, sc, "Unknown, probably new or stale disk");
 		/* If we are in the start process, that's all for now. */
@@ -522,7 +525,7 @@ nofit:
 		 * Different disks may have different sizes/offsets,
 		 * especially in concat mode. Update.
 		 */
-		if (pd->pd_meta != NULL && !resurrection) {
+		if (!resurrection) {
 			sd->sd_offset =
 			    (off_t)pd->pd_meta->offset * 16 * 512; //ZZZ
 			sd->sd_size =
@@ -576,14 +579,12 @@ g_raid_md_jmicron_refill(struct g_raid_softc *sc)
 {
 	struct g_raid_md_object *md;
 	struct g_raid_md_jmicron_object *mdi;
-	struct jmicron_raid_conf *meta;
 	struct g_raid_disk *disk;
 	struct task *task;
 	int update, na;
 
 	md = sc->sc_md;
 	mdi = (struct g_raid_md_jmicron_object *)md;
-	meta = mdi->mdio_meta;
 	update = 0;
 	do {
 		/* Make sure we miss anything. */
@@ -617,10 +618,8 @@ g_raid_md_jmicron_refill(struct g_raid_softc *sc)
 	} while (disk != NULL);
 
 	/* Write new metadata if we changed something. */
-	if (update) {
+	if (update)
 		g_raid_md_write_jmicron(md, NULL, NULL, NULL);
-		meta = mdi->mdio_meta;
-	}
 
 	/* Update status of our need for spare. */
 	mdi->mdio_incomplete = (g_raid_ndisks(sc, G_RAID_DISK_S_ACTIVE) <
@@ -832,9 +831,7 @@ g_raid_md_taste_jmicron(struct g_raid_md_object *md, struct g_class *mp,
 
 	/* Read metadata from device. */
 	meta = NULL;
-	spare = 0;
 	vendor = 0xffff;
-	disk_pos = 0;
 	if (g_access(cp, 1, 0, 0) != 0)
 		return (G_RAID_MD_TASTE_FAIL);
 	g_topology_unlock();
@@ -1130,6 +1127,11 @@ g_raid_md_ctl_jmicron(struct g_raid_md_object *md,
 		if (error != 0)
 			return (error);
 
+		if (sectorsize <= 0) {
+			gctl_error(req, "Can't get sector size.");
+			return (-8);
+		}
+
 		/* Reserve space for metadata. */
 		size -= sectorsize;
 
@@ -1300,10 +1302,8 @@ g_raid_md_ctl_jmicron(struct g_raid_md_object *md,
 			/* If disk was assigned, just update statuses. */
 			if (pd->pd_disk_pos >= 0) {
 				g_raid_change_disk_state(disk, G_RAID_DISK_S_OFFLINE);
-				if (disk->d_consumer) {
-					g_raid_kill_consumer(sc, disk->d_consumer);
-					disk->d_consumer = NULL;
-				}
+				g_raid_kill_consumer(sc, disk->d_consumer);
+				disk->d_consumer = NULL;
 				TAILQ_FOREACH(sd, &disk->d_subdisks, sd_next) {
 					g_raid_change_subdisk_state(sd,
 					    G_RAID_SUBDISK_S_NONE);
@@ -1363,7 +1363,6 @@ g_raid_md_ctl_jmicron(struct g_raid_md_object *md,
 
 			disk = g_raid_create_disk(sc);
 			disk->d_consumer = cp;
-			disk->d_consumer->private = disk;
 			disk->d_md_data = (void *)pd;
 			cp->private = disk;
 			g_topology_unlock();
@@ -1469,7 +1468,6 @@ g_raid_md_write_jmicron(struct g_raid_md_object *md, struct g_raid_volume *tvol,
 	if (mdi->mdio_meta != NULL)
 		free(mdi->mdio_meta, M_MD_JMICRON);
 	mdi->mdio_meta = meta;
-	i = 0;
 	TAILQ_FOREACH(disk, &sc->sc_disks, d_next) {
 		pd = (struct g_raid_md_jmicron_perdisk *)disk->d_md_data;
 		if (disk->d_state != G_RAID_DISK_S_ACTIVE &&
@@ -1506,12 +1504,10 @@ g_raid_md_fail_disk_jmicron(struct g_raid_md_object *md,
     struct g_raid_subdisk *tsd, struct g_raid_disk *tdisk)
 {
 	struct g_raid_softc *sc;
-	struct g_raid_md_jmicron_object *mdi;
 	struct g_raid_md_jmicron_perdisk *pd;
 	struct g_raid_subdisk *sd;
 
 	sc = md->mdo_softc;
-	mdi = (struct g_raid_md_jmicron_object *)md;
 	pd = (struct g_raid_md_jmicron_perdisk *)tdisk->d_md_data;
 
 	/* We can't fail disk that is not a part of array now. */

@@ -549,7 +549,6 @@ g_raid_tr_iostart_raid1_read(struct g_raid_tr_object *tr, struct bio *bp)
 static void
 g_raid_tr_iostart_raid1_write(struct g_raid_tr_object *tr, struct bio *bp)
 {
-	struct g_raid_softc *sc;
 	struct g_raid_volume *vol;
 	struct g_raid_subdisk *sd;
 	struct bio_queue_head queue;
@@ -557,7 +556,6 @@ g_raid_tr_iostart_raid1_write(struct g_raid_tr_object *tr, struct bio *bp)
 	int i;
 
 	vol = tr->tro_volume;
-	sc = vol->v_softc;
 
 	/*
 	 * Allocate all bios before sending any request, so we can return
@@ -720,8 +718,6 @@ g_raid_tr_iodone_raid1(struct g_raid_tr_object *tr,
 				    bp->bio_error);
 				bp->bio_cmd = BIO_WRITE;
 				bp->bio_cflags = G_RAID_BIO_FLAG_SYNC;
-				bp->bio_offset = bp->bio_offset;
-				bp->bio_length = bp->bio_length;
 				G_RAID_LOGREQ(4, bp, "Queueing rebuild write.");
 				g_raid_subdisk_iostart(trs->trso_failed_sd, bp);
 			} else {

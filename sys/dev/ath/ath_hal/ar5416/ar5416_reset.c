@@ -305,7 +305,7 @@ ar5416Reset(struct ath_hal *ah, HAL_OPMODE opmode,
 	 */
 	OS_REG_WRITE(ah, AR_OBS, 8);
 
-#ifdef AR5416_INT_MITIGATION
+#ifdef	AH_AR5416_INTERRUPT_MITIGATION
 	OS_REG_WRITE(ah, AR_MIRT, 0);
 
 	OS_REG_RMW_FIELD(ah, AR_RIMT, AR_RIMT_LAST, 500);
@@ -480,7 +480,15 @@ ar5416InitDMA(struct ath_hal *ah)
 	 * reduce the number of usable entries in PCU TXBUF to avoid
 	 * wrap around.
 	 */
-	OS_REG_WRITE(ah, AR_PCU_TXBUF_CTRL, AR_PCU_TXBUF_CTRL_USABLE_SIZE);
+	if (AR_SREV_KITE(ah))
+		/*
+		 * For AR9285 the number of Fifos are reduced to half.
+		 * So set the usable tx buf size also to half to
+		 * avoid data/delimiter underruns
+		 */
+		OS_REG_WRITE(ah, AR_PCU_TXBUF_CTRL, AR_9285_PCU_TXBUF_CTRL_USABLE_SIZE);
+	else
+		OS_REG_WRITE(ah, AR_PCU_TXBUF_CTRL, AR_PCU_TXBUF_CTRL_USABLE_SIZE);
 }
 
 static void
@@ -538,7 +546,7 @@ ar5416InitIMR(struct ath_hal *ah, HAL_OPMODE opmode)
 			| AR_IMR_RXERR | AR_IMR_RXORN
                         | AR_IMR_BCNMISC;
 
-#ifdef AR5416_INT_MITIGATION
+#ifdef	AH_AR5416_INTERRUPT_MITIGATION
        	ahp->ah_maskReg |= AR_IMR_TXINTM | AR_IMR_RXINTM
 			|  AR_IMR_TXMINTR | AR_IMR_RXMINTR;
 #else

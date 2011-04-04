@@ -56,6 +56,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/priv.h>
 #include <sys/proc.h>
 #include <sys/pioctl.h>
+#include <sys/racct.h>
 #include <sys/resourcevar.h>
 #include <sys/sched.h>
 #include <sys/syscall.h>
@@ -733,6 +734,12 @@ fork1(struct thread *td, int flags, int pages, struct proc **procp)
 		return (fork_norfproc(td, flags));
 	}
 
+	PROC_LOCK(p1);
+	error = racct_add(p1, RACCT_NPROC, 1);
+	PROC_UNLOCK(p1);
+	if (error != 0)
+		return (EAGAIN);
+
 	mem_charged = 0;
 	vm2 = NULL;
 	if (pages == 0)
@@ -783,6 +790,21 @@ fork1(struct thread *td, int flags, int pages, struct proc **procp)
 	knlist_init_mtx(&newproc->p_klist, &newproc->p_mtx);
 	STAILQ_INIT(&newproc->p_ktr);
 
+	/*
+	 * XXX: This is ugly; when we copy resource usage, we need to bump
+	 *      per-cred resource counters.
+	 */
+	newproc->p_ucred = p1->p_ucred;
+
+	/*
+	 * Initialize resource accounting for the child process.
+	 */
+	error = racct_proc_fork(p1, newproc);
+	if (error != 0) {
+		error = EAGAIN;
+		goto fail1;
+	}
+
 	/* We have to lock the process tree while we look for a pid. */
 	sx_slock(&proctree_lock);
 
@@ -796,6 +818,17 @@ fork1(struct thread *td, int flags, int pages, struct proc **procp)
 	sx_xlock(&allproc_lock);
 	if ((nprocs >= maxproc - 10 && priv_check_cred(td->td_ucred,
 	    PRIV_MAXPROC, 0) != 0) || nprocs >= maxproc) {
+		error = EAGAIN;
+		goto fail;
+	}
+
+	/*
+	 * After fork, there is exactly one thread running.
+	 */
+	PROC_LOCK(newproc);
+	error = racct_set(newproc, RACCT_NTHR, 1);
+	PROC_UNLOCK(newproc);
+	if (error != 0) {
 		error = EAGAIN;
 		goto fail;
 	}
@@ -827,6 +860,7 @@ fork1(struct thread *td, int flags, int pages, struct proc **procp)
 
 	error = EAGAIN;
 fail:
+	racct_proc_exit(newproc);
 	sx_sunlock(&proctree_lock);
 	if (ppsratecheck(&lastfail, &curfail, 1))
 		printf("maxproc limit exceeded by uid %i, please see tuning(7) and login.conf(5).\n",
@@ -840,6 +874,9 @@ fail1:
 		vmspace_free(vm2);
 	uma_zfree(proc_zone, newproc);
 	pause("fork", hz / 2);
+	PROC_LOCK(p1);
+	racct_sub(p1, RACCT_NPROC, 1);
+	PROC_UNLOCK(p1);
 	return (error);
 }
 

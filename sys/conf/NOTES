@@ -2711,6 +2711,9 @@ device		rue
 # Davicom DM9601E USB to fast ethernet. Supports the Corega FEther USB-TXC.
 device		udav
 #
+# Moschip MCS7730/MCS7840 USB to fast ethernet. Supports the Sitecom LN030.
+device		mos
+#
 # HSxPA devices from Option N.V
 device		uhso
 
@@ -2929,6 +2932,12 @@ options 	AAC_DEBUG	# Debugging levels:
 				#     points and things done
 				# 2 - extremely noisy, emit trace
 				#     items in loops, etc.
+
+# Resource Accounting
+options 	RACCT
+
+# Resource Limits
+options 	RCTL
 
 # Yet more undocumented options for linting.
 # BKTR_ALLOC_PAGES has no effect except to cause warnings, and

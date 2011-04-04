@@ -541,9 +541,9 @@ intel_meta_write_spare(struct g_consumer *cp, struct intel_raid_disk *d)
 
 	/* Fill anchor and single disk. */
 	meta = malloc(INTEL_MAX_MD_SIZE(1), M_MD_INTEL, M_WAITOK | M_ZERO);
-	memcpy(&meta->intel_id[0], INTEL_MAGIC, sizeof(INTEL_MAGIC));
+	memcpy(&meta->intel_id[0], INTEL_MAGIC, sizeof(INTEL_MAGIC) - 1);
 	memcpy(&meta->version[0], INTEL_VERSION_1000,
-	    sizeof(INTEL_VERSION_1000));
+	    sizeof(INTEL_VERSION_1000) - 1);
 	meta->config_size = INTEL_MAX_MD_SIZE(1);
 	meta->config_id = arc4random();
 	meta->generation = 1;
@@ -1153,7 +1153,6 @@ g_raid_md_taste_intel(struct g_raid_md_object *md, struct g_class *mp,
 
 	/* Read metadata from device. */
 	meta = NULL;
-	spare = 0;
 	vendor = 0xffff;
 	disk_pos = 0;
 	if (g_access(cp, 1, 0, 0) != 0)
@@ -1431,7 +1430,7 @@ g_raid_md_ctl_intel(struct g_raid_md_object *md,
 					gctl_error(req, "Can't open disk '%s'.",
 					    diskname);
 					g_topology_unlock();
-					error = -4;
+					error = -7;
 					break;
 				}
 				pp = cp->provider;
@@ -1480,6 +1479,11 @@ g_raid_md_ctl_intel(struct g_raid_md_object *md,
 		}
 		if (error != 0)
 			return (error);
+
+		if (sectorsize <= 0) {
+			gctl_error(req, "Can't get sector size.");
+			return (-8);
+		}
 
 		/* Reserve some space for metadata. */
 		size -= ((4096 + sectorsize - 1) / sectorsize) * sectorsize;
@@ -1881,10 +1885,8 @@ g_raid_md_ctl_intel(struct g_raid_md_object *md,
 			/* If disk was assigned, just update statuses. */
 			if (pd->pd_disk_pos >= 0) {
 				g_raid_change_disk_state(disk, G_RAID_DISK_S_OFFLINE);
-				if (disk->d_consumer) {
-					g_raid_kill_consumer(sc, disk->d_consumer);
-					disk->d_consumer = NULL;
-				}
+				g_raid_kill_consumer(sc, disk->d_consumer);
+				disk->d_consumer = NULL;
 				TAILQ_FOREACH(sd, &disk->d_subdisks, sd_next) {
 					g_raid_change_subdisk_state(sd,
 					    G_RAID_SUBDISK_S_NONE);
@@ -1955,7 +1957,6 @@ g_raid_md_ctl_intel(struct g_raid_md_object *md,
 
 			disk = g_raid_create_disk(sc);
 			disk->d_consumer = cp;
-			disk->d_consumer->private = disk;
 			disk->d_md_data = (void *)pd;
 			cp->private = disk;
 
@@ -2049,7 +2050,7 @@ g_raid_md_write_intel(struct g_raid_md_object *md, struct g_raid_volume *tvol,
 	/* Fill anchor and disks. */
 	meta = malloc(INTEL_MAX_MD_SIZE(numdisks),
 	    M_MD_INTEL, M_WAITOK | M_ZERO);
-	memcpy(&meta->intel_id[0], INTEL_MAGIC, sizeof(INTEL_MAGIC));
+	memcpy(&meta->intel_id[0], INTEL_MAGIC, sizeof(INTEL_MAGIC) - 1);
 	meta->config_size = INTEL_MAX_MD_SIZE(numdisks);
 	meta->config_id = mdi->mdio_config_id;
 	meta->generation = mdi->mdio_generation;
@@ -2214,7 +2215,7 @@ g_raid_md_write_intel(struct g_raid_md_object *md, struct g_raid_volume *tvol,
 	meta->total_volumes = vi;
 	if (strcmp(version, INTEL_VERSION_1300) != 0)
 		meta->attributes &= INTEL_ATTR_CHECKSUM;
-	memcpy(&meta->version[0], version, sizeof(INTEL_VERSION_1000));
+	memcpy(&meta->version[0], version, sizeof(INTEL_VERSION_1000) - 1);
 
 	/* We are done. Print meta data and store them to disks. */
 	g_raid_md_intel_print(meta);

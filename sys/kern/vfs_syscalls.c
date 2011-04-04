@@ -1069,7 +1069,7 @@ kern_openat(struct thread *td, int fd, char *path, enum uio_seg pathseg,
 	else
 		flags = FFLAGS(flags);
 
-	error = fallocf(td, &nfp, &indx, flags);
+	error = falloc(td, &nfp, &indx, flags);
 	if (error)
 		return (error);
 	/* An extra reference on `nfp' has been held for us by falloc(). */
@@ -3898,14 +3898,20 @@ struct ogetdirentries_args {
 };
 #endif
 int
-ogetdirentries(td, uap)
-	struct thread *td;
-	register struct ogetdirentries_args /* {
-		int fd;
-		char *buf;
-		u_int count;
-		long *basep;
-	} */ *uap;
+ogetdirentries(struct thread *td, struct ogetdirentries_args *uap)
+{
+	long loff;
+	int error;
+
+	error = kern_ogetdirentries(td, uap, &loff);
+	if (error == 0)
+		error = copyout(&loff, uap->basep, sizeof(long));
+	return (error);
+}
+
+int
+kern_ogetdirentries(struct thread *td, struct ogetdirentries_args *uap,
+    long *ploff)
 {
 	struct vnode *vp;
 	struct file *fp;
@@ -4024,9 +4030,10 @@ unionread:
 	}
 	VOP_UNLOCK(vp, 0);
 	VFS_UNLOCK_GIANT(vfslocked);
-	error = copyout(&loff, uap->basep, sizeof(long));
 	fdrop(fp, td);
 	td->td_retval[0] = uap->count - auio.uio_resid;
+	if (error == 0)
+		*ploff = loff;
 	return (error);
 }
 #endif /* COMPAT_43 */
@@ -4488,7 +4495,7 @@ fhopen(td, uap)
 	 * end of vn_open code
 	 */
 
-	if ((error = fallocf(td, &nfp, &indx, fmode)) != 0) {
+	if ((error = falloc(td, &nfp, &indx, fmode)) != 0) {
 		if (fmode & FWRITE)
 			vp->v_writecount--;
 		goto bad;

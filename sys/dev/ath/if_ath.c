@@ -58,6 +58,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/kthread.h>
 #include <sys/taskqueue.h>
 #include <sys/priv.h>
+#include <sys/module.h>
 
 #include <machine/bus.h>
 
@@ -3338,6 +3339,7 @@ ath_rx_proc(void *arg, int npending)
 		ds = bf->bf_desc;
 		if (ds->ds_link == bf->bf_daddr) {
 			/* NB: never process the self-linked entry at the end */
+			sc->sc_stats.ast_rx_hitqueueend++;
 			break;
 		}
 		/* XXX sync descriptor memory */
@@ -5590,3 +5592,5 @@ ath_tdma_beacon_send(struct ath_softc *sc, struct ieee80211vap *vap)
 }
 #endif /* IEEE80211_SUPPORT_TDMA */
 
+MODULE_VERSION(if_ath, 1);
+MODULE_DEPEND(if_ath, wlan, 1, 1, 1);          /* 802.11 media layer */

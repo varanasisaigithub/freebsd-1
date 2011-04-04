@@ -786,6 +786,9 @@ AH_USE_INIPDGAIN	opt_ah.h
 AH_MAXCHAN		opt_ah.h
 AH_RXCFG_SDMAMW_4BYTES	opt_ah.h
 
+# AR5416 and later interrupt mitigation
+AH_AR5416_INTERRUPT_MITIGATION	opt_ah.h
+
 # options for the Broadcom BCM43xx driver (bwi)
 BWI_DEBUG		opt_bwi.h
 BWI_DEBUG_VERBOSE	opt_bwi.h
@@ -872,6 +875,12 @@ SDP		opt_ofed.h
 SDP_DEBUG	opt_ofed.h
 IPOIB_DEBUG	opt_ofed.h
 IPOIB_CM	opt_ofed.h
+
+# Resource Accounting
+RACCT		opt_global.h
+
+# Resource Limits
+RCTL		opt_global.h
 
 # At least one of the AR71XX ubiquiti boards has a Redboot configuration
 # that "lies" about the amount of RAM it has. Until a cleaner method is
