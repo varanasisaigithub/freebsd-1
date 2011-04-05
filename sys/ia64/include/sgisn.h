@@ -29,7 +29,7 @@
 #define _MACHINE_SGISN_H_
 
 /* SAL functions */
-#define	SAL_SGISN_KLCONFIG_ADDR		0x02000005
+#define	SAL_SGISN_KLCFG_ADDR		0x02000005
 #define	SAL_SGISN_SAPIC_INFO		0x0200001d
 #define	SAL_SGISN_SN_INFO		0x0200001e
 #define	SAL_SGISN_PUTC			0x02000021
@@ -42,30 +42,40 @@
 #define	SAL_SGISN_FEATURE_GET_PROM	0x02000065
 #define	SAL_SGISN_FEATURE_SET_OS	0x02000066
 
-#define	SGISN_GEOID_MODULE(id)		(((id) >> 0) & 0xffffffffu)
-#define	SGISN_GEOID_TYPE(id)		(((id) >> 32) & 0xff)
-#define	SGISN_GEOID_SLAB(id)		(((id) >> 40) & 0xff)
-#define	SGISN_GEOID_ADDIT(id)		(((id) >> 48) & 0xffff);
-#define	SGISN_GEOID_CPU_SLICE(id)	((SGISN_GEOID_ADDIT(id) >> 0) & 0xff)
-#define	SGISN_GEOID_DEV_BUS(id)		((SGISN_GEOID_ADDIT(id) >> 0) & 0xff)
-#define	SGISN_GEOID_DEV_SLOT(id)	((SGISN_GEOID_ADDIT(id) >> 8) & 0xff)
-#define	SGISN_GEOID_MEM_BUS(id)		((SGISN_GEOID_ADDIT(id) >> 0) & 0xff)
-#define	SGISN_GEOID_MEM_SLOT(id)	((SGISN_GEOID_ADDIT(id) >> 8) & 0xff)
-
-#define	SGISN_GEO_TYPE_INVALID	0
-#define	SGISN_GEO_TYPE_MODULE	1
-#define	SGISN_GEO_TYPE_NODE	2
-#define	SGISN_GEO_TYPE_RTR	3
-#define	SGISN_GEO_TYPE_IOC	4
-#define	SGISN_GEO_TYPE_DEV	5	/* PCI device */
-#define	SGISN_GEO_TYPE_CPU	6
-#define	SGISN_GEO_TYPE_MEM	7
 
 #define	SGISN_HUB_NITTES	8
 #define	SGISN_HUB_NWIDGETS	16
 
 #define	SHUB_IVAR_PCIBUS	1
 #define	SHUB_IVAR_PCISEG	2
+
+struct sgisn_geoid {
+	uint32_t	sg_module;
+	uint8_t		sg_type;
+#define	SGISN_GEOID_TYPE_INVALID	0
+#define	SGISN_GEOID_TYPE_MODULE		1
+#define	SGISN_GEOID_TYPE_NODE		2
+#define	SGISN_GEOID_TYPE_RTR		3
+#define	SGISN_GEOID_TYPE_IOC		4
+#define	SGISN_GEOID_TYPE_DEV		5	/* PCI device */
+#define	SGISN_GEOID_TYPE_CPU		6
+#define	SGISN_GEOID_TYPE_MEM		7
+	uint8_t		sg_slab:4;
+	uint8_t		sg_slot:4;
+	union {
+		struct {
+			uint8_t slice;
+		} cpu;
+		struct {
+			uint8_t bus;
+			uint8_t slot;
+		} dev;
+		struct {
+			uint8_t	bus;
+			uint8_t	slot;
+		} mem;
+	} sg_u;
+};
 
 struct sgisn_fwhub;
 
@@ -92,7 +102,7 @@ struct sgisn_fwbus {
 };
 
 struct sgisn_fwhub {
-	uint64_t		hub_geoid;
+	struct sgisn_geoid	hub_geoid;
 	uint16_t		hub_nasid;
 	uint16_t		hub_peer_nasid;
 	uint32_t		_pad;
@@ -130,10 +140,81 @@ struct sgisn_fwdev {
 	uint64_t		dev_bar[6];
 	uint64_t		dev_romaddr;
 	uint64_t		dev_handle;
-	struct sgisn_fwbus	*dev_bus_softc;
-	struct sgisn_fwdev	*dev_parent;
-	void			*dev_os_devptr;
+	uint64_t		dev_os_private[3];
 	struct sgisn_fwirq	*dev_irq;
+	uint64_t		dev_xxx[4];
+};
+
+/*
+ * KLCFG stuff...
+ */
+
+static __inline void *
+sgisn_klcfg_ptr(uint64_t base, int32_t ofs)
+{
+	void *ptr;
+
+	ptr = (void *)IA64_PHYS_TO_RR7(base + ofs);
+	return (ptr);
+}
+
+struct sgisn_klcfg_hdr {
+	uint64_t	skh_magic;
+#define	SGISN_KLCFG_MAGIC		0xbeedbabe
+	uint32_t	skh_version;
+	int32_t		skh_ofs_mallocs;
+	int32_t		skh_ofs_console;
+	int32_t		skh_board_info;
+	/* more fields here. */
+};
+
+struct sgisn_klcfg_board {
+	int32_t		skb_next;
+	uint8_t		skb_affinity;	/* local or remote */
+#define	SGISN_KLCFG_BOARD_TYPE_LOCAL	1
+#define	SGISN_KLCFG_BOARD_TYPE_REMOTE	2
+	uint8_t		skb_type;
+	uint8_t		skb_version;	/* structure version */
+	uint8_t		skb_revision;	/* board revision */
+	uint8_t		skb_promver;
+	uint8_t		skb_flags;
+	uint8_t		skb_slot;
+	uint16_t	skb_dbgsw;
+	struct sgisn_geoid skb_geoid;
+	int8_t		skb_partition;
+	uint16_t	skb_diag[4];	/* xxx */
+	uint8_t		skb_inventory;
+	uint8_t		skb_ncompts;
+	uint64_t	skb_nic;
+	int16_t		skb_nasid;
+	int32_t		skb_compts[24];
+	int32_t		skb_errinfo;
+	int32_t		skb_parent;
+	uint32_t	_pad1;
+	uint8_t		skb_badness;
+	int16_t		skb_owner;
+	uint8_t		skb_nicflags;
+	uint8_t		_pad2[28];
+	char		skb_name[32];
+	int16_t		skb_peer_host;
+	int32_t		skb_peer;
+};
+
+struct sgisn_klcfg_compt {
+	uint8_t		skc_type;
+	uint8_t		skc_version;
+	uint8_t		skc_flags;
+	uint8_t		skc_revision;
+	uint16_t	skc_diag[2];
+	uint8_t		skc_inventory;
+	uint16_t	skc_partid;
+	uint64_t	skc_nic;
+	uint8_t		skc_physid;
+	uint32_t	skc_virtid;
+	uint8_t		skc_wdgtid;
+	int16_t		skc_nasid;
+	uint64_t	skc_data;
+	int32_t		skc_errinfo;
 };
 
 #endif /* !_MACHINE_SGISN_H_ */
