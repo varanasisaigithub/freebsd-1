@@ -159,7 +159,8 @@ vm_offset_t virtual_end;	/* VA of last avail page (end of kernel AS) */
  * Kernel virtual memory management.
  */
 static int nkpt;
-struct ia64_lpte ***ia64_kptdir;
+extern struct ia64_lpte ***ia64_kptdir;
+
 #define KPTE_DIR0_INDEX(va) \
 	(((va) >> (3*PAGE_SHIFT-8)) & ((1<<(PAGE_SHIFT-3))-1))
 #define KPTE_DIR1_INDEX(va) \
@@ -177,7 +178,7 @@ static uint64_t pmap_ptc_e_count2 = 2;
 static uint64_t pmap_ptc_e_stride1 = 0x2000;
 static uint64_t pmap_ptc_e_stride2 = 0x100000000;
 
-volatile u_long pmap_ptc_g_sem;
+extern volatile u_long pmap_ptc_g_sem;
 
 /*
  * Data for the RID allocator

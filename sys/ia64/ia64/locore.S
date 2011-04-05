@@ -1,4 +1,5 @@
 /*-
+ * Copyright (c) 2001-2011 Marcel Moolenaar
  * Copyright (c) 1998 Doug Rabson
  * All rights reserved.
  *
@@ -40,7 +41,7 @@
  */
 #define	FW_STACK_SIZE	3*PAGE_SIZE
 
-	.section .data.kstack, "aw"
+	.section .ivt.data, "aw"
 	.align	PAGE_SIZE
 	.global	kstack
 kstack:	.space	FW_STACK_SIZE
@@ -80,13 +81,17 @@ ENTRY_NOPROFILE(__start, 1)
 	movl	gp=__gp			// find kernel globals
 	;;
 }
-
+{	.mlx
 	mov	ar.bspstore=r16		// switch backing store
+	movl	r16=bootinfo
 	;;
+}
+{	.mmi
+	st8	[r16]=r8		// save the PA of the bootinfo block
 	loadrs				// invalidate regs
 	mov	r17=IA64_DCR_DEFAULT
 	;;
-
+}
 {	.mmi
 	mov	cr.dcr=r17
 	mov	ar.rsc=3		// turn rse back on
@@ -100,13 +105,13 @@ ENTRY_NOPROFILE(__start, 1)
 	;;				// we just need to process fptrs
 }
 {	.mib
-	mov	r9=r8			// Save pointer to bootinfo.
+	nop	0
 	nop	0
 	br.call.sptk.many rp=_reloc
 	;;
 }
 {	.mib
-	mov	out0=r9			// Pass pointer to bootinfo.
+	nop	0
 	nop	0
 	br.call.sptk.many rp=ia64_init
 	;;

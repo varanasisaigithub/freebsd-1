@@ -11,10 +11,10 @@ SECTIONS
   .interp         : { *(.interp) }
 
   PROVIDE (btext = .);
-  .ivt		  : { *(.ivt) }
   .text           :
   {
-    *(.text.ivt)
+    *(.ivt)
+    *(.ivt.text)
     *(.text .stub .text.* .gnu.linkonce.t.*)
     /* .gnu.warning sections are handled specially by elf32.em.  */
     *(.gnu.warning)
@@ -62,7 +62,8 @@ SECTIONS
 
   .data           :
   {
-    *(.data.kstack .data .data.* .gnu.linkonce.d.*)
+    *(.ivt.data)
+    *(.data .data.* .gnu.linkonce.d.*)
     SORT(CONSTRUCTORS)
   }
   .data1          : { *(.data1) }
