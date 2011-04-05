@@ -348,6 +348,7 @@ sgisn_shub_attach(device_t dev)
 {
 	struct ia64_sal_result r;
 	struct sgisn_shub_softc *sc;
+	struct sgisn_fwbus *fwbus;
 	ACPI_TABLE_HEADER *tbl;
 	device_t child;
 	void *ptr;
@@ -410,33 +411,21 @@ sgisn_shub_attach(device_t dev)
 	for (wdgt = 0; wdgt < SGISN_HUB_NWIDGETS; wdgt++)
 		sc->sc_fwhub->hub_widget[wdgt].wgt_hub = sc->sc_fwhub;
 
-	r = ia64_sal_entry(SAL_SGISN_KLCONFIG_ADDR, sc->sc_nasid,
-	    0, 0, 0, 0, 0, 0);
-	device_printf(dev, "KLCONFIG: status=%#lx, addr=%#lx\n",
-	    r.sal_status, r.sal_result[0]);
-
-	/*
-	 * XXX Hack to avoid having the same PCI busses as children of any
-	 * SHub we have. The problem is that we can't pass the nasid to the
-	 * the SAL function. So either we get all the busses, irrespective
-	 * of the node in which they live or we always get the busses local
-	 * to the CPU. I can't tell the difference, because I don't have
-	 * busses on the other brick right now.
-	 * In any case: we don't have a good way yet to figure out if the
-	 * bus connects to the SHub in question.
-         */
-	if (sc->sc_nasid != 0)
-		return (0);
-
 	for (seg = 0; seg <= sc->sc_fwhub->hub_pci_maxseg; seg++) {
 		for (bus = 0; bus <= sc->sc_fwhub->hub_pci_maxbus; bus++) {
 			r = ia64_sal_entry(SAL_SGISN_IOBUS_INFO, seg, bus,
 			    ia64_tpa((uintptr_t)&addr), 0, 0, 0, 0);
-			if (r.sal_status == 0 && addr != 0) {
-				child = device_add_child(dev, "pcib", -1);
-				device_set_ivars(child, (void *)(uintptr_t)
-				  ((seg << 8) | (bus & 0xff)));
-			}
+			if (r.sal_status != 0 || addr == 0)
+				continue;
+
+			fwbus = (void *)IA64_PHYS_TO_RR7(addr);
+			if (((fwbus->bus_base >> sc->sc_nasid_shft) &
+			    sc->sc_nasid_mask) != sc->sc_nasid)
+				continue;
+
+			child = device_add_child(dev, "pcib", -1);
+			device_set_ivars(child,
+			    (void *)(uintptr_t) ((seg << 8) | (bus & 0xff)));
 		}
 	}
 
