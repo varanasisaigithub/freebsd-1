@@ -481,15 +481,11 @@ SYSCTL_UINT(_hw_bxe, OID_AUTO, queue_count, CTLFLAG_RDTUN, &bxe_queue_count,
  * destination IP address and the source/destination TCP port).
  *
  */
+/* static int bxe_multi_mode = ETH_RSS_MODE_REGULAR; */
 static int bxe_multi_mode = ETH_RSS_MODE_DISABLED;
 TUNABLE_INT("hw.bxe.multi_mode", &bxe_multi_mode);
 SYSCTL_UINT(_hw_bxe, OID_AUTO, multi_mode, CTLFLAG_RDTUN, &bxe_multi_mode,
     0, "Multi-Queue Mode");
-
-static uint32_t bxe_pri_map = 0x0;
-TUNABLE_INT("hw.bxe.pri_map", &bxe_pri_map);
-SYSCTL_UINT(_hw_bxe, OID_AUTO, pri_map, CTLFLAG_RDTUN, &bxe_pri_map,
-    0, "Priority map");
 
 /*
  * Host interrupt coalescing is controller by these values.
@@ -521,6 +517,7 @@ TUNABLE_INT("hw.bxe.mrrs", &bxe_mrrs);
 SYSCTL_UINT(_hw_bxe, OID_AUTO, mrrs, CTLFLAG_RDTUN, &bxe_mrrs,
     0, "PCIe maximum read request size.");
 
+#if 0
 /*
  * Allows setting the maximum number of received frames to process
  * during an interrupt.
@@ -544,6 +541,7 @@ static int bxe_tx_limit = -1;
 TUNABLE_INT("hw.bxe.tx_limit", &bxe_tx_limit);
 SYSCTL_UINT(_hw_bxe, OID_AUTO, tx_limit, CTLFLAG_RDTUN, &bxe_tx_limit,
 	0, "Maximum transmit frames processed during an interrupt.");
+#endif
 
 /*
  * Global variables
@@ -1674,7 +1672,8 @@ bxe_init_firmware(struct bxe_softc *sc)
 	else if (CHIP_IS_E1H(sc))
 		bxe_init_e1h_firmware(sc);
 	else {
-		BXE_PRINTF("Unsupported chip revision\n");
+		BXE_PRINTF("%s(%d): Unsupported chip revision\n",
+		    __FILE__, __LINE__);
 		return (ENXIO);
 	}
 	return (0);
@@ -1840,7 +1839,8 @@ bxe_attach(device_t dev)
 	sc->grcdump_buffer = malloc(BXE_GRCDUMP_BUF_SIZE, M_TEMP, M_NOWAIT);
 	if (sc->grcdump_buffer == NULL) {
 		/* Failure is OK, just print a message and continue attach. */
-		BXE_PRINTF("Failed to allocate grcdump memory buffer!\n");
+		BXE_PRINTF("%s(%d): Failed to allocate grcdump memory "
+		    "buffer!\n", __FILE__, __LINE__);
 	}
 #endif
 
@@ -1867,7 +1867,8 @@ bxe_attach(device_t dev)
 	/* If bootcode is not running only initialize port 0. */
 	if (nomcp && BP_PORT(sc)) {
 		BXE_PRINTF(
-		    "Second device disabled (no bootcode), exiting...\n");
+		    "%s(%d): Second device disabled (no bootcode), "
+		    "exiting...\n", __FILE__, __LINE__);
 		rc = ENODEV;
 		goto bxe_attach_fail;
 	}
@@ -1888,8 +1889,16 @@ bxe_attach(device_t dev)
 	else
 		sc->mrrs = bxe_mrrs;
 
-	/* Select the RX and TX ring sizes */
-	sc->tx_ring_size = USABLE_TX_BD;
+	/*
+	 * Select the RX and TX ring sizes.  The actual
+	 * ring size for TX is complicated by the fact
+	 * that a single TX frame may be broken up into
+	 * many buffer descriptors (tx_start_bd,
+	 * tx_parse_bd, tx_data_bd).  In the best case,
+	 * there are always at least two BD's required
+	 * so we'll assume the best case here.
+	 */
+	sc->tx_ring_size = (USABLE_TX_BD >> 1);
 	sc->rx_ring_size = USABLE_RX_BD;
 
 	/* Assume receive IP/TCP/UDP checksum is enabled. */
@@ -1907,7 +1916,7 @@ bxe_attach(device_t dev)
 
 	/* Allocate DMA memory resources. */
 	if (bxe_dma_alloc(sc->bxe_dev)) {
-		BXE_PRINTF("%s(%d): DMA allocation failed!\n",
+		BXE_PRINTF("%s(%d): DMA memory allocation failed!\n",
 		    __FILE__, __LINE__);
 		rc = ENOMEM;
 		goto bxe_attach_fail;
@@ -2041,8 +2050,8 @@ bxe_link_settings_supported(struct bxe_softc *sc, uint32_t switch_cfg)
 
 		default:
 			BXE_PRINTF(
-			    "%s(%d): BAD External PHY NVRAM config data "
-			    "(0x%08X).\n",
+			    "%s(%d): Bad NVRAM 1Gb PHY configuration data "
+			    "(ext_phy_config=0x%08X).\n",
 			    __FILE__, __LINE__,
 			    sc->link_params.ext_phy_config);
 			goto bxe_link_settings_supported_exit;
@@ -2199,10 +2208,10 @@ bxe_link_settings_supported(struct bxe_softc *sc, uint32_t switch_cfg)
 			    __FUNCTION__);
 			break;
 
-		default:
 			BXE_PRINTF(
-			    "%s(%d): BAD External PHY NVRAM config data "
-			    "(0x%08X).\n", __FILE__, __LINE__,
+			    "%s(%d): Bad NVRAM 10Gb PHY configuration data "
+			    "(ext_phy_config=0x%08X).\n",
+			    __FILE__, __LINE__,
 			    sc->link_params.ext_phy_config);
 			goto bxe_link_settings_supported_exit;
 		}
@@ -2501,7 +2510,7 @@ bxe_get_function_hwinfo(struct bxe_softc *sc)
 
 		if ((mac_lo == 0) && (mac_hi == 0)) {
 			BXE_PRINTF("%s(%d): Invalid Ethernet address!\n",
-				__FILE__, __LINE__);
+			    __FILE__, __LINE__);
 		} else {
 			sc->link_params.mac_addr[0] = (u_char)(mac_hi >> 8);
 			sc->link_params.mac_addr[1] = (u_char)(mac_hi);
@@ -2671,7 +2680,8 @@ bxe_get_common_hwinfo(struct bxe_softc *sc)
 	val = SHMEM_RD(sc, validity_map[BP_PORT(sc)]);
 	if ((val & (SHR_MEM_VALIDITY_DEV_INFO | SHR_MEM_VALIDITY_MB)) !=
 	    (SHR_MEM_VALIDITY_DEV_INFO | SHR_MEM_VALIDITY_MB)) {
-		BXE_PRINTF("Invalid NVRAM-Bad validity signature!\n");
+		BXE_PRINTF("%s(%d): Invalid NVRAM! Bad validity "
+		    "signature.\n", __FILE__, __LINE__);
 		goto bxe_get_common_hwinfo_exit;
 	}
 
@@ -2705,9 +2715,9 @@ bxe_get_common_hwinfo(struct bxe_softc *sc)
 	/* Check bootcode version */
 	sc->common.bc_ver = ((SHMEM_RD(sc, dev_info.bc_rev)) >> 8);
 	if (sc->common.bc_ver < MIN_BXE_BC_VER) {
-		BXE_PRINTF("Warning: This driver needs bootcode 0x%08X "
-			"but found 0x%08X, please upgrade!\n", MIN_BXE_BC_VER,
-			sc->common.bc_ver);
+		BXE_PRINTF("%s(%d): Warning: This driver needs bootcode "
+		    "0x%08X but found 0x%08X, please upgrade!\n",
+		    __FILE__, __LINE__,	MIN_BXE_BC_VER, sc->common.bc_ver);
 		goto bxe_get_common_hwinfo_exit;
 	}
 
@@ -2850,7 +2860,8 @@ bxe_detach(device_t dev)
 
 	ifp = sc->bxe_ifp;
 	if (ifp != NULL && ifp->if_vlantrunk != NULL) {
-		BXE_PRINTF("Cannot detach while VLANs are in use.\n");
+		BXE_PRINTF("%s(%d): Cannot detach while VLANs are in use.\n",
+		    __FILE__, __LINE__);
 		return(EBUSY);
 	}
 
@@ -2902,7 +2913,7 @@ bxe_setup_leading(struct bxe_softc *sc)
 
 	DBENTER(BXE_VERBOSE_LOAD | BXE_VERBOSE_RESET | BXE_VERBOSE_RAMROD);
 
-	DBPRINT(sc, BXE_INFO_LOAD, "%s(): Setup leading connection "
+	DBPRINT(sc, BXE_VERBOSE_LOAD, "%s(): Setup leading connection "
 	    "on fp[00].\n", __FUNCTION__);
 
 	/* Reset IGU state for the leading connection. */
@@ -2933,7 +2944,7 @@ bxe_stop_leading(struct bxe_softc *sc)
 
 	DBENTER(BXE_VERBOSE_LOAD | BXE_VERBOSE_RESET | BXE_VERBOSE_RAMROD);
 
-	DBPRINT(sc, BXE_INFO_LOAD, "%s(): Stop client connection "
+	DBPRINT(sc, BXE_VERBOSE_LOAD, "%s(): Stop client connection "
 	    "on fp[00].\n", __FUNCTION__);
 
 	/* Send the ETH_HALT ramrod. */
@@ -2994,7 +3005,7 @@ bxe_setup_multi(struct bxe_softc *sc, int index)
 
 	DBENTER(BXE_VERBOSE_LOAD | BXE_VERBOSE_RESET | BXE_VERBOSE_RAMROD);
 
-	DBPRINT(sc, BXE_INFO_LOAD, "%s(): Setup client connection "
+	DBPRINT(sc, BXE_VERBOSE_LOAD, "%s(): Setup client connection "
 	    "on fp[%02d].\n", __FUNCTION__, index);
 
 	fp = &sc->fp[index];
@@ -3029,7 +3040,7 @@ bxe_stop_multi(struct bxe_softc *sc, int index)
 
 	DBENTER(BXE_VERBOSE_LOAD | BXE_VERBOSE_RESET | BXE_VERBOSE_RAMROD);
 
-	DBPRINT(sc, BXE_INFO_LOAD, "%s(): Stop client connection "
+	DBPRINT(sc, BXE_VERBOSE_LOAD, "%s(): Stop client connection "
 	    "on fp[%02d].\n", __FUNCTION__, index);
 
 	fp = &sc->fp[index];
@@ -3041,7 +3052,8 @@ bxe_stop_multi(struct bxe_softc *sc, int index)
 	/* Wait for the ramrod completion. */
 	rc = bxe_wait_ramrod(sc, BXE_FP_STATE_HALTED, index, &(fp->state), 1);
 	if (rc){
-	BXE_PRINTF("halted failed \n");
+		BXE_PRINTF("%s(%d): fp[%02d] client ramrod halt failed!\n",
+		    __FILE__, __LINE__, index);
 		goto bxe_stop_multi_exit;
 	}
 	/* Delete the CFC entry. */
@@ -3185,7 +3197,7 @@ bxe_stop_locked(struct bxe_softc *sc, int unload_mode)
 
 			if (count == 0) {
 				BXE_PRINTF(
-			"%s(%d): Timeout wating for fp[%d] to complete.\n",
+		"%s(%d): Timeout wating for fp[%d] transmits to complete!\n",
 				    __FILE__, __LINE__, i);
 				break;
 			}
@@ -3252,7 +3264,6 @@ bxe_stop_locked(struct bxe_softc *sc, int unload_mode)
 	/* Stop all non-leading client connections. */
 	for (i = 1; i < sc->num_queues; i++) {
 		if (bxe_stop_multi(sc, i)){
-			BXE_PRINTF("multi failed \n");
 			goto bxe_stop_locked_exit;
 		}
 	}
@@ -3262,9 +3273,8 @@ bxe_stop_locked(struct bxe_softc *sc, int unload_mode)
 #ifdef BXE_DEBUG
 		if ((sc->state != BXE_STATE_CLOSING_WAIT4_UNLOAD) ||
 		    (sc->fp[0].state != BXE_FP_STATE_CLOSED)) {
-			BXE_PRINTF(
-			    "%s(): Failed to close leading connection!\n",
-			    __FUNCTION__);
+			BXE_PRINTF("%s(%d): Failed to close leading "
+			    "client connection!\n", __FILE__, __LINE__);
 		}
 #endif
 	}
@@ -3368,7 +3378,9 @@ bxe_link_report(struct bxe_softc *sc)
 		/* Report the link status change to OS. */
 		if (sc->state == BXE_STATE_OPEN)
 			if_link_state_change(sc->bxe_ifp, LINK_STATE_UP);
+
 		line_speed = sc->link_vars.line_speed;
+
 		if (IS_E1HMF(sc)){
 			vn_max_rate = ((sc->mf_config[BP_E1HVN(sc)] &
 			    FUNC_MF_CFG_MAX_BW_MASK) >>
@@ -3383,6 +3395,7 @@ bxe_link_report(struct bxe_softc *sc)
 			printf("full duplex");
 		else
 			printf("half duplex");
+
 		if (sc->link_vars.flow_ctrl) {
 			if (sc->link_vars.flow_ctrl & FLOW_CTRL_RX) {
 				printf(", receive ");
@@ -3395,7 +3408,7 @@ bxe_link_report(struct bxe_softc *sc)
 		printf("\n");
 	} else {
 		/* Report the link down */
-		BXE_PRINTF("Link is down.\n");
+		BXE_PRINTF("Link is down\n");
 		if_link_state_change(sc->bxe_ifp, LINK_STATE_DOWN);
 	}
 
@@ -3611,7 +3624,8 @@ bxe_init_locked(struct bxe_softc *sc, int load_mode)
 
 	/* Initialize hardware. */
 	if (bxe_init_hw(sc, load_code)){
-		BXE_PRINTF("HW init failed, aborting\n");
+		BXE_PRINTF("%s(%d): Hardware initialization failed, "
+		    "aborting!\n", __FILE__, __LINE__);
 		goto bxe_init_locked_failed1;
 	}
 
@@ -3628,8 +3642,8 @@ bxe_init_locked(struct bxe_softc *sc, int load_mode)
 		sc->mbuf_alloc_size = MJUM9BYTES;
 
 
-	DBPRINT(sc, BXE_INFO,
-	    "%s(): mbuf_alloc_size = %d, max_frame_size = %d\n", __FUNCTION__,
+	DBPRINT(sc, BXE_INFO, "%s(): mbuf_alloc_size = %d, "
+	    "max_frame_size = %d\n", __FUNCTION__,
 	    sc->mbuf_alloc_size, sc->port.ether_mtu);
 
 	/* Setup NIC internals and enable interrupts. */
@@ -3638,7 +3652,7 @@ bxe_init_locked(struct bxe_softc *sc, int load_mode)
 	if ((load_code == FW_MSG_CODE_DRV_LOAD_COMMON) &&
 	    (sc->common.shmem2_base)){
 		if (bxe_dcc_enable) {
-			BXE_PRINTF(" setting dcc support\n");
+			BXE_PRINTF("Enabing DCC support\n");
 			SHMEM2_WR(sc, dcc_support,
 			    (SHMEM_DCC_SUPPORT_DISABLE_ENABLE_PF_TLV |
 			     SHMEM_DCC_SUPPORT_BANDWIDTH_ALLOCATION_TLV));
@@ -3671,12 +3685,13 @@ bxe_init_locked(struct bxe_softc *sc, int load_mode)
 			BXE_PRINTF("Multi-function mode is disabled\n");
 			/* sc->state = BXE_STATE_DISABLED; */
 		}
+
 		/* Setup additional client connections for RSS/multi-queue */
 		if (sc->state == BXE_STATE_OPEN) {
 			for (i = 1; i < sc->num_queues; i++) {
 				if (bxe_setup_multi(sc, i)) {
-					DBPRINT(sc, 1,
-		"%s(): fp[%d] CLIENT_SETUP ramrod failed! State not OPEN!\n",
+					DBPRINT(sc, BXE_FATAL,
+		"%s(): fp[%02d] CLIENT_SETUP ramrod failed! State not OPEN!\n",
 					    __FUNCTION__, i);
 					goto bxe_init_locked_failed4;
 				}
@@ -3786,9 +3801,9 @@ bxe_wait_ramrod(struct bxe_softc *sc, int state, int idx, int *state_p,
 
 	DBENTER(BXE_VERBOSE_LOAD | BXE_VERBOSE_RESET | BXE_VERBOSE_RAMROD);
 
-	DBPRINT(sc, BXE_VERBOSE_RAMROD, "%s(): %s for state 0x%08X on fp[%d], "
-	    "currently 0x%08X.\n", __FUNCTION__, poll ? "Polling" : "Waiting",
-	    state, idx, *state_p);
+	DBPRINT(sc, BXE_VERBOSE_RAMROD, "%s(): %s for state 0x%08X on "
+	    "fp[%02d], currently 0x%08X.\n", __FUNCTION__,
+	    poll ? "Polling" : "Waiting", state, idx, *state_p);
 
 	rc = 0;
 	timeout = 5000;
@@ -4067,9 +4082,9 @@ static void
 bxe_init_wr_zp(struct bxe_softc *sc, uint32_t addr, uint32_t len,
     uint32_t blob_off)
 {
-	BXE_PRINTF("%s(): Compressed FW is not supported yet. "
-	    "ERROR: address:0x%x len:0x%x bloboffset:0x%x\n", __FUNCTION__,
-	    addr, len, blob_off);
+	BXE_PRINTF("%s(%d): Compressed FW is not supported yet. "
+	    "ERROR: address:0x%x len:0x%x blob_offset:0x%x\n",
+	    __FILE__, __LINE__,	addr, len, blob_off);
 }
 
 /*
@@ -4720,8 +4735,10 @@ bxe_panic_dump(struct bxe_softc *sc)
 	BXE_PRINTF("---------- Begin crash dump ----------\n");
 
 	/* Idle	check is run twice to verify the controller has	stopped. */
-	bxe_idle_chk(sc); bxe_idle_chk(sc);
+	bxe_idle_chk(sc);
+	bxe_idle_chk(sc);
 	bxe_mc_assert(sc);
+
 #ifdef BXE_DEBUG
 	bxe_breakpoint(sc);
 #endif
@@ -5677,7 +5694,8 @@ bxe_get_gpio(struct bxe_softc *sc, int gpio_num, uint8_t port)
 	gpio_mask = 1 << gpio_shift;
 
 	if (gpio_num > MISC_REGISTERS_GPIO_3) {
-		BXE_PRINTF("Invalid GPIO %d\n", gpio_num);
+		DBPRINT(sc, BXE_WARN, "%s(): Invalid GPIO %d\n",
+		    __FUNCTION__, gpio_num);
 		return (-EINVAL);
 	}
 
@@ -5785,7 +5803,8 @@ bxe_set_gpio_int(struct bxe_softc *sc, int gpio_num, uint32_t mode,
 	    (gpio_port ? MISC_REGISTERS_GPIO_PORT_SHIFT : 0);
 	gpio_mask = (1 << gpio_shift);
 	if (gpio_num > MISC_REGISTERS_GPIO_3) {
-		BXE_PRINTF("Invalid GPIO %d\n", gpio_num);
+		DBPRINT(sc, BXE_WARN, "%s(): Invalid GPIO %d\n",
+		    __FUNCTION__, gpio_num);
 		return (-EINVAL);
 	}
 
@@ -6180,8 +6199,8 @@ bxe_sp_post(struct bxe_softc *sc, int command, int cid, uint32_t data_hi,
 
 	/* We are limited to 8 slowpath commands. */
 	if (!sc->spq_left) {
-		BXE_PRINTF("%s(%d): Slowpath queue is full!\n", __FILE__,
-		    __LINE__);
+		BXE_PRINTF("%s(%d): Slowpath queue is full!\n",
+		    __FILE__, __LINE__);
 		bxe_panic_dump(sc);
 		rc = EBUSY;
 		goto bxe_sp_post_exit;
@@ -6363,7 +6382,8 @@ bxe_attn_int_asserted(struct bxe_softc *sc, uint32_t asserted)
 	nig_mask = 0;
 
 	if (sc->attn_state & asserted)
-		BXE_PRINTF("%s(%d): IGU ERROR!\n", __FILE__, __LINE__);
+		BXE_PRINTF("%s(%d): IGU attention ERROR!\n",
+		    __FILE__, __LINE__);
 
 	rc = bxe_acquire_hw_lock(sc,
 		HW_LOCK_RESOURCE_PORT0_ATT_MASK + port);
@@ -6551,8 +6571,8 @@ bxe_attn_int_deasserted0(struct bxe_softc *sc, uint32_t attn)
 		SHMEM_WR(sc, dev_info.port_hw_config[port].external_phy_config,
 		    sc->link_params.ext_phy_config);
 		/* Log the failure */
-		BXE_PRINTF("A fan failure has caused the driver to shutdown "
-		    "the device to prevent permanent damage.\n");
+		BXE_PRINTF("A fan failure has caused the driver to "
+		    "shutdown the device to prevent permanent damage.\n");
 	}
 
 	if (attn & (AEU_INPUTS_ATTN_BITS_GPIO3_FUNCTION_0 |
@@ -6568,9 +6588,8 @@ bxe_attn_int_deasserted0(struct bxe_softc *sc, uint32_t attn)
 		val &= ~(attn & HW_INTERRUT_ASSERT_SET_0);
 		REG_WR(sc, reg_offset, val);
 
-		BXE_PRINTF(
-		    "%s(%d): FATAL hardware block attention (set0 = 0x%08X)!\n",
-		    __FILE__, __LINE__,
+		BXE_PRINTF("%s(%d): FATAL hardware block attention "
+		    "(set0 = 0x%08X)!\n", __FILE__, __LINE__,
 		    (attn & (uint32_t)HW_INTERRUT_ASSERT_SET_0));
 
 		bxe_panic_dump(sc);
@@ -6616,9 +6635,8 @@ bxe_attn_int_deasserted1(struct bxe_softc *sc, uint32_t attn)
 		val &= ~(attn & HW_INTERRUT_ASSERT_SET_1);
 		REG_WR(sc, reg_offset, val);
 
-		BXE_PRINTF(
-		    "%s(%d): FATAL hardware block attention (set1 = 0x%08X)!\n",
-		    __FILE__, __LINE__,
+		BXE_PRINTF("%s(%d): FATAL hardware block attention "
+		    "(set1 = 0x%08X)!\n", __FILE__, __LINE__,
 		    (attn & (uint32_t)HW_INTERRUT_ASSERT_SET_1));
 
 		bxe_panic_dump(sc);
@@ -7098,7 +7116,8 @@ bxe_stats_port_base_init(struct bxe_softc *sc)
 	struct dmae_command *dmae;
 
 	if (!sc->port.pmf || !sc->port.port_stx) {
-		BXE_PRINTF("%s(%d): Bug!\n", __FILE__, __LINE__);
+		BXE_PRINTF("%s(%d): Invalid statistcs port setup!\n",
+		    __FILE__, __LINE__);
 		return;
 	}
 
@@ -7445,7 +7464,8 @@ bxe_stats_port_init(struct bxe_softc *sc)
 
 	/* Sanity check. */
 	if (!sc->link_vars.link_up || !sc->port.pmf) {
-		BXE_PRINTF("%s(%d): Bug!\n", __FILE__, __LINE__);
+		BXE_PRINTF("%s(%d): Invalid statistics port setup!\n",
+		    __FILE__, __LINE__);
 		goto bxe_stats_port_init_exit;
 	}
 
@@ -7664,7 +7684,8 @@ bxe_stats_func_init(struct bxe_softc *sc)
 	stats_comp = BXE_SP(sc, stats_comp);
 
 	if (!sc->func_stx) {
-		BXE_PRINTF("%s(%d): Bug!\n", __FILE__, __LINE__);
+		BXE_PRINTF("%s(%d): Invalid statistics function setup!\n",
+		     __FILE__, __LINE__);
 		goto bxe_stats_func_init_exit;
 	}
 
@@ -8006,27 +8027,33 @@ bxe_stats_storm_update(struct bxe_softc *sc)
 		/* Are STORM statistics valid? */
 		if ((uint16_t)(le16toh(tclient->stats_counter) + 1) !=
 		    sc->stats_counter) {
+#if 0
 			DBPRINT(sc, BXE_WARN, "%s(): Stats not updated by TSTORM "
 			    "(tstorm counter (%d) != stats_counter (%d))!\n",
 			    __FUNCTION__, tclient->stats_counter, sc->stats_counter);
+#endif
 			rc = 1;
 			goto bxe_stats_storm_update_exit;
 		}
 
 		if ((uint16_t)(le16toh(uclient->stats_counter) + 1) !=
 		    sc->stats_counter) {
+#if 0
 			DBPRINT(sc, BXE_WARN, "%s(): Stats not updated by USTORM "
 			    "(ustorm counter (%d) != stats_counter (%d))!\n",
 			    __FUNCTION__, uclient->stats_counter, sc->stats_counter);
+#endif
 			rc = 2;
 			goto bxe_stats_storm_update_exit;
 		}
 
 		if ((uint16_t)(le16toh(xclient->stats_counter) + 1) !=
 			sc->stats_counter) {
+#if 0
 			DBPRINT(sc, BXE_WARN, "%s(): Stats not updated by XSTORM "
 			    "(xstorm counter (%d) != stats_counter (%d))!\n",
 			    __FUNCTION__, xclient->stats_counter, sc->stats_counter);
+#endif
 			rc = 3;
 			goto bxe_stats_storm_update_exit;
 		}
@@ -8498,7 +8525,9 @@ bxe_stats_handle(struct bxe_softc *sc, enum bxe_stats_event event)
  * Check that (13 total bds - 3bds) = 10 bd window >= MSS.
  * The window: 3 bds are = 1 (for headers BD) + 2 (for PBD and last BD)
  * The headers comes in a seperate bd in FreeBSD. So 13-3=10.
- * returns 1 to defrag, 0 if OK.
+ *
+ * Returns:
+ *   0 if OK to send, 1 if packet needs further defragmentation.
  */
 static int
 bxe_chktso_window(struct bxe_softc* sc, int nsegs, bus_dma_segment_t *segs,
@@ -8573,11 +8602,7 @@ bxe_tx_encap(struct bxe_fastpath *fp, struct mbuf **m_head)
 	sc = fp->sc;
 	DBENTER(BXE_VERBOSE_SEND);
 
-	rc = 0;
-	nbds = 0;
-	ovlan = 0;
-	vlan_off = 0;
-	total_pkt_size = 0;
+	rc = nbds = ovlan = vlan_off = total_pkt_size = 0;
 
 	m0 = *m_head;
 
@@ -8600,122 +8625,116 @@ bxe_tx_encap(struct bxe_fastpath *fp, struct mbuf **m_head)
 	map = fp->tx_mbuf_map[TX_BD(pkt_prod)];
 	error = bus_dmamap_load_mbuf_sg(fp->tx_mbuf_tag, map, m0,
 	    segs, &nsegs, BUS_DMA_NOWAIT);
+
 	do{
 		/* Handle any mapping errors. */
 		if(__predict_false(error)){
+			fp->tx_dma_mapping_failure++;
 			if (error == ENOMEM) {
-				/* Temporary OS resource issue. */
+				/* Resource issue, try again later. */
 				rc = ENOMEM;
 			}else if (error == EFBIG) {
 				/* Possibly recoverable. */
-				DBRUN(fp->mbuf_defrag_attempts++);
+				fp->mbuf_defrag_attempts++;
 				m0 = m_defrag(*m_head, M_DONTWAIT);
 				if (m0 == NULL) {
-					BXE_PRINTF("%s(%d): Can't defrag TX frame!\n",
-					    __FILE__, __LINE__);
+					fp->mbuf_defrag_failures++;
 					rc = ENOBUFS;
 				} else {
 				/* Defrag was successful, try mapping again.*/
-					DBRUN(fp->mbuf_defrag_successes++);
+					fp->mbuf_defrag_successes++;
 					*m_head = m0;
 					error =
 					    bus_dmamap_load_mbuf_sg(
 						fp->tx_mbuf_tag, map, m0,
 						segs, &nsegs, BUS_DMA_NOWAIT);
+					if (error) {
+						fp->tx_dma_mapping_failure++;
+						rc = error;
+					}
 				}
 			}else {
 				/* Unrecoverable. */
-				BXE_PRINTF("%s(%d): Unknown TX mapping error! "
-				    "rc = %d.\n", __FILE__, __LINE__, error);
+				DBPRINT(sc, BXE_WARN_SEND,
+				    "%s(): Unknown TX mapping error! "
+				    "rc = %d.\n", __FUNCTION__, error);
 				DBRUN(bxe_dump_mbuf(sc, m0));
 				rc = error;
 			}
+
 			break;
 		}
 
-		/*
-		 * Now that we know how many buffer descriptors	are required to
-		 * send the frame, check whether we have enough transmit BD's
-		 * to do the job.  Make sure we have enough room for a parsing
-		 * BD too.
-		 */
+		/* Make sure this enough room in the send queue. */
 		if (__predict_false((nsegs + 2) >
 		    (USABLE_TX_BD - fp->used_tx_bd))) {
+			fp->tx_queue_too_full++;
 			bus_dmamap_unload(fp->tx_mbuf_tag, map);
-			BXE_PRINTF("%s(%d): Insufficient TX queue space!\n",
-				   __FILE__, __LINE__);
-			/* DRC - Should we drop a frame with this error? */
 			rc = ENOBUFS;
 			break;
 		}
 
 		/* Now make sure it fits in the pkt window */
 		if (__predict_false(nsegs > 12)) {
-			/* The mbuf has more segments than the controller can
-			 * handle. Try to defrag the mbuf if there are too many
-			 * segments.  If it can't be defragged then
-			 * drop the frame, log an error, and exit.
-			 * An alternative would be to use a bounce buffer.
+
+			/*
+			 * The mbuf may be to big for the controller
+			 * to handle.  If the frame is a TSO frame
+			 * we'll need to do an additional check.
 			 */
 			if(m0->m_pkthdr.csum_flags & CSUM_TSO){
-				if (! bxe_chktso_window(sc,nsegs,segs,m0))
-					/* Send it */
+				if (bxe_chktso_window(sc,nsegs,segs,m0) == 0)
+					/* OK to send. */
 					break;
-			}
+				else
+					fp->window_violation_tso++;
+			} else
+				fp->window_violation_std++;
 
-			/* Defrag for non tso and if tso needs it */
-			DBRUN(fp->mbuf_defrag_attempts++);
+			/*
+			 * If this is a standard frame then defrag is
+			 * required.  Unmap the mbuf, defrag it, then
+			 * try mapping it again.
+			 */
+			fp->mbuf_defrag_attempts++;
+			bus_dmamap_unload(fp->tx_mbuf_tag, map);
 			m0 = m_defrag(*m_head, M_DONTWAIT);
 			if (m0 == NULL) {
-				BXE_PRINTF("%s(%d): Can't defrag TX frame!\n",
-				    __FILE__, __LINE__);
+				fp->mbuf_defrag_failures++;
 				rc = ENOBUFS;
 				break;
 			}
 
 			/* Defrag was successful, try mapping again. */
-			DBRUN(fp->mbuf_defrag_successes++);
+			fp->mbuf_defrag_successes++;
 			*m_head = m0;
 			error =
 			    bus_dmamap_load_mbuf_sg(
 				fp->tx_mbuf_tag, map, m0,
 				segs, &nsegs, BUS_DMA_NOWAIT);
+
 			/* Handle any mapping errors. */
 			if (__predict_false(error)) {
-				if(error == ENOMEM) {
-					/* This is a recoverable error,
-					 * try again later.
-					 */
-					rc = ENOMEM;
-				} else {
-					/* The frame can't be defragged,
-					 *  drop it.
-					 */
-					BXE_PRINTF("%s(%d): Can't map TX frame!\n",
-					    __FILE__, __LINE__);
-					rc = error;
-				}
+				fp->tx_dma_mapping_failure++;
+				rc = error;
 				break;
 			}
 
 			/* Last try */
 			if (m0->m_pkthdr.csum_flags & CSUM_TSO){
-				if (bxe_chktso_window(sc,nsegs,segs,m0))
+				if (bxe_chktso_window(sc,nsegs,segs,m0) == 1)
 					rc = ENOBUFS;
 			} else if (nsegs > 12 ){
-				BXE_PRINTF("%s(%d): Too many fragments for a TSO "
-				    "frame!\n",	__FILE__, __LINE__);
 				rc = ENOBUFS;
-			}
+			} else
+				rc = 0;
 		}
 	}while (0);
 
-    /* Check for errors */
+	/* Check for errors */
 	if (rc){
 		if(rc == ENOMEM){
 			/* Recoverable try again later  */
-			BXE_PRINTF("%s(%d): Error mapping mbuf into TX chain, "
-			   "returning pkt to queue!\n",__FILE__, __LINE__);
 		}else{
 			fp->soft_tx_errors++;
 			DBRUN(fp->tx_mbuf_alloc--);
@@ -8729,10 +8748,10 @@ bxe_tx_encap(struct bxe_fastpath *fp, struct mbuf **m_head)
 	fp->tx_pkt_prod++;
 
 	/* set flag according to packet type (UNICAST_ADDRESS is default)*/
-		if (m0->m_flags & M_BCAST)
-			mac_type = BROADCAST_ADDRESS;
-		else if (m0->m_flags & M_MCAST)
-			mac_type = MULTICAST_ADDRESS;
+	if (m0->m_flags & M_BCAST)
+		mac_type = BROADCAST_ADDRESS;
+	else if (m0->m_flags & M_MCAST)
+		mac_type = MULTICAST_ADDRESS;
 
 	/* Prepare the first transmit BD for the mbuf(Get a link from the chain). */
 	tx_start_bd = &fp->tx_bd_chain[TX_PAGE(bd_prod)][TX_IDX(bd_prod)].start_bd;
@@ -8766,7 +8785,8 @@ bxe_tx_encap(struct bxe_fastpath *fp, struct mbuf **m_head)
 		 */
 		tx_start_bd->vlan = htole16(pkt_prod);
 
-	/* Add a parsing BD from the chain. The parsing bd is always added,
+	/*
+	 * Add a parsing BD from the chain. The parsing bd is always added,
 	 * however, it is only used for tso & chksum.
 	 */
 	bd_prod = TX_BD(NEXT_TX_BD(bd_prod));
@@ -8816,7 +8836,7 @@ bxe_tx_encap(struct bxe_fastpath *fp, struct mbuf **m_head)
 			if (m0->m_pkthdr.csum_flags & CSUM_IP) {
 				DBPRINT(sc, BXE_EXTREME_SEND, "%s(): IP checksum "
 					"enabled.\n", __FUNCTION__);
-				DBRUN(sc->debug_ip_csum_offload_frames++);
+				fp->offload_frames_csum_ip++;
 				flags |= ETH_TX_BD_FLAGS_IP_CSUM;
 			}
 
@@ -8833,7 +8853,7 @@ bxe_tx_encap(struct bxe_fastpath *fp, struct mbuf **m_head)
 
 				/* Add the TCP checksum offload flag. */
 				flags |= ETH_TX_BD_FLAGS_L4_CSUM;
-				DBRUN(sc->debug_tcp_csum_offload_frames++);
+				fp->offload_frames_csum_tcp++;
 
 				/* Update the enet + IP + TCP header length. */
 				tx_parse_bd->total_hlen += (uint16_t)(th->th_off << 1);
@@ -8866,7 +8886,7 @@ bxe_tx_encap(struct bxe_fastpath *fp, struct mbuf **m_head)
 
 				/* Add the TCP checksum offload flag for UDP frames too. */
 				flags |= ETH_TX_BD_FLAGS_L4_CSUM;
-				DBRUN(sc->debug_udp_csum_offload_frames++);
+				fp->offload_frames_csum_udp++;
 				tx_parse_bd->global_data |= ETH_TX_PARSE_BD_UDP_CS_FLG;
 
 				/* Get a pointer to the UDP header. */
@@ -8894,13 +8914,13 @@ bxe_tx_encap(struct bxe_fastpath *fp, struct mbuf **m_head)
 			break;
 		}
 		case ETHERTYPE_IPV6:
-			BXE_PRINTF("%s(%d): IPv6 checksum offload not "
-				"supported!.\n", __FILE__, __LINE__);
+			fp->unsupported_tso_request_ipv6++;
+			/* DRC - How to handle this error? */
 			break;
 
 		default:
-			BXE_PRINTF("%s(%d): TSO enabled for unsupported protocol!.\n",
-				__FILE__, __LINE__);
+			fp->unsupported_tso_request_not_tcp++;
+			/* DRC - How to handle this error? */
 		}
 
 		/* Setup the Parsing BD with TSO specific info */
@@ -8913,7 +8933,7 @@ bxe_tx_encap(struct bxe_fastpath *fp, struct mbuf **m_head)
 
 			tx_start_bd->bd_flags.as_bitfield |= ETH_TX_BD_FLAGS_SW_LSO;
 
-			DBRUN(sc->debug_tso_offload_frames++);
+			fp->offload_frames_tso++;
  			if (__predict_false(tx_start_bd->nbytes > hdr_len)) {
 				/*
 				 * Split the first BD into 2 BDs to make the
@@ -8932,6 +8952,8 @@ bxe_tx_encap(struct bxe_fastpath *fp, struct mbuf **m_head)
 				tx_data_bd->addr_hi = htole32(U64_HI(segs[0].ds_addr + hdr_len));
 				tx_data_bd->addr_lo = htole32(U64_LO(segs[0].ds_addr + hdr_len));
 				tx_data_bd->nbytes = htole16(segs[0].ds_len) - hdr_len;
+				if (tx_total_pkt_size_bd == NULL)
+					tx_total_pkt_size_bd = tx_data_bd;
 
 				/*
 				 * This indicates that the transmit BD
@@ -9015,8 +9037,6 @@ bxe_tx_encap(struct bxe_fastpath *fp, struct mbuf **m_head)
 */
 
 
-//pci_read_config(sc->bxe_dev, PCIR_REVID, 4);
-
 	/* Don't allow reordering of writes for nbd and packets. */
 	mb();
 /*
@@ -9028,22 +9048,21 @@ bxe_tx_encap(struct bxe_fastpath *fp, struct mbuf **m_head)
 //	BXE_PRINTF("doorbell: nbd %d  bd %u  index %d\n", nbds, bd_prod, fp->index);
 
 	fp->tx_db.data.prod += nbds;
+
 	/* Producer points to the next free tx_bd at this point. */
 	fp->tx_bd_prod = bd_prod;
 
 	DOORBELL(sc, fp->index, fp->tx_db.raw);
 
-
-	DBRUN(fp->tx_pkts++);
-
-	/* Prevent speculative reads from getting ahead of the status block. */
-	bus_space_barrier(sc->bxe_btag, sc->bxe_bhandle, 0, 0,
-		BUS_SPACE_BARRIER_READ);
+	fp->tx_pkts++;
 
 	/* Prevent speculative reads from getting ahead of the status block. */
-	bus_space_barrier(sc->bxe_db_btag, sc->bxe_db_bhandle, 0, 0,
-		BUS_SPACE_BARRIER_READ);
-//pci_read_config(sc->bxe_dev, PCIR_REVID, 4);
+	bus_space_barrier(sc->bxe_btag, sc->bxe_bhandle,
+	    0, 0, BUS_SPACE_BARRIER_READ);
+
+	/* Prevent speculative reads from getting ahead of the doorbell. */
+	bus_space_barrier(sc->bxe_db_btag, sc->bxe_db_bhandle,
+	    0, 0, BUS_SPACE_BARRIER_READ);
 
 	DBEXIT(BXE_VERBOSE_SEND);
 	return(rc);
@@ -9064,12 +9083,9 @@ bxe_tx_start(struct ifnet *ifp)
 {
 	struct bxe_softc *sc;
 	struct bxe_fastpath *fp;
-	int fp_index;
 
 	sc = ifp->if_softc;
 	DBENTER(BXE_EXTREME_SEND);
-
-	fp_index = 0;
 
 	/* Exit if there's no link. */
 	if (!sc->link_vars.link_up) {
@@ -9089,7 +9105,7 @@ bxe_tx_start(struct ifnet *ifp)
 	}
 
 	/* Set the TX queue for the frame. */
-	fp = &sc->fp[fp_index];
+	fp = &sc->fp[0];
 
 	BXE_CORE_LOCK(sc);
 	bxe_tx_start_locked(ifp, fp);
@@ -9109,14 +9125,11 @@ static void
 bxe_tx_start_locked(struct ifnet *ifp, struct bxe_fastpath *fp)
 {
 	struct bxe_softc *sc;
-	struct mbuf *m;
-	int tx_count;
+	struct mbuf *m = NULL;
+	int tx_count = 0;
 
 	sc = fp->sc;
 	DBENTER(BXE_EXTREME_SEND);
-
-	m = NULL;
-	tx_count = 0;
 
  	/* Keep adding entries while there are frames to send. */
 	while (!IFQ_DRV_IS_EMPTY(&ifp->if_snd)) {
@@ -9136,6 +9149,7 @@ bxe_tx_start_locked(struct ifnet *ifp, struct bxe_fastpath *fp)
 		 * and wait for the NIC to drain the chain.
 		 */
 		if (__predict_false(bxe_tx_encap(fp, &m))) {
+			fp->tx_encap_failures++;
 			/* Very Bad Frames(tm) may have been dropped. */
 			if (m != NULL) {
 				/*
@@ -9162,17 +9176,12 @@ bxe_tx_start_locked(struct ifnet *ifp, struct bxe_fastpath *fp)
 	}
 
 	/* No TX packets were dequeued. */
-	if (tx_count == 0) {
-		DBPRINT(sc, BXE_INFO_SEND,
-		    "%s(): No packets were dequeued on fp[%d].\n", __FUNCTION__,
-		    fp->index);
-		goto bxe_tx_start_locked_exit;
-	}
+	if (tx_count > 0)
+		/* Reset the TX watchdog timeout timer. */
+		sc->watchdog_timer = BXE_TX_TIMEOUT;
+	else
+		fp->tx_start_called_on_empty_queue++;
 
-	/* Reset the TX watchdog timeout timer. */
-	sc->watchdog_timer = BXE_TX_TIMEOUT;
-
-bxe_tx_start_locked_exit:
 	DBEXIT(BXE_EXTREME_SEND);
 }
 
@@ -9353,14 +9362,6 @@ bxe_ioctl(struct ifnet *ifp, u_long command, caddr_t data)
 			error = EINVAL;
 		}
 
-		/* Handle any other capabilities. */
-		if (mask & ~(IFCAP_VLAN_HWTAGGING | IFCAP_VLAN_MTU |
-			IFCAP_RXCSUM | IFCAP_TXCSUM)) {
-			BXE_PRINTF("%s(%d): Unsupported capability!\n",
-				__FILE__, __LINE__);
-			error = EINVAL;
-		}
-
 		/* Restart the controller with the new capabilities. */
 		if (reinit) {
 			bxe_stop_locked(sc, UNLOAD_NORMAL);
@@ -9392,10 +9393,10 @@ bxe_ioctl(struct ifnet *ifp, u_long command, caddr_t data)
 static __inline uint16_t
 bxe_rx_cq_cons(struct bxe_fastpath *fp)
 {
-	volatile uint16_t rx_cons_sb = 0;
+	volatile uint16_t rx_cq_cons_sb = 0;
 
 	rmb();
-	rx_cons_sb = (volatile uint16_t) le16toh(*fp->rx_cons_sb);
+	rx_cq_cons_sb = (volatile uint16_t) le16toh(*fp->rx_cq_cons_sb);
 
 	/*
 	 * It is valid for the hardware's copy of the completion
@@ -9404,11 +9405,11 @@ bxe_rx_cq_cons(struct bxe_fastpath *fp)
 	 * that it is pointing at the next available CQE so we
 	 * need to adjust the value accordingly.
 	 */
-	if ((rx_cons_sb & USABLE_RCQ_ENTRIES_PER_PAGE) ==
+	if ((rx_cq_cons_sb & USABLE_RCQ_ENTRIES_PER_PAGE) ==
 		USABLE_RCQ_ENTRIES_PER_PAGE)
-		rx_cons_sb++;
+		rx_cq_cons_sb++;
 
-	return (rx_cons_sb);
+	return (rx_cq_cons_sb);
 }
 
 static __inline int
@@ -10139,7 +10140,7 @@ bxe_alloc_mbuf(struct bxe_fastpath *fp, int size)
    	if (__predict_false(m_new == NULL)) {
 		DBPRINT(sc, BXE_WARN, "%s(): mbuf allocation failure!\n",
 		    __FUNCTION__);
-		DBRUN(fp->mbuf_alloc_failed++);
+		fp->mbuf_alloc_failed++;
 	    goto bxe_alloc_mbuf_exit;
    	}
 
@@ -10199,7 +10200,7 @@ bxe_map_mbuf(struct bxe_fastpath *fp, struct mbuf *m, bus_dma_tag_t tag,
 		DBPRINT(sc, BXE_WARN, "%s(): mbuf mapping failure (%d)!\n",
 		    __FUNCTION__, rc);
 		m_freem(m);
-		DBRUN(fp->mbuf_alloc_failed++);
+		fp->mbuf_alloc_failed++;
 		goto bxe_map_mbuf_exit;
 	}
 
@@ -10304,7 +10305,7 @@ bxe_init_rx_chains(struct bxe_softc *sc)
 	struct eth_rx_sge *sge;
 	struct eth_rx_bd *rx_bd;
 	struct eth_rx_cqe_next_page *nextpg;
-	uint16_t ring_prod, cqe_ring_prod;
+	uint16_t rx_bd_prod, rx_sge_prod;
 	int func, i, j, rcq_idx, rx_idx, rx_sge_idx, max_agg_queues;
 
 	DBENTER(BXE_VERBOSE_LOAD | BXE_VERBOSE_RESET);
@@ -10324,24 +10325,23 @@ bxe_init_rx_chains(struct bxe_softc *sc)
 		for (i = 0; i < sc->num_queues; i++) {
 			fp = &sc->fp[i];
 			DBPRINT(sc, (BXE_INSANE_LOAD | BXE_INSANE_RESET),
-			    "%s(): Initializing fp[%d] TPA pool.\n",
+			    "%s(): Initializing fp[%02d] TPA pool.\n",
 			    __FUNCTION__, i);
 
 			for (j = 0; j < max_agg_queues; j++) {
 				DBPRINT(sc,
 				    (BXE_INSANE_LOAD | BXE_INSANE_RESET),
-				    "%s(): Initializing fp[%d] TPA pool[%d].\n",
-				    __FUNCTION__, i, j);
+				    "%s(): Initializing fp[%02d] TPA "
+				    "pool[%d].\n", __FUNCTION__, i, j);
 
 				fp->disable_tpa = 0;
 				fp->tpa_mbuf_ptr[j] = bxe_alloc_tpa_mbuf(fp, j,
 				    sc->mbuf_alloc_size);
 
 				if (fp->tpa_mbuf_ptr[j] == NULL) {
-					BXE_PRINTF(
-		"%s(%d): Failed to allocate TPA pool mbuf for fp[%d]! "
-		"Disabling TPA on this queue!\n",
-					    __FILE__, __LINE__, i);
+					fp->tpa_mbuf_alloc_failed++;
+					BXE_PRINTF("TPA disabled on "
+					    "fp[%02d]!\n", i);
 					bxe_free_tpa_pool(fp, j);
 					fp->disable_tpa = 1;
 					break;
@@ -10351,15 +10351,17 @@ bxe_init_rx_chains(struct bxe_softc *sc)
 		}
 	}
 
+	/* Allocate memory for RX and CQ chains. */
 	for (i = 0; i < sc->num_queues; i++) {
 		fp = &sc->fp[i];
 		DBPRINT(sc, (BXE_VERBOSE_LOAD | BXE_VERBOSE_RESET),
 		    "%s(): Initializing fp[%d] RX chain.\n", __FUNCTION__, i);
 
-		fp->rx_bd_cons = 0;
+		fp->rx_bd_cons = fp->rx_bd_prod = 0;
+		fp->rx_cq_cons = fp->rx_cq_prod = 0;
 
-		/* Pointer to status block's completion queue consumer index. */
-		fp->rx_cons_sb = &fp->status_block->
+		/* Status block's completion queue consumer index. */
+		fp->rx_cq_cons_sb = &fp->status_block->
 		    u_status_block.index_values[HC_INDEX_U_ETH_RX_CQ_CONS];
 
 		/* Pointer to status block's receive consumer index. */
@@ -10399,7 +10401,7 @@ bxe_init_rx_chains(struct bxe_softc *sc)
 			rx_idx = ((j + 1) % NUM_RX_PAGES);
 			rx_bd = &fp->rx_bd_chain[j][USABLE_RX_BD_PER_PAGE];
 
-			DBPRINT(sc, (BXE_INFO_LOAD),
+			DBPRINT(sc, (BXE_EXTREME_LOAD),
 			    "%s(): fp[%02d].rx_bd_chain[%02d][0x%04X]=0x%jX\n",
 			     __FUNCTION__, i, j,
 			    (uint16_t) USABLE_RX_BD_PER_PAGE,
@@ -10421,7 +10423,7 @@ bxe_init_rx_chains(struct bxe_softc *sc)
 			nextpg = (struct eth_rx_cqe_next_page *)
 			    &fp->rx_cq_chain[j][USABLE_RCQ_ENTRIES_PER_PAGE];
 
-			DBPRINT(sc, (BXE_INFO_LOAD),
+			DBPRINT(sc, (BXE_EXTREME_LOAD),
 			    "%s(): fp[%02d].rx_cq_chain[%02d][0x%04X]=0x%jX\n",
 			     __FUNCTION__, i, j,
 			    (uint16_t) USABLE_RCQ_ENTRIES_PER_PAGE,
@@ -10435,59 +10437,60 @@ bxe_init_rx_chains(struct bxe_softc *sc)
 
 		if (TPA_ENABLED(sc)) {
 			/* Allocate SGEs and initialize the ring elements. */
-			ring_prod = 0;
+			rx_sge_prod = 0;
 
-			while (ring_prod < sc->rx_ring_size) {
-				if (bxe_alloc_rx_sge(sc, fp, ring_prod) != 0) {
+			while (rx_sge_prod < sc->rx_ring_size) {
+				if (bxe_alloc_rx_sge(sc, fp, rx_sge_prod) != 0) {
+					fp->tpa_mbuf_alloc_failed++;
 					BXE_PRINTF(
 					    "%s(%d): Memory allocation failure! "
-					    "Disabling TPA for fp[%d].\n",
+					    "Disabling TPA for fp[%02d].\n",
 					    __FILE__, __LINE__, i);
 
 					/* Cleanup already allocated elements */
 					bxe_free_rx_sge_range(sc, fp,
-					    ring_prod);
+					    rx_sge_prod);
 					fp->disable_tpa = 1;
-					ring_prod = 0;
+					rx_sge_prod = 0;
 					break;
 				}
-				ring_prod = NEXT_SGE_IDX(ring_prod);
+				rx_sge_prod = NEXT_SGE_IDX(rx_sge_prod);
 			}
 
-			fp->rx_sge_prod = ring_prod;
+			fp->rx_sge_prod = rx_sge_prod;
 		}
 
 		/*
 		 * Allocate buffers for all the RX BDs in RX BD Chain.
-		 * Add completion queue entries at the same time.
 		 */
-		fp->rx_cq_cons = ring_prod = cqe_ring_prod = 0;
-		DBRUN(fp->free_rx_bd = USABLE_RX_BD);
+		rx_bd_prod = 0;
+		DBRUN(fp->free_rx_bd = sc->rx_ring_size);
 
-		while (ring_prod < sc->rx_ring_size) {
-			if (bxe_get_buf(fp, NULL, ring_prod)) {
+		for (j = 0; j < sc->rx_ring_size; j++) {
+			if (bxe_get_buf(fp, NULL, rx_bd_prod)) {
 				BXE_PRINTF(
 	"%s(%d): Memory allocation failure! Cannot fill fp[%d] RX chain.\n",
 				    __FILE__, __LINE__, i);
 				break;
 			}
-			ring_prod = NEXT_RX_BD(ring_prod);
-			cqe_ring_prod = NEXT_RCQ_IDX(cqe_ring_prod);
+			rx_bd_prod = NEXT_RX_BD(rx_bd_prod);
 		}
 
 		/* Update the driver's copy of the producer indices. */
-		fp->rx_bd_prod = ring_prod;
+		fp->rx_bd_prod = rx_bd_prod;
+		fp->rx_cq_prod = MAX_RCQ_ENTRIES;
+		fp->rx_pkts = fp->rx_calls = 0;
 
-		fp->rx_cq_prod = cqe_ring_prod;
-		/*
-		 * fp->rx_cq_prod =
-		 *     (uint16_t)min(NUM_RCQ_PAGES*TOTAL_RCQ_ENTRIES_PER_PAGE,
-		 *     cqe_ring_prod);
-		 */
+		DBPRINT(sc, (BXE_VERBOSE_LOAD | BXE_VERBOSE_RESET),
+		    "%s(): USABLE_RX_BD=0x%04X, USABLE_RCQ_ENTRIES=0x%04X\n",
+		    __FUNCTION__, (uint16_t) USABLE_RX_BD,
+		    (uint16_t) USABLE_RCQ_ENTRIES);
+		DBPRINT(sc, (BXE_VERBOSE_LOAD | BXE_VERBOSE_RESET),
+		    "%s(): fp[%02d]->rx_bd_prod=0x%04X, rx_cq_prod=0x%04X\n",
+		    __FUNCTION__, i, fp->rx_bd_prod, fp->rx_cq_prod);
 
-		DBRUN(fp->rx_pkts = fp->rx_calls = 0);
 
-		/* Prepare the CQ buffers for DMA access. */
+		/* Prepare the recevie BD and CQ buffers for DMA access. */
 		for (j = 0; j < NUM_RX_PAGES; j++)
 			bus_dmamap_sync(fp->rx_bd_chain_tag,
 			    fp->rx_bd_chain_map[j], BUS_DMASYNC_PREREAD |
@@ -10499,22 +10502,26 @@ bxe_init_rx_chains(struct bxe_softc *sc)
 			    BUS_DMASYNC_PREWRITE);
 
 		/*
-		 * Tell the controller that we have rx_bd's and CQE's available.
-		 * Warning! this will generate an interrupt (to the TSTORM).
-		 * This must only be done when the controller is initialized.
+		 * Tell the controller that we have rx_bd's and CQE's
+		 * available.  Warning! this will generate an interrupt
+		 * (to the TSTORM).  This must only be done when the
+		 * controller is initialized.
 		 */
-		bxe_update_rx_prod(sc, fp, ring_prod, fp->rx_cq_prod,
-		    fp->rx_sge_prod);
+		bxe_update_rx_prod(sc, fp, fp->rx_bd_prod,
+		    fp->rx_cq_prod, fp->rx_sge_prod);
 
-		if (i != 0)
-			continue;
-
-		REG_WR(sc, BAR_USTORM_INTMEM +
-		    USTORM_MEM_WORKAROUND_ADDRESS_OFFSET(func),
-		    U64_LO(fp->rx_cq_chain_paddr[0]));
-		REG_WR(sc, BAR_USTORM_INTMEM +
-		    USTORM_MEM_WORKAROUND_ADDRESS_OFFSET(func) + 4,
-		    U64_HI(fp->rx_cq_chain_paddr[0]));
+		/*
+		 * Tell controller where the receive CQ
+		 * chains start in physical memory.
+		 */
+		if (i == 0) {
+			REG_WR(sc, BAR_USTORM_INTMEM +
+			    USTORM_MEM_WORKAROUND_ADDRESS_OFFSET(func),
+			    U64_LO(fp->rx_cq_chain_paddr[0]));
+			REG_WR(sc, BAR_USTORM_INTMEM +
+			    USTORM_MEM_WORKAROUND_ADDRESS_OFFSET(func) + 4,
+			    U64_HI(fp->rx_cq_chain_paddr[0]));
+		}
 	}
 
 	DBEXIT(BXE_VERBOSE_LOAD | BXE_VERBOSE_RESET);
@@ -10573,7 +10580,7 @@ bxe_init_tx_chains(struct bxe_softc *sc)
 		fp->tx_cons_sb =
 		    &fp->status_block->c_status_block.index_values[C_SB_ETH_TX_CQ_INDEX];
 
-		DBRUN(fp->tx_pkts = 0);
+		fp->tx_pkts = 0;
 	}
 
 	DBEXIT(BXE_VERBOSE_LOAD | BXE_VERBOSE_RESET);
@@ -11199,7 +11206,8 @@ bxe_init_internal_func(struct bxe_softc *sc)
 	for (i = 0; i < sc->num_queues; i++) {
 		fp = &sc->fp[i];
 		nextpg = (struct eth_rx_cqe_next_page *)
-		    &fp->rx_cq_chain[i][USABLE_RCQ_ENTRIES_PER_PAGE];
+		    &fp->rx_cq_chain[0][USABLE_RCQ_ENTRIES_PER_PAGE];
+
 		/* Program the completion queue address. */
 		REG_WR(sc, BAR_USTORM_INTMEM +
 		    USTORM_CQE_PAGE_BASE_OFFSET(port, fp->cl_id),
@@ -11208,15 +11216,18 @@ bxe_init_internal_func(struct bxe_softc *sc)
 		    USTORM_CQE_PAGE_BASE_OFFSET(port, fp->cl_id) + 4,
 		    U64_HI(fp->rx_cq_chain_paddr[0]));
 
-		/* Next page */
-		REG_WR(sc, BAR_USTORM_INTMEM + USTORM_CQE_PAGE_NEXT_OFFSET(port,
-		    fp->cl_id), nextpg->addr_lo);
-		REG_WR(sc, BAR_USTORM_INTMEM + USTORM_CQE_PAGE_NEXT_OFFSET(port,
-		    fp->cl_id) + 4, nextpg->addr_hi);
+		/* Program the first CQ next page address. */
+		REG_WR(sc, BAR_USTORM_INTMEM +
+		    USTORM_CQE_PAGE_NEXT_OFFSET(port, fp->cl_id),
+		    nextpg->addr_lo);
+		REG_WR(sc, BAR_USTORM_INTMEM +
+		    USTORM_CQE_PAGE_NEXT_OFFSET(port, fp->cl_id) + 4,
+		    nextpg->addr_hi);
 
 		/* Set the maximum TPA aggregation size. */
 		REG_WR16(sc, BAR_USTORM_INTMEM +
-		    USTORM_MAX_AGG_SIZE_OFFSET(port, fp->cl_id), max_agg_size);
+		    USTORM_MAX_AGG_SIZE_OFFSET(port, fp->cl_id),
+		    max_agg_size);
 	}
 
 	/* Configure lossless flow control. */
@@ -11261,14 +11272,6 @@ bxe_init_internal_func(struct bxe_softc *sc)
 			    "fairness will be disabled.\n", __FUNCTION__);
 	}
 
-	switch (sc->multi_mode) {
-	case ETH_RSS_MODE_DISABLED:
-	case ETH_RSS_MODE_REGULAR:
-		break;
-	default:
-		break;
-	}
-
 	/* Store it to internal memory */
 	if (sc->port.pmf) {
 		for (i = 0; i < sizeof(struct cmng_struct_per_port) / 4; i++)
@@ -11307,8 +11310,8 @@ bxe_init_internal(struct bxe_softc *sc, uint32_t load_code)
 
 	default:
 		BXE_PRINTF(
-		    "%s(%d): Unknown load_code (0x%08X) from MCP!\n", __FILE__,
-		    __LINE__, load_code);
+		    "%s(%d): Unknown load_code (0x%08X) from MCP!\n",
+		    __FILE__, __LINE__, load_code);
 		break;
 	}
 
@@ -11354,7 +11357,7 @@ bxe_init_nic(struct bxe_softc *sc, uint32_t load_code)
 		/* Set the status block ID for this fastpath instance. */
 		fp->sb_id = fp->cl_id;
 
-		DBPRINT(sc, (BXE_INFO_LOAD | BXE_INFO_RESET),
+		DBPRINT(sc, (BXE_VERBOSE_LOAD | BXE_VERBOSE_RESET),
 		    "%s(): fp[%d]: cl_id = %d, sb_id = %d\n",
 		    __FUNCTION__, fp->index, fp->cl_id, fp->sb_id);
 
@@ -11434,7 +11437,7 @@ bxe_gunzip_init_nomem2:
 
 bxe_gunzip_init_nomem1:
 	BXE_PRINTF(
-	    "%s(%d): Cannot allocate firmware buffer for un-compression!\n",
+	    "%s(%d): Cannot allocate firmware buffer for decompression!\n",
 	    __FILE__, __LINE__);
 	rc = ENOMEM;
 
@@ -11875,24 +11878,27 @@ bxe_init_pxp_arb(struct bxe_softc *sc, int r_order, int w_order)
 	uint32_t val, i;
 
 	if (r_order > MAX_RD_ORD) {
-		DBPRINT(sc, BXE_INFO,
-		    "read order of %d order adjusted to %d\n", r_order,
-		    MAX_RD_ORD);
+		DBPRINT(sc, (BXE_VERBOSE_LOAD | BXE_VERBOSE_RESET),
+		    "%s(): Read order of %d order adjusted to %d\n",
+		    __FUNCTION__,  r_order, MAX_RD_ORD);
 		r_order = MAX_RD_ORD;
 	}
 	if (w_order > MAX_WR_ORD) {
-		DBPRINT(sc, BXE_INFO,
-		    "write order of %d order adjusted to %d\n", w_order,
-		    MAX_WR_ORD);
+		DBPRINT(sc, (BXE_VERBOSE_LOAD | BXE_VERBOSE_RESET),
+		    "%s(): Write order of %d order adjusted to %d\n",
+		    __FUNCTION__, w_order, MAX_WR_ORD);
 		w_order = MAX_WR_ORD;
 	}
 
-	DBPRINT(sc, BXE_INFO, "read order %d write order %d\n", r_order,
-	    w_order);
+	DBPRINT(sc, (BXE_VERBOSE_LOAD | BXE_VERBOSE_RESET),
+	    "%s(): Read order %d, write order %d\n",
+	    __FUNCTION__, r_order, w_order);
 
 	for (i = 0; i < NUM_RD_Q - 1; i++) {
-		REG_WR(sc, read_arb_addr[i].l, read_arb_data[i][r_order].l);
-		REG_WR(sc, read_arb_addr[i].add, read_arb_data[i][r_order].add);
+		REG_WR(sc, read_arb_addr[i].l,
+		    read_arb_data[i][r_order].l);
+		REG_WR(sc, read_arb_addr[i].add,
+		    read_arb_data[i][r_order].add);
 		REG_WR(sc, read_arb_addr[i].ubound,
 		    read_arb_data[i][r_order].ubound);
 	}
@@ -11972,13 +11978,17 @@ bxe_init_pxp(struct bxe_softc *sc)
 	uint16_t devctl;
 	int r_order, w_order;
 
-	devctl = pci_read_config(sc->bxe_dev, sc->pcie_cap + PCI_EXP_DEVCTL, 2);
-	DBPRINT(sc, BXE_INFO, "read 0x%x from devctl\n", devctl);
+	devctl = pci_read_config(sc->bxe_dev,
+	    sc->pcie_cap + PCI_EXP_DEVCTL, 2);
+	DBPRINT(sc, (BXE_VERBOSE_LOAD | BXE_VERBOSE_RESET),
+	    "%s(): Read 0x%x from devctl\n", __FUNCTION__, devctl);
 	w_order = ((devctl & PCI_EXP_DEVCTL_PAYLOAD) >> 5);
 	if (sc->mrrs == -1)
 		r_order = ((devctl & PCI_EXP_DEVCTL_READRQ) >> 12);
 	else {
-		DBPRINT(sc, BXE_INFO, "force read order to %d\n", sc->mrrs);
+		DBPRINT(sc, (BXE_VERBOSE_LOAD | BXE_VERBOSE_RESET),
+		    "%s(): Force MRRS read order to %d\n",
+		    __FUNCTION__, sc->mrrs);
 		r_order = sc->mrrs;
 	}
 
@@ -12229,22 +12239,24 @@ bxe_init_common(struct bxe_softc *sc)
 	/* Finish CFC initialization. */
 	val = bxe_reg_poll(sc, CFC_REG_LL_INIT_DONE, 1, 100, 10);
 	if (val != 1) {
-		BXE_PRINTF("%s(%d): CFC LL_INIT failed!\n", __FILE__, __LINE__);
+		BXE_PRINTF("%s(%d): CFC LL_INIT failed!\n",
+		    __FILE__, __LINE__);
 		rc = EBUSY;
 		goto bxe_init_common_exit;
 	}
 
 	val = bxe_reg_poll(sc, CFC_REG_AC_INIT_DONE, 1, 100, 10);
 	if (val != 1) {
-		BXE_PRINTF("%s(%d): CFC AC_INIT failed!\n", __FILE__, __LINE__);
+		BXE_PRINTF("%s(%d): CFC AC_INIT failed!\n",
+		     __FILE__, __LINE__);
 		rc = EBUSY;
 		goto bxe_init_common_exit;
 	}
 
 	val = bxe_reg_poll(sc, CFC_REG_CAM_INIT_DONE, 1, 100, 10);
 	if (val != 1) {
-		BXE_PRINTF("%s(%d): CFC CAM_INIT failed!\n", __FILE__,
-		   __LINE__);
+		BXE_PRINTF("%s(%d): CFC CAM_INIT failed!\n",
+		    __FILE__, __LINE__);
 		rc = EBUSY;
 		goto bxe_init_common_exit;
 	}
@@ -12713,8 +12725,8 @@ bxe_fw_command(struct bxe_softc *sc, uint32_t command)
 	if (seq == (rc & FW_MSG_SEQ_NUMBER_MASK ))
 		rc &= FW_MSG_CODE_MASK;
 	else {
-		BXE_PRINTF("%s(%d): Bootcode failed to respond!\n", __FILE__,
-		    __LINE__);
+		BXE_PRINTF("%s(%d): Bootcode failed to respond!\n",
+		    __FILE__, __LINE__);
 		DBRUN(bxe_dump_fw(sc));
 		rc = 0;
 	}
@@ -13143,8 +13155,9 @@ bxe_dma_alloc(device_t dev)
 		    NULL,		/* lock f() */
 		    NULL,		/* lock f() arg */
 		    &fp->status_block_tag)) {
-			BXE_PRINTF("%s(%d): Could not allocate fp[%d] "
-			    "status block DMA tag!\n", __FILE__, __LINE__, i);
+			BXE_PRINTF(
+	"%s(%d): Could not allocate fp[%d] status block DMA tag!\n",
+			    __FILE__, __LINE__, i);
 			rc = ENOMEM;
 			goto bxe_dma_alloc_exit;
 		}
@@ -13153,8 +13166,8 @@ bxe_dma_alloc(device_t dev)
 		    (void **)&fp->status_block, BUS_DMA_NOWAIT,
 		    &fp->status_block_map)) {
 			BXE_PRINTF(
-			    "%s(%d): Could not allocate fp[%d] status block "
-			    "DMA memory!\n", __FILE__, __LINE__, i);
+	"%s(%d): Could not allocate fp[%d] status block	DMA memory!\n",
+			    __FILE__, __LINE__, i);
 			rc = ENOMEM;
 			goto bxe_dma_alloc_exit;
 		}
@@ -13166,8 +13179,9 @@ bxe_dma_alloc(device_t dev)
 		    bxe_dma_map_addr, &busaddr, BUS_DMA_NOWAIT);
 
 		if (error) {
-			BXE_PRINTF("%s(%d): Could not map fp[%d] status block "
-			    "DMA memory!\n", __FILE__, __LINE__, i);
+			BXE_PRINTF(
+		"%s(%d): Could not map fp[%d] status block DMA memory!\n",
+			    __FILE__, __LINE__, i);
 			rc = ENOMEM;
 			goto bxe_dma_alloc_exit;
 		}
@@ -13198,8 +13212,8 @@ bxe_dma_alloc(device_t dev)
 		    NULL,		/* lock f() arg */
 		    &fp->tx_bd_chain_tag)) {
 			BXE_PRINTF(
-			    "%s(%d): Could not allocate fp[%d] TX descriptor "
-			    "chain DMA tag!\n", __FILE__, __LINE__, i);
+	"%s(%d): Could not allocate fp[%d] TX descriptor chain DMA tag!\n",
+			    __FILE__, __LINE__, i);
 			rc = ENOMEM;
 			goto bxe_dma_alloc_exit;
 		}
@@ -13209,8 +13223,7 @@ bxe_dma_alloc(device_t dev)
 			    (void **)&fp->tx_bd_chain[j], BUS_DMA_NOWAIT,
 			    &fp->tx_bd_chain_map[j])) {
 				BXE_PRINTF(
-				    "%s(%d): Could not allocate fp[%d] TX "
-				    "descriptor chain DMA memory!\n",
+	"%s(%d): Could not allocate fp[%d] TX descriptor chain DMA memory!\n",
 				    __FILE__, __LINE__, i);
 				rc = ENOMEM;
 				goto bxe_dma_alloc_exit;
@@ -13224,8 +13237,8 @@ bxe_dma_alloc(device_t dev)
 			    &busaddr, BUS_DMA_NOWAIT);
 
 			if (error) {
-				BXE_PRINTF("%s(%d): Could not map fp[%d] "
-				    "TX descriptor chain DMA memory!\n",
+				BXE_PRINTF(
+	"%s(%d): Could not map fp[%d] TX descriptor chain DMA memory!\n",
 				    __FILE__, __LINE__, i);
 				rc = ENOMEM;
 				goto bxe_dma_alloc_exit;
@@ -13278,8 +13291,8 @@ bxe_dma_alloc(device_t dev)
 			if (bus_dmamap_create(fp->tx_mbuf_tag,
 			    BUS_DMA_NOWAIT,
 			    &(fp->tx_mbuf_map[j]))) {
-				BXE_PRINTF("%s(%d): Unable to create fp[%d] "
-				    "TX mbuf DMA map!\n",
+				BXE_PRINTF(
+		"%s(%d): Unable to create fp[%d] TX mbuf DMA map!\n",
 				    __FILE__, __LINE__, i);
 				rc = ENOMEM;
 				goto bxe_dma_alloc_exit;
@@ -13306,8 +13319,8 @@ bxe_dma_alloc(device_t dev)
 		    NULL,		/* lock f() */
 		    NULL,		/* lock f() arg */
 		    &fp->rx_bd_chain_tag)) {
-			BXE_PRINTF("%s(%d): Could not allocate fp[%d] "
-			    "RX BD chain DMA tag!\n",
+			BXE_PRINTF(
+	"%s(%d): Could not allocate fp[%d] RX BD chain DMA tag!\n",
 			    __FILE__, __LINE__, i);
 			rc = ENOMEM;
 			goto bxe_dma_alloc_exit;
@@ -13990,7 +14003,8 @@ bxe_set_rx_mode(struct bxe_softc *sc)
 	} else {
 		/* Enable selective multicast mode. */
 		DBPRINT(sc, BXE_INFO,
-		    "%s(): Enabling selective multicast mode.\n", __FUNCTION__);
+		    "%s(): Enabling selective multicast mode.\n",
+		    __FUNCTION__);
 
 		if (CHIP_IS_E1(sc)) {
 			i = 0;
@@ -14683,14 +14697,14 @@ bxe_tpa_stop_exit:
  */
 static __inline void
 bxe_update_rx_prod(struct bxe_softc *sc, struct bxe_fastpath *fp,
-    uint16_t bd_prod, uint16_t rx_cq_prod, uint16_t sge_prod)
+    uint16_t bd_prod, uint16_t cqe_prod, uint16_t sge_prod)
 {
 	volatile struct ustorm_eth_rx_producers rx_prods = {0};
 	int i;
 
 	/* Update producers. */
 	rx_prods.bd_prod =  bd_prod;
-	rx_prods.cqe_prod = rx_cq_prod;
+	rx_prods.cqe_prod = cqe_prod;
 	rx_prods.sge_prod = sge_prod;
 
 	wmb();
@@ -14702,8 +14716,8 @@ bxe_update_rx_prod(struct bxe_softc *sc, struct bxe_fastpath *fp,
 	}
 
 	DBPRINT(sc, BXE_EXTREME_RECV, "%s(%d): Wrote fp[%02d] bd_prod = 0x%04X, "
-	    "rx_cq_prod = 0x%04X, sge_prod = 0x%04X\n", __FUNCTION__, curcpu,
-	    fp->index, bd_prod, rx_cq_prod, sge_prod);
+	    "cqe_prod = 0x%04X, sge_prod = 0x%04X\n", __FUNCTION__, curcpu,
+	    fp->index, bd_prod, cqe_prod, sge_prod);
 }
 
 /*
@@ -14721,10 +14735,7 @@ bxe_rxeof(struct bxe_fastpath *fp)
 	uint16_t rx_bd_prod, rx_bd_prod_idx;
 	uint16_t rx_cq_cons, rx_cq_cons_idx;
 	uint16_t rx_cq_prod, rx_cq_cons_sb;
-
-#ifdef BXE_DEBUG
 	unsigned long rx_pkts = 0;
-#endif
 
 	sc = fp->sc;
 	ifp = sc->bxe_ifp;
@@ -14792,9 +14803,9 @@ bxe_rxeof(struct bxe_fastpath *fp)
 #endif
 
 		DBRUNIF((cqe_fp_flags == 0),
-		    BXE_PRINTF("%s(): CQE received with null "
-		    "type/error flags!\n", __FUNCTION__);
+		    fp->null_cqe_flags++;
 		    bxe_dump_cqe(fp, rx_cq_cons_idx, cqe));
+		/* DRC - ANything else to do here? */
 
 		/* Check the CQE type for slowpath or fastpath completion. */
 		if (__predict_false(CQE_TYPE(cqe_fp_flags) ==
@@ -15021,7 +15032,7 @@ bxe_rxeof(struct bxe_fastpath *fp)
 bxe_rxeof_next_rx:
 		rx_bd_prod = NEXT_RX_BD(rx_bd_prod);
 		rx_bd_cons = NEXT_RX_BD(rx_bd_cons);
-		DBRUN(rx_pkts++);
+		rx_pkts++;
 
 bxe_rxeof_next_cqe:
 		rx_cq_prod = NEXT_RCQ_IDX(rx_cq_prod);
@@ -15051,8 +15062,8 @@ bxe_rxeof_next_cqe:
 	bus_space_barrier(sc->bxe_btag, sc->bxe_bhandle, 0, 0,
 	    BUS_SPACE_BARRIER_READ);
 
-	DBRUN(fp->rx_pkts += rx_pkts);
-	DBRUN(fp->rx_calls++);
+	fp->rx_pkts += rx_pkts;
+	fp->rx_calls++;
 	DBEXIT(BXE_EXTREME_RECV);
 }
 
@@ -15087,6 +15098,7 @@ bxe_txeof(struct bxe_fastpath *fp)
 		txbd = NULL;
 		sw_tx_chain_cons = TX_BD(sw_tx_bd_cons);
 		pkt_cons = TX_BD(sw_pkt_cons);
+
 #ifdef BXE_DEBUG
 		if (sw_tx_chain_cons > MAX_TX_BD) {
 			BXE_PRINTF(
@@ -15106,6 +15118,7 @@ bxe_txeof(struct bxe_fastpath *fp)
 			bxe_breakpoint(sc);
 		}
 #endif
+
 		/*
 		 * Find the number of BD's that were used in the completed pkt.
 		 */
@@ -15126,8 +15139,7 @@ bxe_txeof(struct bxe_fastpath *fp)
 			fp->tx_mbuf_ptr[pkt_cons] = NULL;
 			fp->opackets++;
 		} else {
-			BXE_PRINTF("%s(%d): Lost an mbuf from the TX chain!\n",
-			    __FILE__, __LINE__);
+			fp->tx_chain_lost_mbuf++;
 		}
 
 		/* Skip over the remaining used buffer descriptors. */
@@ -15260,8 +15272,7 @@ bxe_watchdog(struct bxe_softc *sc)
 	if (sc->watchdog_timer == 0 || --sc->watchdog_timer)
 		goto bxe_watchdog_exit;
 
-	BXE_PRINTF("%s(%d): Watchdog timeout occurred, resetting! \n",
-		__FILE__, __LINE__);
+	BXE_PRINTF("TX watchdog timeout occurred, resetting!\n");
 
 	/* DBRUNLV(BXE_FATAL, bxe_breakpoint(sc)); */
 
@@ -15713,32 +15724,23 @@ bxe_add_sysctls(struct bxe_softc *sc)
 	    CTLFLAG_RD, &estats->driver_xoff,
 	    0, "Driver transmit queue full count");
 
+	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO,
+	    "tx_start_called_with_link_down",
+	    CTLFLAG_RD, &sc->tx_start_called_with_link_down,
+	    "TX start routine called while link down count");
+
+	SYSCTL_ADD_ULONG(ctx, children, OID_AUTO,
+	    "tx_start_called_with_queue_full",
+	    CTLFLAG_RD, &sc->tx_start_called_with_queue_full,
+	    "TX start routine called with queue full count");
+
 	/* ToDo: Add more statistics here. */
 
 #ifdef BXE_DEBUG
 	SYSCTL_ADD_INT(ctx, children, OID_AUTO, "bxe_debug",
 	    CTLFLAG_RW, &bxe_debug, 0,
 	    "Debug message level flag");
-
-	SYSCTL_ADD_UINT(ctx, children, OID_AUTO, "tso_offload_frames",
-	    CTLFLAG_RD, &sc->debug_tso_offload_frames,
-	    0, "TSO offload frames processed count");
-
-	SYSCTL_ADD_UINT(ctx, children, OID_AUTO, "ip_csum_offload_frames",
-	    CTLFLAG_RD, &sc->debug_ip_csum_offload_frames,
-	    0, "IP checksum offload frames processed count");
-
-	SYSCTL_ADD_UINT(ctx, children, OID_AUTO, "tcp_csum_offload_frames",
-	    CTLFLAG_RD, &sc->debug_tcp_csum_offload_frames,
-	    0, "TCP checksum offload frames processed count");
-
-	SYSCTL_ADD_UINT(ctx, children, OID_AUTO, "udp_csum_offload_frames",
-	    CTLFLAG_RD, &sc->debug_udp_csum_offload_frames,
-	    0, "UDP checksum offload frames processed count");
-
-	SYSCTL_ADD_INT(ctx, children, OID_AUTO, "mbuf_alloc_failed",
-	    CTLFLAG_RD, &sc->mbuf_alloc_failed, 0,
-	    "mbuf cluster allocation failures");
+#endif
 
 	do {
 #define QUEUE_NAME_LEN 32
@@ -15755,23 +15757,111 @@ bxe_add_sysctls(struct bxe_softc *sc)
 			queue_list = SYSCTL_CHILDREN(queue_node);
 
 			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
+			    "rx_pkts",
+			    CTLFLAG_RD, &fp->rx_pkts,
+			    "Received packets");
+
+			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
+			    "tx_pkts",
+			    CTLFLAG_RD, &fp->tx_pkts,
+			    "Transmitted packets");
+
+			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
 			    "mbuf_alloc_failed",
 			    CTLFLAG_RD, &fp->mbuf_alloc_failed,
-			    "Mbuf allocation failures");
+			    "Mbuf allocation failure count");
+
+			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
+			    "tpa_mbuf_alloc_failed",
+			    CTLFLAG_RD, &fp->tpa_mbuf_alloc_failed,
+			    "TPA mbuf allocation failure count");
 
 			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
 			    "mbuf_defrag_attempts",
 			    CTLFLAG_RD, &fp->mbuf_defrag_attempts,
-			    "Mbuf defrag attempts");
+			    "Mbuf defrag attempt count");
+
+			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
+			    "mbuf_defrag_failures",
+			    CTLFLAG_RD, &fp->mbuf_defrag_failures,
+			    "Mbuf defrag failure count");
 
 			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
 			    "mbuf_defrag_successes",
 			    CTLFLAG_RD, &fp->mbuf_defrag_successes,
-			    "Mbuf defrag successes");
-		}
+			    "Mbuf defrag success count");
 
+			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
+			    "offload_frames_csum_ip",
+			    CTLFLAG_RD, &fp->offload_frames_csum_ip,
+			    "IP checksum offload frame count");
+
+			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
+			    "offload_frames_csum_tcp",
+			    CTLFLAG_RD, &fp->offload_frames_csum_tcp,
+			    "TCP checksum offload frame count");
+
+			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
+			    "offload_frames_csum_udp",
+			    CTLFLAG_RD, &fp->offload_frames_csum_udp,
+			    "UDP checksum offload frame count");
+
+			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
+			    "offload_frames_tso",
+			    CTLFLAG_RD, &fp->offload_frames_tso,
+			    "TSO offload frame count");
+
+			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
+			    "tx_encap_failures",
+			    CTLFLAG_RD, &fp->tx_encap_failures,
+			    "TX encapsulation failure count");
+
+			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
+			    "tx_start_called_on_empty_queue",
+			    CTLFLAG_RD, &fp->tx_start_called_on_empty_queue,
+			    "TX start function called on empty "
+			    "TX queue count");
+
+			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
+			    "tx_queue_too_full",
+			    CTLFLAG_RD, &fp->tx_queue_too_full,
+			    "TX queue too full to add a TX frame count");
+
+			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
+			    "window_violation_std",
+			    CTLFLAG_RD, &fp->window_violation_std,
+			    "Standard frame TX BD window violation count");
+
+			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
+			    "window_violation_tso",
+			    CTLFLAG_RD, &fp->window_violation_tso,
+			    "TSO frame TX BD window violation count");
+
+			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
+			    "unsupported_tso_request_ipv6",
+			    CTLFLAG_RD, &fp->unsupported_tso_request_ipv6,
+			    "TSO frames with unsupported IPv6 protocol count");
+
+			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
+			    "unsupported_tso_request_not_tcp",
+			    CTLFLAG_RD, &fp->unsupported_tso_request_not_tcp,
+			    "TSO frames with unsupported protocol count");
+
+			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
+			    "tx_chain_lost_mbuf",
+			    CTLFLAG_RD, &fp->tx_chain_lost_mbuf,
+			    "Mbufs lost on TX chain count");
+#ifdef BXE_DEBUG
+			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
+			    "null_cqe_flags",
+			    CTLFLAG_RD, &fp->null_cqe_flags,
+			    "CQEs with NULL flags count");
+#endif
+		}
 	} while (0);
 
+
+#ifdef BXE_DEBUG
 	SYSCTL_ADD_PROC(ctx, children, OID_AUTO, "driver_state",
 	    CTLTYPE_INT | CTLFLAG_RW, (void *)sc, 0,
 	    bxe_sysctl_driver_state, "I", "Drive state information");

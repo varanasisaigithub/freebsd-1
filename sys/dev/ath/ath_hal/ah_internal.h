@@ -28,6 +28,7 @@
 #define	AH_MAX(a,b)	((a)>(b)?(a):(b))
 
 #include <net80211/_ieee80211.h>
+#include "opt_ah.h"			/* needed for AH_SUPPORT_AR5416 */
 
 #ifndef NBBY
 #define	NBBY	8			/* number of bits/byte */
@@ -136,11 +137,16 @@ typedef struct {
 #define	CHANNEL_IQVALID		0x01	/* IQ calibration valid */
 #define	CHANNEL_ANI_INIT	0x02	/* ANI state initialized */
 #define	CHANNEL_ANI_SETUP	0x04	/* ANI state setup */
+#define	CHANNEL_MIMO_NF_VALID	0x04	/* Mimo NF values are valid */
 	uint8_t		calValid;	/* bitmask of cal types */
 	int8_t		iCoff;
 	int8_t		qCoff;
 	int16_t		rawNoiseFloor;
 	int16_t		noiseFloorAdjust;
+#ifdef	AH_SUPPORT_AR5416
+	int16_t		noiseFloorCtl[AH_MIMO_MAX_CHAINS];
+	int16_t		noiseFloorExt[AH_MIMO_MAX_CHAINS];
+#endif	/* AH_SUPPORT_AR5416 */
 	uint16_t	mainSpur;	/* cached spur value for this channel */
 } HAL_CHANNEL_INTERNAL;
 
@@ -197,7 +203,8 @@ typedef struct {
 			halMbssidAggrSupport		: 1,
 			halBssidMatchSupport		: 1,
 			hal4kbSplitTransSupport		: 1,
-			halHasPsPollSupport		: 1;
+			halHasPsPollSupport		: 1,
+			halHasRxSelfLinkedTail		: 1;
 	uint32_t	halWirelessModes;
 	uint16_t	halTotalQueues;
 	uint16_t	halKeyCacheSize;

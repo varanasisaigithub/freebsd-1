@@ -31,6 +31,14 @@
 #include "ah_osdep.h"
 
 /*
+ * The maximum number of TX/RX chains supported.
+ * This is intended to be used by various statistics gathering operations
+ * (NF, RSSI, EVM).
+ */
+#define	AH_MIMO_MAX_CHAINS		3
+#define	AH_MIMO_MAX_EVM_PILOTS		6
+
+/*
  * __ahdecl is analogous to _cdecl; it defines the calling
  * convention used within the HAL.  For most systems this
  * can just default to be empty and the compiler will (should)
@@ -114,6 +122,7 @@ typedef enum {
 	HAL_CAP_STREAMS		= 39,	/* how many 802.11n spatial streams are available */
 	HAL_CAP_SPLIT_4KB_TRANS	= 40,	/* hardware supports descriptors straddling a 4k page boundary */
 	HAL_CAP_HAS_PSPOLL	= 41,	/* hardware has ps-poll support */
+	HAL_CAP_RXDESC_SELFLINK	= 42,	/* support a self-linked tail RX descriptor */
 } HAL_CAPABILITY_TYPE;
 
 /* 
@@ -940,6 +949,14 @@ extern	HAL_STATUS __ahdecl ath_hal_init_channels(struct ath_hal *,
 extern	HAL_STATUS __ahdecl ath_hal_set_channels(struct ath_hal *,
     struct ieee80211_channel *chans, int nchans,
     HAL_CTRY_CODE cc, HAL_REG_DOMAIN regDmn);
+
+/*
+ * Fetch the ctl/ext noise floor values reported by a MIMO
+ * radio. Returns 1 for valid results, 0 for invalid channel.
+ */
+extern int __ahdecl ath_hal_get_mimo_chan_noise(struct ath_hal *ah,
+    const struct ieee80211_channel *chan, int16_t *nf_ctl,
+    int16_t *nf_ext);
 
 /*
  * Calibrate noise floor data following a channel scan or similar.

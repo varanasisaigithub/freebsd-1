@@ -71,7 +71,6 @@ static u_int	acpi_timer_get_timecount_safe(struct timecounter *tc);
 static int	acpi_timer_sysctl_freq(SYSCTL_HANDLER_ARGS);
 static void	acpi_timer_boot_test(void);
 
-static u_int	acpi_timer_read(void);
 static int	acpi_timer_test(void);
 
 static device_method_t acpi_timer_methods[] = {
@@ -101,9 +100,10 @@ static struct timecounter acpi_timer_timecounter = {
 	-1				/* quality (chosen later) */
 };
 
-static u_int
-acpi_timer_read()
+static __inline uint32_t
+acpi_timer_read(void)
 {
+
     return (bus_space_read_4(acpi_timer_bst, acpi_timer_bsh, 0));
 }
 
@@ -306,12 +306,12 @@ SYSCTL_PROC(_machdep, OID_AUTO, acpi_timer_freq, CTLTYPE_INT | CTLFLAG_RW,
 static int
 acpi_timer_test()
 {
-    uint32_t	last, this;
-    int		min, max, n, delta;
-    register_t	s;
+    uint32_t last, this;
+    int delta, max, max2, min, n;
+    register_t s;
 
-    min = 10000000;
-    max = 0;
+    min = INT32_MAX;
+    max = max2 = 0;
 
     /* Test the timer with interrupts disabled to get accurate results. */
     s = intr_disable();
@@ -319,22 +319,26 @@ acpi_timer_test()
     for (n = 0; n < N; n++) {
 	this = acpi_timer_read();
 	delta = acpi_TimerDelta(this, last);
-	if (delta > max)
+	if (delta > max) {
+	    max2 = max;
 	    max = delta;
-	else if (delta < min)
+	} else if (delta > max2)
+	    max2 = delta;
+	if (delta < min)
 	    min = delta;
 	last = this;
     }
     intr_restore(s);
 
-    if (max - min > 2)
+    delta = max2 - min;
+    if ((max - min > 8 || delta > 3) && vm_guest == VM_GUEST_NO)
 	n = 0;
-    else if (min < 0 || max == 0)
+    else if (min < 0 || max == 0 || max2 == 0)
 	n = 0;
     else
 	n = 1;
     if (bootverbose)
-	printf(" %d/%d", n, max-min);
+	printf(" %d/%d", n, delta);
 
     return (n);
 }

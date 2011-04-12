@@ -1072,16 +1072,17 @@ int
 cpu_est_clockrate(int cpu_id, uint64_t *rate)
 {
 	register_t reg;
-	uint64_t tsc1, tsc2;
+	uint64_t freq, tsc1, tsc2;
 
 	if (pcpu_find(cpu_id) == NULL || rate == NULL)
 		return (EINVAL);
 	if ((cpu_feature & CPUID_TSC) == 0)
 		return (EOPNOTSUPP);
+	freq = atomic_load_acq_64(&tsc_freq);
 
 	/* If we're booting, trust the rate calibrated moments ago. */
-	if (cold && tsc_freq != 0) {
-		*rate = tsc_freq;
+	if (cold && freq != 0) {
+		*rate = freq;
 		return (0);
 	}
 
@@ -1110,7 +1111,7 @@ cpu_est_clockrate(int cpu_id, uint64_t *rate)
 #endif
 
 	tsc2 -= tsc1;
-	if (tsc_freq != 0) {
+	if (freq != 0) {
 		*rate = tsc2 * 1000;
 		return (0);
 	}
@@ -1329,6 +1330,21 @@ idle_sysctl(SYSCTL_HANDLER_ARGS)
 
 SYSCTL_PROC(_machdep, OID_AUTO, idle, CTLTYPE_STRING | CTLFLAG_RW, 0, 0,
     idle_sysctl, "A", "currently selected idle function");
+
+uint64_t (*atomic_load_acq_64)(volatile uint64_t *) =
+    atomic_load_acq_64_i386;
+void (*atomic_store_rel_64)(volatile uint64_t *, uint64_t) =
+    atomic_store_rel_64_i386;
+
+static void
+cpu_probe_cmpxchg8b(void)
+{
+
+	if ((cpu_feature & CPUID_CX8) != 0) {
+		atomic_load_acq_64 = atomic_load_acq_64_i586;
+		atomic_store_rel_64 = atomic_store_rel_64_i586;
+	}
+}
 
 /*
  * Reset registers to default values on exec.
@@ -2344,6 +2360,8 @@ init386(first)
 	thread0.td_pcb->pcb_cr3 = (int)IdlePTD;
 	thread0.td_pcb->pcb_ext = 0;
 	thread0.td_frame = &proc0_tf;
+
+	cpu_probe_cmpxchg8b();
 }
 
 void

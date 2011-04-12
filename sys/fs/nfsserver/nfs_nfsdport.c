@@ -54,6 +54,7 @@ extern int newnfs_numnfsd;
 extern struct mount nfsv4root_mnt;
 extern struct nfsrv_stablefirst nfsrv_stablefirst;
 extern void (*nfsd_call_servertimer)(void);
+extern SVCPOOL	*nfsrvd_pool;
 struct vfsoptlist nfsv4root_opt, nfsv4root_newopt;
 NFSDLOCKMUTEX;
 struct mtx nfs_cache_mutex;
@@ -764,10 +765,9 @@ nfsvno_createsub(struct nfsrv_descript *nd, struct nameidata *ndp,
 			    &ndp->ni_cnd, &nvap->na_vattr);
 			vput(ndp->ni_dvp);
 			nfsvno_relpathbuf(ndp);
-			if (error) {
-				vrele(ndp->ni_startdir);
+			vrele(ndp->ni_startdir);
+			if (error)
 				return (error);
-			}
 		} else {
 			vrele(ndp->ni_startdir);
 			nfsvno_relpathbuf(ndp);
@@ -1975,9 +1975,13 @@ again:
 							vref(vp);
 							nvp = vp;
 							r = 0;
-						} else
+						} else {
 							r = VOP_LOOKUP(vp, &nvp,
 							    &cn);
+							if (vp != nvp)
+								VOP_UNLOCK(vp,
+								    0);
+						}
 					}
 				}
 				if (!r) {
@@ -3121,8 +3125,15 @@ nfsd_modevent(module_t mod, int type, void *data)
 		nfsd_call_servertimer = NULL;
 		nfsd_call_nfsd = NULL;
 
+		/* Clean out all NFSv4 state. */
+		nfsrv_throwawayallstate(curthread);
+
 		/* Clean the NFS server reply cache */
 		nfsrvd_cleancache();
+
+		/* Free up the krpc server pool. */
+		if (nfsrvd_pool != NULL)
+			svcpool_destroy(nfsrvd_pool);
 
 		/* and get rid of the locks */
 		mtx_destroy(&nfs_cache_mutex);
