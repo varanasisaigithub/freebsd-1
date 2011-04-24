@@ -8,10 +8,6 @@
 # backwards compat option for older systems.
 MACHINE_CPUARCH?=${MACHINE_ARCH:C/mipse[lb]/mips/:C/armeb/arm/:C/powerpc64/powerpc/}
 
-# Support for building relocatable kernels on some architectures.
-REL_KERNEL_ARCHS= # Altix TODO
-LINK_REL_KERNEL= ${REL_KERNEL_ARCHS:S/${MACHINE_ARCH}/yes/g:Myes}
-
 # Can be overridden by makeoptions or /etc/make.conf
 KERNEL_KO?=	kernel
 KERNEL?=	kernel
@@ -159,17 +155,10 @@ SYSTEM_CFILES= config.c env.c hints.c vnode_if.c
 SYSTEM_DEP= Makefile ${SYSTEM_OBJS}
 SYSTEM_OBJS= locore.o ${MDOBJS} ${OBJS}
 SYSTEM_OBJS+= ${SYSTEM_CFILES:.c=.o}
-SYSTEM_CTFMERGE= [ -z "${CTFMERGE}" -o -n "${NO_CTF}" ] || ${CTFMERGE} ${CTFFLAGS} -o ${.TARGET} ${SYSTEM_OBJS} vers.o
-
-.if ${LINK_REL_KERNEL} == yes
-SYSTEM_LDFLAGS= -r -e __start
-.else
 SYSTEM_OBJS+= hack.So
-SYSTEM_LDFLAGS= -Bdynamic -T ${LDSCRIPT} -export-dynamic \
-	-dynamic-linker /red/herring
-.endif
-
-SYSTEM_LD= @${LD} ${SYSTEM_LDFLAGS} -warn-common \
+SYSTEM_CTFMERGE= [ -z "${CTFMERGE}" -o -n "${NO_CTF}" ] || ${CTFMERGE} ${CTFFLAGS} -o ${.TARGET} ${SYSTEM_OBJS} vers.o
+SYSTEM_LD= @${LD} -Bdynamic -T ${LDSCRIPT} \
+	-warn-common -export-dynamic -dynamic-linker /red/herring \
 	-o ${.TARGET} -X ${SYSTEM_OBJS} vers.o
 SYSTEM_LD_TAIL= @${OBJCOPY} --strip-symbol gcc2_compiled. ${.TARGET} ; \
 	${SIZE} ${.TARGET} ; chmod 755 ${.TARGET}

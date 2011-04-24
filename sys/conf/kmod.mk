@@ -82,9 +82,7 @@ OBJCOPY?=	objcopy
 .SUFFIXES: .out .o .c .cc .cxx .C .y .l .s .S
 
 # amd64 and mips use direct linking for kmod, all others use shared binaries
-.if ${MACHINE_CPUARCH} != amd64 && \
-    ${MACHINE_CPUARCH} != ia64 && \
-    ${MACHINE_CPUARCH} != mips
+.if ${MACHINE_CPUARCH} != amd64 && ${MACHINE_CPUARCH} != mips
 __KLD_SHARED=yes
 .else
 __KLD_SHARED=no
