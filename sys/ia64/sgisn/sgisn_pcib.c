@@ -50,12 +50,17 @@ __FBSDID("$FreeBSD$");
 #include <machine/sal.h>
 #include <machine/sgisn.h>
 
+#include <ia64/sgisn/sgisn_pcib.h>
+
 static struct sgisn_fwdev sgisn_dev;
 static struct sgisn_fwirq sgisn_irq;
 
 struct sgisn_pcib_softc {
 	device_t	sc_dev;
-	void		*sc_promaddr;
+	struct sgisn_fwbus *sc_fwbus;
+	bus_addr_t	sc_ioaddr;
+	bus_space_tag_t	sc_tag;
+	bus_space_handle_t sc_hndl;
 	u_int		sc_domain;
 	u_int		sc_busnr;
 };
@@ -185,22 +190,36 @@ sgisn_pcib_activate_resource(device_t dev, device_t child, int type, int rid,
 			device_printf(dev, "interrupt mismatch: (actual=%u)\n",
 			    sgisn_irq.irq_nr);
 
-	printf("XXX: %s: %u, %u, %u, %u, %u, %#lx\n", __func__,
-	    sgisn_irq.irq_tgt_nasid, sgisn_irq.irq_tgt_slice,
-	    sgisn_irq.irq_cpuid, sgisn_irq.irq_nr, sgisn_irq.irq_pin,
-	    sgisn_irq.irq_tgt_xtaddr);
-	printf("\t%u, %p, %p, %u, %#x, %#x, %u\n", sgisn_irq.irq_br_type,
-	    sgisn_irq.irq_bridge, sgisn_irq.irq_io_info, sgisn_irq.irq_last,
-	    sgisn_irq.irq_cookie, sgisn_irq.irq_flags, sgisn_irq.irq_refcnt);
+                printf("XXX: nasid=%u, slice=%u, cpuid=%u, irq=%u, pin=%u, "
+		    "xtaddr=%#lx\n", sgisn_irq.irq_nasid, sgisn_irq.irq_slice,
+                    sgisn_irq.irq_cpuid, sgisn_irq.irq_nr, sgisn_irq.irq_pin,
+                    sgisn_irq.irq_xtaddr);
+		printf("XXX: brt=%u, br=%p, dev=%p, last=%u, cookie=%#x, "
+		    "flags=%#x, refcnt=%u\n", sgisn_irq.irq_br_type,
+		    sgisn_irq.irq_bridge, sgisn_irq.irq_dev,
+		    sgisn_irq.irq_last, sgisn_irq.irq_cookie,
+		    sgisn_irq.irq_flags, sgisn_irq.irq_refcnt);
 
 #if 0
+		intrs = bus_space_read_8(sc->sc_tag, sc->sc_hndl,
+		    PIC_REG_INT_ENABLE);
+		intrs |= 1 << sgisn_irq.irq_pin;
+		bus_space_write_8(sc->sc_tag, sc->sc_hndl, PIC_REG_INT_ENABLE,
+		    intrs);
+
+		bus_space_write_8(sc->sc_tag, sc->sc_hndl,
+		    PIC_REG_INT_PIN(sgisn_irq.irq_pin), 1);
+
+		sgisn_dev.dev_parent = sc->sc_fwbus;
+		sgisn_dev.dev_irq = &sgisn_irq;
+		sgisn_irq.irq_dev = &sgisn_dev;
+
 		r = ia64_sal_entry(SAL_SGISN_INTERRUPT, 1 /*alloc*/,
-		    sgisn_irq.irq_tgt_nasid,
-		    (sgisn_irq.irq_bridge >> 24) & 15
+		    sgisn_irq.irq_nasid, (sgisn_irq.irq_bridge >> 24) & 15,
 		    ia64_tpa((uintptr_t)&sgisn_irq),
 		    paddr,
-		    sgisn_irq.irq_tgt_nasid,
-		    sgisn_irq.irq_tgt_slice);
+		    sgisn_irq.irq_nasid,
+		    sgisn_irq.irq_slice);
 		if (r.status != 0)
 			return (ENXIO);
 #endif
@@ -250,7 +269,8 @@ sgisn_pcib_attach(device_t dev)
 {
 	struct sgisn_pcib_softc *sc;
 	device_t parent;
-	uintptr_t bus, seg;
+	uintptr_t addr, bus, seg;
+	u_int i;
 
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
@@ -260,6 +280,27 @@ sgisn_pcib_attach(device_t dev)
 	sc->sc_busnr = bus;
 	BUS_READ_IVAR(parent, dev, SHUB_IVAR_PCISEG, &seg);
 	sc->sc_domain = seg;
+
+	(void)ia64_sal_entry(SAL_SGISN_IOBUS_INFO, seg, bus,
+	    ia64_tpa((uintptr_t)&addr), 0, 0, 0, 0);
+	sc->sc_fwbus = (void *)IA64_PHYS_TO_RR7(addr);
+	sc->sc_ioaddr = IA64_RR_MASK(sc->sc_fwbus->bus_base);
+	sc->sc_tag = IA64_BUS_SPACE_MEM;
+	bus_space_map(sc->sc_tag, sc->sc_ioaddr, PIC_REG_SIZE, 0,
+	    &sc->sc_hndl);
+
+	device_printf(dev, "ASIC=%x, XID=%u\n", sc->sc_fwbus->bus_asic,
+	    sc->sc_fwbus->bus_xid);
+
+	device_printf(dev, "INTR status=%lx\n",
+	    bus_space_read_8(sc->sc_tag, sc->sc_hndl, PIC_REG_INT_STATUS));
+	device_printf(dev, "INTR enable=%lx\n",
+	    bus_space_read_8(sc->sc_tag, sc->sc_hndl, PIC_REG_INT_ENABLE));
+	device_printf(dev, "INTR addrs:");
+	for (i = 0; i < 8; i++)
+		printf(" %lx", bus_space_read_8(sc->sc_tag, sc->sc_hndl,
+		    PIC_REG_INT_ADDR(i)));
+	printf("\n");
 
 #if 0
 	sgisn_pcib_scan(sc, sc->sc_busnr, sgisn_pcib_maxslots(dev));
