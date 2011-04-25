@@ -27,12 +27,15 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
+#include "opt_comconsole.h"
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/bus.h>
 #include <sys/cons.h>
 #include <sys/interrupt.h>
+#include <sys/kdb.h>
 #include <sys/module.h>
 #include <sys/rman.h>
 #include <sys/tty.h>
@@ -47,6 +50,7 @@ struct sncon_softc {
 	void		*sc_icookie;
 	void		*sc_softih;
 	int		sc_irid;
+	int		sc_altbrk;
 };
 
 static char sncon_name[] = "sncon";
@@ -206,9 +210,9 @@ sncon_tty_param(struct tty *tp, struct termios *t)
  * Device section.
  */
 
-static int sncon_attach(device_t);
-static int sncon_detach(device_t);
-static int sncon_probe(device_t);
+static int  sncon_attach(device_t);
+static int  sncon_detach(device_t);
+static int  sncon_probe(device_t);
 
 static device_method_t sncon_methods[] = {
 	DEVMETHOD(device_attach,	sncon_attach),
@@ -230,6 +234,56 @@ DRIVER_MODULE(sncon, shub, sncon_driver, sncon_devclass, 0, 0);
 static void
 sncon_rx_intr(void *arg)
 {
+	struct sncon_softc *sc = arg;
+	struct ia64_sal_result r;
+	struct tty *tp;
+	int ch, count;
+
+	count = 0;
+	tp = sc->sc_tp;
+	tty_lock(tp);
+	do {
+		r = ia64_sal_entry(SAL_SGISN_POLL, 0, 0, 0, 0, 0, 0, 0);
+		if (r.sal_status || r.sal_result[0] == 0)
+			break;
+
+		r = ia64_sal_entry(SAL_SGISN_GETC, 0, 0, 0, 0, 0, 0, 0);
+		if (r.sal_status != 0)
+			break;
+
+		ch = r.sal_result[0];
+
+#if defined(KDB) && defined(ALT_BREAK_TO_DEBUGGER)
+		do {
+			int kdb;
+			kdb = kdb_alt_break(ch, &sc->sc_altbrk);
+			if (kdb != 0) {
+				switch (kdb) {
+				case KDB_REQ_DEBUGGER:
+					kdb_enter(KDB_WHY_BREAK,
+					    "Break sequence on console");
+					break;
+				case KDB_REQ_PANIC:
+					kdb_panic("Panic sequence on console");
+					break;
+				case KDB_REQ_REBOOT:
+					kdb_reboot();
+					break;
+				}
+			}
+		} while (0);
+#endif
+
+		ttydisc_rint(tp, ch, 0);
+		count++;
+	} while (count < 128);
+	if (count > 0)
+		ttydisc_rint_done(tp);
+	tty_unlock(tp);
+
+	/* Acknowledge handling of Shub event. */
+	BUS_WRITE_IVAR(device_get_parent(sc->sc_dev), sc->sc_dev,
+	    SHUB_IVAR_EVENT, SHUB_EVENT_CONSOLE);
 }
 
 static void
@@ -248,11 +302,6 @@ sncon_attach(device_t dev)
 	sc->sc_dev = dev;
 
 	do {
-		/* Enable RX interrupts. */
-		r = ia64_sal_entry(SAL_SGISN_CON_INTR, 2, 1, 0, 0, 0, 0, 0);
-		if (r.sal_status != 0)
-			break;
-
 		sc->sc_irid = 0;
 		sc->sc_ires = bus_alloc_resource_any(dev, SYS_RES_IRQ,
 		    &sc->sc_irid, RF_ACTIVE | RF_SHAREABLE);
@@ -270,10 +319,9 @@ sncon_attach(device_t dev)
 		}
 	} while (0);
 
-	if (sc->sc_ires == NULL) {
-		/* Disable RX interrupts. */
-		r = ia64_sal_entry(SAL_SGISN_CON_INTR, 2, 0, 0, 0, 0, 0, 0);
-	}
+	/* Enable or disable RX interrupts appropriately. */
+	r = ia64_sal_entry(SAL_SGISN_CON_INTR, 2,
+	    (sc->sc_ires != NULL) ? 1 : 0, 0, 0, 0, 0, 0);
 
 	swi_add(&tty_intr_event, sncon_name, sncon_tx_intr, sc, SWI_TTY,
 	    INTR_TYPE_TTY, &sc->sc_softih);
@@ -300,13 +348,13 @@ sncon_detach(device_t dev)
 	tty_rel_gone(tp);
 
 	if (sc->sc_ires != NULL) {
+		/* Disable RX interrupts. */
+		r = ia64_sal_entry(SAL_SGISN_CON_INTR, 2, 0, 0, 0, 0, 0, 0);
+
 		bus_teardown_intr(dev, sc->sc_ires, sc->sc_icookie);
 		bus_release_resource(dev, SYS_RES_IRQ, sc->sc_irid,
 		    sc->sc_ires);
 	}
-
-	/* Disable Tx & Rx interrupts. */
-	r = ia64_sal_entry(SAL_SGISN_CON_INTR, 2, 0, 0, 0, 0, 0, 0);
 	return (0);
 }
 
@@ -314,12 +362,17 @@ static int
 sncon_probe(device_t dev)
 {
 	struct ia64_sal_result r;
+	int error;
  
 	r = ia64_sal_entry(SAL_SGISN_SN_INFO, 0, 0, 0, 0, 0, 0, 0);
 	if (r.sal_status != 0)
 		return (ENXIO);
 
-	bus_set_resource(dev, SYS_RES_IRQ, 0, 0xe9, 1);
+	error = bus_set_resource(dev, SYS_RES_IRQ, 0, 0xe9, 1);
+	if (error) {
+		device_printf(dev, "Can't set IRQ (error=%d)\n", error);
+		return (error);
+	}
 	device_set_desc_copy(dev, "SGI L1 console");
 	return (0);
 }

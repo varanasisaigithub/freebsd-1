@@ -264,6 +264,24 @@ sgisn_pcib_probe(device_t dev)
 	return (BUS_PROBE_DEFAULT);
 }
 
+static void
+sgisn_pcib_callout(void *arg)
+{
+	static u_long islast = ~0UL;
+	struct sgisn_pcib_softc *sc = arg;
+	u_long is;
+
+	is = bus_space_read_8(sc->sc_tag, sc->sc_hndl, PIC_REG_INT_STATUS);
+	if (is != islast) {
+		islast = is;
+		printf("XXX: %s: INTR status = %lu, IRR=%#lx:%#lx:%#lx:%#lx\n",
+		    __func__, is, ia64_get_irr0(), ia64_get_irr1(),
+		    ia64_get_irr2(), ia64_get_irr3());
+	}
+
+	timeout(sgisn_pcib_callout, sc, hz);
+}
+
 static int
 sgisn_pcib_attach(device_t dev)
 {
@@ -305,6 +323,8 @@ sgisn_pcib_attach(device_t dev)
 #if 0
 	sgisn_pcib_scan(sc, sc->sc_busnr, sgisn_pcib_maxslots(dev));
 #endif
+
+	timeout(sgisn_pcib_callout, sc, hz);
 
 	device_add_child(dev, "pci", -1);
 	return (bus_generic_attach(dev));

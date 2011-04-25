@@ -72,28 +72,38 @@ static int sgisn_shub_probe(device_t);
 
 static int sgisn_shub_activate_resource(device_t, device_t, int, int,
     struct resource *);
-static int sgisn_shub_read_ivar(device_t, device_t, int, uintptr_t *);
-static int sgisn_shub_write_ivar(device_t, device_t, int, uintptr_t);
 static struct resource *sgisn_shub_alloc_resource(device_t, device_t, int,
     int *, u_long, u_long, u_long, u_int);
+static void sgisn_shub_delete_resource(device_t, device_t, int, int);
+static int sgisn_shub_get_resource(device_t, device_t, int, int, u_long *,
+    u_long *);
+static int sgisn_shub_read_ivar(device_t, device_t, int, uintptr_t *);
+static int sgisn_shub_release_resource(device_t, device_t, int, int,
+    struct resource *);
+static int sgisn_shub_set_resource(device_t, device_t, int, int, u_long,
+    u_long);
+static int sgisn_shub_write_ivar(device_t, device_t, int, uintptr_t);
 
 /*
  * Bus interface definitions.
  */
 static device_method_t sgisn_shub_methods[] = {
 	/* Device interface */
+	DEVMETHOD(device_attach,	sgisn_shub_attach),
 	DEVMETHOD(device_identify,	sgisn_shub_identify),
 	DEVMETHOD(device_probe,		sgisn_shub_probe),
-	DEVMETHOD(device_attach,	sgisn_shub_attach),
 
 	/* Bus interface */
-        DEVMETHOD(bus_read_ivar,	sgisn_shub_read_ivar),
-        DEVMETHOD(bus_write_ivar,	sgisn_shub_write_ivar),
+	DEVMETHOD(bus_read_ivar,	sgisn_shub_read_ivar),
+	DEVMETHOD(bus_write_ivar,	sgisn_shub_write_ivar),
 	DEVMETHOD(bus_print_child,	bus_generic_print_child),
-	DEVMETHOD(bus_alloc_resource,	sgisn_shub_alloc_resource),
-	DEVMETHOD(bus_release_resource,	bus_generic_release_resource),
 	DEVMETHOD(bus_activate_resource, sgisn_shub_activate_resource),
+	DEVMETHOD(bus_alloc_resource,	sgisn_shub_alloc_resource),
 	DEVMETHOD(bus_deactivate_resource, bus_generic_deactivate_resource),
+	DEVMETHOD(bus_delete_resource,	sgisn_shub_delete_resource),
+	DEVMETHOD(bus_get_resource,	sgisn_shub_get_resource),
+	DEVMETHOD(bus_release_resource,	sgisn_shub_release_resource),
+	DEVMETHOD(bus_set_resource,	sgisn_shub_set_resource),
 	DEVMETHOD(bus_setup_intr,	bus_generic_setup_intr),
 	DEVMETHOD(bus_teardown_intr,	bus_generic_teardown_intr),
 
@@ -191,6 +201,53 @@ sgisn_shub_activate_resource(device_t dev, device_t child, int type, int rid,
 #endif
 
 	return (EDOOFUS);
+}
+
+static struct resource *
+sgisn_shub_alloc_resource(device_t dev, device_t child, int type, int *rid,
+    u_long start, u_long end, u_long count, u_int flags)
+{
+	struct resource *res;
+
+	res = bus_alloc_resource(dev, type, rid, start, end, count, flags);
+	return (res);
+}
+
+static void
+sgisn_shub_delete_resource(device_t dev, device_t child, int type, int rid)
+{
+ 
+	bus_delete_resource(dev, type, rid);
+}
+
+static int
+sgisn_shub_get_resource(device_t dev, device_t child, int type, int rid,
+    u_long *startp, u_long *countp)
+{
+	int error;
+
+	error = bus_get_resource(dev, type, rid, startp, countp);
+	return (error);
+}
+
+static int
+sgisn_shub_release_resource(device_t dev, device_t child, int type, int rid,
+    struct resource *r)
+{
+	int error;
+
+	error = bus_release_resource(dev, type, rid, r);
+	return (error);
+}
+
+static int
+sgisn_shub_set_resource(device_t dev, device_t child, int type, int rid,
+    u_long start, u_long count)
+{
+	int error;
+
+	error =  bus_set_resource(dev, type, rid, start, count);
+	return (error);
 }
 
 #if 0
@@ -476,17 +533,17 @@ sgisn_shub_read_ivar(device_t dev, device_t child, int which, uintptr_t *res)
 static int
 sgisn_shub_write_ivar(device_t dev, device_t child, int which, uintptr_t value)
 {
-// XXX	struct sgisn_shub_softc *sc = device_get_softc(dev);
+	struct sgisn_shub_softc *sc = device_get_softc(dev);
+	uint64_t ev;
 
-	return (ENOENT);
-}
+	if (which != SHUB_IVAR_EVENT)
+		return (ENOENT);
 
-static struct resource *
-sgisn_shub_alloc_resource(device_t dev, device_t child, int type, int *rid,
-    u_long start, u_long end, u_long count, u_int flags)
-{
-	struct resource *res;
-
-	res = bus_alloc_resource(dev, type, rid, start, end, count, flags);
-	return (res);
+	ev = bus_space_read_8(sc->sc_tag, sc->sc_hndl, SHUB_MMR_EVENT);
+	if (ev & value)
+		bus_space_write_8(sc->sc_tag, sc->sc_hndl, SHUB_MMR_EVENT_WR,
+		    value);
+	device_printf(dev, "XXX: %s: child=%p, event=%lx, mask=%lx\n",
+	    __func__, child, ev, value);
+	return (0);
 }
