@@ -164,7 +164,10 @@ ia64_intr_eoi(void *arg)
 
 	i = ia64_intrs[xiv];
 	KASSERT(i != NULL, ("%s", __func__));
-	sapic_eoi(i->sapic, xiv);
+	if (i->sapic != NULL)
+		sapic_eoi(i->sapic, xiv);
+	else
+		printf("XXX-INTR: %s: XIV=%u\n", __func__, xiv);
 }
 
 static void
@@ -175,8 +178,11 @@ ia64_intr_mask(void *arg)
 
 	i = ia64_intrs[xiv];
 	KASSERT(i != NULL, ("%s", __func__));
-	sapic_mask(i->sapic, i->irq);
-	sapic_eoi(i->sapic, xiv);
+	if (i->sapic != NULL) {
+		sapic_mask(i->sapic, i->irq);
+		sapic_eoi(i->sapic, xiv);
+	} else
+		printf("XXX-INTR: %s: XIV=%u\n", __func__, xiv);
 }
 
 static void
@@ -187,7 +193,10 @@ ia64_intr_unmask(void *arg)
 
 	i = ia64_intrs[xiv];
 	KASSERT(i != NULL, ("%s", __func__));
-	sapic_unmask(i->sapic, i->irq);
+	if (i->sapic != NULL)
+		sapic_unmask(i->sapic, i->irq);
+	else
+		printf("XXX-INTR: %s: XIV=%u\n", __func__, xiv);
 }
 
 static int
@@ -350,7 +359,8 @@ ia64_bind_intr(void)
 			cpu = (cpu == 0) ? MAXCPU - 1 : cpu - 1;
 			pc = cpuid_to_pcpu[cpu];
 		} while (pc == NULL || !pc->pc_md.awake);
-		sapic_bind_intr(i->irq, pc);
+		if (i->sapic != NULL)
+			sapic_bind_intr(i->irq, pc);
 	}
 }
 
@@ -378,8 +388,6 @@ ia64_handle_intr(struct trapframe *tf)
 	critical_enter();
 
 	do {
-		CTR2(KTR_INTR, "INTR: ITC=%u, XIV=%u",
-		    (u_int)tf->tf_special.ifa, xiv);
 		(ia64_handler[xiv])(td, xiv, tf);
 		ia64_set_eoi(0);
 		ia64_srlz_d();
@@ -415,6 +423,8 @@ ia64_ih_irq(struct thread *td, u_int xiv, struct trapframe *tf)
 
 	PCPU_INC(md.stats.pcs_nhwints);
 
+	printf("INTR: ITC=%u, XIV=%u", (u_int)tf->tf_special.ifa, xiv);
+
 	/* Find the interrupt thread for this XIV. */
 	i = ia64_intrs[xiv];
 	KASSERT(i != NULL, ("%s: unassigned XIV", __func__));
@@ -442,7 +452,10 @@ db_print_xiv(u_int xiv, int always)
 	i = ia64_intrs[xiv];
 	if (i != NULL) {
 		db_printf("XIV %u (%p): ", xiv, i);
-		sapic_print(i->sapic, i->irq);
+		if (i->sapic != NULL)
+			sapic_print(i->sapic, i->irq);
+		else
+			db_printf("\n");
 	} else if (always)
 		db_printf("XIV %u: unassigned\n", xiv);
 }
