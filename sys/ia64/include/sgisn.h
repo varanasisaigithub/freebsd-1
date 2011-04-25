@@ -50,6 +50,9 @@
 
 #define	SHUB_IVAR_PCIBUS	1
 #define	SHUB_IVAR_PCISEG	2
+#define	SHUB_IVAR_EVENT		3
+
+#define	SHUB_EVENT_CONSOLE	0x100000
 
 struct sgisn_geoid {
 	uint32_t	sg_module;
