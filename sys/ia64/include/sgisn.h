@@ -172,7 +172,6 @@ struct sgisn_fwdev {
 	struct sgisn_fwbus	*dev_parent;
 	uint64_t		dev_os_private[2];
 	struct sgisn_fwirq	*dev_irq;
-	uint64_t		dev_xxx[4];
 };
 
 /*
