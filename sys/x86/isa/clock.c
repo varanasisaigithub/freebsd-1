@@ -250,7 +250,7 @@ static u_int
 get_tsc(__unused struct timecounter *tc)
 {
 
-	return (rdtsc());
+	return (rdtsc32());
 }
 
 static __inline int
@@ -263,7 +263,7 @@ delay_tc(int n)
 
 	tc = timecounter;
 	freq = atomic_load_acq_64(&tsc_freq);
-	if (freq != 0) {
+	if (tsc_is_invariant && freq != 0) {
 		func = get_tsc;
 		mask = ~0u;
 	} else {
@@ -527,7 +527,8 @@ sysctl_machdep_i8254_freq(SYSCTL_HANDLER_ARGS)
 }
 
 SYSCTL_PROC(_machdep, OID_AUTO, i8254_freq, CTLTYPE_INT | CTLFLAG_RW,
-    0, sizeof(u_int), sysctl_machdep_i8254_freq, "IU", "");
+    0, sizeof(u_int), sysctl_machdep_i8254_freq, "IU",
+    "i8254 timer frequency");
 
 static unsigned
 i8254_get_timecount(struct timecounter *tc)

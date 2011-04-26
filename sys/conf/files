@@ -190,6 +190,7 @@ contrib/dev/acpica/dispatcher/dswload2.c	optional acpi
 contrib/dev/acpica/dispatcher/dswscope.c	optional acpi
 contrib/dev/acpica/dispatcher/dswstate.c	optional acpi
 contrib/dev/acpica/events/evevent.c		optional acpi
+contrib/dev/acpica/events/evglock.c		optional acpi
 contrib/dev/acpica/events/evgpe.c		optional acpi
 contrib/dev/acpica/events/evgpeblk.c		optional acpi
 contrib/dev/acpica/events/evgpeinit.c		optional acpi
@@ -492,7 +493,7 @@ dev/advansys/adwcam.c		optional adw
 dev/advansys/adwlib.c		optional adw
 dev/advansys/adwmcode.c		optional adw
 dev/ae/if_ae.c			optional ae pci
-dev/age/if_age.c		optional age pci inet
+dev/age/if_age.c		optional age pci
 dev/agp/agp.c			optional agp pci
 dev/agp/agp_if.m			optional agp pci
 dev/aha/aha.c			optional aha
@@ -514,8 +515,8 @@ dev/aic7xxx/aic7xxx.c		optional ahc
 dev/aic7xxx/aic7xxx_93cx6.c	optional ahc
 dev/aic7xxx/aic7xxx_osm.c	optional ahc
 dev/aic7xxx/aic7xxx_pci.c	optional ahc pci
-dev/alc/if_alc.c		optional alc pci inet
-dev/ale/if_ale.c		optional ale pci inet
+dev/alc/if_alc.c		optional alc pci
+dev/ale/if_ale.c		optional ale pci
 dev/amd/amd.c			optional amd
 dev/amr/amr.c			optional amr
 dev/amr/amr_cam.c		optional amrp amr
@@ -773,6 +774,10 @@ dev/ath/ath_hal/ar9002/ar9285_reset.c optional ath_hal | ath_ar9285 \
 	compile-with "${NORMAL_C} -I$S/dev/ath -I$S/dev/ath/ath_hal"
 dev/ath/ath_hal/ar9002/ar9285_cal.c optional ath_hal | ath_ar9285 \ 
 	compile-with "${NORMAL_C} -I$S/dev/ath -I$S/dev/ath/ath_hal"
+dev/ath/ath_hal/ar9002/ar9285_phy.c optional ath_hal | ath_ar9285 \ 
+	compile-with "${NORMAL_C} -I$S/dev/ath -I$S/dev/ath/ath_hal"
+dev/ath/ath_hal/ar9002/ar9285_diversity.c optional ath_hal | ath_ar9285 \ 
+	compile-with "${NORMAL_C} -I$S/dev/ath -I$S/dev/ath/ath_hal"
 # rf backends
 dev/ath/ath_hal/ar5212/ar2316.c	optional ath_rf2316 \
 	compile-with "${NORMAL_C} -I$S/dev/ath -I$S/dev/ath/ath_hal"
@@ -968,11 +973,11 @@ dev/ed/if_ed_pccard.c		optional ed pccard
 dev/ed/if_ed_pci.c		optional ed pci
 dev/eisa/eisa_if.m		standard
 dev/eisa/eisaconf.c		optional eisa
-dev/e1000/if_em.c		optional em inet \
+dev/e1000/if_em.c		optional em \
 	compile-with "${NORMAL_C} -I$S/dev/e1000"
-dev/e1000/if_lem.c		optional em inet \
+dev/e1000/if_lem.c		optional em \
 	compile-with "${NORMAL_C} -I$S/dev/e1000"
-dev/e1000/if_igb.c		optional igb inet \
+dev/e1000/if_igb.c		optional igb \
 	compile-with "${NORMAL_C} -I$S/dev/e1000"
 dev/e1000/e1000_80003es2lan.c	optional em | igb \
 	compile-with "${NORMAL_C} -I$S/dev/e1000"
@@ -1041,7 +1046,7 @@ dev/firewire/sbp.c		optional sbp
 dev/firewire/sbp_targ.c		optional sbp_targ
 dev/flash/at45d.c		optional at45d
 dev/flash/mx25l.c		optional mx25l
-dev/fxp/if_fxp.c		optional fxp inet
+dev/fxp/if_fxp.c		optional fxp
 dev/gem/if_gem.c		optional gem
 dev/gem/if_gem_pci.c		optional gem pci
 dev/gem/if_gem_sbus.c		optional gem sbus
@@ -1208,8 +1213,8 @@ iwn1000fw.fwo			optional iwn1000fw | iwnfw		\
 	no-implicit-rule						\
 	clean		"iwn1000fw.fwo"
 iwn1000.fw			optional iwn1000fw | iwnfw		\
-	dependency	"$S/contrib/dev/iwn/iwlwifi-1000-128.50.3.1.fw.uu" \
-	compile-with	"uudecode -o ${.TARGET} $S/contrib/dev/iwn/iwlwifi-1000-128.50.3.1.fw.uu" \
+	dependency	"$S/contrib/dev/iwn/iwlwifi-1000-39.31.5.1.fw.uu" \
+	compile-with	"uudecode -o ${.TARGET} $S/contrib/dev/iwn/iwlwifi-1000-39.31.5.1.fw.uu" \
 	no-obj no-implicit-rule						\
 	clean		"iwn1000.fw"
 iwn4965fw.c			optional iwn4965fw | iwnfw		\
@@ -1236,8 +1241,8 @@ iwn5000fw.fwo		optional iwn5000fw | iwnfw			\
 	no-implicit-rule						\
 	clean		"iwn5000fw.fwo"
 iwn5000.fw			optional iwn5000fw | iwnfw		\
-	dependency	"$S/contrib/dev/iwn/iwlwifi-5000-8.24.2.12.fw.uu" \
-	compile-with	"uudecode -o ${.TARGET} $S/contrib/dev/iwn/iwlwifi-5000-8.24.2.12.fw.uu"	\
+	dependency	"$S/contrib/dev/iwn/iwlwifi-5000-8.83.5.1.fw.uu" \
+	compile-with	"uudecode -o ${.TARGET} $S/contrib/dev/iwn/iwlwifi-5000-8.83.5.1.fw.uu"	\
 	no-obj no-implicit-rule						\
 	clean		"iwn5000.fw"
 iwn5150fw.c			optional iwn5150fw | iwnfw		\
@@ -1268,6 +1273,34 @@ iwn6000.fw			optional iwn6000fw | iwnfw		\
 	compile-with	"uudecode -o ${.TARGET} $S/contrib/dev/iwn/iwlwifi-6000-9.221.4.1.fw.uu" \
 	no-obj no-implicit-rule						\
 	clean		"iwn6000.fw"
+iwn6000g2afw.c			optional iwn6000g2afw | iwnfw		\
+	compile-with	"${AWK} -f $S/tools/fw_stub.awk iwn6000g2a.fw:iwn6000g2afw -miwn6000g2afw -c${.TARGET}" \
+	no-implicit-rule before-depend local				\
+	clean		"iwn6000g2afw.c"
+iwn6000g2afw.fwo		optional iwn6000g2afw | iwnfw		\
+	dependency	"iwn6000g2a.fw"					\
+	compile-with	"${LD} -b binary -d -warn-common -r -d -o ${.TARGET} iwn6000g2a.fw" \
+	no-implicit-rule						\
+	clean		"iwn6000g2afw.fwo"
+iwn6000g2a.fw			optional iwn6000g2afw | iwnfw		\
+	dependency	"$S/contrib/dev/iwn/iwlwifi-6000g2a-17.168.5.2.fw.uu" \
+	compile-with	"uudecode -o ${.TARGET} $S/contrib/dev/iwn/iwlwifi-6000g2a-17.168.5.2.fw.uu" \
+	no-obj no-implicit-rule						\
+	clean		"iwn6000g2a.fw"
+iwn6000g2bfw.c			optional iwn6000g2bfw | iwnfw		\
+	compile-with	"${AWK} -f $S/tools/fw_stub.awk iwn6000g2b.fw:iwn6000g2bfw -miwn6000g2bfw -c${.TARGET}" \
+	no-implicit-rule before-depend local				\
+	clean		"iwn6000g2bfw.c"
+iwn6000g2bfw.fwo		optional iwn6000g2bfw | iwnfw		\
+	dependency	"iwn6000g2b.fw"					\
+	compile-with	"${LD} -b binary -d -warn-common -r -d -o ${.TARGET} iwn6000g2b.fw" \
+	no-implicit-rule						\
+	clean		"iwn6000g2bfw.fwo"
+iwn6000g2b.fw			optional iwn6000g2bfw | iwnfw		\
+	dependency	"$S/contrib/dev/iwn/iwlwifi-6000g2b-17.168.5.2.fw.uu" \
+	compile-with	"uudecode -o ${.TARGET} $S/contrib/dev/iwn/iwlwifi-6000g2b-17.168.5.2.fw.uu" \
+	no-obj no-implicit-rule						\
+	clean		"iwn6000g2b.fw"
 iwn6050fw.c			optional iwn6050fw | iwnfw		\
 	compile-with	"${AWK} -f $S/tools/fw_stub.awk iwn6050.fw:iwn6050fw -miwn6050fw -c${.TARGET}" \
 	no-implicit-rule before-depend local				\
@@ -1278,8 +1311,8 @@ iwn6050fw.fwo			optional iwn6050fw | iwnfw		\
 	no-implicit-rule						\
 	clean		"iwn6050fw.fwo"
 iwn6050.fw			optional iwn6050fw | iwnfw		\
-	dependency	"$S/contrib/dev/iwn/iwlwifi-6050-9.201.4.1.fw.uu" \
-	compile-with	"uudecode -o ${.TARGET} $S/contrib/dev/iwn/iwlwifi-6050-9.201.4.1.fw.uu" \
+	dependency	"$S/contrib/dev/iwn/iwlwifi-6050-41.28.5.1.fw.uu" \
+	compile-with	"uudecode -o ${.TARGET} $S/contrib/dev/iwn/iwlwifi-6050-41.28.5.1.fw.uu" \
 	no-obj no-implicit-rule						\
 	clean		"iwn6050.fw"
 dev/ixgb/if_ixgb.c		optional ixgb
@@ -1303,7 +1336,7 @@ dev/ixgbe/ixgbe_82598.c		optional ixgbe inet \
 	compile-with "${NORMAL_C} -I$S/dev/ixgbe"
 dev/ixgbe/ixgbe_82599.c		optional ixgbe inet \
 	compile-with "${NORMAL_C} -I$S/dev/ixgbe"
-dev/jme/if_jme.c		optional jme pci inet
+dev/jme/if_jme.c		optional jme pci
 dev/joy/joy.c			optional joy
 dev/joy/joy_isa.c		optional joy isa
 dev/joy/joy_pccard.c		optional joy pccard
@@ -1392,7 +1425,7 @@ dev/mpt/mpt_debug.c		optional mpt
 dev/mpt/mpt_pci.c		optional mpt pci
 dev/mpt/mpt_raid.c		optional mpt
 dev/mpt/mpt_user.c		optional mpt
-dev/msk/if_msk.c		optional msk inet
+dev/msk/if_msk.c		optional msk
 dev/mvs/mvs.c			optional mvs
 dev/mvs/mvs_if.m		optional mvs
 dev/mvs/mvs_pci.c		optional mvs pci
@@ -1606,7 +1639,7 @@ dev/siba/siba_bwn.c		optional siba_bwn pci
 dev/siba/siba_core.c		optional siba_bwn pci
 dev/siis/siis.c			optional siis pci
 dev/sis/if_sis.c		optional sis pci
-dev/sk/if_sk.c			optional sk pci inet
+dev/sk/if_sk.c			optional sk pci
 dev/smbus/smb.c			optional smb
 dev/smbus/smbconf.c		optional smbus
 dev/smbus/smbus.c		optional smbus
@@ -1755,7 +1788,7 @@ dev/twa/tw_osl_freebsd.c	optional twa \
 dev/twe/twe.c			optional twe
 dev/twe/twe_freebsd.c		optional twe
 dev/tx/if_tx.c			optional tx
-dev/txp/if_txp.c		optional txp inet
+dev/txp/if_txp.c		optional txp
 dev/uart/uart_bus_acpi.c	optional uart acpi
 #dev/uart/uart_bus_cbus.c	optional uart cbus
 dev/uart/uart_bus_ebus.c	optional uart ebus
@@ -2068,6 +2101,7 @@ geom/eli/g_eli_crypto.c		optional geom_eli
 geom/eli/g_eli_ctl.c		optional geom_eli
 geom/eli/g_eli_integrity.c	optional geom_eli
 geom/eli/g_eli_key.c		optional geom_eli
+geom/eli/g_eli_key_cache.c	optional geom_eli
 geom/eli/g_eli_privacy.c	optional geom_eli
 geom/eli/pkcs5v2.c		optional geom_eli
 geom/gate/g_gate.c		optional geom_gate
@@ -2083,6 +2117,7 @@ geom/geom_event.c		standard
 geom/geom_fox.c			optional geom_fox
 geom/geom_io.c			standard
 geom/geom_kern.c		standard
+geom/geom_map.c			optional geom_map
 geom/geom_mbr.c			optional geom_mbr
 geom/geom_mbr_enc.c		optional geom_mbr
 geom/geom_pc98.c		optional geom_pc98
@@ -2544,6 +2579,7 @@ net80211/ieee80211_superg.c	optional wlan ieee80211_support_superg
 net80211/ieee80211_tdma.c	optional wlan ieee80211_support_tdma
 net80211/ieee80211_wds.c	optional wlan
 net80211/ieee80211_xauth.c	optional wlan wlan_xauth
+net80211/ieee80211_alq.c	optional wlan ieee80211_alq
 netatalk/aarp.c			optional netatalk
 netatalk/at_control.c		optional netatalk
 netatalk/at_proto.c		optional netatalk
@@ -2648,7 +2684,7 @@ netinet/ip_gre.c		optional gre inet
 netinet/ip_id.c			optional inet
 netinet/in_mcast.c		optional inet
 netinet/in_pcb.c		optional inet | inet6
-netinet/in_proto.c		optional inet \
+netinet/in_proto.c		optional inet | inet6 \
 	compile-with "${NORMAL_C} -I$S/contrib/pf"
 netinet/in_rmx.c		optional inet
 netinet/ip_divert.c		optional inet ipdivert ipfirewall
@@ -2787,12 +2823,12 @@ netsmb/smb_smb.c		optional netsmb
 netsmb/smb_subr.c		optional netsmb
 netsmb/smb_trantcp.c		optional netsmb
 netsmb/smb_usr.c		optional netsmb
+nfs/bootp_subr.c		optional bootp nfsclient | bootp nfscl
+nfs/krpc_subr.c			optional bootp nfsclient | bootp nfscl
 nfs/nfs_common.c		optional nfsclient | nfsserver
+nfs/nfs_diskless.c		optional nfsclient nfs_root | nfscl nfs_root
 nfs/nfs_lock.c			optional nfsclient | nfscl | nfslockd | nfsd
-nfsclient/bootp_subr.c		optional bootp nfsclient
-nfsclient/krpc_subr.c		optional bootp nfsclient
 nfsclient/nfs_bio.c		optional nfsclient
-nfsclient/nfs_diskless.c	optional nfsclient nfs_root
 nfsclient/nfs_node.c		optional nfsclient
 nfsclient/nfs_krpc.c		optional nfsclient
 nfsclient/nfs_subs.c		optional nfsclient

@@ -108,6 +108,10 @@ ipdn_bound_var(int *v, int dflt, int lo, int hi, const char *msg)
 {
 	int oldv = *v;
 	const char *op = NULL;
+	if (dflt < lo)
+		dflt = lo;
+	if (dflt > hi)
+		dflt = hi;
 	if (oldv < lo) {
 		*v = dflt;
 		op = "Bump";
@@ -1836,9 +1840,7 @@ dummynet_get(struct sockopt *sopt, void **compat)
 #endif
 		if (l > sizeof(r)) {
 			/* request larger than default, allocate buffer */
-			cmd = malloc(l,  M_DUMMYNET, M_WAIT);
-			if (cmd == NULL)
-				return ENOMEM; //XXX
+			cmd = malloc(l,  M_DUMMYNET, M_WAITOK);
 			error = sooptcopyin(sopt, cmd, l, l);
 			sopt->sopt_valsize = sopt_valsize;
 			if (error)
@@ -1894,10 +1896,6 @@ dummynet_get(struct sockopt *sopt, void **compat)
 
 		have = need;
 		start = malloc(have, M_DUMMYNET, M_WAITOK | M_ZERO);
-		if (start == NULL) {
-			error = ENOMEM;
-			goto done;
-		}
 	}
 
 	if (start == NULL) {
@@ -2134,7 +2132,7 @@ ip_dn_init(void)
 	dn_cfg.red_max_pkt_size = 1500;	/* default max packet size */
 
 	/* hash tables */
-	dn_cfg.max_hash_size = 1024;	/* max in the hash tables */
+	dn_cfg.max_hash_size = 65536;	/* max in the hash tables */
 	dn_cfg.hash_size = 64;		/* default hash size */
 
 	/* create hash tables for schedulers and flowsets.

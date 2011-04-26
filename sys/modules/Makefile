@@ -40,6 +40,7 @@ SUBDIR=	${_3dfx} \
 	bce \
 	bfe \
 	bge \
+	${_bxe} \
 	${_bios} \
 	${_bktr} \
 	${_bm} \
@@ -383,6 +384,7 @@ _aout=		aout
 _apm=		apm
 _arcnet=	arcnet
 _bktr=		bktr
+_bxe=		bxe
 _cardbus=	cardbus
 _cbb=		cbb
 _ce=		ce
@@ -529,6 +531,7 @@ _amdsbwd=	amdsbwd
 _amdtemp=	amdtemp
 _arcmsr=	arcmsr
 _asmc=		asmc
+_bxe=		bxe
 _cardbus=	cardbus
 _cbb=		cbb
 _cmx=		cmx

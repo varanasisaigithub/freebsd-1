@@ -103,6 +103,10 @@ struct ath_hal_5416 {
 			    const struct ieee80211_channel *chan,
         		    int16_t *pTxPowerIndexOffset);
 
+	/* baseband operations */
+	void		(*ah_initPLL) (struct ath_hal *ah,
+			    const struct ieee80211_channel *chan);
+
 	u_int       	ah_globaltxtimeout;	/* global tx timeout */
 	u_int		ah_gpioMask;
 	int		ah_hangs;		/* h/w hangs state */
@@ -246,6 +250,10 @@ extern	void ar5416InitChainMasks(struct ath_hal *ah);
 extern	void ar5416RestoreChainMask(struct ath_hal *ah);
 extern	void ar5416EepromSetAddac(struct ath_hal *ah,
 		const struct ieee80211_channel *chan);
+extern	uint16_t ar5416GetMaxEdgePower(uint16_t freq,
+		CAL_CTL_EDGES *pRdEdgesPower, HAL_BOOL is2GHz);
+extern	void ar5416InitPLL(struct ath_hal *ah,
+		const struct ieee80211_channel *chan);
 
 /* TX power setup related routines in ar5416_reset.c */
 extern	void ar5416GetGainBoundariesAndPdadcs(struct ath_hal *ah,
@@ -266,6 +274,8 @@ extern	void ar5416WritePdadcValues(struct ath_hal *ah, int i,
 extern	HAL_BOOL ar5416SetPowerCalTable(struct ath_hal *ah,
 	struct ar5416eeprom *pEepData, const struct ieee80211_channel *chan,
 	int16_t *pTxPowerIndexOffset);
+extern	void ar5416WriteTxPowerRateRegisters(struct ath_hal *ah,
+	const struct ieee80211_channel *chan, const int16_t ratesArray[]);
 
 extern	HAL_BOOL ar5416StopTxDma(struct ath_hal *ah, u_int q);
 extern	HAL_BOOL ar5416SetupTxDesc(struct ath_hal *ah, struct ath_desc *ds,

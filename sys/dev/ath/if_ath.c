@@ -1265,7 +1265,7 @@ ath_intr(void *arg)
 	struct ath_softc *sc = arg;
 	struct ifnet *ifp = sc->sc_ifp;
 	struct ath_hal *ah = sc->sc_ah;
-	HAL_INT status;
+	HAL_INT status = 0;
 
 	if (sc->sc_invalid) {
 		/*
@@ -1296,6 +1296,11 @@ ath_intr(void *arg)
 	ath_hal_getisr(ah, &status);		/* NB: clears ISR too */
 	DPRINTF(sc, ATH_DEBUG_INTR, "%s: status 0x%x\n", __func__, status);
 	status &= sc->sc_imask;			/* discard unasked for bits */
+
+	/* Short-circuit un-handled interrupts */
+	if (status == 0x0)
+		return;
+
 	if (status & HAL_INT_FATAL) {
 		sc->sc_stats.ast_hardware++;
 		ath_hal_intrset(ah, 0);		/* disable intr's until reset */
@@ -1355,6 +1360,10 @@ ath_intr(void *arg)
 			sc->sc_stats.ast_bmiss++;
 			taskqueue_enqueue(sc->sc_tq, &sc->sc_bmisstask);
 		}
+		if (status & HAL_INT_GTT)
+			sc->sc_stats.ast_tx_timeout++;
+		if (status & HAL_INT_CST)
+			sc->sc_stats.ast_tx_cst++;
 		if (status & HAL_INT_MIB) {
 			sc->sc_stats.ast_mib++;
 			/*
@@ -1558,6 +1567,13 @@ ath_init(void *arg)
 	 */
 	if (sc->sc_needmib && ic->ic_opmode == IEEE80211_M_STA)
 		sc->sc_imask |= HAL_INT_MIB;
+
+	/* Enable global TX timeout and carrier sense timeout if available */
+	if (ath_hal_gtxto_supported(ah))
+		sc->sc_imask |= HAL_INT_GTT;
+
+	DPRINTF(sc, ATH_DEBUG_RESET, "%s: imask=0x%x\n",
+		__func__, sc->sc_imask);
 
 	ifp->if_drv_flags |= IFF_DRV_RUNNING;
 	callout_reset(&sc->sc_wd_ch, hz, ath_watchdog, sc);
@@ -3615,6 +3631,12 @@ rx_accept:
 			} else
 				sc->sc_rxotherant = 0;
 		}
+
+		/* Newer school diversity - kite specific for now */
+		/* XXX perhaps migrate the normal diversity code to this? */
+		if ((ah)->ah_rxAntCombDiversity)
+			(*(ah)->ah_rxAntCombDiversity)(ah, rs, ticks, hz);
+
 		if (sc->sc_softled) {
 			/*
 			 * Blink for any data frame.  Otherwise do a

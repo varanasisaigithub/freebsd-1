@@ -123,6 +123,7 @@ typedef enum {
 	HAL_CAP_SPLIT_4KB_TRANS	= 40,	/* hardware supports descriptors straddling a 4k page boundary */
 	HAL_CAP_HAS_PSPOLL	= 41,	/* hardware has ps-poll support */
 	HAL_CAP_RXDESC_SELFLINK	= 42,	/* support a self-linked tail RX descriptor */
+	HAL_CAP_GTXTO		= 43,	/* hardware supports global tx timeout */
 } HAL_CAPABILITY_TYPE;
 
 /* 
@@ -767,6 +768,9 @@ struct ath_hal {
 				const struct ieee80211_channel *);
 	void	  __ahdecl(*ah_procMibEvent)(struct ath_hal *,
 				const HAL_NODE_STATS *);
+	void	  __ahdecl(*ah_rxAntCombDiversity)(struct ath_hal *,
+				struct ath_rx_status *,
+				unsigned long, int);
 
 	/* Misc Functions */
 	HAL_STATUS __ahdecl(*ah_getCapability)(struct ath_hal *,
