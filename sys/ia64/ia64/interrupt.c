@@ -423,7 +423,7 @@ ia64_ih_irq(struct thread *td, u_int xiv, struct trapframe *tf)
 
 	PCPU_INC(md.stats.pcs_nhwints);
 
-	printf("INTR: ITC=%u, XIV=%u", (u_int)tf->tf_special.ifa, xiv);
+	printf("INTR: ITC=%u, XIV=%u\n", (u_int)tf->tf_special.ifa, xiv);
 
 	/* Find the interrupt thread for this XIV. */
 	i = ia64_intrs[xiv];
