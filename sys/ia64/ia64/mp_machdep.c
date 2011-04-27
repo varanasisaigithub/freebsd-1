@@ -70,12 +70,8 @@ void ia64_ap_startup(void);
 #define	SAPIC_ID_GET_EID(x)	((u_int)(x) & 0xff)
 #define	SAPIC_ID_SET(id, eid)	((u_int)(((id) & 0xff) << 8) | ((eid) & 0xff))
 
-/* Variables used by os_boot_rendez and ia64_ap_startup */
-struct pcpu *ap_pcpu;
-void *ap_stack;
-volatile int ap_delay;
-volatile int ap_awake;
-volatile int ap_spin;
+/* State used to wake and bootstrap APs. */
+struct ia64_ap_state ia64_ap_state;
 
 int ia64_ipi_ast;
 int ia64_ipi_highfp;
@@ -302,9 +298,15 @@ cpu_mp_announce()
 void
 cpu_mp_start()
 {
+	struct ia64_sal_result result;
+	struct ia64_fdesc *fd;
 	struct pcpu *pc;
 
 	ap_spin = 1;
+
+	fd = (struct ia64_fdesc *) os_boot_rendez;
+	result = ia64_sal_entry(SAL_SET_VECTORS, SAL_OS_BOOT_RENDEZ,
+	    ia64_tpa(fd->func), ia64_tpa(ia64_ap_state), 0, 0, 0, 0);
 
 	SLIST_FOREACH(pc, &cpuhead, pc_allcpu) {
 		pc->pc_md.current_pmap = kernel_pmap;
