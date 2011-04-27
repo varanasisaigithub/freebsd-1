@@ -92,6 +92,7 @@ ia64/ia64/locore.S		standard	no-obj
 ia64/ia64/machdep.c		standard
 ia64/ia64/mca.c			standard
 ia64/ia64/mem.c			optional	mem
+ia64/ia64/mp_locore.S		optional	smp
 ia64/ia64/mp_machdep.c		optional	smp
 ia64/ia64/nexus.c		standard
 ia64/ia64/pal.S			standard
@@ -122,7 +123,6 @@ ia64/sgisn/sgisn_shub.c		standard
 isa/syscons_isa.c		optional	sc
 isa/vga_isa.c			optional	vga
 kern/imgact_elf32.c		optional	compat_freebsd32
-kern/link_elf_obj.c		standard
 libkern/bcmp.c			standard
 libkern/ffsl.c			standard
 libkern/fls.c			standard
