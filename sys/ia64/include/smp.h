@@ -17,17 +17,16 @@
 struct pcpu;
 
 struct ia64_ap_state {
-	uint64_t	as_pgtbl_pa;
-	uint64_t	as_pgtbl_va;
-	uint32_t	as_pgtblsz;
-	uint64_t	as_text_pa;
+	uint64_t	as_pgtbl_pte;
+	uint64_t	as_pgtbl_itir;
 	uint64_t	as_text_va;
-	uint32_t	as_textsz;
-	uint64_t	as_data_pa;
+	uint64_t	as_text_pte;
+	uint64_t	as_text_itir;
 	uint64_t	as_data_va;
-	uint32_t	as_datasz;
-	uint64_t	as_kstack;
-	uint64_t	as_kstack_top;
+	uint64_t	as_data_pte;
+	uint64_t	as_data_itir;
+	void		*as_kstack;
+	void		*as_kstack_top;
 	struct pcpu	*as_pcpu;
 	volatile u_int	as_delay;
 	volatile u_int	as_awake;

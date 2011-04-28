@@ -174,7 +174,7 @@ ia64_ap_startup(void)
 {
 	uint64_t vhpt;
 
-	pcpup = ap_pcpu;
+	pcpup = ia64_ap_state.as_pcpu;
 	ia64_set_k4((intptr_t)pcpup);
 
 	vhpt = PCPU_GET(md.vhpt);
@@ -182,8 +182,8 @@ ia64_ap_startup(void)
 	ia64_set_pta(vhpt + (1 << 8) + (pmap_vhpt_log2size << 2) + 1);
 	ia64_srlz_i();
 
-	ap_awake = 1;
-	ap_delay = 0;
+	ia64_ap_state.as_awake = 1;
+	ia64_ap_state.as_delay = 0;
 
 	map_pal_code();
 	map_gateway_page();
@@ -191,14 +191,14 @@ ia64_ap_startup(void)
 	ia64_set_fpsr(IA64_FPSR_DEFAULT);
 
 	/* Wait until it's time for us to be unleashed */
-	while (ap_spin)
+	while (ia64_ap_state.as_spin)
 		cpu_spinwait();
 
 	/* Initialize curthread. */
 	KASSERT(PCPU_GET(idlethread) != NULL, ("no idle thread"));
 	PCPU_SET(curthread, PCPU_GET(idlethread));
 
-	atomic_add_int(&ap_awake, 1);
+	atomic_add_int(&ia64_ap_state.as_awake, 1);
 	while (!smp_started)
 		cpu_spinwait();
 
@@ -301,28 +301,32 @@ cpu_mp_start()
 	struct ia64_sal_result result;
 	struct ia64_fdesc *fd;
 	struct pcpu *pc;
+	u_char *stp;
 
-	ap_spin = 1;
+	ia64_ap_state.as_spin = 1;
 
 	fd = (struct ia64_fdesc *) os_boot_rendez;
 	result = ia64_sal_entry(SAL_SET_VECTORS, SAL_OS_BOOT_RENDEZ,
-	    ia64_tpa(fd->func), ia64_tpa(ia64_ap_state), 0, 0, 0, 0);
+	    ia64_tpa(fd->func), ia64_tpa((uintptr_t)&ia64_ap_state),
+	    0, 0, 0, 0);
 
 	SLIST_FOREACH(pc, &cpuhead, pc_allcpu) {
 		pc->pc_md.current_pmap = kernel_pmap;
 		pc->pc_other_cpus = all_cpus & ~pc->pc_cpumask;
 		if (pc->pc_cpuid > 0) {
-			ap_pcpu = pc;
+			ia64_ap_state.as_pcpu = pc;
 			pc->pc_md.vhpt = pmap_alloc_vhpt();
 			if (pc->pc_md.vhpt == 0) {
 				printf("SMP: WARNING: unable to allocate VHPT"
 				    " for cpu%d", pc->pc_cpuid);
 				continue;
 			}
-			ap_stack = malloc(KSTACK_PAGES * PAGE_SIZE, M_SMP,
-			    M_WAITOK);
-			ap_delay = 2000;
-			ap_awake = 0;
+			stp = malloc(KSTACK_PAGES * PAGE_SIZE, M_SMP, M_WAITOK);
+			ia64_ap_state.as_kstack = stp;
+			ia64_ap_state.as_kstack_top = stp + KSTACK_PAGES *
+			    PAGE_SIZE - 16;
+			ia64_ap_state.as_delay = 2000;
+			ia64_ap_state.as_awake = 0;
 
 			if (bootverbose)
 				printf("SMP: waking up cpu%d\n", pc->pc_cpuid);
@@ -331,10 +335,10 @@ cpu_mp_start()
 
 			do {
 				DELAY(1000);
-			} while (--ap_delay > 0);
-			pc->pc_md.awake = ap_awake;
+			} while (--ia64_ap_state.as_delay > 0);
+			pc->pc_md.awake = ia64_ap_state.as_awake;
 
-			if (!ap_awake)
+			if (!ia64_ap_state.as_awake)
 				printf("SMP: WARNING: cpu%d did not wake up\n",
 				    pc->pc_cpuid);
 		} else
@@ -374,10 +378,10 @@ cpu_mp_unleash(void *dummy)
 		}
 	}
 
-	ap_awake = 1;
-	ap_spin = 0;
+	ia64_ap_state.as_awake = 1;
+	ia64_ap_state.as_spin = 0;
 
-	while (ap_awake != smp_cpus)
+	while (ia64_ap_state.as_awake != smp_cpus)
 		cpu_spinwait();
 
 	if (smp_cpus != cpus || cpus != mp_ncpus) {
