@@ -60,6 +60,7 @@ SECTIONS
      page in the loader virtual memory. */
   . = ALIGN(65536);
 
+  PROVIDE (bdata = .);
   .data           :
   {
     *(.ivt.data)
