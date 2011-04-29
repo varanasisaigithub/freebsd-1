@@ -47,6 +47,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/uuid.h>
 
 #include <machine/atomic.h>
+#include <machine/bootinfo.h>
 #include <machine/cpu.h>
 #include <machine/fpu.h>
 #include <machine/intr.h>
@@ -61,6 +62,8 @@ __FBSDID("$FreeBSD$");
 #include <vm/pmap.h>
 #include <vm/vm_extern.h>
 #include <vm/vm_kern.h>
+
+extern uint64_t bdata[];
 
 MALLOC_DEFINE(M_SMP, "SMP", "SMP related allocations");
 
@@ -79,6 +82,21 @@ int ia64_ipi_nmi;
 int ia64_ipi_preempt;
 int ia64_ipi_rndzvs;
 int ia64_ipi_stop;
+
+static u_int
+sz2shft(uint64_t sz)
+{
+	uint64_t s;
+	u_int shft;
+
+	shft = 12;      /* Start with 4K */
+	s = 1 << shft;
+	while (s < sz) {
+		shft++;
+		s <<= 1;
+	}
+	return (shft);
+}
 
 static u_int
 ia64_ih_ast(struct thread *td, u_int xiv, struct trapframe *tf)
@@ -174,13 +192,24 @@ ia64_ap_startup(void)
 {
 	uint64_t vhpt;
 
+	ia64_ap_state.as_trace = 0x100;
+
+	ia64_set_rr(IA64_RR_BASE(5), (5 << 8) | (PAGE_SHIFT << 2) | 1);
+	ia64_set_rr(IA64_RR_BASE(6), (6 << 8) | (PAGE_SHIFT << 2));
+	ia64_set_rr(IA64_RR_BASE(7), (7 << 8) | (PAGE_SHIFT << 2));
+	ia64_srlz_d();
+
 	pcpup = ia64_ap_state.as_pcpu;
 	ia64_set_k4((intptr_t)pcpup);
+
+	ia64_ap_state.as_trace = 0x108;
 
 	vhpt = PCPU_GET(md.vhpt);
 	map_vhpt(vhpt);
 	ia64_set_pta(vhpt + (1 << 8) + (pmap_vhpt_log2size << 2) + 1);
 	ia64_srlz_i();
+
+	ia64_ap_state.as_trace = 0x110;
 
 	ia64_ap_state.as_awake = 1;
 	ia64_ap_state.as_delay = 0;
@@ -301,48 +330,73 @@ cpu_mp_start()
 	struct ia64_sal_result result;
 	struct ia64_fdesc *fd;
 	struct pcpu *pc;
+	uintptr_t state;
 	u_char *stp;
 
-	ia64_ap_state.as_spin = 1;
-
+	state = ia64_tpa((uintptr_t)&ia64_ap_state);
 	fd = (struct ia64_fdesc *) os_boot_rendez;
 	result = ia64_sal_entry(SAL_SET_VECTORS, SAL_OS_BOOT_RENDEZ,
-	    ia64_tpa(fd->func), ia64_tpa((uintptr_t)&ia64_ap_state),
-	    0, 0, 0, 0);
+	    ia64_tpa(fd->func), state, 0, 0, 0, 0);
+
+	ia64_ap_state.as_pgtbl_pte = PTE_PRESENT | PTE_MA_WB |
+	    PTE_ACCESSED | PTE_DIRTY | PTE_PL_KERN | PTE_AR_RW |
+	    (bootinfo->bi_pbvm_pgtbl & PTE_PPN_MASK);
+	ia64_ap_state.as_pgtbl_itir = sz2shft(bootinfo->bi_pbvm_pgtblsz) << 2;
+	ia64_ap_state.as_text_va = IA64_PBVM_BASE;
+	ia64_ap_state.as_text_pte = PTE_PRESENT | PTE_MA_WB |
+	    PTE_ACCESSED | PTE_DIRTY | PTE_PL_KERN | PTE_AR_RX |
+	    (ia64_tpa(IA64_PBVM_BASE) & PTE_PPN_MASK);
+	ia64_ap_state.as_text_itir = bootinfo->bi_text_mapped << 2;
+	ia64_ap_state.as_data_va = (uintptr_t)bdata;
+	ia64_ap_state.as_data_pte = PTE_PRESENT | PTE_MA_WB |
+	    PTE_ACCESSED | PTE_DIRTY | PTE_PL_KERN | PTE_AR_RW |
+	    (ia64_tpa((uintptr_t)bdata) & PTE_PPN_MASK);
+	ia64_ap_state.as_data_itir = bootinfo->bi_data_mapped << 2;
+
+	/* Keep 'em spinning until we unleash them... */
+	ia64_ap_state.as_spin = 1;
 
 	SLIST_FOREACH(pc, &cpuhead, pc_allcpu) {
 		pc->pc_md.current_pmap = kernel_pmap;
 		pc->pc_other_cpus = all_cpus & ~pc->pc_cpumask;
-		if (pc->pc_cpuid > 0) {
-			ia64_ap_state.as_pcpu = pc;
-			pc->pc_md.vhpt = pmap_alloc_vhpt();
-			if (pc->pc_md.vhpt == 0) {
-				printf("SMP: WARNING: unable to allocate VHPT"
-				    " for cpu%d", pc->pc_cpuid);
-				continue;
-			}
-			stp = malloc(KSTACK_PAGES * PAGE_SIZE, M_SMP, M_WAITOK);
-			ia64_ap_state.as_kstack = stp;
-			ia64_ap_state.as_kstack_top = stp + KSTACK_PAGES *
-			    PAGE_SIZE - 16;
-			ia64_ap_state.as_delay = 2000;
-			ia64_ap_state.as_awake = 0;
-
-			if (bootverbose)
-				printf("SMP: waking up cpu%d\n", pc->pc_cpuid);
-
-			ipi_send(pc, ia64_ipi_wakeup);
-
-			do {
-				DELAY(1000);
-			} while (--ia64_ap_state.as_delay > 0);
-			pc->pc_md.awake = ia64_ap_state.as_awake;
-
-			if (!ia64_ap_state.as_awake)
-				printf("SMP: WARNING: cpu%d did not wake up\n",
-				    pc->pc_cpuid);
-		} else
+		/* The BSP is obviously running already. */
+		if (pc->pc_cpuid == 0) {
 			pc->pc_md.awake = 1;
+			continue;
+		}
+
+		ia64_ap_state.as_pcpu = pc;
+		pc->pc_md.vhpt = pmap_alloc_vhpt();
+		if (pc->pc_md.vhpt == 0) {
+			printf("SMP: WARNING: unable to allocate VHPT"
+			    " for cpu%d", pc->pc_cpuid);
+			continue;
+		}
+
+		stp = malloc(KSTACK_PAGES * PAGE_SIZE, M_SMP, M_WAITOK);
+		ia64_ap_state.as_kstack = stp;
+		ia64_ap_state.as_kstack_top = stp + KSTACK_PAGES * PAGE_SIZE;
+
+		ia64_ap_state.as_trace = 0;
+		ia64_ap_state.as_delay = 2000;
+		ia64_ap_state.as_awake = 0;
+
+		if (bootverbose)
+			printf("SMP: waking up cpu%d\n", pc->pc_cpuid);
+
+		/* Here she goes... */
+		ipi_send(pc, ia64_ipi_wakeup);
+		do {
+			DELAY(1000);
+		} while (--ia64_ap_state.as_delay > 0);
+
+		pc->pc_md.awake = ia64_ap_state.as_awake;
+
+		if (!ia64_ap_state.as_awake) {
+			printf("SMP: WARNING: cpu%d did not wake up (code "
+			    "%#lx)\n", pc->pc_cpuid,
+			    ia64_ap_state.as_trace - state);
+		}
 	}
 }
 

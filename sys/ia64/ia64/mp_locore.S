@@ -43,62 +43,81 @@
 	.align	32
 ENTRY_NOPROFILE(os_boot_rendez,0)
 {	.mmi
+	st8	[gp] = gp		// trace = 0x00
 	mov	r8 = cr.ivr		// clear IRR bit
+	add	r2 = 8, gp
 	;;
-	srlz.d
-	mov	r16 = (IA64_PBVM_RR << 8) | (IA64_PBVM_PAGE_SHIFT << 2)
 }
 {	.mmi
-	mov	cr.eoi = r0		// ACK the wake-up
-	;;
 	srlz.d
+	mov	cr.eoi = r0		// ACK the wake-up
+	add	r3 = 16, gp
+	;;
+}
+{	.mmi
+	srlz.d
+	rsm	IA64_PSR_IC | IA64_PSR_I
+	mov	r16 = (IA64_PBVM_RR << 8) | (IA64_PBVM_PAGE_SHIFT << 2)
+	;;
+}
+{	.mmi
+	srlz.d
+	st8	[gp] = r2		// trace = 0x08
 	dep.z	r17 = IA64_PBVM_RR, 61, 3
 	;;
 }
-{	.mmi
-	rsm	IA64_PSR_IC | IA64_PSR_I
-	mov     rr[r17] = r16
-	add	r2 = 8, r1
-	;;
-}
 {	.mlx
-	srlz.i
-	movl	r16 = IA64_PBVM_PGTBL
+	mov     rr[r17] = r16
+	movl	r18 = IA64_PBVM_PGTBL
 	;;
 }
 {	.mmi
-	ld8	r17 = [r1], 16		// as_pgtbl_pte
-	ld8	r18 = [r2], 16		// as_pgtbl_itir
+	srlz.i
+	;;
+	st8	[gp] = r3		// trace = 0x10
+	nop	0
+	;;
+}
+{	.mmi
+	ld8	r16 = [r2], 16		// as_pgtbl_pte
+	ld8	r17 = [r3], 16		// as_pgtbl_itir
+	nop	0
+	;;
+}
+{	.mmi
+	mov	cr.itir = r17
+	mov	cr.ifa = r18
+	nop	0
+	;;
+}
+{	.mmi
+	srlz.d
+	ptr.d	r18, r17
+	nop	0
+	;;
+}
+{	.mmi
+	srlz.d
+	st8	[gp] = r2		// trace = 0x18
 	mov	r8 = r0
 	;;
 }
 {	.mmi
-	mov	cr.ifa = r16
-	mov	cr.itir = r18
+	itr.d	dtr[r8] = r16
+	;;
+	srlz.d
 	mov	r9 = r0
 	;;
 }
 {	.mmi
-	srlz.d
-	ptr.d	r16, r18
-	nop	0
-	;;
-}
-{	.mmi
-	srlz.d
-	itr.d	dtr[r8] = r17
-	nop	0
-	;;
-}
-{	.mmi
-	srlz.d
-	ld8	r16 = [r1], 16		// as_text_va
+	ld8	r16 = [r2], 16		// as_text_va
+	st8	[gp] = r3		// trace = 0x20
 	add	r8 = 1, r8
 	;;
 }
 {	.mmi
-	ld8	r17 = [r2], 16		// as_text_pte
-	ld8	r18 = [r1], 16		// as_text_itir
+	ld8	r17 = [r3], 16		// as_text_pte
+	ld8	r18 = [r2], 16		// as_text_itir
 	nop	0
 	;;
 }
@@ -116,12 +135,18 @@ ENTRY_NOPROFILE(os_boot_rendez,0)
 }
 {	.mmi
 	srlz.d
-	itr.d	dtr[r8] = r17
+	st8	[gp] = r3		// trace = 0x30
 	nop	0
 	;;
 }
 {	.mmi
+	itr.d	dtr[r8] = r17
+	;;
 	srlz.d
+	nop	0
+}
+{	.mmi
+	st8	[gp] = r2		// trace = 0x38
 	ptr.i	r16, r18
 	add	r8 = 1, r8
 	;;
@@ -136,42 +161,51 @@ ENTRY_NOPROFILE(os_boot_rendez,0)
 {	.mmi
 	srlz.i
 	;;
-	ld8	r16 = [r2], 16          // as_data_va
+	ld8	r16 = [r3], 16          // as_data_va
 	add	r9 = 1, r9
 	;;
 }
 {	.mmi
-	ld8	r17 = [r1], 16		// as_data_pte
-	ld8	r18 = [r2], 16		// as_data_itir
+	st8	[gp] = r3		// trace = 0x40
+	ld8	r17 = [r2], 16		// as_data_pte
 	nop	0
 	;;
 }
 {	.mmi
 	mov	cr.ifa = r16
+	ld8	r18 = [r3], 16		// as_data_itir
+	nop	0
+	;;
+}
+{	.mmi
 	mov	cr.itir = r18
+	;;
+	srlz.d
 	nop	0
 	;;
 }
 {	.mmi
-	srlz.d
 	ptr.d	r16, r18
-	nop	0
 	;;
-}
-{	.mmi
 	srlz.d
-	itr.d	dtr[r8] = r17
 	mov	r19 = IA64_DCR_DEFAULT
 	;;
 }
 {	.mmi
+	itr.d	dtr[r8] = r17
+	;;
 	srlz.d
-	ld8	r16 = [r1], 16		// as_kstack
 	add	r8 = 1, r8
 	;;
 }
 {	.mmi
-	ld8	r17 = [r2], 16		// as_kstack_top
+	st8	[gp] = r2		// trace = 0x48
+	;;
+	ld8	r16 = [r2], 16		// as_kstack
+	nop	0
+}
+{	.mmi
+	ld8	r17 = [r3], 16		// as_kstack_top
 	mov	cr.dcr = r19
 	nop	0
 	;;
@@ -182,38 +216,31 @@ ENTRY_NOPROFILE(os_boot_rendez,0)
 			IA64_PSR_RT | IA64_PSR_DFH
 	;;
 }
-1:
-{	.mii
+{	.mlx
 	mov	cr.ipsr = r18
-	mov	r19 = ip
+	movl	r19 = ia64_vector_table		// set up IVT early
 	;;
-	add	r19 = 2f-1b, r19
+}
+{	.mlx
+	mov	cr.iva = r19
+	movl	r18 = 1f
 	;;
 }
 {	.mmi
+	mov	cr.iip = r18
 	mov	cr.ifs = r0
-	mov	cr.iip = r19
 	nop	0
 	;;
 }
-
+{	.mmb
+	srlz.d
+	st8	[gp] = r2		// trace = 0x58
 	rfi
 	;;
+}
 
 	.align	32
-2:
-{	.mlx
-	mov	ar.rsc = 0
-	movl	r18 = ia64_vector_table		// set up IVT early
-	;;
-}
-{	.mmi
-	mov	cr.iva = r18
-	;;
-	srlz.i
-	nop	0
-	;;
-}
+1:
 {	.mlx
 	mov	ar.bspstore = r16
 	movl	gp = __gp
@@ -221,13 +248,18 @@ ENTRY_NOPROFILE(os_boot_rendez,0)
 }
 {	.mmi
 	loadrs
+	add	sp = -16, r17
+	nop	0
+	;;
+}
+{	.mmi
+	mov	ar.rsc = 3
 	;;
 	alloc	r18 = ar.pfs, 0, 0, 0, 0
-	add	sp = -16, r17
 	;;
 }
 {	.mib
-	mov	ar.rsc = 3
+	nop	0
 	nop	0
 	br.call.sptk.few rp = ia64_ap_startup
 	;;
