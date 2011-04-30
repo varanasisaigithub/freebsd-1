@@ -759,15 +759,15 @@ ia64_init(void)
 	if (bootinfo->bi_kernend)
 		kernend = round_page(bootinfo->bi_kernend);
 
-        /*
-         * Region 6 is direct mapped UC and region 7 is direct mapped
-         * WC. The details of this is controlled by the Alt {I,D}TLB
-         * handlers. Here we just make sure that they have the largest
-         * possible page size to minimise TLB usage.
-         */
-        ia64_set_rr(IA64_RR_BASE(6), (6 << 8) | (PAGE_SHIFT << 2));
-        ia64_set_rr(IA64_RR_BASE(7), (7 << 8) | (PAGE_SHIFT << 2));
-        ia64_srlz_d();
+	/*
+	 * Region 6 is direct mapped UC and region 7 is direct mapped
+	 * WC. The details of this is controlled by the Alt {I,D}TLB
+	 * handlers. Here we just make sure that they have the largest
+	 * possible page size to minimise TLB usage.
+	 */
+	ia64_set_rr(IA64_RR_BASE(6), (6 << 8) | (PAGE_SHIFT << 2));
+	ia64_set_rr(IA64_RR_BASE(7), (7 << 8) | (PAGE_SHIFT << 2));
+	ia64_srlz_d();
 
 	/*
 	 * Wire things up so we can call the firmware.
@@ -778,18 +778,18 @@ ia64_init(void)
 	ia64_sal_init();
 	calculate_frequencies();
 
-        /*
-         * Setup the PCPU data for the bootstrap processor. It is needed
-         * by printf(). Also, since printf() has critical sections, we
-         * need to initialize at least pc_curthread.
-         */
-        pcpup = &pcpu0;
-        ia64_set_k4((u_int64_t)pcpup);
-        pcpu_init(pcpup, 0, sizeof(pcpu0));
-        dpcpu_init((void *)kernend, 0);
-        cpu_pcpu_setup(pcpup, ~0U, ia64_get_lid());
-        kernend += DPCPU_SIZE;
-        PCPU_SET(curthread, &thread0);
+	/*
+	 * Setup the PCPU data for the bootstrap processor. It is needed
+	 * by printf(). Also, since printf() has critical sections, we
+	 * need to initialize at least pc_curthread.
+	 */
+	pcpup = &pcpu0;
+	ia64_set_k4((u_int64_t)pcpup);
+	pcpu_init(pcpup, 0, sizeof(pcpu0));
+	dpcpu_init((void *)kernend, 0);
+	cpu_pcpu_setup(pcpup, ~0U, ia64_get_lid());
+	kernend += DPCPU_SIZE;
+	PCPU_SET(curthread, &thread0);
 
 	/*
 	 * Initialize the console before we print anything out.
