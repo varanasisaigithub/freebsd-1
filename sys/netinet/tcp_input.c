@@ -367,12 +367,17 @@ cc_conn_init(struct tcpcb *tp)
 		tp->snd_cwnd = min(4 * tp->t_maxseg,
 		    max(2 * tp->t_maxseg, 4380));
 #ifdef INET6
-	else if ((isipv6 && in6_localaddr(&inp->in6p_faddr)) ||
-		 (!isipv6 && in_localaddr(inp->inp_faddr)))
-#else
-	else if (in_localaddr(inp->inp_faddr))
-#endif
+	else if (isipv6 && in6_localaddr(&inp->in6p_faddr))
 		tp->snd_cwnd = tp->t_maxseg * V_ss_fltsz_local;
+#endif
+#if defined(INET) && defined(INET6)
+	else if (!isipv6 && in_localaddr(inp->inp_faddr))
+		tp->snd_cwnd = tp->t_maxseg * V_ss_fltsz_local;
+#endif
+#ifdef INET
+	else if (in_localaddr(inp->inp_faddr))
+		tp->snd_cwnd = tp->t_maxseg * V_ss_fltsz_local;
+#endif
 	else
 		tp->snd_cwnd = tp->t_maxseg * V_ss_fltsz;
 
@@ -420,6 +425,7 @@ cc_cong_signal(struct tcpcb *tp, struct tcphdr *th, uint32_t type)
 		if (tp->t_flags & TF_WASCRECOVERY)
 			ENTER_CONGRECOVERY(tp->t_flags);
 		tp->snd_nxt = tp->snd_max;
+		tp->t_flags &= ~TF_PREVVALID;
 		tp->t_badrxtwin = 0;
 		break;
 	}
@@ -541,37 +547,46 @@ tcp6_input(struct mbuf **mp, int *offp, int proto)
 	tcp_input(m, *offp);
 	return IPPROTO_DONE;
 }
-#endif
+#endif /* INET6 */
 
 void
 tcp_input(struct mbuf *m, int off0)
 {
-	struct tcphdr *th;
+	struct tcphdr *th = NULL;
 	struct ip *ip = NULL;
+#ifdef INET
 	struct ipovly *ipov;
+#endif
 	struct inpcb *inp = NULL;
 	struct tcpcb *tp = NULL;
 	struct socket *so = NULL;
 	u_char *optp = NULL;
 	int optlen = 0;
-	int len, tlen, off;
+#ifdef INET
+	int len;
+#endif
+	int tlen = 0, off;
 	int drop_hdrlen;
 	int thflags;
 	int rstreason = 0;	/* For badport_bandlim accounting purposes */
-	uint8_t iptos;
 #ifdef TCP_SIGNATURE
 	uint8_t sig_checked = 0;
 #endif
+	uint8_t iptos = 0;
+#ifdef INET
 #ifdef IPFIREWALL_FORWARD
 	struct m_tag *fwd_tag;
 #endif
+#endif /* INET */
 #ifdef INET6
 	struct ip6_hdr *ip6 = NULL;
 	int isipv6;
 #else
 	const void *ip6 = NULL;
+#if (defined(INET) && defined(IPFIREWALL_FORWARD)) || defined(TCPDEBUG)
 	const int isipv6 = 0;
 #endif
+#endif /* INET6 */
 	struct tcpopt to;		/* options in this segment */
 	char *s = NULL;			/* address and port logging */
 	int ti_locked;
@@ -596,8 +611,8 @@ tcp_input(struct mbuf *m, int off0)
 	to.to_flags = 0;
 	TCPSTAT_INC(tcps_rcvtotal);
 
-	if (isipv6) {
 #ifdef INET6
+	if (isipv6) {
 		/* IP6_EXTHDR_CHECK() is already done at tcp6_input(). */
 		ip6 = mtod(m, struct ip6_hdr *);
 		tlen = sizeof(*ip6) + ntohs(ip6->ip6_plen) - off0;
@@ -619,10 +634,13 @@ tcp_input(struct mbuf *m, int off0)
 			/* XXX stat */
 			goto drop;
 		}
-#else
-		th = NULL;		/* XXX: Avoid compiler warning. */
+	}
 #endif
-	} else {
+#if defined(INET) && defined(INET6)
+	else
+#endif
+#ifdef INET
+	{
 		/*
 		 * Get IP and TCP header together in first mbuf.
 		 * Note: IP leaves IP header in first mbuf.
@@ -674,13 +692,18 @@ tcp_input(struct mbuf *m, int off0)
 		/* Re-initialization for later version check */
 		ip->ip_v = IPVERSION;
 	}
+#endif /* INET */
 
 #ifdef INET6
 	if (isipv6)
 		iptos = (ntohl(ip6->ip6_flow) >> 20) & 0xff;
+#endif
+#if defined(INET) && defined(INET6)
 	else
 #endif
+#ifdef INET
 		iptos = ip->ip_tos;
+#endif
 
 	/*
 	 * Check that TCP offset makes sense,
@@ -693,13 +716,18 @@ tcp_input(struct mbuf *m, int off0)
 	}
 	tlen -= off;	/* tlen is used instead of ti->ti_len */
 	if (off > sizeof (struct tcphdr)) {
-		if (isipv6) {
 #ifdef INET6
+		if (isipv6) {
 			IP6_EXTHDR_CHECK(m, off0, off, );
 			ip6 = mtod(m, struct ip6_hdr *);
 			th = (struct tcphdr *)((caddr_t)ip6 + off0);
+		}
 #endif
-		} else {
+#if defined(INET) && defined(INET6)
+		else
+#endif
+#ifdef INET
+		{
 			if (m->m_len < sizeof(struct ip) + off) {
 				if ((m = m_pullup(m, sizeof (struct ip) + off))
 				    == NULL) {
@@ -711,6 +739,7 @@ tcp_input(struct mbuf *m, int off0)
 				th = (struct tcphdr *)((caddr_t)ip + off0);
 			}
 		}
+#endif
 		optlen = off - sizeof (struct tcphdr);
 		optp = (u_char *)(th + 1);
 	}
@@ -753,6 +782,7 @@ findpcb:
 		panic("%s: findpcb ti_locked %d\n", __func__, ti_locked);
 #endif
 
+#ifdef INET
 #ifdef IPFIREWALL_FORWARD
 	/*
 	 * Grab info from PACKET_TAG_IPFORWARD tag prepended to the chain.
@@ -786,21 +816,26 @@ findpcb:
 		m_tag_delete(m, fwd_tag);
 	} else
 #endif /* IPFIREWALL_FORWARD */
+#endif /* INET */
 	{
-		if (isipv6) {
 #ifdef INET6
+		if (isipv6)
 			inp = in6_pcblookup_hash(&V_tcbinfo,
 						 &ip6->ip6_src, th->th_sport,
 						 &ip6->ip6_dst, th->th_dport,
 						 INPLOOKUP_WILDCARD,
 						 m->m_pkthdr.rcvif);
 #endif
-		} else
+#if defined(INET) && defined(INET6)
+		else
+#endif
+#ifdef INET
 			inp = in_pcblookup_hash(&V_tcbinfo,
 						ip->ip_src, th->th_sport,
 						ip->ip_dst, th->th_dport,
 						INPLOOKUP_WILDCARD,
 						m->m_pkthdr.rcvif);
+#endif
 	}
 
 	/*
@@ -988,7 +1023,7 @@ relocked:
 			bcopy((char *)ip, (char *)tcp_saveipgen, sizeof(*ip));
 		tcp_savetcp = *th;
 	}
-#endif
+#endif /* TCPDEBUG */
 	/*
 	 * When the socket is accepting connections (the INPCB is in LISTEN
 	 * state) we look into the SYN cache if this is a new connection
@@ -1223,7 +1258,7 @@ relocked:
 			}
 			ifa_free(&ia6->ia_ifa);
 		}
-#endif
+#endif /* INET6 */
 		/*
 		 * Basic sanity checks on incoming SYN requests:
 		 *   Don't respond if the destination is a link layer
@@ -1242,8 +1277,8 @@ relocked:
 				"link layer address ignored\n", s, __func__);
 			goto dropunlock;
 		}
-		if (isipv6) {
 #ifdef INET6
+		if (isipv6) {
 			if (th->th_dport == th->th_sport &&
 			    IN6_ARE_ADDR_EQUAL(&ip6->ip6_dst, &ip6->ip6_src)) {
 				if ((s = tcp_log_addrs(&inc, th, NULL, NULL)))
@@ -1260,8 +1295,13 @@ relocked:
 					"address ignored\n", s, __func__);
 				goto dropunlock;
 			}
+		}
 #endif
-		} else {
+#if defined(INET) && defined(INET6)
+		else
+#endif
+#ifdef INET
+		{
 			if (th->th_dport == th->th_sport &&
 			    ip->ip_dst.s_addr == ip->ip_src.s_addr) {
 				if ((s = tcp_log_addrs(&inc, th, NULL, NULL)))
@@ -1282,6 +1322,7 @@ relocked:
 				goto dropunlock;
 			}
 		}
+#endif
 		/*
 		 * SYN appears to be valid.  Create compressed TCP state
 		 * for syncache.
@@ -1575,6 +1616,7 @@ tcp_do_segment(struct mbuf *m, struct tcphdr *th, struct socket *so,
 				 * "bad retransmit" recovery.
 				 */
 				if (tp->t_rxtshift == 1 &&
+				    tp->t_flags & TF_PREVVALID &&
 				    (int)(ticks - tp->t_badrxtwin) < 0) {
 					cc_cong_signal(tp, th, CC_RTO_ERR);
 				}
@@ -2521,7 +2563,8 @@ process_ACK:
 		 * original cwnd and ssthresh, and proceed to transmit where
 		 * we left off.
 		 */
-		if (tp->t_rxtshift == 1 && (int)(ticks - tp->t_badrxtwin) < 0)
+		if (tp->t_rxtshift == 1 && tp->t_flags & TF_PREVVALID &&
+		    (int)(ticks - tp->t_badrxtwin) < 0)
 			cc_cong_signal(tp, th, CC_RTO_ERR);
 
 		/*
@@ -3017,7 +3060,9 @@ static void
 tcp_dropwithreset(struct mbuf *m, struct tcphdr *th, struct tcpcb *tp,
     int tlen, int rstreason)
 {
+#ifdef INET
 	struct ip *ip;
+#endif
 #ifdef INET6
 	struct ip6_hdr *ip6;
 #endif
@@ -3036,8 +3081,12 @@ tcp_dropwithreset(struct mbuf *m, struct tcphdr *th, struct tcpcb *tp,
 		    IN6_IS_ADDR_MULTICAST(&ip6->ip6_src))
 			goto drop;
 		/* IPv6 anycast check is done at tcp6_input() */
-	} else
+	}
 #endif
+#if defined(INET) && defined(INET6)
+	else
+#endif
+#ifdef INET
 	{
 		ip = mtod(m, struct ip *);
 		if (IN_MULTICAST(ntohl(ip->ip_dst.s_addr)) ||
@@ -3046,6 +3095,7 @@ tcp_dropwithreset(struct mbuf *m, struct tcphdr *th, struct tcpcb *tp,
 		    in_broadcast(ip->ip_dst, m->m_pkthdr.rcvif))
 			goto drop;
 	}
+#endif
 
 	/* Perform bandwidth limiting. */
 	if (badport_bandlim(rstreason) < 0)
@@ -3305,8 +3355,8 @@ void
 tcp_mss_update(struct tcpcb *tp, int offer,
     struct hc_metrics_lite *metricptr, int *mtuflags)
 {
-	int mss;
-	u_long maxmtu;
+	int mss = 0;
+	u_long maxmtu = 0;
 	struct inpcb *inp = tp->t_inpcb;
 	struct hc_metrics_lite metrics;
 	int origoffer = offer;
@@ -3326,12 +3376,17 @@ tcp_mss_update(struct tcpcb *tp, int offer,
 	if (isipv6) {
 		maxmtu = tcp_maxmtu6(&inp->inp_inc, mtuflags);
 		tp->t_maxopd = tp->t_maxseg = V_tcp_v6mssdflt;
-	} else
+	}
 #endif
+#if defined(INET) && defined(INET6)
+	else
+#endif
+#ifdef INET
 	{
 		maxmtu = tcp_maxmtu(&inp->inp_inc, mtuflags);
 		tp->t_maxopd = tp->t_maxseg = V_tcp_mssdflt;
 	}
+#endif
 
 	/*
 	 * No route to sender, stay with default mss and return.
@@ -3392,14 +3447,19 @@ tcp_mss_update(struct tcpcb *tp, int offer,
 			if (!V_path_mtu_discovery &&
 			    !in6_localaddr(&inp->in6p_faddr))
 				mss = min(mss, V_tcp_v6mssdflt);
-		} else
+		}
 #endif
+#if defined(INET) && defined(INET6)
+		else
+#endif
+#ifdef INET
 		{
 			mss = maxmtu - min_protoh;
 			if (!V_path_mtu_discovery &&
 			    !in_localaddr(inp->inp_faddr))
 				mss = min(mss, V_tcp_mssdflt);
 		}
+#endif
 		/*
 		 * XXX - The above conditional (mss = maxmtu - min_protoh)
 		 * probably violates the TCP spec.
@@ -3537,14 +3597,19 @@ tcp_mssopt(struct in_conninfo *inc)
 		maxmtu = tcp_maxmtu6(inc, NULL);
 		thcmtu = tcp_hc_getmtu(inc); /* IPv4 and IPv6 */
 		min_protoh = sizeof(struct ip6_hdr) + sizeof(struct tcphdr);
-	} else
+	}
 #endif
+#if defined(INET) && defined(INET6)
+	else
+#endif
+#ifdef INET
 	{
 		mss = V_tcp_mssdflt;
 		maxmtu = tcp_maxmtu(inc, NULL);
 		thcmtu = tcp_hc_getmtu(inc); /* IPv4 and IPv6 */
 		min_protoh = sizeof(struct tcpiphdr);
 	}
+#endif
 	if (maxmtu && thcmtu)
 		mss = min(maxmtu, thcmtu) - min_protoh;
 	else if (maxmtu || thcmtu)

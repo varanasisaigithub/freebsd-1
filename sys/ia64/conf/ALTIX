@@ -53,7 +53,7 @@ options 	PROCFS
 options 	PSEUDOFS
 options 	SCHED_ULE
 options 	SCSI_DELAY=3000
-options 	SMP
+#options 	SMP
 options 	SOFTUPDATES
 options 	SYSVMSG
 options 	SYSVSEM

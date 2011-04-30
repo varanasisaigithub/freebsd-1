@@ -757,6 +757,14 @@ dev/ath/ath_hal/ar5416/ar5416_reset.c \
 dev/ath/ath_hal/ar5416/ar5416_xmit.c \
 	optional ath_hal | ath_ar5416 | ath_ar9160 | ath_ar9280 | ath_ar9285 \
 	compile-with "${NORMAL_C} -I$S/dev/ath -I$S/dev/ath/ath_hal"
+# ar9130 (depends upon ar5416) - also requires AH_SUPPORT_AR9130
+dev/ath/ath_hal/ar9001/ar9130_attach.c optional ath_hal | ath_ar9130 \
+	compile-with "${NORMAL_C} -I$S/dev/ath -I$S/dev/ath/ath_hal"
+dev/ath/ath_hal/ar9001/ar9130_phy.c optional ath_hal | ath_ar9130 \
+	compile-with "${NORMAL_C} -I$S/dev/ath -I$S/dev/ath/ath_hal"
+dev/ath/ath_hal/ar9001/ar9130_eeprom.c optional ath_hal | ath_ar9130 \
+	compile-with "${NORMAL_C} -I$S/dev/ath -I$S/dev/ath/ath_hal"
+
 # ar9160 (depends on ar5416)
 dev/ath/ath_hal/ar9001/ar9160_attach.c optional ath_hal | ath_ar9160 \
 	compile-with "${NORMAL_C} -I$S/dev/ath -I$S/dev/ath/ath_hal"
@@ -1962,6 +1970,24 @@ dev/vte/if_vte.c		optional vte pci
 dev/vx/if_vx.c			optional vx
 dev/vx/if_vx_eisa.c		optional vx eisa
 dev/vx/if_vx_pci.c		optional vx pci
+dev/vxge/vxge.c				optional vxge
+dev/vxge/vxgehal/vxgehal-ifmsg.c	optional vxge
+dev/vxge/vxgehal/vxgehal-mrpcim.c	optional vxge
+dev/vxge/vxgehal/vxge-queue.c		optional vxge
+dev/vxge/vxgehal/vxgehal-ring.c		optional vxge
+dev/vxge/vxgehal/vxgehal-swapper.c	optional vxge
+dev/vxge/vxgehal/vxgehal-mgmt.c		optional vxge
+dev/vxge/vxgehal/vxgehal-srpcim.c	optional vxge
+dev/vxge/vxgehal/vxgehal-config.c	optional vxge
+dev/vxge/vxgehal/vxgehal-blockpool.c	optional vxge
+dev/vxge/vxgehal/vxgehal-doorbells.c	optional vxge
+dev/vxge/vxgehal/vxgehal-mgmtaux.c	optional vxge
+dev/vxge/vxgehal/vxgehal-device.c	optional vxge
+dev/vxge/vxgehal/vxgehal-mm.c		optional vxge
+dev/vxge/vxgehal/vxgehal-driver.c	optional vxge
+dev/vxge/vxgehal/vxgehal-virtualpath.c	optional vxge
+dev/vxge/vxgehal/vxgehal-channel.c	optional vxge
+dev/vxge/vxgehal/vxgehal-fifo.c		optional vxge
 dev/watchdog/watchdog.c		standard
 dev/wb/if_wb.c			optional wb pci
 dev/wds/wd7000.c		optional wds isa
@@ -2491,7 +2517,7 @@ net/bpf_jitter.c		optional bpf_jitter
 net/bpf_filter.c		optional bpf | netgraph_bpf
 net/bpf_zerocopy.c		optional bpf
 net/bridgestp.c			optional bridge | if_bridge
-net/flowtable.c			optional flowtable inet
+net/flowtable.c			optional flowtable inet | flowtable inet6
 net/ieee8023ad_lacp.c		optional lagg
 net/if.c			standard
 net/if_arcsubr.c		optional arcnet
@@ -2708,44 +2734,44 @@ netinet/ipfw/ip_fw_pfil.c	optional inet ipfirewall
 netinet/ipfw/ip_fw_sockopt.c	optional inet ipfirewall
 netinet/ipfw/ip_fw_table.c	optional inet ipfirewall
 netinet/ipfw/ip_fw_nat.c	optional inet ipfirewall_nat
-netinet/ip_icmp.c		optional inet
+netinet/ip_icmp.c		optional inet | inet6
 netinet/ip_input.c		optional inet
 netinet/ip_ipsec.c		optional inet ipsec
-netinet/ip_mroute.c		optional mrouting inet | mrouting inet6
+netinet/ip_mroute.c		optional mrouting inet
 netinet/ip_options.c		optional inet
 netinet/ip_output.c		optional inet
-netinet/raw_ip.c		optional inet
-netinet/cc/cc.c			optional inet
-netinet/cc/cc_newreno.c		optional inet
-netinet/sctp_asconf.c		optional inet sctp
-netinet/sctp_auth.c		optional inet sctp
-netinet/sctp_bsd_addr.c		optional inet sctp
-netinet/sctp_cc_functions.c	optional inet sctp
-netinet/sctp_crc32.c		optional inet sctp
-netinet/sctp_indata.c		optional inet sctp
-netinet/sctp_input.c		optional inet sctp
-netinet/sctp_output.c		optional inet sctp
-netinet/sctp_pcb.c		optional inet sctp
-netinet/sctp_peeloff.c		optional inet sctp
-netinet/sctp_ss_functions.c	optional inet sctp
-netinet/sctp_sysctl.c		optional inet sctp
-netinet/sctp_timer.c		optional inet sctp
-netinet/sctp_usrreq.c		optional inet sctp
-netinet/sctputil.c		optional inet sctp
+netinet/raw_ip.c		optional inet | inet6
+netinet/cc/cc.c			optional inet | inet6
+netinet/cc/cc_newreno.c		optional inet | inet6
+netinet/sctp_asconf.c		optional inet sctp | inet6 sctp
+netinet/sctp_auth.c		optional inet sctp | inet6 sctp
+netinet/sctp_bsd_addr.c		optional inet sctp | inet6 sctp
+netinet/sctp_cc_functions.c	optional inet sctp | inet6 sctp
+netinet/sctp_crc32.c		optional inet sctp | inet6 sctp
+netinet/sctp_indata.c		optional inet sctp | inet6 sctp
+netinet/sctp_input.c		optional inet sctp | inet6 sctp
+netinet/sctp_output.c		optional inet sctp | inet6 sctp
+netinet/sctp_pcb.c		optional inet sctp | inet6 sctp
+netinet/sctp_peeloff.c		optional inet sctp | inet6 sctp
+netinet/sctp_ss_functions.c	optional inet sctp | inet6 sctp
+netinet/sctp_sysctl.c		optional inet sctp | inet6 sctp
+netinet/sctp_timer.c		optional inet sctp | inet6 sctp
+netinet/sctp_usrreq.c		optional inet sctp | inet6 sctp
+netinet/sctputil.c		optional inet sctp | inet6 sctp
 netinet/tcp_debug.c		optional tcpdebug
-netinet/tcp_hostcache.c		optional inet
-netinet/tcp_input.c		optional inet
-netinet/tcp_lro.c		optional inet
-netinet/tcp_output.c		optional inet
-netinet/tcp_offload.c		optional inet
-netinet/tcp_reass.c		optional inet
-netinet/tcp_sack.c		optional inet
-netinet/tcp_subr.c		optional inet
-netinet/tcp_syncache.c		optional inet
-netinet/tcp_timer.c		optional inet
-netinet/tcp_timewait.c		optional inet
-netinet/tcp_usrreq.c		optional inet
-netinet/udp_usrreq.c		optional inet
+netinet/tcp_hostcache.c		optional inet | inet6
+netinet/tcp_input.c		optional inet | inet6
+netinet/tcp_lro.c		optional inet | inet6
+netinet/tcp_output.c		optional inet | inet6
+netinet/tcp_offload.c		optional inet | inet6
+netinet/tcp_reass.c		optional inet | inet6
+netinet/tcp_sack.c		optional inet | inet6
+netinet/tcp_subr.c		optional inet | inet6
+netinet/tcp_syncache.c		optional inet | inet6
+netinet/tcp_timer.c		optional inet | inet6
+netinet/tcp_timewait.c		optional inet | inet6
+netinet/tcp_usrreq.c		optional inet | inet6
+netinet/udp_usrreq.c		optional inet | inet6
 netinet/libalias/alias.c	optional libalias inet | netgraph_nat inet
 netinet/libalias/alias_db.c	optional libalias inet | netgraph_nat inet
 netinet/libalias/alias_mod.c	optional libalias | netgraph_nat
@@ -3182,7 +3208,7 @@ security/mac/mac_atalk.c	optional mac netatalk
 security/mac/mac_audit.c	optional mac audit
 security/mac/mac_cred.c		optional mac
 security/mac/mac_framework.c	optional mac
-security/mac/mac_inet.c		optional mac inet
+security/mac/mac_inet.c		optional mac inet | mac inet6
 security/mac/mac_inet6.c	optional mac inet6
 security/mac/mac_label.c	optional mac
 security/mac/mac_net.c		optional mac
