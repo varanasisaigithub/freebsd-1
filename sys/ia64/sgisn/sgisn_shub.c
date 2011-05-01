@@ -126,81 +126,10 @@ static int
 sgisn_shub_activate_resource(device_t dev, device_t child, int type, int rid,
     struct resource *res)
 {
-#if 0
-	struct ia64_sal_result r;
-	struct sgisn_shub_softc *sc;
-	device_t parent;
-	void *vaddr;
-	uintptr_t func, slot;
-	vm_paddr_t paddr;
-	u_long base;
-	int bar, error;
- 
-	parent = device_get_parent(child);
+	int error;
 
-	error = BUS_READ_IVAR(parent, child, PCI_IVAR_SLOT, &slot);
-	if (!error)
-		error = BUS_READ_IVAR(parent, child, PCI_IVAR_FUNCTION, &func);
-	if (error)
-		return (error);
-
-	sc = device_get_softc(dev);
-
-	r = ia64_sal_entry(SAL_SGISN_IODEV_INFO, sc->sc_domain, sc->sc_busnr,
-	    (slot << 3) | func, ia64_tpa((uintptr_t)&sgisn_dev),
-	    ia64_tpa((uintptr_t)&sgisn_irq), 0, 0);
-	if (r.sal_status != 0)
-		return (ENXIO);
-
-	paddr = rman_get_start(res);
-
-	if (type == SYS_RES_IRQ) {
-		/* For now, only warn when there's a mismatch. */
-		if (paddr != sgisn_irq.irq_nr)
-			device_printf(dev, "interrupt mismatch: (actual=%u)\n",
-			    sgisn_irq.irq_nr);
-
-	printf("XXX: %s: %u, %u, %u, %u, %u, %#lx\n", __func__,
-	    sgisn_irq.irq_tgt_nasid, sgisn_irq.irq_tgt_slice,
-	    sgisn_irq.irq_cpuid, sgisn_irq.irq_nr, sgisn_irq.irq_pin,
-	    sgisn_irq.irq_tgt_xtaddr);
-	printf("\t%u, %p, %p, %u, %#x, %#x, %u\n", sgisn_irq.irq_br_type,
-	    sgisn_irq.irq_bridge, sgisn_irq.irq_io_info, sgisn_irq.irq_last,
-	    sgisn_irq.irq_cookie, sgisn_irq.irq_flags, sgisn_irq.irq_refcnt);
-
-		r = ia64_sal_entry(SAL_SGISN_INTERRUPT, 1 /*alloc*/,
-		    sgisn_irq.irq_tgt_nasid,
-		    (sgisn_irq.irq_bridge >> 24) & 15
-		    ia64_tpa((uintptr_t)&sgisn_irq),
-		    paddr,
-		    sgisn_irq.irq_tgt_nasid,
-		    sgisn_irq.irq_tgt_slice);
-		if (r.status != 0)
-			return (ENXIO);
-
-		goto out;
-	}
-
-	bar = PCI_RID2BAR(rid);
-	if (bar < 0 || bar > PCIR_MAX_BAR_0)
-		return (EINVAL);
-	base = sgisn_dev.dev_bar[bar];
-	if (base != paddr)
-		device_printf(dev, "PCI bus address %#lx mapped to CPU "
-		    "address %#lx\n", paddr, base);
-
-	/* I/O port space is presented as memory mapped I/O. */
-	rman_set_bustag(res, IA64_BUS_SPACE_MEM);
-	vaddr = pmap_mapdev(base, rman_get_size(res));
-	rman_set_bushandle(res, (bus_space_handle_t) vaddr);
-	if (type == SYS_RES_MEMORY)
-		rman_set_virtual(res, vaddr);
-
- out:
-	return (rman_activate_resource(res));
-#endif
-
-	return (EDOOFUS);
+	error = bus_activate_resource(dev, type, rid, res);
+	return (error);
 }
 
 static struct resource *
