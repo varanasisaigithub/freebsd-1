@@ -42,7 +42,7 @@ options 	KDB
 options 	KTRACE
 options 	MD_ROOT
 options 	MSDOSFS
-options 	NFSCLIENT
+options 	NFSCL
 options 	NFSLOCKD
 options 	NFS_ROOT
 options 	NULLFS
