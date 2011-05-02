@@ -166,8 +166,6 @@ ia64_intr_eoi(void *arg)
 	KASSERT(i != NULL, ("%s", __func__));
 	if (i->sapic != NULL)
 		sapic_eoi(i->sapic, xiv);
-	else
-		printf("XXX-INTR: %s: XIV=%u\n", __func__, xiv);
 }
 
 static void
@@ -181,8 +179,6 @@ ia64_intr_mask(void *arg)
 	if (i->sapic != NULL) {
 		sapic_mask(i->sapic, i->irq);
 		sapic_eoi(i->sapic, xiv);
-	} else
-		printf("XXX-INTR: %s: XIV=%u\n", __func__, xiv);
 }
 
 static void
@@ -195,8 +191,6 @@ ia64_intr_unmask(void *arg)
 	KASSERT(i != NULL, ("%s", __func__));
 	if (i->sapic != NULL)
 		sapic_unmask(i->sapic, i->irq);
-	else
-		printf("XXX-INTR: %s: XIV=%u\n", __func__, xiv);
 }
 
 static int
@@ -422,10 +416,6 @@ ia64_ih_irq(struct thread *td, u_int xiv, struct trapframe *tf)
 	struct intr_event *ie;			/* our interrupt event */
 
 	PCPU_INC(md.stats.pcs_nhwints);
-
-	if (bootverbose)
-		printf("INTR: ITC=%u, XIV=%u\n", (u_int)tf->tf_special.ifa,
-		    xiv);
 
 	/* Find the interrupt thread for this XIV. */
 	i = ia64_intrs[xiv];
