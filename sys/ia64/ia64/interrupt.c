@@ -179,6 +179,7 @@ ia64_intr_mask(void *arg)
 	if (i->sapic != NULL) {
 		sapic_mask(i->sapic, i->irq);
 		sapic_eoi(i->sapic, xiv);
+	}
 }
 
 static void
