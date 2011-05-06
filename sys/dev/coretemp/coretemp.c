@@ -192,9 +192,18 @@ coretemp_attach(device_t dev)
 	} else if (cpu_model == 0x17) {
 		switch (cpu_stepping) {
 		case 0x6:	/* Mobile Core 2 Duo */
-			sc->sc_tjmax = 104;
+			sc->sc_tjmax = 105;
 			break;
 		default:	/* Unknown stepping */
+			break;
+		}
+	} else if (cpu_model == 0x1c) {
+		switch (cpu_stepping) {
+		case 0xa:	/* 45nm Atom D400, N400 and D500 series */
+			sc->sc_tjmax = 100;
+			break;
+		default:
+			sc->sc_tjmax = 90;
 			break;
 		}
 	} else {

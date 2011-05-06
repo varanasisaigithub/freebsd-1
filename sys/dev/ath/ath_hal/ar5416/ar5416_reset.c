@@ -168,13 +168,6 @@ ar5416Reset(struct ath_hal *ah, HAL_OPMODE opmode,
 	if (AR_SREV_MERLIN_10_OR_LATER(ah))
 		OS_REG_SET_BIT(ah, AR_GPIO_INPUT_EN_VAL, AR_GPIO_JTAG_DISABLE);
 
-	if (AR_SREV_KITE(ah)) {
-		uint32_t val;
-		val = OS_REG_READ(ah, AR_PHY_HEAVY_CLIP_FACTOR_RIFS);
-		val &= ~AR_PHY_RIFS_INIT_DELAY;
-		OS_REG_WRITE(ah, AR_PHY_HEAVY_CLIP_FACTOR_RIFS, val);
-	}
-
 	AH5416(ah)->ah_writeIni(ah, chan);
 
 	/* Override ini values (that can be overriden in this fashion) */
@@ -258,7 +251,12 @@ ar5416Reset(struct ath_hal *ah, HAL_OPMODE opmode,
 	OS_REG_WRITE(ah, AR_BSSMSKU, LE_READ_2(ahp->ah_bssidmask + 4));
 
 	/* Restore previous led state */
-	OS_REG_WRITE(ah, AR_MAC_LED, OS_REG_READ(ah, AR_MAC_LED) | saveLedState);
+	if (AR_SREV_HOWL(ah))
+		OS_REG_WRITE(ah, AR_MAC_LED,
+		    AR_MAC_LED_ASSOC_ACTIVE | AR_CFG_SCLK_32KHZ);
+	else
+		OS_REG_WRITE(ah, AR_MAC_LED, OS_REG_READ(ah, AR_MAC_LED) |
+		    saveLedState);
 
 	/* Restore previous antenna */
 	OS_REG_WRITE(ah, AR_DEF_ANTENNA, saveDefAntenna);
@@ -338,6 +336,19 @@ ar5416Reset(struct ath_hal *ah, HAL_OPMODE opmode,
 
 	if (bChannelChange && !IEEE80211_IS_CHAN_DFS(chan)) 
 		chan->ic_state &= ~IEEE80211_CHANSTATE_CWINT;
+
+	if (AR_SREV_HOWL(ah)) {
+		/*
+		 * Enable the MBSSID block-ack fix for HOWL.
+		 * This feature is only supported on Howl 1.4, but it is safe to
+		 * set bit 22 of STA_ID1 on other Howl revisions (1.1, 1.2, 1.3),
+		 * since bit 22 is unused in those Howl revisions.
+		 */
+		unsigned int reg;
+		reg = (OS_REG_READ(ah, AR_STA_ID1) | (1<<22));
+		OS_REG_WRITE(ah,AR_STA_ID1, reg);
+		ath_hal_printf(ah, "MBSSID Set bit 22 of AR_STA_ID 0x%x\n", reg);
+	}
 
 	HALDEBUG(ah, HAL_DEBUG_RESET, "%s: done\n", __func__);
 
@@ -1212,7 +1223,11 @@ ar5416SetReset(struct ath_hal *ah, int type)
 #endif	/* AH_SUPPORT_AR9130 */
 
     OS_REG_WRITE(ah, AR_RTC_RC, rst_flags);
-    OS_DELAY(50);
+
+    if (AR_SREV_HOWL(ah))
+        OS_DELAY(10000);
+    else
+        OS_DELAY(100);
 
     /*
      * Clear resets and force wakeup
