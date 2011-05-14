@@ -1330,9 +1330,9 @@ bxe_interrupt_attach(struct bxe_softc *sc)
 	/* Setup the slowpath deferred task queue. */
 	TASK_INIT(&sc->task, 0, bxe_task_sp, sc);
 	sc->tq = taskqueue_create_fast("bxe_spq", M_NOWAIT,
-		taskqueue_thread_enqueue, &sc->tq);
+	    taskqueue_thread_enqueue, &sc->tq);
 	taskqueue_start_threads(&sc->tq, 1, PI_NET, "%s spq",
-		device_get_nameunit(sc->dev));
+	    device_get_nameunit(sc->dev));
 #endif
 
 	/* Setup interrupt handlers. */
@@ -1359,13 +1359,19 @@ bxe_interrupt_attach(struct bxe_softc *sc)
 			goto bxe_interrupt_attach_exit;
 		}
 
+#if __FreeBSD_version >= 800504
+		bus_describe_intr(sc->dev,
+				  sc->bxe_msix_res[0],
+				  sc->bxe_msix_tag[0],
+				  "sp");
+#endif
+
 		/* Now initialize the fastpath vectors. */
 		for (i = 0; i < (sc->num_queues); i++) {
 			fp = &sc->fp[i];
-			DBPRINT(sc,
-				(BXE_VERBOSE_LOAD | BXE_VERBOSE_INTR),
-				"%s(): Enabling MSI-X[%d] vector.\n",
-				__FUNCTION__, i + 1);
+			DBPRINT(sc, (BXE_VERBOSE_LOAD | BXE_VERBOSE_INTR),
+			    "%s(): Enabling MSI-X[%d] vector.\n",
+			    __FUNCTION__, i + 1);
 			/*
 			 * Setup the interrupt handler. Note that we pass the
 			 * fastpath context to the interrupt handler in this
@@ -1377,8 +1383,7 @@ bxe_interrupt_attach(struct bxe_softc *sc)
 					    NULL,
 					    bxe_intr_fp,
 					    fp,
-					    &sc->bxe_msix_tag[i + 1]
-					    );
+					    &sc->bxe_msix_tag[i + 1]);
 
 			if (rc) {
 			    BXE_PRINTF(
@@ -1386,6 +1391,21 @@ bxe_interrupt_attach(struct bxe_softc *sc)
 			    __FILE__, __LINE__, (i + 1));
 			    goto bxe_interrupt_attach_exit;
 			}
+
+#if __FreeBSD_version >= 800504
+			bus_describe_intr(sc->dev,
+					  sc->bxe_msix_res[i + 1],
+					  sc->bxe_msix_tag[i + 1],
+					  "fp[%02d]",
+					  i);
+#endif
+
+			/* Bind the fastpath instance to a CPU. */
+			if (sc->num_queues > 1) {
+				bus_bind_intr(sc->dev,
+				     sc->bxe_msix_res[i + 1], i);
+			}
+
 #ifdef BXE_TASK
 			TASK_INIT(&fp->task, 0, bxe_task_fp, fp);
 			fp->tq = taskqueue_create_fast("bxe_fpq", M_NOWAIT,
@@ -1418,6 +1438,13 @@ bxe_interrupt_attach(struct bxe_softc *sc)
 			goto bxe_interrupt_attach_exit;
 		}
 
+#if __FreeBSD_version >= 800504
+		bus_describe_intr(sc->dev,
+				  sc->bxe_msi_res[0],
+				  sc->bxe_msi_tag[0],
+				  "sp");
+#endif
+
 		/* Now initialize the fastpath vectors. */
 		for (i = 0; i < (sc->num_queues); i++) {
 			fp = &sc->fp[i];
@@ -1445,6 +1472,15 @@ bxe_interrupt_attach(struct bxe_softc *sc)
 				__FILE__, __LINE__, (i + 1));
 				goto bxe_interrupt_attach_exit;
 			}
+
+#if __FreeBSD_version >= 800504
+			bus_describe_intr(sc->dev,
+					  sc->bxe_msi_res[i + 1],
+					  sc->bxe_msi_tag[i + 1],
+					  "fp[%02d]",
+					  i);
+#endif
+
 #ifdef BXE_TASK
 			TASK_INIT(&fp->task, 0, bxe_task_fp, fp);
 			fp->tq = taskqueue_create_fast("bxe_fpq", M_NOWAIT,
@@ -3323,7 +3359,7 @@ bxe_stop_locked(struct bxe_softc *sc, int unload_mode)
 		bxe_set_mac_addr_e1(sc, 0);
 
 		for (i = 0; i < config->hdr.length; i++)
-			CAM_INVALIDATE(config->config_table[i]);
+			CAM_INVALIDATE(&config->config_table[i]);
 
 		config->hdr.length = i;
 		config->hdr.offset = BXE_MAX_MULTICAST * (1 + port);
@@ -3646,7 +3682,7 @@ bxe_alloc_buf_rings(struct bxe_softc *sc)
 
 		if (fp != NULL) {
 			fp->br = buf_ring_alloc(BXE_BR_SIZE,
-			    M_DEVBUF, M_WAITOK,	&fp->mtx);
+			    M_DEVBUF, M_DONTWAIT, &fp->mtx);
 			if (fp->br == NULL) {
 				rc = ENOMEM;
 				return(rc);
@@ -9404,7 +9440,7 @@ bxe_tx_mq_start_exit:
 
 
 /*
- * Multiqueue (RSS) transmit routine.
+ * Multiqueue (TSS) transmit routine.
  *
  * Returns:
  *   0 if transmit succeeds, !0 otherwise.
@@ -9415,14 +9451,18 @@ bxe_tx_mq_start_locked(struct ifnet *ifp,
 {
 	struct bxe_softc *sc;
 	struct mbuf *next;
-	int rc = 0, tx_count = 0;
+	int depth, rc = 0, tx_count = 0;
 
 	sc = fp->sc;
 
 	DBENTER(BXE_EXTREME_SEND);
+	depth = drbr_inuse(ifp, fp->br);
+	if (depth > fp->max_drbr_queue_depth) {
+		fp->max_drbr_queue_depth = depth;
+	}
 	DBPRINT(sc, BXE_EXTREME_SEND,
 	    "%s(): fp[%02d], drbr queue depth=%d\n",
-	    __FUNCTION__, fp->index, drbr_inuse(ifp, fp->br));
+	    __FUNCTION__, fp->index, depth);
 
 	BXE_FP_LOCK_ASSERT(fp);
 
@@ -10509,11 +10549,11 @@ bxe_alloc_mbuf(struct bxe_fastpath *fp, int size)
 
 	/* Check whether the allocation succeeded and handle a failure. */
    	if (__predict_false(m_new == NULL)) {
-		DBPRINT(sc, BXE_WARN, "%s(): mbuf allocation failure!\n",
-		    __FUNCTION__);
+		DBPRINT(sc, BXE_WARN, "%s(): Failed to allocate %d byte "
+		   "mbuf on fp[%02d]!\n", __FUNCTION__, size, fp->index);
 		fp->mbuf_alloc_failed++;
-	    goto bxe_alloc_mbuf_exit;
-   	}
+		goto bxe_alloc_mbuf_exit;
+	}
 
 	/* Do a little extra error checking when debugging. */
 	DBRUN(M_ASSERTPKTHDR(m_new));
@@ -10556,7 +10596,7 @@ bxe_map_mbuf(struct bxe_fastpath *fp, struct mbuf *m, bus_dma_tag_t tag,
 		    __FUNCTION__);
 		sc->debug_mbuf_sim_map_failed++;
 		fp->mbuf_alloc_failed++;
-		DBRUN(sc->debug_memory_allocated -= m->m_len);
+		sc->debug_memory_allocated -= m->m_len;
 		m_freem(m);
 		rc = EINVAL;
 		goto bxe_map_mbuf_exit;
@@ -10568,10 +10608,11 @@ bxe_map_mbuf(struct bxe_fastpath *fp, struct mbuf *m, bus_dma_tag_t tag,
 
 	/* Handle any mapping errors. */
 	if (__predict_false(rc)) {
-		DBPRINT(sc, BXE_WARN, "%s(): mbuf mapping failure (%d)!\n",
-		    __FUNCTION__, rc);
-		m_freem(m);
+		DBPRINT(sc, BXE_WARN, "%s(): mbuf mapping failure (%d) on "
+		    "fp[%02d]!\n", __FUNCTION__, rc, fp->index);
 		fp->mbuf_alloc_failed++;
+		DBRUN(sc->debug_memory_allocated -= m->m_len);
+		m_freem(m);
 		goto bxe_map_mbuf_exit;
 	}
 
@@ -10583,6 +10624,7 @@ bxe_map_mbuf(struct bxe_fastpath *fp, struct mbuf *m, bus_dma_tag_t tag,
 	*seg = segs[0];
 
 bxe_map_mbuf_exit:
+	DBEXIT(BXE_INSANE);
 	return (rc);
 }
 
@@ -10960,6 +11002,19 @@ bxe_init_rx_chains(struct bxe_softc *sc)
 			    U64_HI(fp->rx_cq_chain_paddr[0]));
 		}
 	}
+
+	/*
+	 * ToDo: Need a cleanup path if memory allocation
+	 * fails during initializtion.  This is especially
+	 * easy if multiqueue is used on a system with
+	 * jumbo frames and many CPUs.	On my 16GB system
+	 * with 8 CPUs I get the following defaults:
+	 *
+	 * kern.ipc.nmbjumbo16: 3200
+	 * kern.ipc.nmbjumbo9:  6400
+	 * kern.ipc.nmbjumbop:  12800
+	 * kern.ipc.nmbclusters: 25600
+	 */
 
 	DBEXIT(BXE_VERBOSE_LOAD | BXE_VERBOSE_RESET);
 }
@@ -14254,6 +14309,8 @@ static void
 bxe_set_mac_addr_e1(struct bxe_softc *sc, int set)
 {
 	struct mac_configuration_cmd *config;
+	struct mac_configuration_entry *config_table;
+	uint8_t *eaddr;
 	int port;
 
 	DBENTER(BXE_VERBOSE_MISC);
@@ -14274,43 +14331,40 @@ bxe_set_mac_addr_e1(struct bxe_softc *sc, int set)
 	config->hdr.reserved1 = 0;
 
 	/* Program the primary MAC address. */
-	config->config_table[0].cam_entry.msb_mac_addr =
-	    ntohs(*(uint16_t *)&sc->link_params.mac_addr[0]);
-	config->config_table[0].cam_entry.middle_mac_addr =
-	    ntohs(*(uint16_t *)&sc->link_params.mac_addr[2]);
-	config->config_table[0].cam_entry.lsb_mac_addr =
-	    ntohs(*(uint16_t *)&sc->link_params.mac_addr[4]);
-	config->config_table[0].cam_entry.flags = htole16(port);
+	config_table = &config->config_table[0];
+	eaddr = sc->link_params.mac_addr;
+	config_table->cam_entry.msb_mac_addr = eaddr[0] << 8 | eaddr[1];
+	config_table->cam_entry.middle_mac_addr = eaddr[2] << 8 | eaddr[3];
+	config_table->cam_entry.lsb_mac_addr = eaddr[4] << 8 | eaddr[5];
+	config_table->cam_entry.flags = htole16(port);
 
 	if (set)
-		config->config_table[0].target_table_entry.flags = 0;
+		config_table->target_table_entry.flags = 0;
 	else
-		CAM_INVALIDATE(config->config_table[0]);
+		CAM_INVALIDATE(config_table);
 
-	/* t48 	config->config_table[0].target_table_entry.client_id = 0; */
-	config->config_table[0].target_table_entry.vlan_id = 0;
+	config_table->target_table_entry.vlan_id = 0;
 
 	DBPRINT(sc, BXE_VERBOSE, "%s(): %s MAC (%04x:%04x:%04x)\n",
 	   __FUNCTION__, (set ? "Setting" : "Clearing"),
-	   config->config_table[0].cam_entry.msb_mac_addr,
-	   config->config_table[0].cam_entry.middle_mac_addr,
-	   config->config_table[0].cam_entry.lsb_mac_addr);
+	   config_table->cam_entry.msb_mac_addr,
+	   config_table->cam_entry.middle_mac_addr,
+	   config_table->cam_entry.lsb_mac_addr);
 
 	/* Program the broadcast MAC address. */
-	config->config_table[1].cam_entry.msb_mac_addr = 0xffff;
-	config->config_table[1].cam_entry.middle_mac_addr = 0xffff;
-	config->config_table[1].cam_entry.lsb_mac_addr = 0xffff;
-	config->config_table[1].cam_entry.flags = htole16(port);
+	config_table = &config->config_table[1];
+	config_table->cam_entry.msb_mac_addr = 0xffff;
+	config_table->cam_entry.middle_mac_addr = 0xffff;
+	config_table->cam_entry.lsb_mac_addr = 0xffff;
+	config_table->cam_entry.flags = htole16(port);
 
 	if (set)
-		config->config_table[1].target_table_entry.flags =
+		config_table->target_table_entry.flags =
 		    TSTORM_CAM_TARGET_TABLE_ENTRY_BROADCAST;
 	else
-		CAM_INVALIDATE(config->config_table[1]);
+		CAM_INVALIDATE(config_table);
 
-	/*t48	config->config_table[1].target_table_entry.client_id = 0; */
-	config->config_table[1].target_table_entry.vlan_id = 0;
-
+	config_table->target_table_entry.vlan_id = 0;
 
 	/* Post the command to slow path queue. */
 	bxe_sp_post(sc, RAMROD_CMD_ID_ETH_SET_MAC, 0,
@@ -14330,6 +14384,8 @@ static void
 bxe_set_mac_addr_e1h(struct bxe_softc *sc, int set)
 {
 	struct mac_configuration_cmd_e1h *config;
+	struct mac_configuration_entry_e1h *config_table;
+	uint8_t *eaddr;
 	int func, port;
 
 	DBENTER(BXE_VERBOSE_MISC);
@@ -14356,30 +14412,27 @@ bxe_set_mac_addr_e1h(struct bxe_softc *sc, int set)
 	config->hdr.reserved1 = 0;
 
 	/* Program the primary MAC address. */
-	config->config_table[0].msb_mac_addr =
-	    ntohs(*(uint16_t *)&sc->link_params.mac_addr[0]);
-	config->config_table[0].middle_mac_addr =
-	    ntohs(*(uint16_t *)&sc->link_params.mac_addr[2]);
-	config->config_table[0].lsb_mac_addr =
-	    ntohs(*(uint16_t *)&sc->link_params.mac_addr[4]);
-	config->config_table[0].clients_bit_vector =
-	    htole32(1 << sc->fp->cl_id);
+	config_table = &config->config_table[0];
+	eaddr = sc->link_params.mac_addr;
+	config_table->msb_mac_addr = eaddr[0] << 8 | eaddr[1];
+	config_table->middle_mac_addr = eaddr[2] << 8 | eaddr[3];
+	config_table->lsb_mac_addr = eaddr[4] << 8 | eaddr[5];
+	config_table->clients_bit_vector = htole32(1 << sc->fp->cl_id);
 
-	config->config_table[0].vlan_id = 0;
-	config->config_table[0].e1hov_id = htole16(sc->e1hov);
+	config_table->vlan_id = 0;
+	config_table->e1hov_id = htole16(sc->e1hov);
 
 	if (set)
-		config->config_table[0].flags = port;
+		config_table->flags = port;
 	else
-		config->config_table[0].flags =
+		config_table->flags =
 			MAC_CONFIGURATION_ENTRY_E1H_ACTION_TYPE;
 
 	DBPRINT(sc, BXE_VERBOSE_MISC,
 	    "%s(): %s MAC (%04x:%04x:%04x), E1HOV = %d, CLID = %d\n",
 	    __FUNCTION__, (set ? "Setting" : "Clearing"),
-	    config->config_table[0].msb_mac_addr,
-	    config->config_table[0].middle_mac_addr,
-	    config->config_table[0].lsb_mac_addr, sc->e1hov, BP_L_ID(sc));
+	    config_table->msb_mac_addr, config_table->middle_mac_addr,
+	    config_table->lsb_mac_addr, sc->e1hov, BP_L_ID(sc));
 
 	bxe_sp_post(sc, RAMROD_CMD_ID_ETH_SET_MAC, 0,
 	    U64_HI(BXE_SP_MAPPING(sc, mac_config)),
@@ -14402,7 +14455,9 @@ bxe_set_rx_mode(struct bxe_softc *sc)
 	struct ifnet *ifp;
 	struct ifmultiaddr *ifma;
 	struct mac_configuration_cmd *config;
+	struct mac_configuration_entry *config_table;
 	uint32_t mc_filter[MC_HASH_SIZE];
+	uint8_t *maddr;
 	uint32_t crc, bit, regidx, rx_mode;
 	int i, old, offset, port;
 
@@ -14431,8 +14486,8 @@ bxe_set_rx_mode(struct bxe_softc *sc)
 
 		/* Enable promiscuous mode. */
 		rx_mode = BXE_RX_MODE_PROMISC;
-	} else if ((ifp->if_flags & IFF_ALLMULTI) ||
-	    (ifp->if_amcount > BXE_MAX_MULTICAST)) {
+	} else if (ifp->if_flags & IFF_ALLMULTI ||
+	    ifp->if_amcount > BXE_MAX_MULTICAST) {
 		DBPRINT(sc, BXE_VERBOSE_MISC,
 		    "%s(): Enabling all multicast mode.\n", __FUNCTION__);
 
@@ -14453,28 +14508,28 @@ bxe_set_rx_mode(struct bxe_softc *sc)
 			TAILQ_FOREACH(ifma, &ifp->if_multiaddrs, ifma_link) {
 				if (ifma->ifma_addr->sa_family != AF_LINK)
 					continue;
-
-				config->config_table[i].cam_entry.msb_mac_addr =
-					bswap16(*(uint32_t *)(LLADDR((struct sockaddr_dl *)ifma->ifma_addr)));
-				config->config_table[i].cam_entry.middle_mac_addr =
-					bswap16(*(uint16_t *)(LLADDR((struct sockaddr_dl *)ifma->ifma_addr) + 2));
-				config->config_table[i].cam_entry.lsb_mac_addr =
-					bswap16(*(uint16_t *)(LLADDR((struct sockaddr_dl *)ifma->ifma_addr) + 4));
-
-				config->config_table[i].cam_entry.flags = htole16(port);
-				config->config_table[i].target_table_entry.flags = 0;
-				config->config_table[i].target_table_entry.
-					clients_bit_vector = htole32(1 << BP_L_ID(sc));
-				config->config_table[i].target_table_entry.vlan_id = 0;
-
+				maddr = (uint8_t *)LLADDR(
+				    (struct sockaddr_dl *)ifma->ifma_addr);
+				config_table = &config->config_table[i];
+				config_table->cam_entry.msb_mac_addr =
+				    maddr[0] << 8 | maddr[1];
+				config_table->cam_entry.middle_mac_addr =
+				    maddr[2] << 8 | maddr[3];
+				config_table->cam_entry.lsb_mac_addr =
+				    maddr[4] << 8 | maddr[5];
+				config_table->cam_entry.flags = htole16(port);
+				config_table->target_table_entry.flags = 0;
+				config_table->target_table_entry.
+				    clients_bit_vector =
+				    htole32(1 << BP_L_ID(sc));
+				config_table->target_table_entry.vlan_id = 0;
 				i++;
-
 				DBPRINT(sc, BXE_INFO,
 			"%s(): Setting MCAST[%d] (%04X:%04X:%04X)\n",
 				    __FUNCTION__, i,
-				    config->config_table[i].cam_entry.msb_mac_addr,
-				    config->config_table[i].cam_entry.middle_mac_addr,
-				    config->config_table[i].cam_entry.lsb_mac_addr);
+				    config_table->cam_entry.msb_mac_addr,
+				    config_table->cam_entry.middle_mac_addr,
+				    config_table->cam_entry.lsb_mac_addr);
 			}
 
 			IF_ADDR_UNLOCK(ifp);
@@ -14484,11 +14539,11 @@ bxe_set_rx_mode(struct bxe_softc *sc)
 			/* Invalidate any extra MC entries in the CAM. */
 			if (old > i) {
 				for (; i < old; i++) {
-					if (CAM_IS_INVALID(
-					    config->config_table[i]))
+					config_table = &config->config_table[i];
+					if (CAM_IS_INVALID(config_table))
 						break;
 					/* Invalidate */
-					CAM_INVALIDATE(config->config_table[i]);
+					CAM_INVALIDATE(config_table);
 				}
 			}
 
@@ -14501,7 +14556,6 @@ bxe_set_rx_mode(struct bxe_softc *sc)
 			bxe_sp_post(sc, RAMROD_CMD_ID_ETH_SET_MAC, 0,
 			    U64_HI(BXE_SP_MAPPING(sc, mcast_config)),
 			    U64_LO(BXE_SP_MAPPING(sc, mcast_config)), 0);
-
 		} else { /* E1H */
 			/* Accept one or more multicasts */
 			memset(mc_filter, 0, 4 * MC_HASH_SIZE);
@@ -15555,7 +15609,7 @@ bxe_txeof(struct bxe_fastpath *fp)
 #endif
 
 		txbd =
-		    &fp->tx_bd_chain[TX_PAGE(sw_tx_chain_cons)][TX_IDX(sw_tx_chain_cons)].start_bd;
+&fp->tx_bd_chain[TX_PAGE(sw_tx_chain_cons)][TX_IDX(sw_tx_chain_cons)].start_bd;
 
 #ifdef BXE_DEBUG
 		if (txbd == NULL) {
@@ -15765,7 +15819,7 @@ bxe_change_mtu(struct bxe_softc *sc, int if_drv_running)
 	sc->bxe_ifp->if_mtu = ifp->if_mtu;
 	if (if_drv_running) {
 		DBPRINT(sc, BXE_INFO_IOCTL, "%s(): Changing the MTU to %d.\n",
-		    __FUNCTION__, sc->port.ether_mtu);
+		    __FUNCTION__, sc->bxe_ifp->if_mtu);
 
 		bxe_stop_locked(sc, UNLOAD_NORMAL);
 		bxe_init_locked(sc, LOAD_NORMAL);
@@ -16316,6 +16370,12 @@ bxe_add_sysctls(struct bxe_softc *sc)
 			    "tx_chain_lost_mbuf",
 			    CTLFLAG_RD, &fp->tx_chain_lost_mbuf,
 			    "Mbufs lost on TX chain count");
+
+			SYSCTL_ADD_INT(ctx, queue_list, OID_AUTO,
+			    "max_drbr_queue_depth",
+			    CTLFLAG_RD, &fp->max_drbr_queue_depth,
+			    0, "Driver queue maximum dpeth");
+
 #ifdef BXE_DEBUG
 			SYSCTL_ADD_ULONG(ctx, queue_list, OID_AUTO,
 			    "null_cqe_flags",

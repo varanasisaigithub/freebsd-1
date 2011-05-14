@@ -371,6 +371,8 @@ ar5416Attach(uint16_t devid, HAL_SOFTC sc,
 	/* Read Reg Domain */
 	AH_PRIVATE(ah)->ah_currentRD =
 	    ath_hal_eepromGet(ah, AR_EEP_REGDMN_0, AH_NULL);
+	AH_PRIVATE(ah)->ah_currentRDext =
+	    ath_hal_eepromGet(ah, AR_EEP_REGDMN_1, AH_NULL);
 
 	/*
 	 * ah_miscMode is populated by ar5416FillCapabilityInfo()
@@ -417,6 +419,12 @@ ar5416Detach(struct ath_hal *ah)
 
 	HALASSERT(ah != AH_NULL);
 	HALASSERT(ah->ah_magic == AR5416_MAGIC);
+
+	/* Make sure that chip is awake before writing to it */
+	if (! ar5416SetPowerMode(ah, HAL_PM_AWAKE, AH_TRUE))
+		HALDEBUG(ah, HAL_DEBUG_UNMASKABLE,
+		    "%s: failed to wake up chip\n",
+		    __func__);
 
 	ar5416AniDetach(ah);
 	ar5212RfDetach(ah);
@@ -810,6 +818,7 @@ ar5416FillCapabilityInfo(struct ath_hal *ah)
 	pCap->halBssIdMaskSupport = AH_TRUE;
 	pCap->halMcastKeySrchSupport = AH_FALSE;
 	pCap->halTsfAddSupport = AH_TRUE;
+	pCap->hal4AddrAggrSupport = AH_FALSE;	/* Broken in Owl */
 
 	if (ath_hal_eepromGet(ah, AR_EEP_MAXQCU, &val) == HAL_OK)
 		pCap->halTotalQueues = val;
@@ -860,10 +869,12 @@ ar5416FillCapabilityInfo(struct ath_hal *ah)
 	pCap->halTxStreams = 2;
 	pCap->halRxStreams = 2;
 	pCap->halRtsAggrLimit = 8*1024;		/* Owl 2.0 limit */
-	pCap->halMbssidAggrSupport = AH_TRUE;
+	pCap->halMbssidAggrSupport = AH_FALSE;	/* Broken on Owl */
 	pCap->halForcePpmSupport = AH_TRUE;
 	pCap->halEnhancedPmSupport = AH_TRUE;
 	pCap->halBssidMatchSupport = AH_TRUE;
+	pCap->halGTTSupport = AH_TRUE;
+	pCap->halCSTSupport = AH_TRUE;
 
 	if (ath_hal_eepromGetFlag(ah, AR_EEP_RFKILL) &&
 	    ath_hal_eepromGet(ah, AR_EEP_RFSILENT, &ahpriv->ah_rfsilent) == HAL_OK) {

@@ -184,6 +184,7 @@ typedef struct {
 			halChanHalfRate			: 1,
 			halChanQuarterRate		: 1,
 			halHTSupport			: 1,
+			halHTSGI20Support		: 1,
 			halRfSilentSupport		: 1,
 			halHwPhyCounterSupport		: 1,
 			halWowSupport			: 1,
@@ -197,14 +198,15 @@ typedef struct {
 			halCSTSupport			: 1,
 			halRifsRxSupport		: 1,
 			halRifsTxSupport		: 1,
+			hal4AddrAggrSupport		: 1,
 			halExtChanDfsSupport		: 1,
 			halForcePpmSupport		: 1,
 			halEnhancedPmSupport		: 1,
 			halMbssidAggrSupport		: 1,
 			halBssidMatchSupport		: 1,
 			hal4kbSplitTransSupport		: 1,
-			halHasPsPollSupport		: 1,
-			halHasRxSelfLinkedTail		: 1;
+			halHasRxSelfLinkedTail		: 1,
+			halSupportsFastClock5GHz	: 1;	/* Hardware supports 5ghz fast clock; check eeprom/channel before using */
 	uint32_t	halWirelessModes;
 	uint16_t	halTotalQueues;
 	uint16_t	halKeyCacheSize;
@@ -298,6 +300,7 @@ struct ath_hal_private {
 	 * State for regulatory domain handling.
 	 */
 	HAL_REG_DOMAIN	ah_currentRD;		/* EEPROM regulatory domain */
+	HAL_REG_DOMAIN	ah_currentRDext;	/* EEPROM extended regdomain flags */
 	HAL_CHANNEL_INTERNAL ah_channels[AH_MAXCHAN]; /* private chan state */
 	u_int		ah_nchan;		/* valid items in ah_channels */
 	const struct regDomain *ah_rd2GHz;	/* reg state for 2G band */
@@ -514,7 +517,8 @@ extern	void ath_hal_free(void *);
 extern	int ath_hal_debug;
 #define	HALDEBUG(_ah, __m, ...) \
 	do {							\
-		if (ath_hal_debug & (__m)) {			\
+		if ((__m) == HAL_DEBUG_UNMASKABLE ||		\
+		    (ath_hal_debug & (__m))) {			\
 			DO_HALDEBUG((_ah), (__m), __VA_ARGS__);	\
 		}						\
 	} while(0);
@@ -805,10 +809,21 @@ extern	HAL_BOOL ath_ee_FillVpdTable(uint8_t pwrMin, uint8_t pwrMax,
 extern	int16_t ath_ee_interpolate(uint16_t target, uint16_t srcLeft,
 	uint16_t srcRight, int16_t targetLeft, int16_t targetRight);
 
-/* Whether 5ghz fast clock is needed for Merlin and later */
+/* Whether 5ghz fast clock is needed */
+/*
+ * The chipset (Merlin, AR9300/later) should set the capability flag below;
+ * this flag simply says that the hardware can do it, not that the EEPROM
+ * says it can.
+ *
+ * Merlin 2.0/2.1 chips with an EEPROM version > 16 do 5ghz fast clock
+ *   if the relevant eeprom flag is set.
+ * Merlin 2.0/2.1 chips with an EEPROM version <= 16 do 5ghz fast clock
+ *   by default.
+ */
 #define	IS_5GHZ_FAST_CLOCK_EN(_ah, _c) \
 	(IEEE80211_IS_CHAN_5GHZ(_c) && \
-	ath_hal_eepromGetFlag(ah, AR_EEP_FSTCLK_5G))
+	 AH_PRIVATE((_ah))->ah_caps.halSupportsFastClock5GHz && \
+	ath_hal_eepromGetFlag((_ah), AR_EEP_FSTCLK_5G))
 
 
 #endif /* _ATH_AH_INTERAL_H_ */

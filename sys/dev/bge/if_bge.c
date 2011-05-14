@@ -171,6 +171,7 @@ static const struct bge_type {
 	{ BCOM_VENDORID,	BCOM_DEVICEID_BCM5715S },
 	{ BCOM_VENDORID,	BCOM_DEVICEID_BCM5717 },
 	{ BCOM_VENDORID,	BCOM_DEVICEID_BCM5718 },
+	{ BCOM_VENDORID,	BCOM_DEVICEID_BCM5719 },
 	{ BCOM_VENDORID,	BCOM_DEVICEID_BCM5720 },
 	{ BCOM_VENDORID,	BCOM_DEVICEID_BCM5721 },
 	{ BCOM_VENDORID,	BCOM_DEVICEID_BCM5722 },
@@ -299,6 +300,7 @@ static const struct bge_revision {
 	{ BGE_CHIPID_BCM5715_A3,	"BCM5715 A3" },
 	{ BGE_CHIPID_BCM5717_A0,	"BCM5717 A0" },
 	{ BGE_CHIPID_BCM5717_B0,	"BCM5717 B0" },
+	{ BGE_CHIPID_BCM5719_A0,	"BCM5719 A0" },
 	{ BGE_CHIPID_BCM5755_A0,	"BCM5755 A0" },
 	{ BGE_CHIPID_BCM5755_A1,	"BCM5755 A1" },
 	{ BGE_CHIPID_BCM5755_A2,	"BCM5755 A2" },
@@ -346,6 +348,7 @@ static const struct bge_revision const bge_majorrevs[] = {
 	{ BGE_ASICREV_BCM57765,		"unknown BCM57765" },
 	{ BGE_ASICREV_BCM57780,		"unknown BCM57780" },
 	{ BGE_ASICREV_BCM5717,		"unknown BCM5717" },
+	{ BGE_ASICREV_BCM5719,		"unknown BCM5719" },
 
 	{ 0, NULL }
 };
@@ -403,6 +406,7 @@ static void bge_start(struct ifnet *);
 static int bge_ioctl(struct ifnet *, u_long, caddr_t);
 static void bge_init_locked(struct bge_softc *);
 static void bge_init(void *);
+static void bge_stop_block(struct bge_softc *, bus_size_t, uint32_t);
 static void bge_stop(struct bge_softc *);
 static void bge_watchdog(struct bge_softc *);
 static int bge_shutdown(device_t);
@@ -1480,6 +1484,14 @@ bge_chipinit(struct bge_softc *sc)
 		dma_rw_ctl &= ~BGE_PCIDMARWCTL_DIS_CACHE_ALIGNMENT;
 		if (sc->bge_chipid == BGE_CHIPID_BCM57765_A0)
 			dma_rw_ctl &= ~BGE_PCIDMARWCTL_CRDRDR_RDMA_MRRS_MSK;
+		/*
+		 * Enable HW workaround for controllers that misinterpret
+		 * a status tag update and leave interrupts permanently
+		 * disabled.
+		 */
+		if (sc->bge_asicrev != BGE_ASICREV_BCM5717 &&
+		    sc->bge_asicrev != BGE_ASICREV_BCM57765)
+			dma_rw_ctl |= BGE_PCIDMARWCTL_TAGGED_STATUS_WA;
 	}
 	pci_write_config(sc->bge_dev, BGE_PCI_DMA_RW_CTL, dma_rw_ctl, 4);
 
@@ -1536,7 +1548,7 @@ bge_blockinit(struct bge_softc *sc)
 	struct bge_rcb *rcb;
 	bus_size_t vrcb;
 	bge_hostaddr taddr;
-	uint32_t val;
+	uint32_t dmactl, val;
 	int i, limit;
 
 	/*
@@ -1593,22 +1605,27 @@ bge_blockinit(struct bge_softc *sc)
 	CSR_WRITE_4(sc, BGE_BMAN_DMA_DESCPOOL_HIWAT, 10);
 
 	/* Enable buffer manager */
-	if (!(BGE_IS_5705_PLUS(sc))) {
-		CSR_WRITE_4(sc, BGE_BMAN_MODE,
-		    BGE_BMANMODE_ENABLE | BGE_BMANMODE_LOMBUF_ATTN);
+	val = BGE_BMANMODE_ENABLE | BGE_BMANMODE_LOMBUF_ATTN;
+	/*
+	 * Change the arbitration algorithm of TXMBUF read request to
+	 * round-robin instead of priority based for BCM5719.  When
+	 * TXFIFO is almost empty, RDMA will hold its request until
+	 * TXFIFO is not almost empty.
+	 */
+	if (sc->bge_asicrev == BGE_ASICREV_BCM5719)
+		val |= BGE_BMANMODE_NO_TX_UNDERRUN;
+	CSR_WRITE_4(sc, BGE_BMAN_MODE, val);
 
-		/* Poll for buffer manager start indication */
-		for (i = 0; i < BGE_TIMEOUT; i++) {
-			DELAY(10);
-			if (CSR_READ_4(sc, BGE_BMAN_MODE) & BGE_BMANMODE_ENABLE)
-				break;
-		}
+	/* Poll for buffer manager start indication */
+	for (i = 0; i < BGE_TIMEOUT; i++) {
+		DELAY(10);
+		if (CSR_READ_4(sc, BGE_BMAN_MODE) & BGE_BMANMODE_ENABLE)
+			break;
+	}
 
-		if (i == BGE_TIMEOUT) {
-			device_printf(sc->bge_dev,
-			    "buffer manager failed to start\n");
-			return (ENXIO);
-		}
+	if (i == BGE_TIMEOUT) {
+		device_printf(sc->bge_dev, "buffer manager failed to start\n");
+		return (ENXIO);
 	}
 
 	/* Enable flow-through queues */
@@ -1694,7 +1711,8 @@ bge_blockinit(struct bge_softc *sc)
 		rcb->bge_maxlen_flags =
 		    BGE_RCB_MAXLEN_FLAGS(BGE_MAX_FRAMELEN, 0);
 	}
-	if (sc->bge_asicrev == BGE_ASICREV_BCM5717)
+	if (sc->bge_asicrev == BGE_ASICREV_BCM5717 ||
+	    sc->bge_asicrev == BGE_ASICREV_BCM5719)
 		rcb->bge_nicaddr = BGE_STD_RX_RINGS_5717;
 	else
 		rcb->bge_nicaddr = BGE_STD_RX_RINGS;
@@ -1726,7 +1744,8 @@ bge_blockinit(struct bge_softc *sc)
 		    BUS_DMASYNC_PREREAD);
 		rcb->bge_maxlen_flags = BGE_RCB_MAXLEN_FLAGS(0,
 		    BGE_RCB_FLAG_USE_EXT_RX_BD | BGE_RCB_FLAG_RING_DISABLED);
-		if (sc->bge_asicrev == BGE_ASICREV_BCM5717)
+		if (sc->bge_asicrev == BGE_ASICREV_BCM5717 ||
+		    sc->bge_asicrev == BGE_ASICREV_BCM5719)
 			rcb->bge_nicaddr = BGE_JUMBO_RX_RINGS_5717;
 		else
 			rcb->bge_nicaddr = BGE_JUMBO_RX_RINGS;
@@ -1814,7 +1833,8 @@ bge_blockinit(struct bge_softc *sc)
 	BGE_HOSTADDR(taddr, sc->bge_ldata.bge_tx_ring_paddr);
 	RCB_WRITE_4(sc, vrcb, bge_hostaddr.bge_addr_hi, taddr.bge_addr_hi);
 	RCB_WRITE_4(sc, vrcb, bge_hostaddr.bge_addr_lo, taddr.bge_addr_lo);
-	if (sc->bge_asicrev == BGE_ASICREV_BCM5717)
+	if (sc->bge_asicrev == BGE_ASICREV_BCM5717 ||
+	    sc->bge_asicrev == BGE_ASICREV_BCM5719)
 		RCB_WRITE_4(sc, vrcb, bge_nicaddr, BGE_SEND_RING_5717);
 	else
 		RCB_WRITE_4(sc, vrcb, bge_nicaddr,
@@ -1827,7 +1847,8 @@ bge_blockinit(struct bge_softc *sc)
 	 * 'ring diabled' bit in the flags field of all the receive
 	 * return ring control blocks, located in NIC memory.
 	 */
-	if (sc->bge_asicrev == BGE_ASICREV_BCM5717) {
+	if (sc->bge_asicrev == BGE_ASICREV_BCM5717 ||
+	    sc->bge_asicrev == BGE_ASICREV_BCM5719) {
 		/* Should be 17, use 16 until we get an SRAM map. */
 		limit = 16;
 	} else if (!BGE_IS_5705_PLUS(sc))
@@ -2031,15 +2052,35 @@ bge_blockinit(struct bge_softc *sc)
 	    sc->bge_asicrev == BGE_ASICREV_BCM5785 ||
 	    sc->bge_asicrev == BGE_ASICREV_BCM57780 ||
 	    BGE_IS_5717_PLUS(sc)) {
+		dmactl = CSR_READ_4(sc, BGE_RDMA_RSRVCTRL);
+		/*
+		 * Adjust tx margin to prevent TX data corruption and
+		 * fix internal FIFO overflow.
+		 */
+		if (sc->bge_asicrev == BGE_ASICREV_BCM5719) {
+			dmactl &= ~(BGE_RDMA_RSRVCTRL_FIFO_LWM_MASK |
+			    BGE_RDMA_RSRVCTRL_FIFO_HWM_MASK |
+			    BGE_RDMA_RSRVCTRL_TXMRGN_MASK);
+			dmactl |= BGE_RDMA_RSRVCTRL_FIFO_LWM_1_5K |
+			    BGE_RDMA_RSRVCTRL_FIFO_HWM_1_5K |
+			    BGE_RDMA_RSRVCTRL_TXMRGN_320B;
+		}
 		/*
 		 * Enable fix for read DMA FIFO overruns.
 		 * The fix is to limit the number of RX BDs
 		 * the hardware would fetch at a fime.
 		 */
-		CSR_WRITE_4(sc, BGE_RDMA_RSRVCTRL,
-		    CSR_READ_4(sc, BGE_RDMA_RSRVCTRL) |
+		CSR_WRITE_4(sc, BGE_RDMA_RSRVCTRL, dmactl |
 		    BGE_RDMA_RSRVCTRL_FIFO_OFLW_FIX);
 	}
+
+	if (sc->bge_asicrev == BGE_ASICREV_BCM5719) {
+		CSR_WRITE_4(sc, BGE_RDMA_LSO_CRPTEN_CTRL,
+		    CSR_READ_4(sc, BGE_RDMA_LSO_CRPTEN_CTRL) |
+		    BGE_RDMA_LSO_CRPTEN_CTRL_BLEN_BD_4K |
+		    BGE_RDMA_LSO_CRPTEN_CTRL_BLEN_LSO_4K);
+	}
+
 	CSR_WRITE_4(sc, BGE_RDMA_MODE, val);
 	DELAY(40);
 
@@ -2191,6 +2232,7 @@ bge_probe(device_t dev)
 				switch (pci_get_device(dev)) {
 				case BCOM_DEVICEID_BCM5717:
 				case BCOM_DEVICEID_BCM5718:
+				case BCOM_DEVICEID_BCM5719:
 					id = pci_read_config(dev,
 					    BGE_PCI_GEN2_PRODID_ASICREV, 4);
 					break;
@@ -2714,6 +2756,7 @@ bge_attach(device_t dev)
 		switch (pci_get_device(dev)) {
 		case BCOM_DEVICEID_BCM5717:
 		case BCOM_DEVICEID_BCM5718:
+		case BCOM_DEVICEID_BCM5719:
 			sc->bge_chipid = pci_read_config(dev,
 			    BGE_PCI_GEN2_PRODID_ASICREV, 4);
 			break;
@@ -2744,11 +2787,13 @@ bge_attach(device_t dev)
 	  * BCM57XX  |   1   |   X   |   X   |   X   |
 	  * BCM5704  |   1   |   X   |   1   |   X   |
 	  * BCM5717  |   1   |   8   |   2   |   9   |
+	  * BCM5719  |   1   |   8   |   2   |   9   |
 	  *
 	  * Other addresses may respond but they are not
 	  * IEEE compliant PHYs and should be ignored.
 	  */
-	if (sc->bge_asicrev == BGE_ASICREV_BCM5717) {
+	if (sc->bge_asicrev == BGE_ASICREV_BCM5717 ||
+	    sc->bge_asicrev == BGE_ASICREV_BCM5719) {
 		f = pci_get_function(dev);
 		if (sc->bge_chipid == BGE_CHIPID_BCM5717_A0) {
 			if (CSR_READ_4(sc, BGE_SGDIG_STS) &
@@ -2756,7 +2801,7 @@ bge_attach(device_t dev)
 				phy_addr = f + 8;
 			else
 				phy_addr = f + 1;
-		} else if (sc->bge_chipid == BGE_CHIPID_BCM5717_B0) {
+		} else {
 			if (CSR_READ_4(sc, BGE_CPMU_PHY_STRAP) &
 			    BGE_CPMU_PHY_STRAP_IS_SERDES)
 				phy_addr = f + 8;
@@ -2782,11 +2827,17 @@ bge_attach(device_t dev)
 	/* Save chipset family. */
 	switch (sc->bge_asicrev) {
 	case BGE_ASICREV_BCM5717:
+	case BGE_ASICREV_BCM5719:
 		sc->bge_flags |= BGE_FLAG_SHORT_DMA_BUG;
 	case BGE_ASICREV_BCM57765:
 		sc->bge_flags |= BGE_FLAG_5717_PLUS | BGE_FLAG_5755_PLUS |
 		    BGE_FLAG_575X_PLUS | BGE_FLAG_5705_PLUS | BGE_FLAG_JUMBO |
 		    BGE_FLAG_JUMBO_FRAME;
+		if (sc->bge_asicrev == BGE_ASICREV_BCM5719 &&
+		    sc->bge_chipid == BGE_CHIPID_BCM5719_A0) {
+			/* Jumbo frame on BCM5719 A0 does not work. */
+			sc->bge_flags &= ~BGE_FLAG_JUMBO_FRAME;
+		}
 		break;
 	case BGE_ASICREV_BCM5755:
 	case BGE_ASICREV_BCM5761:
@@ -2834,6 +2885,7 @@ bge_attach(device_t dev)
 	if ((BGE_IS_5705_PLUS(sc)) &&
 	    sc->bge_asicrev != BGE_ASICREV_BCM5906 &&
 	    sc->bge_asicrev != BGE_ASICREV_BCM5717 &&
+	    sc->bge_asicrev != BGE_ASICREV_BCM5719 &&
 	    sc->bge_asicrev != BGE_ASICREV_BCM5785 &&
 	    sc->bge_asicrev != BGE_ASICREV_BCM57765 &&
 	    sc->bge_asicrev != BGE_ASICREV_BCM57780) {
@@ -2916,6 +2968,11 @@ bge_attach(device_t dev)
 	if (BGE_IS_5717_PLUS(sc)) {
 		/* BCM5717 requires different TSO configuration. */
 		sc->bge_flags |= BGE_FLAG_TSO3;
+		if (sc->bge_asicrev == BGE_ASICREV_BCM5719 &&
+		    sc->bge_chipid == BGE_CHIPID_BCM5719_A0) {
+			/* TSO on BCM5719 A0 does not work. */
+			sc->bge_flags &= ~BGE_FLAG_TSO3;
+		}
 	} else if (BGE_IS_5755_PLUS(sc)) {
 		/*
 		 * BCM5754 and BCM5787 shares the same ASIC id so
@@ -2938,7 +2995,9 @@ bge_attach(device_t dev)
 		 */
 		sc->bge_flags |= BGE_FLAG_PCIE;
 		sc->bge_expcap = reg;
-		if (pci_get_max_read_req(dev) != 4096)
+		if (sc->bge_asicrev == BGE_ASICREV_BCM5719)
+			pci_set_max_read_req(dev, 2048);
+		else if (pci_get_max_read_req(dev) != 4096)
 			pci_set_max_read_req(dev, 4096);
 	} else {
 		/*
@@ -5136,6 +5195,20 @@ bge_watchdog(struct bge_softc *sc)
 	ifp->if_oerrors++;
 }
 
+static void
+bge_stop_block(struct bge_softc *sc, bus_size_t reg, uint32_t bit)
+{
+	int i;
+
+	BGE_CLRBIT(sc, reg, bit);
+
+	for (i = 0; i < BGE_TIMEOUT; i++) {
+		if ((CSR_READ_4(sc, reg) & bit) == 0)
+			return;
+		DELAY(100);
+        }
+}
+
 /*
  * Stop the adapter and free any mbufs allocated to the
  * RX and TX lists.
@@ -5164,35 +5237,36 @@ bge_stop(struct bge_softc *sc)
 	/*
 	 * Disable all of the receiver blocks.
 	 */
-	BGE_CLRBIT(sc, BGE_RX_MODE, BGE_RXMODE_ENABLE);
-	BGE_CLRBIT(sc, BGE_RBDI_MODE, BGE_RBDIMODE_ENABLE);
-	BGE_CLRBIT(sc, BGE_RXLP_MODE, BGE_RXLPMODE_ENABLE);
-	if (!(BGE_IS_5705_PLUS(sc)))
-		BGE_CLRBIT(sc, BGE_RXLS_MODE, BGE_RXLSMODE_ENABLE);
-	BGE_CLRBIT(sc, BGE_RDBDI_MODE, BGE_RBDIMODE_ENABLE);
-	BGE_CLRBIT(sc, BGE_RDC_MODE, BGE_RDCMODE_ENABLE);
-	BGE_CLRBIT(sc, BGE_RBDC_MODE, BGE_RBDCMODE_ENABLE);
+	bge_stop_block(sc, BGE_RX_MODE, BGE_RXMODE_ENABLE);
+	bge_stop_block(sc, BGE_RBDI_MODE, BGE_RBDIMODE_ENABLE);
+	bge_stop_block(sc, BGE_RXLP_MODE, BGE_RXLPMODE_ENABLE);
+	if (BGE_IS_5700_FAMILY(sc))
+		bge_stop_block(sc, BGE_RXLS_MODE, BGE_RXLSMODE_ENABLE);
+	bge_stop_block(sc, BGE_RDBDI_MODE, BGE_RBDIMODE_ENABLE);
+	bge_stop_block(sc, BGE_RDC_MODE, BGE_RDCMODE_ENABLE);
+	bge_stop_block(sc, BGE_RBDC_MODE, BGE_RBDCMODE_ENABLE);
 
 	/*
 	 * Disable all of the transmit blocks.
 	 */
-	BGE_CLRBIT(sc, BGE_SRS_MODE, BGE_SRSMODE_ENABLE);
-	BGE_CLRBIT(sc, BGE_SBDI_MODE, BGE_SBDIMODE_ENABLE);
-	BGE_CLRBIT(sc, BGE_SDI_MODE, BGE_SDIMODE_ENABLE);
-	BGE_CLRBIT(sc, BGE_RDMA_MODE, BGE_RDMAMODE_ENABLE);
-	BGE_CLRBIT(sc, BGE_SDC_MODE, BGE_SDCMODE_ENABLE);
-	if (!(BGE_IS_5705_PLUS(sc)))
-		BGE_CLRBIT(sc, BGE_DMAC_MODE, BGE_DMACMODE_ENABLE);
-	BGE_CLRBIT(sc, BGE_SBDC_MODE, BGE_SBDCMODE_ENABLE);
+	bge_stop_block(sc, BGE_SRS_MODE, BGE_SRSMODE_ENABLE);
+	bge_stop_block(sc, BGE_SBDI_MODE, BGE_SBDIMODE_ENABLE);
+	bge_stop_block(sc, BGE_SDI_MODE, BGE_SDIMODE_ENABLE);
+	bge_stop_block(sc, BGE_RDMA_MODE, BGE_RDMAMODE_ENABLE);
+	bge_stop_block(sc, BGE_SDC_MODE, BGE_SDCMODE_ENABLE);
+	if (BGE_IS_5700_FAMILY(sc))
+		bge_stop_block(sc, BGE_DMAC_MODE, BGE_DMACMODE_ENABLE);
+	bge_stop_block(sc, BGE_SBDC_MODE, BGE_SBDCMODE_ENABLE);
 
 	/*
 	 * Shut down all of the memory managers and related
 	 * state machines.
 	 */
-	BGE_CLRBIT(sc, BGE_HCC_MODE, BGE_HCCMODE_ENABLE);
-	BGE_CLRBIT(sc, BGE_WDMA_MODE, BGE_WDMAMODE_ENABLE);
-	if (!(BGE_IS_5705_PLUS(sc)))
-		BGE_CLRBIT(sc, BGE_MBCF_MODE, BGE_MBCFMODE_ENABLE);
+	bge_stop_block(sc, BGE_HCC_MODE, BGE_HCCMODE_ENABLE);
+	bge_stop_block(sc, BGE_WDMA_MODE, BGE_WDMAMODE_ENABLE);
+	if (BGE_IS_5700_FAMILY(sc))
+		bge_stop_block(sc, BGE_MBCF_MODE, BGE_MBCFMODE_ENABLE);
+
 	CSR_WRITE_4(sc, BGE_FTQ_RESET, 0xFFFFFFFF);
 	CSR_WRITE_4(sc, BGE_FTQ_RESET, 0);
 	if (!(BGE_IS_5705_PLUS(sc))) {
