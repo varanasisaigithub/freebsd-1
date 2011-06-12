@@ -501,7 +501,7 @@ ar5416PerCalibrationN(struct ath_hal *ah, struct ieee80211_channel *chan,
 		 * and update the history buffer.
 		 */
 		r = ar5416GetNf(ah, chan);
-		if (r <= 0) {
+		if (r == 0 || r == -1) {
 			/* NF calibration result isn't valid */
 			HALDEBUG(ah, HAL_DEBUG_UNMASKABLE, "%s: NF calibration"
 			    " didn't finish; delaying CCA\n", __func__);
@@ -594,8 +594,8 @@ ar5416LoadNF(struct ath_hal *ah, const struct ieee80211_channel *chan)
 	if (AR_SREV_KITE(ah)) {
 		/* Kite has only one chain */
 		chainmask = 0x9;
-	} else if (AR_SREV_MERLIN(ah)) {
-		/* Merlin has only two chains */
+	} else if (AR_SREV_MERLIN(ah) || AR_SREV_KIWI(ah)) {
+		/* Merlin/Kiwi has only two chains */
 		chainmask = 0x1B;
 	} else {
 		chainmask = 0x3F;

@@ -2551,7 +2551,7 @@ nfsvno_fhtovp(struct mount *mp, fhandle_t *fhp, struct sockaddr *nam,
 	if (VFS_NEEDSGIANT(mp))
 		error = ESTALE;
 	else
-		error = VFS_FHTOVP(mp, &fhp->fh_fid, vpp);
+		error = VFS_FHTOVP(mp, &fhp->fh_fid, LK_EXCLUSIVE, vpp);
 	if (error != 0)
 		/* Make sure the server replies ESTALE to the client. */
 		error = ESTALE;
@@ -2592,6 +2592,36 @@ nfsvno_pathconf(struct vnode *vp, int flag, register_t *retf,
 	int error;
 
 	error = VOP_PATHCONF(vp, flag, retf);
+	if (error == EOPNOTSUPP || error == EINVAL) {
+		/*
+		 * Some file systems return EINVAL for name arguments not
+		 * supported and some return EOPNOTSUPP for this case.
+		 * So the NFSv3 Pathconf RPC doesn't fail for these cases,
+		 * just fake them.
+		 */
+		switch (flag) {
+		case _PC_LINK_MAX:
+			*retf = LINK_MAX;
+			break;
+		case _PC_NAME_MAX:
+			*retf = NAME_MAX;
+			break;
+		case _PC_CHOWN_RESTRICTED:
+			*retf = 1;
+			break;
+		case _PC_NO_TRUNC:
+			*retf = 1;
+			break;
+		default:
+			/*
+			 * Only happens if a _PC_xxx is added to the server,
+			 * but this isn't updated.
+			 */
+			*retf = 0;
+			printf("nfsrvd pathconf flag=%d not supp\n", flag);
+		};
+		error = 0;
+	}
 	return (error);
 }
 
@@ -2834,7 +2864,7 @@ nfsvno_getvp(fhandle_t *fhp)
 	mp = vfs_busyfs(&fhp->fh_fsid);
 	if (mp == NULL)
 		return (NULL);
-	error = VFS_FHTOVP(mp, &fhp->fh_fid, &vp);
+	error = VFS_FHTOVP(mp, &fhp->fh_fid, LK_EXCLUSIVE, &vp);
 	vfs_unbusy(mp);
 	if (error)
 		return (NULL);

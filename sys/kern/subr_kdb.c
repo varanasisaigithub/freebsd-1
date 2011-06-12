@@ -412,8 +412,9 @@ kdb_thr_ctx(struct thread *thr)
 		return (&kdb_pcb);
 
 #if defined(SMP) && defined(KDB_STOPPEDPCB)
-	SLIST_FOREACH(pc, &cpuhead, pc_allcpu)  {
-		if (pc->pc_curthread == thr && (stopped_cpus & pc->pc_cpumask))
+	STAILQ_FOREACH(pc, &cpuhead, pc_allcpu)  {
+		if (pc->pc_curthread == thr &&
+		    CPU_OVERLAP(&stopped_cpus, &pc->pc_cpumask))
 			return (KDB_STOPPEDPCB(pc));
 	}
 #endif
