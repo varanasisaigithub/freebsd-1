@@ -90,6 +90,12 @@ bzero(void *addr, size_t count)
 }
 
 /*
+ * Convert number to pointer, truncate on 64->32 case, sign extend
+ * in 32->64 case
+ */
+#define	mkptr(x)	((void *)(intptr_t)(int)(x))
+
+/*
  * Relocate PT_LOAD segements of kernel ELF image to their respective
  * virtual addresses and return entry point
  */
@@ -118,7 +124,7 @@ load_kernel(void * kstart)
 #else
 	eh = (Elf32_Ehdr *)kstart;
 #endif
-	entry_point = (void*)(intptr_t)(int)eh->e_entry;
+	entry_point = mkptr(eh->e_entry);
 	memcpy(phdr, (void *)(kstart + eh->e_phoff),
 	    eh->e_phnum * sizeof(phdr[0]));
 
@@ -149,12 +155,12 @@ load_kernel(void * kstart)
 		if (phdr[i].p_type != PT_LOAD)
 			continue;
 		
-		memcpy((void *)(intptr_t)(int)(phdr[i].p_vaddr),
+		memcpy(mkptr(phdr[i].p_vaddr),
 		    (void*)(kstart + phdr[i].p_offset), phdr[i].p_filesz);
 
 		/* Clean space from oversized segments, eg: bss. */
 		if (phdr[i].p_filesz < phdr[i].p_memsz)
-			bzero((void *)(intptr_t)(int)(phdr[i].p_vaddr + phdr[i].p_filesz),
+			bzero(mkptr(phdr[i].p_vaddr + phdr[i].p_filesz),
 			    phdr[i].p_memsz - phdr[i].p_filesz);
 
 		if (loadend < phdr[i].p_vaddr + phdr[i].p_memsz)
