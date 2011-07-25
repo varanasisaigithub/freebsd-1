@@ -12,11 +12,11 @@
  *    notice, this list of conditions and the following disclaimer in
  *    the documentation and/or other materials provided with the
  *    distribution.
- *
+ * 
  * THIS SOFTWARE IS PROVIDED BY Netlogic Microsystems ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NETLOGIC OR CONTRIBUTORS BE
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NETLOGIC OR CONTRIBUTORS BE 
  * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
  * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
  * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
@@ -39,9 +39,9 @@
 /* ----------------------------------
  *   XLP RESET Physical Address Map
  * ----------------------------------
- * PCI ECFG : 0x18000000 - 0x1bffffff
- * PCI CFG  : 0x1c000000 - 0x1cffffff
- * FLASH    : 0x1fc00000 - 0x1fffffff
+ * PCI ECFG : 0x18000000 - 0x1bffffff 
+ * PCI CFG  : 0x1c000000 - 0x1cffffff 
+ * FLASH    : 0x1fc00000 - 0x1fffffff 
  * ----------------------------------
  */
 
@@ -123,6 +123,27 @@
 #define XLP_PCI_IRTINFO_REG		0x3d
 #define XLP_PCI_UCODEINFO_REG		0x3e
 #define XLP_PCI_SBB_WT_REG		0x3f
+
+
+#define	PCI_VENDOR_NETLOGIC		0x184e
+#define	PCI_DEVICE_ID_NLM_ROOT		0x1001
+#define	PCI_DEVICE_ID_NLM_ICI		0x1002
+#define	PCI_DEVICE_ID_NLM_PIC		0x1003
+#define	PCI_DEVICE_ID_NLM_PCIE		0x1004
+#define	PCI_DEVICE_ID_NLM_EHCI		0x1007
+#define	PCI_DEVICE_ID_NLM_ILK		0x1008
+#define	PCI_DEVICE_ID_NLM_NAE		0x1009
+#define	PCI_DEVICE_ID_NLM_POE		0x100A
+#define	PCI_DEVICE_ID_NLM_FMN		0x100B
+#define	PCI_DEVICE_ID_NLM_RAID		0x100D
+#define	PCI_DEVICE_ID_NLM_SAE		0x100D
+#define	PCI_DEVICE_ID_NLM_RSA		0x100E
+#define	PCI_DEVICE_ID_NLM_CMP		0x100F
+#define	PCI_DEVICE_ID_NLM_UART		0x1010
+#define	PCI_DEVICE_ID_NLM_I2C		0x1011
+#define	PCI_DEVICE_ID_NLM_NOR		0x1015
+#define	PCI_DEVICE_ID_NLM_NAND		0x1016
+#define	PCI_DEVICE_ID_NLM_MMC		0x1018
 
 #if !defined(LOCORE) && !defined(__ASSEMBLY__)
 

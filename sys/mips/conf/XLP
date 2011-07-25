@@ -86,8 +86,16 @@ device		md
 device		pty
 device		bpf
 
-# UART
+# Needed devices
 device		uart
+device		pci
 
 # Network
 device		ether
+
+device		da
+device		scbus
+
+device		usb
+device		ehci
+device		umass
