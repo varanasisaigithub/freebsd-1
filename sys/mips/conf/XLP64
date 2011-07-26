@@ -21,7 +21,7 @@ machine 	mips mips64eb
 ident           XLP64
 
 options 	ISA_MIPS64
-makeoptions	ARCH_FLAGS="-march=mips64 -mabi=64"
+makeoptions	ARCH_FLAGS="-march=mips64r2 -mabi=64"
 makeoptions	KERNLOADADDR=0xffffffff80100000
 
 include		"../nlm/std.xlp"
@@ -93,7 +93,9 @@ device		uart
 device		pci
 
 # Network
+device		miibus
 device		ether
+device		msk
 
 device		da
 device		scbus

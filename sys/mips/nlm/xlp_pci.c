@@ -84,7 +84,7 @@ xlp_pci_init_resources(void)
 		panic("pci_init_resources irq_rman");
 
 	port_rman.rm_start = 0;
-	port_rman.rm_end = ~0u;
+	port_rman.rm_end = ~0ul;
 	port_rman.rm_type = RMAN_ARRAY;
 	port_rman.rm_descr = "I/O ports";
 	if (rman_init(&port_rman)
@@ -92,7 +92,7 @@ xlp_pci_init_resources(void)
 		panic("pci_init_resources port_rman");
 
 	mem_rman.rm_start = 0;
-	mem_rman.rm_end = ~0u;
+	mem_rman.rm_end = ~0ul;
 	mem_rman.rm_type = RMAN_ARRAY;
 	mem_rman.rm_descr = "I/O memory";
 	if (rman_init(&mem_rman)
@@ -100,7 +100,7 @@ xlp_pci_init_resources(void)
 		panic("pci_init_resources mem_rman");
 
 	emul_rman.rm_start = 0;
-	emul_rman.rm_end = ~0u;
+	emul_rman.rm_end = ~0ul;
 	emul_rman.rm_type = RMAN_ARRAY;
 	emul_rman.rm_descr = "Emulated MEMIO";
 	if (rman_init(&emul_rman)
@@ -443,9 +443,7 @@ mips_platform_pci_setup_intr(device_t dev, device_t child,
 	xlp_establish_intr(device_get_name(child), filt,
 	    intr, arg, xlpirq, flags, cookiep, extra_ack);
 
-//	return (bus_generic_setup_intr(dev, child, irq, flags, filt, intr,
-//	    arg, cookiep));
-	return 0;
+	return (0);
 }
 
 static int
@@ -459,15 +457,16 @@ mips_platform_pci_teardown_intr(device_t dev, device_t child,
 	return (bus_generic_teardown_intr(dev, child, irq, cookie));
 }
 
-static vm_offset_t
+static void
 assign_soc_resource(device_t child, int type, u_long *startp, u_long *endp,
-    u_long *countp)
+    u_long *countp, struct rman **rm, vm_offset_t *va)
 {
 	int devid = pci_get_device(child);
 	int inst = pci_get_function(child);
 	int node = pci_get_slot(child) / 8;
-	vm_offset_t va = 0;
 
+	*rm = NULL;
+	*va = 0;
 	switch (devid) {
 	case PCI_DEVICE_ID_NLM_UART:
 		switch (type) {
@@ -476,9 +475,10 @@ assign_soc_resource(device_t child, int type, u_long *startp, u_long *endp,
 			*countp = 1;
 			break;
 		case SYS_RES_MEMORY: 
-			va = nlm_regbase_uart(node, inst)  + XLP_IO_PCI_HDRSZ;
+			*va = nlm_regbase_uart(node, inst)  + XLP_IO_PCI_HDRSZ;
 			*startp = MIPS_KSEG1_TO_PHYS(va);
 			*countp = 0x100;
+			*rm = &emul_rman;
 			break;
 		};
 		break;
@@ -496,8 +496,6 @@ assign_soc_resource(device_t child, int type, u_long *startp, u_long *endp,
 		}
 		break;
 	}
-
-	return (va);
 }
 
 static struct resource *
@@ -517,11 +515,9 @@ xlp_pci_alloc_resource(device_t bus, device_t child, int type, int *rid,
 	 */
 	if (pci_get_bus(child) == 0 &&
 	    pci_get_vendor(child) == PCI_VENDOR_NETLOGIC)
-      		va = assign_soc_resource(child, type, &start, &end,
-		    &count);
-	if (va) 
-		rm = &emul_rman;
-	else
+      		assign_soc_resource(child, type, &start, &end,
+		    &count, &rm, &va);
+	if (rm == NULL) {
 		switch (type) {
 		case SYS_RES_IRQ:
 			rm = &irq_rman;
@@ -537,6 +533,7 @@ xlp_pci_alloc_resource(device_t bus, device_t child, int type, int *rid,
 
 		default:
 			return (0);
+		}
 	}
 
 	rv = rman_reserve_resource(rm, start, end, count, flags, child);
@@ -550,7 +547,12 @@ xlp_pci_alloc_resource(device_t bus, device_t child, int type, int *rid,
 			va = (vm_offset_t)pmap_mapdev(start, count);
 		rman_set_bushandle(rv, va);
 		rman_set_virtual(rv, (void *)va);
-		rman_set_bustag(rv, rmi_bus_space);
+
+		/* SoC devices don't need swap */
+		if (pci_get_bus(child) != 0)
+			rman_set_bustag(rv, rmi_pci_bus_space);
+		else
+			rman_set_bustag(rv, rmi_bus_space);
 	}
 
 	if (needactivate) {
