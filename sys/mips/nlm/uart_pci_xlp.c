@@ -76,11 +76,10 @@ uart_soc_probe(device_t dev)
 		return (ENXIO);
 
 	ubase = nlm_regbase_uart(0, 0);
-	nlm_pci_wreg(ubase, 0xf, 0x1ff);
 	sc = device_get_softc(dev);
 	sc->sc_class = &uart_ns8250_class;
 	device_set_desc(dev, "Netlogic SoC UART");
 	return (uart_bus_probe(dev, 2, 133000000, 0, 0));
 }
 
-DRIVER_MODULE(soc_uart, pci, uart_soc_driver, uart_devclass, 0, 0);
+DRIVER_MODULE(uart_soc, pci, uart_soc_driver, uart_devclass, 0, 0);

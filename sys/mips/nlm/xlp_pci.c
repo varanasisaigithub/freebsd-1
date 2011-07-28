@@ -47,6 +47,9 @@ __FBSDID("$FreeBSD$");
 #include <sys/pciio.h>
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcireg.h>
+#include <dev/uart/uart.h>
+#include <dev/uart/uart_bus.h>
+#include <dev/uart/uart_cpu.h>
 
 #include <machine/bus.h>
 #include <machine/md_var.h>
@@ -459,7 +462,7 @@ mips_platform_pci_teardown_intr(device_t dev, device_t child,
 
 static void
 assign_soc_resource(device_t child, int type, u_long *startp, u_long *endp,
-    u_long *countp, struct rman **rm, vm_offset_t *va)
+    u_long *countp, struct rman **rm, bus_space_tag_t *bst, vm_offset_t *va)
 {
 	int devid = pci_get_device(child);
 	int inst = pci_get_function(child);
@@ -467,6 +470,7 @@ assign_soc_resource(device_t child, int type, u_long *startp, u_long *endp,
 
 	*rm = NULL;
 	*va = 0;
+	*bst = 0;
 	switch (devid) {
 	case PCI_DEVICE_ID_NLM_UART:
 		switch (type) {
@@ -475,10 +479,11 @@ assign_soc_resource(device_t child, int type, u_long *startp, u_long *endp,
 			*countp = 1;
 			break;
 		case SYS_RES_MEMORY: 
-			*va = nlm_regbase_uart(node, inst)  + XLP_IO_PCI_HDRSZ;
+			*va = nlm_regbase_uart(node, inst) + XLP_IO_PCI_HDRSZ;
 			*startp = MIPS_KSEG1_TO_PHYS(va);
 			*countp = 0x100;
 			*rm = &emul_rman;
+			*bst = uart_bus_space_mem;
 			break;
 		};
 		break;
@@ -496,17 +501,21 @@ assign_soc_resource(device_t child, int type, u_long *startp, u_long *endp,
 		}
 		break;
 	}
+
+	/* default to rmi_bus_space for SoC resources */
+	if (type == SYS_RES_MEMORY && *bst == 0)
+		*bst = rmi_bus_space;
 }
 
 static struct resource *
 xlp_pci_alloc_resource(device_t bus, device_t child, int type, int *rid,
 	u_long start, u_long end, u_long count, u_int flags)
 {
-	struct rman *rm;
+	struct rman *rm = NULL;
 	struct resource *rv;
 	vm_offset_t va = 0;
 	int needactivate = flags & RF_ACTIVE;
-
+	bus_space_tag_t bst = 0;
 
 	/*
 	 * For SoC PCI devices, we have to assign resources correctly
@@ -516,7 +525,7 @@ xlp_pci_alloc_resource(device_t bus, device_t child, int type, int *rid,
 	if (pci_get_bus(child) == 0 &&
 	    pci_get_vendor(child) == PCI_VENDOR_NETLOGIC)
       		assign_soc_resource(child, type, &start, &end,
-		    &count, &rm, &va);
+		    &count, &rm, &bst, &va);
 	if (rm == NULL) {
 		switch (type) {
 		case SYS_RES_IRQ:
@@ -545,14 +554,12 @@ xlp_pci_alloc_resource(device_t bus, device_t child, int type, int *rid,
 	if (type == SYS_RES_MEMORY || type == SYS_RES_IOPORT) {
 		if (va == 0)
 			va = (vm_offset_t)pmap_mapdev(start, count);
+		if (bst == 0)
+			bst = rmi_pci_bus_space;
+
 		rman_set_bushandle(rv, va);
 		rman_set_virtual(rv, (void *)va);
-
-		/* SoC devices don't need swap */
-		if (pci_get_bus(child) != 0)
-			rman_set_bustag(rv, rmi_pci_bus_space);
-		else
-			rman_set_bustag(rv, rmi_bus_space);
+		rman_set_bustag(rv, bst);
 	}
 
 	if (needactivate) {
