@@ -36,6 +36,7 @@ __FBSDID("$FreeBSD: head/sys/mips/rmi/fmn.c 213474 2010-10-06 08:09:39Z jchandra
 
 #include <mips/nlm/hal/mmio.h>
 #include <mips/nlm/hal/iomap.h>
+#include <mips/nlm/hal/cpuinfo.h>
 #include <mips/nlm/hal/usb.h>
 
 #include <mips/nlm/xlp.h>
@@ -47,12 +48,12 @@ nlm_usb_intr_en(int node, int port)
 	uint32_t val;
 	uint64_t port_addr;
 
-	port_addr = nlm_regbase_usb(node, port);	
-	val = nlm_rdreg_usb(port_addr, XLP_USB_INT_EN);
+	port_addr = nlm_get_usb_regbase(node, port);	
+	val = nlm_read_usb_reg(port_addr, USB_INT_EN);
 	val = USB_CTRL_INTERRUPT_EN  | USB_OHCI_INTERRUPT_EN | 
 		USB_OHCI_INTERRUPT1_EN | USB_CTRL_INTERRUPT_EN  |
-		USB_OHCI_INTERRUPT_EN | USB_OHCI_INTERRUPT12_EN;
-        nlm_wreg_usb(port_addr, XLP_USB_INT_EN, val);
+		USB_OHCI_INTERRUPT_EN | USB_OHCI_INTERRUPT2_EN;
+        nlm_write_usb_reg(port_addr, USB_INT_EN, val);
 }
 
 static void 
@@ -62,16 +63,16 @@ nlm_usb_hw_reset(int node, int port)
 	uint32_t val;
         	
 	/* reset USB phy */
-	port_addr = nlm_regbase_usb(node, port);       
-	val = nlm_rdreg_usb(port_addr, XLP_USB_PHY0);
-	val &= ~(USBPHYRESET | USBPHYPORTRESET0 | USBPHYPORTRESET1);
-	nlm_wreg_usb(port_addr, XLP_USB_PHY0, val);
+	port_addr = nlm_get_usb_regbase(node, port); 
+	val = nlm_read_usb_reg(port_addr, USB_PHY_0);
+	val &= ~(USB_PHY_RESET | USB_PHY_PORT_RESET_0 | USB_PHY_PORT_RESET_1);
+	nlm_write_usb_reg(port_addr, USB_PHY_0, val);
       
 	DELAY(100);
-	val = nlm_rdreg_usb(port_addr, XLP_USB_CTL0);
-	val &= ~(USBCONTROLLERRESET);
+	val = nlm_read_usb_reg(port_addr, USB_CTL_0);
+	val &= ~(USB_CONTROLLER_RESET);
 	val |= 0x4;
-	nlm_wreg_usb(port_addr, XLP_USB_CTL0, val);
+	nlm_write_usb_reg(port_addr, USB_CTL_0, val);
 }
 
 static void 

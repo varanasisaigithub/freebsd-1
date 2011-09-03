@@ -75,7 +75,7 @@ uart_soc_probe(device_t dev)
 	    pci_get_device(dev) != PCI_DEVICE_ID_NLM_UART)
 		return (ENXIO);
 
-	ubase = nlm_regbase_uart(0, 0);
+	ubase = nlm_get_uart_regbase(0, 0);
 	sc = device_get_softc(dev);
 	sc->sc_class = &uart_ns8250_class;
 	device_set_desc(dev, "Netlogic SoC UART");

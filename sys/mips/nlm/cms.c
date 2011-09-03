@@ -58,7 +58,7 @@ __FBSDID("$FreeBSD: head/sys/mips/rmi/fmn.c 213474 2010-10-06 08:09:39Z jchandra
 #include <mips/nlm/hal/mips-extns.h>
 #include <mips/nlm/hal/mmio.h>
 #include <mips/nlm/hal/iomap.h>
-#include <mips/nlm/hal/cop0.h>
+#include <mips/nlm/hal/cpuinfo.h>
 #include <mips/nlm/hal/cop2.h>
 #include <mips/nlm/hal/fmn.h>
 #include <mips/nlm/hal/pic.h>
@@ -108,7 +108,7 @@ xlp_msgring_config(void)
 	int i;
 
 	/* TODO: Add other nodes */
-	xlp_cms_base = nlm_regbase_cms(0);
+	xlp_cms_base = nlm_get_cms_regbase(0);
 
 	mtx_init(&msgmap_lock, "msgring", NULL, MTX_SPIN);
 	if (xlp_threads_per_core < xlp_msg_threads_per_core)
@@ -210,7 +210,7 @@ xlp_msgring_cpu_init(uint32_t cpuid)
 {
 	int queue,i;
 
-	queue = XLP_CMS_CPU_PUSHQ(0, ((cpuid >> 2) & 0x7), (cpuid & 0x3), 0);
+	queue = CMS_CPU_PUSHQ(0, ((cpuid >> 2) & 0x7), (cpuid & 0x3), 0);
 	/* temp allocate 4 segments to each output queue */
 	nlm_cms_alloc_onchip_q(xlp_cms_base, queue, 4);
 	/* Enable high watermark and non empty interrupt */

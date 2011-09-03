@@ -77,7 +77,6 @@ options 	ALT_BREAK_TO_DEBUGGER
 #options 	KTR			# ktr(4) and ktrdump(8) support
 #options 	KTR_COMPILE=(KTR_LOCK|KTR_PROC|KTR_INTR|KTR_CALLOUT|KTR_UMA|KTR_SYSC)
 #options 	KTR_ENTRIES=131072
-#options 	LOCK_DEBUG
 #options 	LOCK_PROFILING
 
 
@@ -100,6 +99,6 @@ device		msk
 device		da
 device		scbus
 
-device		usb
-device		ehci
-device		umass
+#device		usb
+#device		ehci
+#device		umass

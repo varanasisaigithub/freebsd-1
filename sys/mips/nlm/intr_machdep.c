@@ -48,7 +48,8 @@ __FBSDID("$FreeBSD: head/sys/mips/rmi/intr_machdep.c 212102 2010-09-01 17:35:31Z
 
 #include <mips/nlm/hal/mmio.h>
 #include <mips/nlm/hal/iomap.h>
-#include <mips/nlm/hal/cop0.h>
+#include <mips/nlm/hal/cpuinfo.h>
+#include <mips/nlm/hal/mips-extns.h>
 #include <mips/nlm/interrupt.h>
 #include <mips/nlm/hal/pic.h>
 #include <mips/nlm/xlp.h>

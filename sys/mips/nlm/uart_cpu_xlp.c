@@ -97,7 +97,7 @@ uart_cpu_getdev(int devtype, struct uart_devinfo *di)
 	di->ops = uart_getops(&uart_ns8250_class);
 	di->bas.chan = 0;
 	di->bas.bst = &nlm_uart_bussp;
-	di->bas.bsh = nlm_regbase_uart(0, 0) + XLP_IO_PCI_HDRSZ;
+	di->bas.bsh = nlm_get_uart_regbase(0, 0);
 	
 	di->bas.regshft = 2;
 	/* divisor = rclk / (baudrate * 16); */

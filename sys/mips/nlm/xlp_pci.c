@@ -59,8 +59,9 @@ __FBSDID("$FreeBSD$");
 #include <mips/nlm/hal/mmio.h>
 #include <mips/nlm/interrupt.h>
 #include <mips/nlm/hal/iomap.h>
+#include <mips/nlm/hal/mips-extns.h>
 #include <mips/nlm/hal/pic.h>
-#include <mips/nlm/hal/cop0.h>
+#include <mips/nlm/hal/cpuinfo.h>
 #include <mips/nlm/hal/pcibus.h>
 #include <mips/nlm/hal/uart.h>
 #include <mips/nlm/xlp.h>
@@ -170,7 +171,7 @@ xlp_pcib_read_config(device_t dev, u_int b, u_int s, u_int f,
 	else if ((width == 4) && (reg & 3))
 		return 0xFFFFFFFF;
 
-	data = nlm_pci_rdreg(cfgaddr, regindex);
+	data = nlm_read_pci_reg(cfgaddr, regindex);
 
 	/* 
 	 * Fix up read data in some SoC devices 
@@ -208,18 +209,18 @@ xlp_pcib_write_config(device_t dev, u_int b, u_int s, u_int f,
 		return;
 
 	if (width == 1) {
-		data = nlm_pci_rdreg(cfgaddr, regindex);
+		data = nlm_read_pci_reg(cfgaddr, regindex);
 		data = (data & ~(0xff << ((reg & 3) << 3))) |
 		    (val << ((reg & 3) << 3));
 	} else if (width == 2) {
-		data = nlm_pci_rdreg(cfgaddr, regindex);
+		data = nlm_read_pci_reg(cfgaddr, regindex);
 		data = (data & ~(0xffff << ((reg & 3) << 3))) |
 		    (val << ((reg & 3) << 3));
 	} else {
 		data = val;
 	}
 
-	nlm_pci_wreg(cfgaddr, regindex, data);
+	nlm_write_pci_reg(cfgaddr, regindex, data);
 
 	return;
 }
@@ -280,7 +281,7 @@ xlp_pcie_link_irt(int link)
 	if( (link < 0) || (link > 3))
 		return (-1);
 
-	return XLP_PIC_IRT_PCIE_LINK_INDEX(link);
+	return PIC_IRT_PCIE_LINK_INDEX(link);
 }
 
 static int
@@ -344,26 +345,26 @@ bridge_pcie_ack(int irq)
 	uint64_t base;
 
 	node = nlm_nodeid();
-	reg = XLP_PCIE_MSI_STATUS_REG;
+	reg = PCIE_MSI_STATUS;
 
 	switch(irq) {
-		case XLP_PIC_IRT_PCIE0_IRQ:
+		case PIC_PCIE_0_IRQ:
 			base = nlm_pcicfg_base(XLP_IO_PCIE0_OFFSET(node));
 			break;
-		case XLP_PIC_IRT_PCIE1_IRQ:
+		case PIC_PCIE_1_IRQ:
 			base = nlm_pcicfg_base(XLP_IO_PCIE1_OFFSET(node));
 			break;
-		case XLP_PIC_IRT_PCIE2_IRQ:
+		case PIC_PCIE_2_IRQ:
 			base = nlm_pcicfg_base(XLP_IO_PCIE2_OFFSET(node));
 			break;
-		case XLP_PIC_IRT_PCIE3_IRQ:
+		case PIC_PCIE_3_IRQ:
 			base = nlm_pcicfg_base(XLP_IO_PCIE3_OFFSET(node));
 			break;
 		default:
 			return;
 	}
 
-	nlm_pci_wreg(base, reg, 0xFFFFFFFF);
+	nlm_write_pci_reg(base, reg, 0xFFFFFFFF);
 
 	return;
 }
@@ -408,26 +409,26 @@ mips_platform_pci_setup_intr(device_t dev, device_t child,
 		base = nlm_pcicfg_base(XLP_IO_PCIE_OFFSET(node,link));
 
 		/* MSI Interrupt Vector enable at bridge's configuration */
-		nlm_pci_wreg(base, XLP_PCIE_MSI_EN_REG, PCIE_MSI_VECTOR_INT_EN);
+		nlm_write_pci_reg(base, PCIE_MSI_EN, PCIE_MSI_VECTOR_INT_EN);
 
-		val = nlm_pci_rdreg(base, XLP_PCIE_INT_EN0_REG);
+		val = nlm_read_pci_reg(base, PCIE_INT_EN0);
 		/* MSI Interrupt enable at bridge's configuration */
-		nlm_pci_wreg(base, XLP_PCIE_INT_EN0_REG,
+		nlm_write_pci_reg(base, PCIE_INT_EN0,
 				(val | PCIE_MSI_INT_EN));
 
 		/* legacy interrupt disable at bridge */
-		val = nlm_pci_rdreg(base, XLP_PCIE_BRIDGE_CMD_REG);
-		nlm_pci_wreg(base, XLP_PCIE_BRIDGE_CMD_REG,
+		val = nlm_read_pci_reg(base, PCIE_BRIDGE_CMD);
+		nlm_write_pci_reg(base, PCIE_BRIDGE_CMD,
 				(val | PCIM_CMD_INTxDIS));
 
 		/* MSI address update at bridge */
-		val = nlm_pci_rdreg(base, XLP_PCIE_BRIDGE_MSI_ADDRL_REG);
-		nlm_pci_wreg(base, XLP_PCIE_BRIDGE_MSI_ADDRL_REG,
+		val = nlm_read_pci_reg(base, PCIE_BRIDGE_MSI_ADDRL);
+		nlm_write_pci_reg(base, PCIE_BRIDGE_MSI_ADDRL,
 				(val | MSI_MIPS_ADDR_BASE));
 
-		val = nlm_pci_rdreg(base, XLP_PCIE_BRIDGE_MSI_CAP_REG);
+		val = nlm_read_pci_reg(base, PCIE_BRIDGE_MSI_CAP);
 		/* MSI capability enable at bridge */
-		nlm_pci_wreg(base, XLP_PCIE_BRIDGE_MSI_CAP_REG, 
+		nlm_write_pci_reg(base, PCIE_BRIDGE_MSI_CAP, 
 				(val |
 				(PCIM_MSICTRL_MSI_ENABLE << 16) |
 				(PCIM_MSICTRL_MMC_32 << 16)));
@@ -437,11 +438,12 @@ mips_platform_pci_setup_intr(device_t dev, device_t child,
 			return (EINVAL);
 		xlpirq = xlp_irt_to_irq(xlpirq);
 	}
-	nlm_pic_write_irt_id(xlp_pic_base, xlp_irq_to_irt(xlpirq), 1, 0,
-			xlpirq, 0, 0, 0x1);
+	/* Set all irqs to CPU 0 for now */
+	nlm_pic_write_irt_direct(xlp_pic_base, xlp_irq_to_irt(xlpirq), 1, 0,
+				 PIC_LOCAL_SCHEDULING, xlpirq, 0);
 	extra_ack = NULL;
-	if (xlpirq >= XLP_PIC_IRT_PCIE0_IRQ &&
-	    xlpirq <= XLP_PIC_IRT_PCIE3_IRQ)
+	if (xlpirq >= PIC_PCIE_0_IRQ &&
+	    xlpirq <= PIC_PCIE_3_IRQ)
 		extra_ack = bridge_pcie_ack;
 	xlp_establish_intr(device_get_name(child), filt,
 	    intr, arg, xlpirq, flags, cookiep, extra_ack);
@@ -475,11 +477,11 @@ assign_soc_resource(device_t child, int type, u_long *startp, u_long *endp,
 	case PCI_DEVICE_ID_NLM_UART:
 		switch (type) {
 		case SYS_RES_IRQ:
-			*startp = *endp = XLP_PIC_IRT_UART0_IRQ + inst;
+			*startp = *endp = PIC_UART_0_IRQ + inst;
 			*countp = 1;
 			break;
 		case SYS_RES_MEMORY: 
-			*va = nlm_regbase_uart(node, inst) + XLP_IO_PCI_HDRSZ;
+			*va = nlm_get_uart_regbase(node, inst);
 			*startp = MIPS_KSEG1_TO_PHYS(va);
 			*countp = 0x100;
 			*rm = &emul_rman;
@@ -491,9 +493,9 @@ assign_soc_resource(device_t child, int type, u_long *startp, u_long *endp,
 	case PCI_DEVICE_ID_NLM_EHCI:
 		if (type == SYS_RES_IRQ) {
 			if (inst == 0)
-				*startp = *endp = XLP_PIC_IRT_EHCI0_IRQ;
+				*startp = *endp = PIC_EHCI_0_IRQ;
 			else if (inst == 3)
-				*startp = *endp = XLP_PIC_IRT_EHCI1_IRQ;
+				*startp = *endp = PIC_EHCI_1_IRQ;
 			else
 				device_printf(child, "bad instance %d\n", inst);
 

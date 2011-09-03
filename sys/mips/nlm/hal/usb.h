@@ -30,28 +30,28 @@
 #ifndef __NLM_USB_H__
 #define __NLM_USB_H__
 
-#define XLP_USB_CTL0			0x41
-#define XLP_USB_PHY0			0x4A
-#define USBPHYRESET			0x01
-#define USBPHYPORTRESET0		0x10
-#define USBPHYPORTRESET1		0x20
-#define USBCONTROLLERRESET		0x01
-#define XLP_USB_INT_STATUS		0x4E
-#define XLP_USB_INT_EN			0x4F
+#define USB_CTL_0			0x01
+#define USB_PHY_0			0x0A
+#define USB_PHY_RESET			0x01
+#define USB_PHY_PORT_RESET_0		0x10
+#define USB_PHY_PORT_RESET_1		0x20
+#define USB_CONTROLLER_RESET		0x01
+#define USB_INT_STATUS			0x0E
+#define USB_INT_EN			0x0F
 #define USB_PHY_INTERRUPT_EN		0x01
 #define USB_OHCI_INTERRUPT_EN		0x02
 #define USB_OHCI_INTERRUPT1_EN		0x04
-#define USB_OHCI_INTERRUPT12_EN		0x08
+#define USB_OHCI_INTERRUPT2_EN		0x08
 #define USB_CTRL_INTERRUPT_EN		0x10
 
 
 #if !defined(LOCORE) && !defined(__ASSEMBLY__)
 
-#define nlm_rdreg_usb(b, r)		nlm_read_reg_kseg(b,r)
-#define nlm_wreg_usb(b, r, v)		nlm_write_reg_kseg(b,r,v)
-#define	nlm_pcibase_usb(node, inst)	nlm_pcicfg_base(XLP_IO_USB_OFFSET(node, inst))
-#define	nlm_base_usb_pcibar(node, inst)	nlm_pcibar0_base_xkphys(nlm_pcibase_usb(node, inst))
-#define	nlm_regbase_usb(node, inst)	(nlm_pcibase_usb(node, inst))
+#define nlm_read_usb_reg(b, r)		nlm_read_reg(b,r)
+#define nlm_write_usb_reg(b, r, v)	nlm_write_reg(b,r,v)
+#define	nlm_get_usb_pcibase(node, inst)	nlm_pcicfg_base(XLP_IO_USB_OFFSET(node, inst))
+#define	nlm_get_usb_hcd_base(node, inst) nlm_xkphys_map_pcibar0(nlm_get_usb_pcibase(node, inst))
+#define	nlm_get_usb_regbase(node, inst)	(nlm_get_usb_pcibase(node, inst) + XLP_IO_PCI_HDRSZ)
 
 #endif
 #endif
