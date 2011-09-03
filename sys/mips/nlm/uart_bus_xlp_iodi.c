@@ -42,7 +42,7 @@ __FBSDID("$FreeBSD: head/sys/mips/rmi/uart_bus_xlr_iodi.c 202175 2010-01-12 21:3
 #include <machine/bus.h>
 #include <machine/resource.h>
 
-#include <mips/nlm/hal/mmio.h>
+#include <mips/nlm/hal/haldefs.h>
 #include <mips/nlm/hal/iomap.h>
 #include <mips/nlm/hal/uart.h>
 

@@ -38,17 +38,17 @@
 #define PIC_CTRL_ICI		19 /* ICI interrupt timeout enable */
 #define PIC_CTRL_ITE		18 /* interrupt timeout enable */
 #define PIC_CTRL_STE		10 /* system timer interrupt enable */
-#define PIC_CTRL_WWR1		8  /* watchdog timer 1 wraparound count for reset */
-#define PIC_CTRL_WWR0		6  /* watchdog timer 0 wraparound count for reset */
-#define PIC_CTRL_WWN1		4  /* watchdog timer 1 wraparound count for NMI */
-#define PIC_CTRL_WWN0		2  /* watchdog timer 0 wraparound count for NMI */
+#define PIC_CTRL_WWR1		8  /* watchdog 1 wraparound count for reset */
+#define PIC_CTRL_WWR0		6  /* watchdog 0 wraparound count for reset */
+#define PIC_CTRL_WWN1		4  /* watchdog 1 wraparound count for NMI */
+#define PIC_CTRL_WWN0		2  /* watchdog 0 wraparound count for NMI */
 #define PIC_CTRL_WTE		0  /* watchdog timer enable */
 
 /* PIC Status register defines */
-#define PIC_ICI_STATUS		33 /* ICI interrupt timeout interrupt status */
-#define PIC_ITE_STATUS		32 /* interrupt timeout interrupt status */
+#define PIC_ICI_STATUS		33 /* ICI interrupt timeout status */
+#define PIC_ITE_STATUS		32 /* interrupt timeout status */
 #define PIC_STS_STATUS		4  /* System timer interrupt status */
-#define PIC_WNS_STATUS		2  /* NMI interrupt status for watchdog timers */
+#define PIC_WNS_STATUS		2  /* NMI status for watchdog timers */
 #define PIC_WIS_STATUS		0  /* Interrupt status for watchdog timers */
 
 /* PIC IPI control register offsets */
@@ -341,8 +341,8 @@ static inline void
 nlm_pic_write_irt_direct(uint64_t base, int irt_num, int en, int nmi,
 	int sch, int vec, int cpu)
 {
-	nlm_pic_write_irt(base, irt_num, en, nmi, sch, vec, 1, 
-		(cpu >> 4), 		/* thread group */
+	nlm_pic_write_irt(base, irt_num, en, nmi, sch, vec, 1,
+		(cpu >> 4),		/* thread group */
 		1 << (cpu & 0xf));	/* thread mask */
 }
 
@@ -358,7 +358,7 @@ nlm_pic_write_timer(uint64_t base, int timer, uint64_t value)
 	nlm_write_pic_reg(base, PIC_TIMER_COUNT(timer), value);
 }
 
-static __inline__ void
+static inline void
 nlm_pic_set_timer(uint64_t base, int timer, uint64_t value, int irq, int cpu)
 {
 	uint64_t pic_ctrl = nlm_read_pic_reg(base, PIC_CTRL);
@@ -366,7 +366,7 @@ nlm_pic_set_timer(uint64_t base, int timer, uint64_t value, int irq, int cpu)
 
 	en = (irq > 0);
 	nlm_write_pic_reg(base, PIC_TIMER_MAXVAL(timer), value);
-	nlm_pic_write_irt_direct(base, PIC_IRT_TIMER_INDEX(timer), 
+	nlm_pic_write_irt_direct(base, PIC_IRT_TIMER_INDEX(timer),
 		en, 0, 0, irq, cpu);
 
 	/* enable the timer */

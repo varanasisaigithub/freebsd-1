@@ -42,7 +42,7 @@ __FBSDID("$FreeBSD$");
 
 #include <dev/pci/pcivar.h>
 
-#include <mips/nlm/hal/mmio.h>
+#include <mips/nlm/hal/haldefs.h>
 #include <mips/nlm/hal/iomap.h>
 #include <mips/nlm/hal/uart.h>
 

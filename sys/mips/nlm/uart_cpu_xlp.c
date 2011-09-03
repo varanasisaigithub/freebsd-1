@@ -53,7 +53,7 @@ __FBSDID("$FreeBSD: head/sys/mips/rmi/uart_cpu_mips_xlr.c 202175 2010-01-12 21:3
 #include <dev/uart/uart.h>
 #include <dev/uart/uart_cpu.h>
 
-#include <mips/nlm/hal/mmio.h>
+#include <mips/nlm/hal/haldefs.h>
 #include <mips/nlm/hal/iomap.h>
 #include <mips/nlm/hal/uart.h>
 

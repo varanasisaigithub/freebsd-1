@@ -35,7 +35,7 @@
  * and will provide a way to read 32/64 bit memory mapped registers in
  * all ABIs
  */
-#if !defined(__mips_n32) && !defined(__mips_n64)
+
 /*
  * For o32 compilation, we have to disable interrupts and enable KX bit to
  * access 64 bit addresses or data.
@@ -44,27 +44,26 @@
  * registers in  interrupt handling. So if we get hit by an interrupt while
  * using the upper 32 bits of a register, we lose.
  */
-static inline uint32_t nlm_enable_kx(void)
+static inline uint32_t nlm_save_flags_kx(void)
 {
-	uint32_t sr;
+	uint32_t sr = mips_rd_status();
 
-	__asm__ __volatile__(
-		"mfc0	%0, $12\n\t"		/* read status reg */
-		"move	$8, %0\n\t"
-		"ori	$8, $8, 0x81\n\t"	/* set KX, and IE */
-		"xori	$8, $8, 0x1\n\t"	/* flip IE */
-		"mtc0	$8, $12\n\t"		/* update status reg */
-		: "=r"(sr)
-		: : "$8");
-
-	return sr;
+	mips_wr_status((sr & ~MIPS_SR_INT_IE) | MIPS_SR_KX);
+	return (sr);
 }
 
-static inline void nlm_restore_kx(uint32_t sr)
+static inline uint32_t nlm_save_flags_cop2(void)
 {
-	__asm__ __volatile__("mtc0	%0, $12" : : "r"(sr));
+	uint32_t sr = mips_rd_status();
+
+	mips_wr_status((sr & ~MIPS_SR_INT_IE) | MIPS_SR_COP_2_BIT);
+	return (sr);
 }
-#endif
+
+static inline void nlm_restore_flags(uint32_t sr)
+{
+	mips_wr_status(sr);
+}
 
 static inline uint32_t
 nlm_load_word(uint64_t addr)
@@ -106,7 +105,7 @@ nlm_load_dword(uint64_t addr)
 	volatile uint64_t *p = (volatile uint64_t *)(long)addr;
 	uint32_t valhi, vallo, sr;
 
-	sr = nlm_enable_kx();
+	sr = nlm_save_flags_kx();
 	__asm__ __volatile__(
 		".set	push\n\t"
 		".set	mips64\n\t"
@@ -117,7 +116,7 @@ nlm_load_dword(uint64_t addr)
 		: "=r"(valhi), "=r"(vallo)
 		: "r"(p)
 		: "$8");
-	nlm_restore_kx(sr);
+	nlm_restore_flags(sr);
 
 	return ((uint64_t)valhi << 32) | vallo;
 }
@@ -131,7 +130,7 @@ nlm_store_dword(uint64_t addr, uint64_t val)
 	valhi = val >> 32;
 	vallo = val & 0xffffffff;
 
-	sr = nlm_enable_kx();
+	sr = nlm_save_flags_kx();
 	__asm__ __volatile__(
 		".set	push\n\t"
 		".set	mips64\n\t"
@@ -143,7 +142,7 @@ nlm_store_dword(uint64_t addr, uint64_t val)
 		".set	pop\n"
 		: : "r"(p), "r"(valhi), "r"(vallo)
 		: "$8", "$9", "memory");
-	nlm_restore_kx(sr);
+	nlm_restore_flags(sr);
 }
 #endif
 
@@ -246,7 +245,7 @@ nlm_load_word_daddr(uint64_t addr)
 	addrhi = addr >> 32;
 	addrlo = addr & 0xffffffff;
 
-	sr = nlm_enable_kx();
+	sr = nlm_save_flags_kx();
 	__asm__ __volatile__(
 		".set	push\n\t"
 		".set	mips64\n\t"
@@ -259,7 +258,7 @@ nlm_load_word_daddr(uint64_t addr)
 		:	"=r"(val)
 		:	"r"(addrhi), "r"(addrlo)
 		:	"$8", "$9");
-	nlm_restore_kx(sr);
+	nlm_restore_flags(sr);
 
 	return val;
 
@@ -273,7 +272,7 @@ nlm_store_word_daddr(uint64_t addr, uint32_t val)
 	addrhi = addr >> 32;
 	addrlo = addr & 0xffffffff;
 
-	sr = nlm_enable_kx();
+	sr = nlm_save_flags_kx();
 	__asm__ __volatile__(
 		".set	push\n\t"
 		".set	mips64\n\t"
@@ -285,7 +284,7 @@ nlm_store_word_daddr(uint64_t addr, uint32_t val)
 		".set	pop\n"
 		: : "r"(val), "r"(addrhi), "r"(addrlo)
 		:	"$8", "$9", "memory");
-	nlm_restore_kx(sr);
+	nlm_restore_flags(sr);
 }
 
 static inline uint64_t
@@ -297,7 +296,7 @@ nlm_load_dword_daddr(uint64_t addr)
 	addrh = addr >> 32;
 	addrl = addr & 0xffffffff;
 
-	sr = nlm_enable_kx();
+	sr = nlm_save_flags_kx();
 	__asm__ __volatile__(
 		".set	push\n\t"
 		".set	mips64\n\t"
@@ -312,7 +311,7 @@ nlm_load_dword_daddr(uint64_t addr)
 		: "=r"(valh), "=r"(vall)
 		: "r"(addrh), "r"(addrl)
 		: "$8", "$9");
-	nlm_restore_kx(sr);
+	nlm_restore_flags(sr);
 
 	return ((uint64_t)valh << 32) | vall;
 }
@@ -328,7 +327,7 @@ nlm_store_dword_daddr(uint64_t addr, uint64_t val)
 	valh = val >> 32;
 	vall = val & 0xffffffff;
 
-	sr = nlm_enable_kx();
+	sr = nlm_save_flags_kx();
 	__asm__ __volatile__(
 		".set	push\n\t"
 		".set	mips64\n\t"
@@ -344,7 +343,7 @@ nlm_store_dword_daddr(uint64_t addr, uint64_t val)
 		".set	pop\n"
 		: :	"r"(valh), "r"(vall), "r"(addrh), "r"(addrl)
 		:	"$8", "$9", "memory");
-	nlm_restore_kx(sr);
+	nlm_restore_flags(sr);
 }
 #endif /* __mips_n64 */
 

@@ -71,9 +71,8 @@ __FBSDID("$FreeBSD: head/sys/mips/rmi/xlp_machdep.c 214106 2010-10-20 09:41:36Z 
 #include <machine/smp.h>
 
 #include <mips/nlm/hal/mips-extns.h>
-#include <mips/nlm/hal/mmio.h>
+#include <mips/nlm/hal/haldefs.h>
 #include <mips/nlm/hal/iomap.h>
-#include <mips/nlm/hal/cpuinfo.h>
 #include <mips/nlm/hal/sys.h>
 #include <mips/nlm/hal/pic.h>
 #include <mips/nlm/hal/uart.h>

@@ -215,23 +215,6 @@ nlm_msgwait(int vc)
 		: "$8");
 }
 
-/* TODO this is not needed in n32 and n64 */
-static inline uint32_t
-nlm_fmn_saveflags(void)
-{
-	uint32_t sr = mips_rd_status();
-
-	mips_wr_status((sr & ~MIPS_SR_INT_IE) | MIPS_SR_COP_2_BIT);
-	return sr;
-}
-
-static inline void
-nlm_fmn_restoreflags(uint32_t sr)
-{
-
-	mips_wr_status(sr);
-}
-
 static inline int
 nlm_fmn_msgsend(int dstid, int size, int swcode, struct nlm_fmn_msg *m)
 {
@@ -239,7 +222,7 @@ nlm_fmn_msgsend(int dstid, int size, int swcode, struct nlm_fmn_msg *m)
 	int rv;
 
 	size -= 1;
-	flags = nlm_fmn_saveflags();
+	flags = nlm_save_flags_cop2();
 	switch (size) {
 	case 3:
 		nlm_write_c2_txbuf3(m->msg[3]);
@@ -256,7 +239,7 @@ nlm_fmn_msgsend(int dstid, int size, int swcode, struct nlm_fmn_msg *m)
 	rv = !status;
 	if (rv != 0)
 		rv = nlm_read_c2_txmsgstatus();
-	nlm_fmn_restoreflags(flags);
+	nlm_restore_flags(flags);
 
 	return rv;
 }
@@ -268,7 +251,7 @@ nlm_fmn_msgrcv(int vc, int *srcid, int *size, int *code, struct nlm_fmn_msg *m)
 	uint32_t msg_status, flags;
 	int tmp_sz, rv;
 
-	flags = nlm_fmn_saveflags();
+	flags = nlm_save_flags_cop2();
 	status = nlm_msgld(vc); /* will return 0, if error */
 	rv = !status;
 	if (rv == 0) {
@@ -288,7 +271,7 @@ nlm_fmn_msgrcv(int vc, int *srcid, int *size, int *code, struct nlm_fmn_msg *m)
 			m->msg[0] = nlm_read_c2_rxbuf0();
 		}
 	}
-	nlm_fmn_restoreflags(flags);
+	nlm_restore_flags(flags);
 
 	return rv;
 }

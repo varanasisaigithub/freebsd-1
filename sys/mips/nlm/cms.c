@@ -56,9 +56,8 @@ __FBSDID("$FreeBSD: head/sys/mips/rmi/fmn.c 213474 2010-10-06 08:09:39Z jchandra
 #include <machine/intr_machdep.h>
 
 #include <mips/nlm/hal/mips-extns.h>
-#include <mips/nlm/hal/mmio.h>
+#include <mips/nlm/hal/haldefs.h>
 #include <mips/nlm/hal/iomap.h>
-#include <mips/nlm/hal/cpuinfo.h>
 #include <mips/nlm/hal/cop2.h>
 #include <mips/nlm/hal/fmn.h>
 #include <mips/nlm/hal/pic.h>
@@ -247,9 +246,9 @@ xlp_handle_msg_vc(int vc, int max_msgs)
 	uint32_t mflags, status;
 
 	for (i = 0; i < max_msgs; i++) {
-		mflags = nlm_fmn_saveflags();
+		mflags = nlm_save_flags_cop2();
 		status = nlm_fmn_msgrcv(vc, &srcid, &size, &code, &msg);
-		nlm_fmn_restoreflags(mflags);
+		nlm_restore_flags(mflags);
 		if (status != 0) /* If there is no msg or error */
 			break;
 		if (srcid < 0 && srcid >= 1024) {
@@ -320,9 +319,9 @@ msgring_process(void * arg)
 
 	if (hwtid != nlm_cpuid())
 		printf("Misscheduled hwtid %d != cpuid %d\n", hwtid, nlm_cpuid());
-	mflags = nlm_fmn_saveflags();
+	mflags = nlm_save_flags_cop2();
         nlm_fmn_cpu_init(IRQ_MSGRING, 0, 0, 0, 0, 0);
-	nlm_fmn_restoreflags(mflags);
+	nlm_restore_flags(mflags);
 
         /* start processing messages */
         for( ; ; ) {

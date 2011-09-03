@@ -45,7 +45,7 @@ __FBSDID("$FreeBSD$");
 
 #include <dev/pci/pcivar.h>
 
-#include <mips/nlm/hal/mmio.h>
+#include <mips/nlm/hal/haldefs.h>
 #include <mips/nlm/hal/iomap.h>
 
 static int	nlm_soc_pci_probe(device_t dev);

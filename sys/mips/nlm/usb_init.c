@@ -34,7 +34,7 @@ __FBSDID("$FreeBSD: head/sys/mips/rmi/fmn.c 213474 2010-10-06 08:09:39Z jchandra
 #include <sys/param.h>
 #include <sys/kernel.h>
 
-#include <mips/nlm/hal/mmio.h>
+#include <mips/nlm/hal/haldefs.h>
 #include <mips/nlm/hal/iomap.h>
 #include <mips/nlm/hal/cpuinfo.h>
 #include <mips/nlm/hal/usb.h>

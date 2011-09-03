@@ -28,12 +28,13 @@
  * NETLOGIC_BSD */
 
 #include <sys/types.h>
-#include <mips/nlm/hal/mips-extns.h>
-#include <mips/nlm/hal/mmio.h>
-#include <mips/nlm/hal/iomap.h>
-#include <mips/nlm/hal/cpuinfo.h>
-#include <mips/nlm/hal/fmn.h>
 #include <sys/systm.h>
+
+#include <machine/cpufunc.h>
+#include <mips/nlm/hal/mips-extns.h>
+#include <mips/nlm/hal/haldefs.h>
+#include <mips/nlm/hal/iomap.h>
+#include <mips/nlm/hal/fmn.h>
 
 /* XLP can take upto 16K of FMN messages per hardware queue, as spill.
 * But, configuring all 16K causes the total spill memory to required

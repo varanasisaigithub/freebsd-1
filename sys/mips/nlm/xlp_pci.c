@@ -56,12 +56,11 @@ __FBSDID("$FreeBSD$");
 #include <machine/intr_machdep.h>
 #include <machine/cpuregs.h>
 
-#include <mips/nlm/hal/mmio.h>
+#include <mips/nlm/hal/haldefs.h>
 #include <mips/nlm/interrupt.h>
 #include <mips/nlm/hal/iomap.h>
 #include <mips/nlm/hal/mips-extns.h>
 #include <mips/nlm/hal/pic.h>
-#include <mips/nlm/hal/cpuinfo.h>
 #include <mips/nlm/hal/pcibus.h>
 #include <mips/nlm/hal/uart.h>
 #include <mips/nlm/xlp.h>
