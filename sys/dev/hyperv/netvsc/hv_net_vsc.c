@@ -1172,12 +1172,6 @@ NetVscOnSend(
 }
 
 
-#define _PREFETCHT0(addr) \
-	__extension__ ({ \
-		__asm__ __volatile__ ("prefetcht0 (%0)\n" \
-		: : "g" ((void *)(addr)) ); \
-	})
-
 static void 
 NetVscOnReceive(
 	DEVICE_OBJECT		*Device,
@@ -1191,20 +1185,21 @@ NetVscOnReceive(
 	LIST_ENTRY* entry;
 	ULONG_PTR start;
 	ULONG_PTR end;
-#ifdef REMOVED
+//#ifdef REMOVED
 	/* Fixme:  Removed to mitigate warning */
 	ULONG_PTR endVirtual;
-#endif
+//#endif
 	//NETVSC_DRIVER_OBJECT *netvscDriver;
 	XFERPAGE_PACKET *xferpagePacket=NULL;
 	LIST_ENTRY listHead;
 
 	int i=0;
 	int count=0;
-#ifdef REMOVED
+//#ifdef REMOVED
 	/* Fixme:  Removed to mitigate warning */
 	int bytesRemain=0;
-#endif
+	int j=0;
+//#endif
 
 	DPRINT_ENTER(NETVSC);
 
@@ -1304,13 +1299,6 @@ NetVscOnReceive(
 		entry = REMOVE_HEAD_LIST(&listHead);
 		netvscPacket = CONTAINING_RECORD(entry, NETVSC_PACKET, ListEntry);
 
-#if 0
-		start = (void*)((ULONG_PTR)netDevice->ReceiveBuffer + vmxferpagePacket->Ranges[i].ByteOffset);
-		/* Prefetch the pkt */
-		_PREFETCHT0(start);
-		_PREFETCHT0(start+16);
-		start = ((unsigned long)start) & ~(PAGE_SIZE - 1);
-#endif
 		// Initialize the netvsc packet
 		netvscPacket->XferPagePacket = xferpagePacket;
 		netvscPacket->Completion.Recv.OnReceiveCompletion = NetVscOnReceiveCompletion;
@@ -1335,14 +1323,66 @@ NetVscOnReceive(
 		    + vmxferpagePacket->Ranges[i].ByteCount -1);
 		end = ((unsigned long)end) & ~(PAGE_SIZE - 1);
 
-		// FIXME: For now, assume we are within a page
+		// Fixme: For now, assume we are within a page
 #ifndef NETSCALER
-		// LAtest release requires more changes here 
-		ASSERT((end >> PAGE_SHIFT) == (start>>PAGE_SHIFT));
+		/*
+		 * Fixme:  This assert causing the intermittent problem
+		 * crashing us to DDB during pings or other data transfers.
+		 */
+		// Latest release requires more changes here 
+		//ASSERT((end >> PAGE_SHIFT) == (start >> PAGE_SHIFT));
 #endif
 
 		// Calculate the page relative offset
 		netvscPacket->PageBuffers[0].Offset = vmxferpagePacket->Ranges[i].ByteOffset & (PAGE_SIZE -1);
+
+
+		/*
+		 * Fixme:  This code pulled in from lis21.  It does not
+		 * work correctly at present.  It seems to be related to
+		 * the intermittent problem crashing us to DDB during
+		 * pings or other data transfers.
+		 */
+		if ((end >> PAGE_SHIFT) != (start >> PAGE_SHIFT)) {
+printf("NetVscOnReceive():  Frame across multiple pages!\n");
+printf("  start 0x%lx end 0x%lx\n"
+       " start page 0x%lx end page 0x%lx\n",
+    start, end, (start >> PAGE_SHIFT), (end >> PAGE_SHIFT));
+		    //Handle frame across multiple pages:
+printf("  length 0x%x\n", netvscPacket->PageBuffers[0].Length);
+printf("  new length 0x%lx\n",
+    (netvscPacket->PageBuffers[0].Pfn << PAGE_SHIFT) + PAGE_SIZE - start);
+#ifdef REMOVED
+		    netvscPacket->PageBuffers[0].Length = 
+			(netvscPacket->PageBuffers[0].Pfn << PAGE_SHIFT) +
+			PAGE_SIZE - start;
+#endif
+		    bytesRemain = netvscPacket->TotalDataBufferLength -
+			netvscPacket->PageBuffers[0].Length;
+
+printf("  bytesRemain 0x%x\n", bytesRemain);
+
+#ifdef REMOVED
+		    for (j=1; j < NETVSC_PACKET_MAXPAGE; j++) {
+			netvscPacket->PageBuffers[j].Offset = 0;
+			if (bytesRemain <= PAGE_SIZE) {
+			    netvscPacket->PageBuffers[j].Length = bytesRemain;
+			    bytesRemain = 0;
+			} else {
+			    netvscPacket->PageBuffers[j].Length = PAGE_SIZE;
+			    bytesRemain -= PAGE_SIZE;
+			}
+			netvscPacket->PageBuffers[j].Pfn = 
+			    GetPhysicalAddress((void*)(endVirtual -
+			    bytesRemain)) >> PAGE_SHIFT;
+			netvscPacket->PageBufferCount++;
+			if (bytesRemain == 0) 
+			    break;
+		    }
+		    ASSERT(bytesRemain == 0);
+#endif
+		}
+
 
 		DPRINT_DBG(NETVSC, "[%d] - (abs offset %u len %u) => (pfn %llx, offset %u, len %u)", 
 			i, 
@@ -1478,9 +1518,6 @@ NetVscOnReceiveCompletion(
 	DPRINT_EXIT(NETVSC);
 }
 
-// Fixme:  Should these be static?  Should have better names
-int rx_pkt=0;
-int tx_cmpl=0;
 
 void
 NetVscOnChannelCallback(
@@ -1585,165 +1622,6 @@ NetVscOnChannelCallback(
 			ASSERT(0);
 		}
 	} while (1);
-
-	PutNetDevice(device);
-	DPRINT_EXIT(NETVSC);
-	return;
-}
-
-/*
- * NetScaler Extension
- *
- * Fixme:  Do we need this?
- */
-int
-NetVscRxReady(
-	PVOID Context
-	)
-{
-#if 1
-	DEVICE_OBJECT *device=(DEVICE_OBJECT*)Context;
-	return(VmbusDataReady(device->context));
-#else
-	DEVICE_OBJECT *device=(DEVICE_OBJECT*)Context;
-	NETVSC_DEVICE *netDevice;
-	UINT32 bytesRecvd;
-	UINT64 requestId;
-
-	int ret;
-
-#if 0
-	netDevice = GetInboundNetDevice(device);
-	if (!netDevice)
-	{
-		DPRINT_ERR(NETVSC, "net device (%p) shutting down...ignoring inbound packets", netDevice);
-		DPRINT_EXIT(NETVSC);
-		return 0;
-	}
-#endif
-
-	ret = device->Driver->VmbusChannelInterface.RecvPacketRaw(device, 
-		NULL, 0, &bytesRecvd, &requestId);
-	
-	if (ret < 0)
-		ret = 1;
-	else
-		ret = 0;
-
-#if 0
-	PutNetDevice(device);
-	DPRINT_EXIT(NETVSC);
-#endif
-
-	return ret;
-#endif
-
-}
-
-int NetVscSetMode(DEVICE_OBJECT *Device, int mode)
-{
-//	printf("NetVscSetMode\n");
-	return(RndisSetMode(Device, mode));
-}
-
-void NetVscOnChannelCallback2(PVOID Context, int rxlimit)
-{
-	const int netPacketSize=2048;
-	int ret=0;
-	DEVICE_OBJECT *device=(DEVICE_OBJECT*)Context;
-	NETVSC_DEVICE *netDevice;
-
-	UINT32 bytesRecvd;
-	UINT64 requestId;
-	UCHAR packet[netPacketSize];
-	VMPACKET_DESCRIPTOR *desc;
-	UCHAR	*buffer=packet;
-	int		bufferlen=netPacketSize;
-
-
-	DPRINT_ENTER(NETVSC);
-
-	ASSERT(device);
-
-	netDevice = GetInboundNetDevice(device);
-	if (!netDevice)
-	{
-		DPRINT_ERR(NETVSC, "net device (%p) shutting down...ignoring inbound packets", netDevice);
-		DPRINT_EXIT(NETVSC);
-		return;
-	}
-
-	do
-	{
-		ret = device->Driver->VmbusChannelInterface.RecvPacketRaw(device,
-																	buffer,
-																	bufferlen, 
-																	&bytesRecvd, 
-																	&requestId);
-
-		if (ret == 0)
-		{
-			if (bytesRecvd > 0)
-			{
-				desc = (VMPACKET_DESCRIPTOR*)buffer;
-				switch (desc->Type)
-				{
-					case VmbusPacketTypeCompletion:
-						NetVscOnSendCompletion(device, desc);
-						break;
-
-					case VmbusPacketTypeDataUsingTransferPages:
-						NetVscOnReceive(device, desc);
-						rxlimit--;
-						break;
-
-					default:
-						DPRINT_ERR(NETVSC, "unhandled packet type %d, tid %llx len %d\n", desc->Type, requestId, bytesRecvd);
-						break;
-				}
-
-				// reset
-				if (bufferlen > netPacketSize)
-				{
-					MemFree(buffer);
-									
-					buffer = packet;
-					bufferlen = netPacketSize;
-				}
-			}
-			else
-			{
-				//DPRINT_DBG(NETVSC, "nothing else to read...");
-				
-				// reset
-				if (bufferlen > netPacketSize)
-				{
-					MemFree(buffer);
-									
-					buffer = packet;
-					bufferlen = netPacketSize;
-				}
-
-				break;
-			}
-		}
-		else if (ret == -2) // Handle large packet
-		{
-			buffer = MemAllocAtomic(bytesRecvd);
-			if (buffer == NULL)
-			{
-				// Try again next time around
-				DPRINT_ERR(NETVSC, "unable to allocate buffer of size (%d)!!", bytesRecvd);
-				break;
-			}
-
-			bufferlen = bytesRecvd;
-		}
-		else
-		{
-			ASSERT(0);
-		}
-	} while (rxlimit >= 0);
 
 	PutNetDevice(device);
 	DPRINT_EXIT(NETVSC);

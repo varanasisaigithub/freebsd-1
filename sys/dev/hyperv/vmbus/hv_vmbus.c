@@ -20,19 +20,15 @@
  *
  * Copyright (c) 2010-2011, Citrix, Inc.
  *
- * Implements main vmbus entry points that is exported to the
+ * Ported from lis21 code drop
+ *
+ * Hyperv main vmbus entry points that are exported to the
  * open-source vmbus driver
  *
  *****************************************************************************/
 
 /*
  * Copyright (c) 2009, Microsoft Corporation - All rights reserved.
- *
- * This software is available to you under a choice of one of two
- * licenses.  You may choose to be licensed under the terms of the GNU
- * General Public License (GPL) Version 2, available from the file
- * LICENSE-GPL in the main directory of this source tree, or the
- * BSD license (http://opensource.org/licenses/bsd-license.php).
  *
  *     Redistribution and use in source and binary forms, with or
  *     without modification, are permitted provided that the following
@@ -48,7 +44,7 @@
  *        provided with the distribution.
  *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
  * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
  * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
  * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
@@ -61,21 +57,10 @@
  *   Hank Janssen  <hjanssen@microsoft.com>
  */
 
-/*++
-File:
-	Vmbus.c
-
-Description:
-	Implements main vmbus entry points that is exported to the
-	open-source vmbus driver
---*/
-
 
 #include <sys/types.h>
 #include <sys/systm.h>
-
 #include <sys/smp.h>    /* for mp_ncpus extern */
-
 
 #ifdef REMOVED
 /* Fixme -- removed */
@@ -87,7 +72,6 @@ Description:
 /* Fixme -- may need to be updated */
 #include <dev/hyperv/include/hv_osd.h>
 #include <dev/hyperv/include/hv_logging.h>
-/* Fixme -- currently empty */
 #include "hv_version_info.h"
 #include "hv_hv.h"
 #include "hv_vmbus_var.h"
@@ -100,6 +84,7 @@ Description:
 #include "hv_channel_mgmt.h"
 #include "hv_channel.h"
 #include "hv_channel_interface.h"
+#include <dev/hyperv/vmbus/hv_connection.h>
 // Fixme:  need this?  Was in hv_vmbus_private.h
 //#include "timesync_ic.h"
 #include "hv_vmbus_private.h"
@@ -196,14 +181,13 @@ VmbusInitialize(
 	DPRINT_ENTER(VMBUS);
 
 	DPRINT_INFO(VMBUS, "+++++++ Build Date=%s %s +++++++", 
-		              __DATE__, __TIME__);
-
+		    __DATE__, __TIME__);
 	DPRINT_INFO(VMBUS, "+++++++ Build Description=%s +++++++", VersionDesc);
 
 	DPRINT_INFO(VMBUS, "+++++++ Vmbus supported version = %d +++++++", 
-			VMBUS_REVISION_NUMBER);
-	DPRINT_INFO(VMBUS,  "+++++++ Vmbus using SINT %d +++++++", 
-			VMBUS_MESSAGE_SINT);
+		    VMBUS_REVISION_NUMBER);
+	DPRINT_INFO(VMBUS, "+++++++ Vmbus using SINT %d +++++++", 
+		    VMBUS_MESSAGE_SINT);
 
 	DPRINT_DBG(VMBUS, "sizeof(VMBUS_CHANNEL_PACKET_PAGE_BUFFER)=%d, sizeof(VMBUS_CHANNEL_PACKET_MULITPAGE_BUFFER)=%d",
 		sizeof(VMBUS_CHANNEL_PACKET_PAGE_BUFFER), sizeof(VMBUS_CHANNEL_PACKET_MULITPAGE_BUFFER));
@@ -222,7 +206,7 @@ VmbusInitialize(
 	driver->GetChannelInterface		= VmbusGetChannelInterface;
 	driver->GetChannelInfo			= VmbusGetChannelInfo;
 
-	MemoryFence();	
+	MemoryFence();
 
 	// Hypervisor initialization...setup hypercall page..etc
 	ret = HvInit();
@@ -386,7 +370,6 @@ Description:
 	Callback when the root bus device is added
 
 --*/
-
 static int
 VmbusOnDeviceAdd(
 	DEVICE_OBJECT	*dev,
@@ -406,8 +389,11 @@ VmbusOnDeviceAdd(
 
 	//strcpy(dev->name, "vmbus");
 	// SynIC setup...
-	// Netscaler: Calling SMP redezvous wherein memory cannot be alloc'd
-	for (cpuid = 0 ; cpuid < mp_ncpus; cpuid++) {
+	/*
+	 * Fixme -- Netscaler:  Calling SMP redezvous wherein memory cannot
+	 * be alloc'd.  Allocation moved out of HvSynicInit()
+	 */
+	for (cpuid = 0; cpuid < mp_ncpus; cpuid++) {
 		gHvContext.synICMessagePage[cpuid] = PageAlloc(1);
 		gHvContext.synICEventPage[cpuid] = PageAlloc(1);
 	}
@@ -446,13 +432,8 @@ int VmbusOnDeviceRemove(
 
 	VmbusDisconnect();
 
-	/*
-	 * Fixme -- first parameter generates a warning
-	 * first parameter of HvSynicCleanup() needs to be changed to
-	 * "void *" to make warning go away.  Should do this after testing
-	 * succeeds!
-	 */
-	doOnAllCpus(HvSynicCleanup, (void *)NULL, 1, 1);
+	/* Clean up all the per-cpu resources */
+	doOnAllCpus(HvSynicCleanup, NULL, 1, 1);
 
 	DPRINT_EXIT(VMBUS);
 
@@ -498,6 +479,7 @@ VmbusOnMsgDPC(
 	DRIVER_OBJECT* drv
 	)
 {
+	/* Fixme:  Is this correct for FreeBSD port? */
         //int cpu = getCpuId();
         int cpu = 0;
 	void *page_addr = gHvContext.synICMessagePage[cpu];
@@ -565,8 +547,6 @@ Description:
 	ISR routine
 
 --*/
-int CheckEvents(void);
-
 int
 VmbusOnISR(
 	DRIVER_OBJECT* drv
@@ -600,13 +580,13 @@ VmbusOnISR(
 	event = (HV_SYNIC_EVENT_FLAGS*)page_addr + VMBUS_MESSAGE_SINT;
 
 	// Since we are a child, we only need to check bit 0
-	//printf("VMBUS OnISR: event flags: %x\n", event->Flags32[0]);
 	if (BitTestAndClear(&event->Flags32[0], 0))
 	{
 		DPRINT_DBG(VMBUS, "received event %d", event->Flags32[0]);
-		/* NetScaler */
-		if (CheckEvents())
-		ret |= 0x2;
+		/* Fixme:  CheckEvents() Added for NetScaler */
+		if (CheckEvents()) {
+			ret |= 0x2;
+		}
 	}
 
 	DPRINT_EXIT(VMBUS);
@@ -614,4 +594,3 @@ VmbusOnISR(
 }
 
 // eof
-

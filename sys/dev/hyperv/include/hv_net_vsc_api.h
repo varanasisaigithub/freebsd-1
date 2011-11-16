@@ -110,10 +110,10 @@ typedef struct hn_softc {
  */
 extern int promisc_mode;
 
-extern int  NetVscSetMode(DEVICE_OBJECT *Device, int mode);
-extern void NetVscOnChannelCallback2(PVOID Context, int rxlimit);
-/* NetScaler extension:  Do we need this? */
-extern int  NetVscRxReady(PVOID Context);
+/* Fixme:  NetScaler extensions:  Do we need these? */
+//extern int  NetVscSetMode(DEVICE_OBJECT *Device, int mode);
+//extern void NetVscOnChannelCallback2(PVOID Context, int rxlimit);
+//extern int  NetVscRxReady(PVOID Context);
 extern void NetVscOnReceiveCompletion(PVOID Context);
 
 

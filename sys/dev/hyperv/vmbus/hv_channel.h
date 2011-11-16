@@ -54,7 +54,6 @@
  * Authors:
  *   Haiyang Zhang <haiyangz@microsoft.com>
  *   Hank Janssen  <hjanssen@microsoft.com>
- *   Larry Melia
  */
 
 #ifndef __HV_CHANNEL_H__
