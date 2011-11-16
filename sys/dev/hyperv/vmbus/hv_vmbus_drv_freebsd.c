@@ -84,17 +84,15 @@ struct vmbus_device_vars {
 
 struct vmbus_driver_context {
 	struct driver_context	drv_ctx;
-	VMBUS_DRIVER_OBJECT		drv_obj;
+	VMBUS_DRIVER_OBJECT	drv_obj;
 	struct device_context   device_ctx;
-	device_t				vmb_dev;
-	struct resource 		*intr_res;
-	void					*msg_dpc;	
-	void					*event_dpc;
+	device_t		vmb_dev;
+	struct resource 	*intr_res;
+	void			*msg_dpc;	
+	void			*event_dpc;
+	struct intr_event 	*hv_message_intr_event;
+	struct intr_event 	*hv_event_intr_event;
 };
-
-int hv_vmbus_irq = VMBUS_IRQ;
-int hv_vmbus_vec = 0;
-
 
 static void vmbus_exit(void);
 static void vmbus_bus_exit(void);
@@ -451,8 +449,9 @@ Desc:   Main vmbus driver initialization routine. Here, we
 
 static int vmbus_bus_init(PFN_DRIVERINITIALIZE pfn_drv_init)
 {
-	int ret=0;
-	unsigned int vector=0;
+	int ret = -1;
+	unsigned int vector = 0;
+	struct intsrc *isrc;
 
 	struct vmbus_driver_context *vmbus_drv_ctx=&g_vmbus_drv;
 	VMBUS_DRIVER_OBJECT *vmbus_drv_obj=&g_vmbus_drv.drv_obj;
@@ -480,37 +479,33 @@ static int vmbus_bus_init(PFN_DRIVERINITIALIZE pfn_drv_init)
 	// Sanity checks
 	if (!vmbus_drv_obj->Base.OnDeviceAdd) {
 		DPRINT_ERR(VMBUS_DRV, "OnDeviceAdd() routine not set");
-		ret = -1;
 		goto cleanup;
 	}
 
-	if (swi_add(NULL, "hv_msg", vmbus_msg_dpc, vmbus_drv_obj, 
+	if (swi_add(&g_vmbus_drv.hv_message_intr_event, "hv_msg", vmbus_msg_dpc, vmbus_drv_obj, 
 				SWI_CLOCK, 0, &vmbus_drv_ctx->msg_dpc)) {
-
-		ret = -1;
 		goto cleanup;
 	}
 
-	if (swi_add(NULL, "hv_event", vmbus_event_dpc, vmbus_drv_obj, 
-				SWI_CLOCK, 0, &vmbus_drv_ctx->event_dpc)) {
+	if (intr_event_bind(g_vmbus_drv.hv_message_intr_event,0)) {
+		goto cleanup1;
+	}
 
-		swi_remove(vmbus_drv_ctx->msg_dpc);
-		ret = -1;
-		goto cleanup;
+	if (swi_add(&g_vmbus_drv.hv_event_intr_event, "hv_event", vmbus_event_dpc, vmbus_drv_obj, 
+				SWI_CLOCK, 0, &vmbus_drv_ctx->event_dpc)) {
+		goto cleanup1;
+	}
+
+	if (intr_event_bind(g_vmbus_drv.hv_event_intr_event,0)) {
+		goto cleanup2;
 	}
 
 	g_vmbus_drv.intr_res = bus_alloc_resource(g_vmbus_drv.vmb_dev, 
-		SYS_RES_IRQ, &vmbus_rid, VMBUS_IRQ, VMBUS_IRQ, 1, RF_ACTIVE);
+		SYS_RES_IRQ, &vmbus_rid, vmbus_irq, vmbus_irq, 1, RF_ACTIVE);
 
 	if (g_vmbus_drv.intr_res == NULL) {
-		//DPRINT_ERR(VMBUS_DRV, "ERROR - Unable to request IRQ %d", vmbus_irq);
-
-		/* remove swi */
-		swi_remove(vmbus_drv_ctx->msg_dpc);
-		swi_remove(vmbus_drv_ctx->event_dpc);
-
-		ret = -1;
-		goto cleanup;
+		DPRINT_ERR(VMBUS_DRV, "ERROR - Unable to request IRQ %d", vmbus_irq);
+		goto cleanup2;
 	}
 
 	/*
@@ -526,23 +521,28 @@ static int vmbus_bus_init(PFN_DRIVERINITIALIZE pfn_drv_init)
     
 	if (ret != 0) {
 		/* Fixme:  Probably not appropriate */
-		printf("VMBUS:  bus_setup_intr() failed %d\n", ret);
-
 		DPRINT_ERR(VMBUS_DRV, "ERROR - Unable to setup intr handler");
-		
-		/* remove swi, bus resource */
-		bus_release_resource(g_vmbus_drv.vmb_dev, SYS_RES_IRQ, 
-			vmbus_rid, g_vmbus_drv.intr_res);
-
-		swi_remove(vmbus_drv_ctx->msg_dpc);
-		swi_remove(vmbus_drv_ctx->event_dpc);
-
-		ret = -1;
-		goto cleanup;
+		goto cleanup3;
 	}
 
-	vector = hv_vmbus_vec; 
-	printf(" VMBUS: irq 0x%x vector 0x%x\n", vmbus_irq, vector);
+	ret = bus_bind_intr(g_vmbus_drv.vmb_dev, g_vmbus_drv.intr_res, 0);
+	if (ret != 0) {
+		DPRINT_ERR(VMBUS_DRV, "ERROR - Unable to bind intr to cpu(0) ");
+		goto cleanup4;
+	}
+	
+	isrc = intr_lookup_source(vmbus_irq);
+	if ((isrc == NULL) || (isrc->is_event == NULL)) {
+		if (isrc) {
+			DPRINT_ERR(VMBUS_DRV, "ERROR - Unable to find intr event");
+		} else {
+			DPRINT_ERR(VMBUS_DRV, "ERROR - Unable to find intr src");
+		}
+		goto cleanup4;
+	}
+
+	vector = isrc->is_event->ie_vector;
+	printf("VMBUS: irq 0x%x vector 0x%x\n", vmbus_irq, vector);
 
 	// Call to bus driver to add the root device
 	memset(dev_ctx, 0, sizeof(struct device_context));
@@ -551,19 +551,7 @@ static int vmbus_bus_init(PFN_DRIVERINITIALIZE pfn_drv_init)
 	ret = vmbus_drv_obj->Base.OnDeviceAdd(&dev_ctx->device_obj, &vector);
 	if (ret != 0) {
 		DPRINT_ERR(VMBUS_DRV, "ERROR: Unable to add vmbus root device");
-			
-		/* remove swi, bus and intr resource */
-		bus_teardown_intr(g_vmbus_drv.vmb_dev, 
-			g_vmbus_drv.intr_res, vmbus_cookiep);
-
-		bus_release_resource(g_vmbus_drv.vmb_dev, SYS_RES_IRQ, 
-			vmbus_rid, g_vmbus_drv.intr_res);
-
-		swi_remove(vmbus_drv_ctx->msg_dpc);
-		swi_remove(vmbus_drv_ctx->event_dpc);
-
-		ret = -1;
-		goto cleanup;
+		goto cleanup4;
 	}
 
 //	sprintf(dev_ctx->device.bus_id, "vmbus_0_0");
@@ -573,6 +561,24 @@ static int vmbus_bus_init(PFN_DRIVERINITIALIZE pfn_drv_init)
 	    sizeof(GUID));
 
 	vmbus_drv_obj->GetChannelOffers();
+
+	ret = 0;
+	goto cleanup;
+
+cleanup4:
+	/* remove swi, bus and intr resource */
+	bus_teardown_intr(g_vmbus_drv.vmb_dev, 
+			g_vmbus_drv.intr_res, vmbus_cookiep);
+
+cleanup3:
+	bus_release_resource(g_vmbus_drv.vmb_dev, SYS_RES_IRQ, 
+			vmbus_rid, g_vmbus_drv.intr_res);
+
+cleanup2:
+	swi_remove(vmbus_drv_ctx->event_dpc);
+
+cleanup1:
+	swi_remove(vmbus_drv_ctx->msg_dpc);
 
 cleanup:
 	DPRINT_EXIT(VMBUS_DRV);

@@ -63,3 +63,6 @@ KDTRACE_FRAME		opt_kdtrace.h
 BPF_JITTER		opt_bpf.h
 
 XENHVM			opt_global.h
+
+# Hyper-V
+HV_VMBUS		opt_global.h

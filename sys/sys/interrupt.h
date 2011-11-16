@@ -118,6 +118,7 @@ struct intr_event {
 	int		ie_warncnt;	/* Rate-check interrupt storm warns. */
 	struct timeval	ie_warntm;
 	int		ie_irq;		/* Physical irq number if !SOFT. */
+	int		ie_vector;	/* IDT Vector (X86 only?). */
 	u_char		ie_cpu;		/* CPU this event is bound to. */
 };
 
