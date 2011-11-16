@@ -609,6 +609,11 @@ HvSynicInit (
 		return;
 	}
 
+	if (cpu != 0) {
+		DPRINT_EXIT(VMBUS);
+		return;
+	}
+
 	// Check the version
 	version = ReadMsr(HV_X64_MSR_SVERSION);
 
@@ -682,7 +687,7 @@ HvSynicInit (
 	sharedSint.AsUINT64 = 0;
 	sharedSint.Vector = irqVector; //HV_SHARED_SINT_IDT_VECTOR + 0x20;
 	sharedSint.Masked = FALSE;
-	sharedSint.AutoEoi = TRUE;
+	sharedSint.AutoEoi = FALSE;
 
 	DPRINT_DBG(VMBUS, "HV_X64_MSR_SINT1 msr set to: %llx", sharedSint.AsUINT64);
 
@@ -727,7 +732,7 @@ HvSynicCleanup(
 	VOID *arg
 	)
 {
-	HV_SYNIC_SINT	sharedSint;
+        HV_SYNIC_SINT	sharedSint;
 	HV_SYNIC_SIMP	simp;
 	HV_SYNIC_SIEFP	siefp;
 	int cpu = PCPU_GET(cpuid);
@@ -740,11 +745,16 @@ HvSynicCleanup(
 		return;
 	}
 
+	if (cpu != 0) {
+		DPRINT_EXIT(VMBUS);
+		return;
+	}
+
 	sharedSint.AsUINT64 = ReadMsr(HV_X64_MSR_SINT0 + VMBUS_MESSAGE_SINT);
 
 	sharedSint.Masked = 1;
 
-//KYS: Need to correctly cleanup in the case of SMP!!!
+	//KYS: Need to correctly cleanup in the case of SMP!!!
 	// Disable the interrupt
 	WriteMsr(HV_X64_MSR_SINT0 + VMBUS_MESSAGE_SINT, sharedSint.AsUINT64);
 
