@@ -20,6 +20,7 @@
 #include <cam/cam_periph.h>
 #include <cam/cam_sim.h>
 #include <cam/cam_xpt_sim.h>
+#include <cam/cam_xpt_internal.h>
 #include <cam/cam_debug.h>
 #include <cam/scsi/scsi_all.h>
 #include <cam/scsi/scsi_message.h>
@@ -96,10 +97,11 @@ scan_for_lun_callback(struct cam_periph *periph, union ccb *ccb)
 /**
  * scan_for_luns
  *
- * In Hyper-V there is no backend changed device operation which presents FreeBSD with a list of
- * devices to connect.  The result is that we have to scan for a list of luns in the storvsc_attach()
- * routine.
- * There is only one SCSI target, so scan for the maximum number of luns.
+ * In Hyper-V there is no backend changed device operation which
+ * presents FreeBSD with a list of devices to connect.  The result is
+ * that we have to scan for a list of luns in the storvsc_attach()
+ * routine.  There is only one SCSI target, so scan for the maximum
+ * number of luns.
  */
 static void scan_for_luns(struct storvsc_softc * storvsc_softc)
 {
@@ -108,13 +110,16 @@ static void scan_for_luns(struct storvsc_softc * storvsc_softc)
 	
 	for (i = 0; i < STORVSC_MAX_LUNS_PER_TARGET; i++) {
 
-		if ((ccb = malloc(sizeof(union ccb), M_DEVBUF, M_NOWAIT | M_ZERO)) == NULL) {
+		ccb = malloc(sizeof(union ccb), M_DEVBUF, M_NOWAIT | M_ZERO);
+		if (ccb == NULL) {
 			printf("scan failed (can't allocate CCB)\n");
 			return;
 		}
 
-		// Create a path on bus 0, target 0 for the specified lun
-		if (xpt_create_path(&(storvsc_softc->path), xpt_periph, 0, 0, i) != CAM_REQ_CMP) {
+		// Create path for the specified bus, target 0 and this lun id
+		if (xpt_create_path(&(storvsc_softc->path), xpt_periph,
+							storvsc_softc->path->bus->path_id, 0, i) !=
+			CAM_REQ_CMP) {
 			printf("rescan failed (can't create path)\n");
 			free(ccb, M_DEVBUF);
 			return;
