@@ -33,16 +33,16 @@
 #include "hv_stor_vsc_api.h"
 
 struct storvsc_driver_context {
-        // !! These must be the first 2 fields !!
-        struct driver_context   drv_ctx;
-        STORVSC_DRIVER_OBJECT   drv_obj;
+	// !! These must be the first 2 fields !!
+	struct driver_context   drv_ctx;
+	STORVSC_DRIVER_OBJECT   drv_obj;
 };
 
 struct storvsc_softc {
-    DEVICE_OBJECT *storvsc_dev;
+	DEVICE_OBJECT *storvsc_dev;
 	int unit;
-    struct cam_sim *sim;
-    struct cam_path *path;
+	struct cam_sim *sim;
+	struct cam_path *path;
 	LIST_ENTRY free_list;
 	HANDLE free_list_lock;
 };
@@ -60,7 +60,6 @@ static int storvsc_drv_init(PFN_DRIVERINITIALIZE pfn_drv_init);
 static void storvsc_poll(struct cam_sim * sim);
 static void storvsc_action(struct cam_sim * sim, union ccb * ccb);
 static void scan_for_luns(struct storvsc_softc * storvsc_softc);
-static void scan_for_lun_callback(struct cam_periph *periph, union ccb *ccb);
 static void create_storvsc_request(union ccb *ccb, STORVSC_REQUEST *reqp);
 static void storvsc_free_request(struct storvsc_softc *sc, STORVSC_REQUEST *reqp);
 
@@ -83,15 +82,12 @@ MODULE_DEPEND(storvsc, vmbus, 1, 1, 1);
 MODULE_VERSION(storvsc, 1);
 SYSINIT(storvsc_initx, SI_SUB_RUN_SCHEDULER, SI_ORDER_MIDDLE + 1, storvsc_init, NULL);
 
-/**
- * scan_for_lun_callback
- *
- * Callback handler for scan_for_luns routine.  This is called on the completion of each lun scan.
- */
 static void
-scan_for_lun_callback(struct cam_periph *periph, union ccb *ccb)
+xptscandone(struct cam_periph *periph, union ccb *done_ccb)
 {
-    free(ccb, M_DEVBUF);
+        xpt_release_path(done_ccb->ccb_h.path);
+        free(done_ccb->ccb_h.path, M_CAMXPT);
+        free(done_ccb, M_CAMXPT);
 }
 
 /**
@@ -105,31 +101,46 @@ scan_for_lun_callback(struct cam_periph *periph, union ccb *ccb)
  */
 static void scan_for_luns(struct storvsc_softc * storvsc_softc)
 {
-	union ccb * ccb;
+	union ccb *request_ccb;
+	struct cam_path *path = storvsc_softc->path;
+	struct cam_path *new_path = NULL;
+	cam_status status;
 	int i;
 	
 	for (i = 0; i < STORVSC_MAX_LUNS_PER_TARGET; i++) {
 
-		ccb = malloc(sizeof(union ccb), M_DEVBUF, M_NOWAIT | M_ZERO);
-		if (ccb == NULL) {
-			printf("scan failed (can't allocate CCB)\n");
+		request_ccb = malloc(sizeof(union ccb), M_CAMXPT, M_NOWAIT);
+		if (request_ccb == NULL) {
+			xpt_print(path, "scan_for_luns: can't allocate CCB, "
+					  "can't continue\n");
+			return;
+		}
+		new_path = malloc(sizeof(*new_path), M_CAMXPT, M_NOWAIT);
+		if (new_path == NULL) {
+			xpt_print(path, "scan_for_luns: can't allocate path, "
+					  "can't continue\n");
+			free(request_ccb, M_CAMXPT);
+			return;
+		}
+		status = xpt_compile_path(new_path,
+								  xpt_periph,
+								  path->bus->path_id,
+								  0,
+								  i);
+
+		if (status != CAM_REQ_CMP) {
+			xpt_print(path, "scan_for_luns: can't compile path, "
+					  "can't continue\n");
+			free(request_ccb, M_CAMXPT);
+			free(new_path, M_CAMXPT);
 			return;
 		}
 
-		// Create path for the specified bus, target 0 and this lun id
-		if (xpt_create_path(&(storvsc_softc->path), xpt_periph,
-							storvsc_softc->path->bus->path_id, 0, i) !=
-			CAM_REQ_CMP) {
-			printf("rescan failed (can't create path)\n");
-			free(ccb, M_DEVBUF);
-			return;
-		}
-
-		xpt_setup_ccb(&ccb->ccb_h, storvsc_softc->path, 5);
-		ccb->ccb_h.func_code = XPT_SCAN_LUN;
-		ccb->ccb_h.cbfcnp = scan_for_lun_callback;
-		ccb->crcn.flags = CAM_FLAG_NONE;
-		xpt_action(ccb);
+		xpt_setup_ccb(&request_ccb->ccb_h, new_path, CAM_PRIORITY_XPT);
+		request_ccb->ccb_h.func_code = XPT_SCAN_LUN;
+		request_ccb->ccb_h.cbfcnp = xptscandone;
+		request_ccb->crcn.flags = CAM_FLAG_NONE;
+		xpt_action(request_ccb);
 	}
 }
 
@@ -209,8 +220,6 @@ storvsc_attach(device_t dev)
 		return ret;
 	}
 
-	sc->unit = device_get_unit(dev);
-
 	if (!storvsc_drv_obj->Base.OnDeviceAdd) {
 		DPRINT_ERR(STORVSC_DRV, "OnDeviceAdd is not initialized");
 		return -1;
@@ -218,6 +227,8 @@ storvsc_attach(device_t dev)
 
 	bzero(sc, sizeof(struct storvsc_softc));
 	device_ctx->device_obj.Driver = &g_storvsc_drv.drv_obj.Base;
+
+	sc->unit = device_get_unit(dev);
 
 	sc->storvsc_dev = &device_ctx->device_obj;
 
