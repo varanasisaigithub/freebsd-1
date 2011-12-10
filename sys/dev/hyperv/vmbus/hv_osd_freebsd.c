@@ -59,20 +59,8 @@
 #include <machine/bus.h>
 #include <sys/timetc.h>
 
-/* Fixme -- updated */
-#ifdef REMOVED
-#include "osd.h"
-/* Fixme -- what about this file? */
-#include "timesync_ic.h"
-#include "logging.h"
-#endif
-
 #include <dev/hyperv/include/hv_osd.h>
 #include <dev/hyperv/include/hv_logging.h>
-/* Fixme:  Are these needed? */
-//#include "hv_vmbus_var.h"
-//#include "hv_vmbus_api.h"
-//#include "hv_vmbus.h"
 
 typedef long wait_queue_head_t;
 typedef struct mtx SPINLOCK;
@@ -84,7 +72,7 @@ typedef struct mtx SPINLOCK;
 typedef struct _TIMER {
 	struct callout_handle handle;
 	PFN_TIMER_CALLBACK callback;
-	void* context;
+	void *context;
 } TIMER;
 
 typedef struct _WAITEVENT {
@@ -101,11 +89,11 @@ typedef struct _WORKQUEUE {
 typedef struct _WORKITEM {
 	struct task work;
 	PFN_WORKITEM_CALLBACK callback;
-	void* context;
+	void *context;
 } WORKITEM;
 
 static void TimerCallback(void *);
-static void WorkItemCallback(void* work, int pending);
+static void WorkItemCallback(void *work, int pending);
 
 /* Use critical sections for spinlocks */
 // #define USE_CRITICAL_SECTION 1
@@ -116,43 +104,43 @@ static void WorkItemCallback(void* work, int pending);
 
 /* External Interfaces */
 
-void BitSet(unsigned int* addr, int bit)
+void BitSet(unsigned int *addr, int bit)
 {
 	asm("bts %1,%0" : "+m" (*addr) : "Ir" (bit));
 }
 
-int BitTest(unsigned int* addr, int bit)
+int BitTest(unsigned int *addr, int bit)
 {
         unsigned char v;
 
         asm("btl %2,%1; setc %0" : "=qm" (v) : "m" (*addr), "Ir" (bit));
 
-        return (int)v;
+        return ((int)v);
 }
 
-void BitClear(unsigned int* addr, int bit)
+void BitClear(unsigned int *addr, int bit)
 {
 	asm("btr %1,%0" : "+m" (*addr) : "Ir" (bit));
 }
 
-int BitTestAndClear(unsigned int* addr, int bit)
+int BitTestAndClear(unsigned int *addr, int bit)
 {
 	int oldbit;
 
 	asm volatile("lock; btr %2,%1; sbb %0,%0"
 		: "=r" (oldbit), "+m" (*addr) : "Ir" (bit) : "memory");
 
-	return oldbit;
+	return (oldbit);
 }
 
-int BitTestAndSet(unsigned int* addr, int bit)
+int BitTestAndSet(unsigned int *addr, int bit)
 {
 	int oldbit;
 
 	asm volatile("lock; bts %2,%1; sbb %0,%0"
 		: "=r" (oldbit), "+m" (*addr) : "Ir" (bit) : "memory");
 
-	return oldbit;
+	return (oldbit);
 }
 
 static inline int atomic_add_return(int i, int *addr)
@@ -161,17 +149,17 @@ static inline int atomic_add_return(int i, int *addr)
 	asm volatile("lock; xadd %0, %1"
 			: "+r" (i), "+m" (*addr)
 			: : "memory");
-	return i + __i;
+	return (i + __i);
 }
 
 int InterlockedIncrement(int *val)
 {
-	return(atomic_add_return(1, val));
+	return (atomic_add_return(1, val));
 }
 
 int InterlockedDecrement(int *val)
 {
-	return(atomic_add_return(-1, val));
+	return (atomic_add_return(-1, val));
 }
 
 int InterlockedCompareExchange(int *val, int new, int curr)
@@ -183,7 +171,7 @@ int InterlockedCompareExchange(int *val, int new, int curr)
 		: "r"(new), "m"(*val), "0"(curr)
 		: "memory");
 
-	return prev;
+	return (prev);
 }
 
 void Sleep(unsigned long usecs)
@@ -191,91 +179,68 @@ void Sleep(unsigned long usecs)
 	DELAY(usecs);
 }
 
-void* VirtualAllocExec(unsigned int size)
+void *VirtualAllocExec(unsigned int size)
 {
 	void *p;
 
 	p = malloc(size, M_DEVBUF, M_ZERO);
 
-	return p;
+	return (p);
 }
 
-void VirtualFree(void* VirtAddr)
+void VirtualFree(void *VirtAddr)
 {
-	return free(VirtAddr, M_DEVBUF);
+	return (free(VirtAddr, M_DEVBUF));
 }
 
-void* PageAlloc(unsigned int count)
+void *PageAlloc(unsigned int count)
 {
 	void *p;
 
 	p = contigmalloc(count * PAGE_SIZE, M_DEVBUF, M_WAITOK, 
 	    BUS_SPACE_MAXADDR_24BIT, BUS_SPACE_MAXADDR, PAGE_SIZE, 0);
-	if (p) memset(p, 0, count * PAGE_SIZE);
+	if (p) {
+		memset(p, 0, count * PAGE_SIZE);
+	}
 
-	return p;
+	return (p);
 }
 
-void PageFree(void* page, unsigned int count)
+void PageFree(void *page, unsigned int count)
 {
 	contigfree(page, PAGE_SIZE * count, M_DEVBUF);
 }
 
-
-#if 0
-void* PageMapVirtualAddress(unsigned long Pfn)
-{
-	vm_offset_t va;
-
-	va = kmem_alloc_nofault(kernel_map, PAGE_SIZE);
-	if (va == 0) {
-		printf("PageMapVirtualAddress: Failed\n");
-		return NULL;
-	}
-	pmap_kenter(va, Pfn << PAGE_SHIFT);
-	return (void *)va;
-}
-
-void PageUnmapVirtualAddress(void* VirtAddr)
-{
-	if (VirtAddr == NULL) {
-		return;
-	}
-	vm_map_lock(kernel_map);
-	vm_map_delete(kernel_map, (vm_offset_t)VirtAddr, 
-	    (vm_offset_t)VirtAddr + PAGE_SIZE);
-	vm_map_unlock(kernel_map);
-	pmap_kremove((vm_offset_t)VirtAddr);
-}
-#endif
-
-void* PageMapVirtualAddress(unsigned long Pfn)
+/*
+ *
+ */
+void *PageMapVirtualAddress(unsigned long Pfn)
 {
 	unsigned long va = Pfn << PAGE_SHIFT;
 //	invlpg(va);
-	return (void *)(va);
+	return ((void *)(va));
 }
 
-void PageUnmapVirtualAddress(void* VirtAddr)
+void PageUnmapVirtualAddress(void *VirtAddr)
 {
 }
 
-void* MemAlloc(unsigned int size)
+void *MemAlloc(unsigned int size)
 {
-	return(malloc(size, M_DEVBUF, M_NOWAIT));
+	return (malloc(size, M_DEVBUF, M_NOWAIT));
 }
 
-void* MemAllocZeroed(unsigned int size)
+void *MemAllocZeroed(unsigned int size)
 {
-	return(malloc(size, M_DEVBUF, M_NOWAIT | M_ZERO));
+	return (malloc(size, M_DEVBUF, M_NOWAIT | M_ZERO));
 }
 
-void* MemAllocAtomic(unsigned int size)
+void *MemAllocAtomic(unsigned int size)
 {
-	return(malloc(size, M_DEVBUF, M_NOWAIT));
+	return (malloc(size, M_DEVBUF, M_NOWAIT));
 }
 
-void MemFree(void* buf)
+void MemFree(void *buf)
 {
 	free(buf, M_DEVBUF);
 }
@@ -285,7 +250,7 @@ void *MemMapIO(unsigned long phys, unsigned long size)
 	/* no users of this function */
 	printf("MemMapIO - Error\n");
 
-	return NULL;
+	return (NULL);
 }
 
 void MemUnmapIO(void *virt)
@@ -301,46 +266,46 @@ void MemoryFence()
 
 static void TimerCallback(void *data)
 {
-	TIMER* t = (TIMER*)data;
+	TIMER *t = (TIMER*)data;
 
 	t->callback(t->context);
 }
 
-HANDLE TimerCreate(PFN_TIMER_CALLBACK pfnTimerCB, void* context)
+HANDLE TimerCreate(PFN_TIMER_CALLBACK pfnTimerCB, void *context)
 {
-	TIMER* t = malloc(sizeof(TIMER), M_DEVBUF, M_NOWAIT);
+	TIMER *t = malloc(sizeof(TIMER), M_DEVBUF, M_NOWAIT);
 	if (!t)
 	{
 		printf("Failed to create timer\n");
-		return NULL;
+		return (NULL);
 	}
 
 	t->callback = pfnTimerCB;
 	t->context = context;
 	callout_handle_init(&t->handle);
 
-	return t;
+	return (t);
 }
 
 void TimerStart(HANDLE hTimer, UINT32 expirationInUs)
 {
-	TIMER* t  = (TIMER* )hTimer;
+	TIMER *t  = (TIMER *)hTimer;
 
 	t->handle = timeout(TimerCallback, t, expirationInUs/1000);
 }
 
 int TimerStop(HANDLE hTimer)
 {
-	TIMER* t  = (TIMER* )hTimer;
+	TIMER *t  = (TIMER *)hTimer;
 
 	untimeout(TimerCallback, t, t->handle);
 
-	return 0;
+	return (0);
 }
 
 void TimerClose(HANDLE hTimer)
 {
-	TIMER* t  = (TIMER* )hTimer;
+	TIMER *t  = (TIMER *)hTimer;
 
 	untimeout(TimerCallback, t, t->handle);
 
@@ -350,7 +315,7 @@ void TimerClose(HANDLE hTimer)
 /* Not used */
 SIZE_T GetTickCount(void)
 {
-	return ticks;
+	return (ticks);
 }
 
 #ifdef LATER
@@ -359,27 +324,27 @@ static signed long long GetTimestamp(void)
 	struct timespec ts;
 
 	nanotime(&ts);
-	return(ts.tv_sec * 1000000000 + ts.tv_nsec);
+	return (ts.tv_sec * 1000000000 + ts.tv_nsec);
 }
 #endif
 
 HANDLE WaitEventCreate(void)
 {
-	WAITEVENT* wait = malloc(sizeof(WAITEVENT), M_DEVBUF, M_ZERO);
+	WAITEVENT *wait = malloc(sizeof(WAITEVENT), M_DEVBUF, M_ZERO);
 	if (!wait) {
 		printf("Failed to create WaitEvent\n");
-		return NULL;
+		return (NULL);
 	}
 
 	wait->condition = 0;
 	mtx_init(&wait->mtx, "HV Wait Event", NULL, MTX_RECURSE);
 
-	return wait;
+	return (wait);
 }
 
 void WaitEventClose(HANDLE hWait)
 {
-	WAITEVENT* waitEvent = (WAITEVENT* )hWait;
+	WAITEVENT *waitEvent = (WAITEVENT *)hWait;
 
 	/* Do we need to care about the waiting processes - if any */
 	mtx_destroy(&waitEvent->mtx);
@@ -388,7 +353,7 @@ void WaitEventClose(HANDLE hWait)
 
 void WaitEventSet(HANDLE hWait)
 {
-	WAITEVENT* waitEvent = (WAITEVENT* )hWait;
+	WAITEVENT *waitEvent = (WAITEVENT *)hWait;
 #if 1
 	mtx_lock(&waitEvent->mtx);
 	waitEvent->condition = 1;
@@ -402,7 +367,7 @@ void WaitEventSet(HANDLE hWait)
 int WaitEventWait(HANDLE hWait)
 {
 	int ret = 0;
-	WAITEVENT* waitEvent = (WAITEVENT *)hWait;
+	WAITEVENT *waitEvent = (WAITEVENT *)hWait;
 
 #if 1
 	mtx_lock(&waitEvent->mtx);
@@ -416,15 +381,15 @@ int WaitEventWait(HANDLE hWait)
 	}
 	mtx_unlock(&waitEvent->mtx);
 #else
-	ret= tsleep(&waitEvent->event, PWAIT | PCATCH, "hv sleep", 0);
+	ret = tsleep(&waitEvent->event, PWAIT | PCATCH, "hv sleep", 0);
 #endif
-	return ret;
+	return (ret);
 }
 
 int WaitEventWaitEx(HANDLE hWait, UINT32 TimeoutInMs)
 {
 	int ret = 1;
-	WAITEVENT* waitEvent = (WAITEVENT *)hWait;
+	WAITEVENT *waitEvent = (WAITEVENT *)hWait;
 
 #if 1
 	mtx_lock(&waitEvent->mtx);
@@ -448,23 +413,23 @@ int WaitEventWaitEx(HANDLE hWait, UINT32 TimeoutInMs)
 	ret = tsleep(&waitEvent->event, PWAIT | PCATCH, "hv sleep tw",
 	    TimeoutInMs);
 #endif
-	return ret;
+	return (ret);
 }
 
 
 HANDLE SpinlockCreate(VOID)
 {
 #ifdef USE_CRITICAL_SECTION
-	return (HANDLE)1;
+	return ((HANDLE)1);
 #else
-	SPINLOCK* spin = malloc(sizeof(SPINLOCK), M_DEVBUF, M_ZERO);
+	SPINLOCK *spin = malloc(sizeof(SPINLOCK), M_DEVBUF, M_ZERO);
 	if (!spin) {
 		printf("Unable to create a spin lock\n");
 		return NULL;
 	}
-	mtx_init(spin, "HV spin lock", NULL, MTX_SPIN|MTX_RECURSE);
+	mtx_init(spin, "HV spin lock", NULL, MTX_SPIN | MTX_RECURSE);
 
-	return spin;
+	return (spin);
 #endif
 }
 
@@ -473,7 +438,7 @@ VOID SpinlockAcquire(HANDLE hSpin)
 #ifdef USE_CRITICAL_SECTION
 	critical_enter();
 #else
-	SPINLOCK* spin = (SPINLOCK* )hSpin;
+	SPINLOCK *spin = (SPINLOCK *)hSpin;
 	
 	mtx_lock(spin);
 #endif
@@ -484,7 +449,7 @@ VOID SpinlockRelease(HANDLE hSpin)
 #ifdef USE_CRITICAL_SECTION
 	critical_exit();
 #else
-	SPINLOCK* spin = (SPINLOCK* )hSpin;
+	SPINLOCK *spin = (SPINLOCK *)hSpin;
 	
 	mtx_unlock(spin);
 #endif
@@ -494,42 +459,42 @@ VOID SpinlockClose(HANDLE hSpin)
 {
 #ifdef USE_CRITICAL_SECTION
 #else
-	SPINLOCK* spin = (SPINLOCK* )hSpin;
+	SPINLOCK *spin = (SPINLOCK *)hSpin;
 
 	mtx_destroy(spin);
 	free(spin, M_DEVBUF);
 #endif
 }
 
-void* Physical2LogicalAddr(ULONG_PTR PhysAddr)
+void *Physical2LogicalAddr(ULONG_PTR PhysAddr)
 {
 	/* Should not be executed  - used in vmbus/hv.c */
 	printf("NOTYET - Physical2LogicalAddr\n");
 
-	return NULL;
+	return (NULL);
 }
 
 ULONG_PTR Logical2PhysicalAddr(PVOID LogicalAddr)
 {
 	ULONG_PTR ret;
 
-	ret =  (vtophys(LogicalAddr) | ((vm_offset_t)LogicalAddr & PAGE_MASK));
+	ret = (vtophys(LogicalAddr) | ((vm_offset_t)LogicalAddr & PAGE_MASK));
 
-	return ret;
+	return (ret);
 }
 
 ULONG_PTR Virtual2Physical(PVOID VirtAddr)
 {
 	ULONG_PTR ret;
 
-	ret =  vtophys(VirtAddr);
+	ret = vtophys(VirtAddr);
 
-	return ret;
+	return (ret);
 }
 
-static void WorkItemCallback(void* work, int pending)
+static void WorkItemCallback(void *work, int pending)
 {
-	WORKITEM* w = (WORKITEM*)work;
+	WORKITEM *w = (WORKITEM*)work;
 
 	critical_enter();
 	w->callback(w->context);
@@ -538,7 +503,7 @@ static void WorkItemCallback(void* work, int pending)
 	free(w, M_DEVBUF);
 }
 
-HANDLE WorkQueueCreate(char* name)
+HANDLE WorkQueueCreate(char *name)
 {
 	static unsigned int qid = 0;
 	char qname[64];
@@ -547,7 +512,7 @@ HANDLE WorkQueueCreate(char* name)
 	WORKQUEUE *wq = malloc(sizeof(WORKQUEUE), M_DEVBUF, M_NOWAIT);
 	if (!wq) {
 		printf("Failed to create WorkQueue\n");
-		return NULL;
+		return (NULL);
 	}
 
 	if (strcmp(name, "vmbusQ") == 0) {
@@ -573,18 +538,18 @@ HANDLE WorkQueueCreate(char* name)
 
 	if (wq->queue == NULL) {
 		free(wq, M_DEVBUF);
-		return NULL;
+		return (NULL);
 	}
 
 	if (taskqueue_start_threads(&wq->queue, 1, pri, "%s taskq", qname)) {
 		taskqueue_free(wq->queue);
 		free(wq, M_DEVBUF);
-		return NULL;
+		return (NULL);
 	}
 
 	qid++;
 
-	return wq;
+	return (wq);
 }
 
 void WorkQueueClose(HANDLE hWorkQueue)
@@ -597,14 +562,14 @@ void WorkQueueClose(HANDLE hWorkQueue)
 }
 
 int WorkQueueQueueWorkItem(HANDLE hWorkQueue, PFN_WORKITEM_CALLBACK workItem,
-			   void* context)
+			   void *context)
 {
 	WORKQUEUE *wq = (WORKQUEUE *)hWorkQueue;
 
-	WORKITEM* w = malloc(sizeof(WORKITEM), M_DEVBUF, M_NOWAIT);
+	WORKITEM *w = malloc(sizeof(WORKITEM), M_DEVBUF, M_NOWAIT);
 	if (!w) {
 		printf("Failed to create WorkItem\n");
-		return -1;
+		return (-1);
 	}
 
 	w->callback = workItem;
@@ -612,18 +577,18 @@ int WorkQueueQueueWorkItem(HANDLE hWorkQueue, PFN_WORKITEM_CALLBACK workItem,
 
 	TASK_INIT(&w->work, 0, WorkItemCallback, w);
 
-	return taskqueue_enqueue(wq->queue, &w->work);
+	return (taskqueue_enqueue(wq->queue, &w->work));
 }
 
 /* Not used */
-void QueueWorkItem(PFN_WORKITEM_CALLBACK workItem, void* context)
+void QueueWorkItem(PFN_WORKITEM_CALLBACK workItem, void *context)
 {
 	(workItem)(context);
 }
 
 int getCpuId(void)
 {
-        return(PCPU_GET(cpuid));
+        return (PCPU_GET(cpuid));
 }
 
 int doOnAllCpus(void (*func) (void *info), void *info,
