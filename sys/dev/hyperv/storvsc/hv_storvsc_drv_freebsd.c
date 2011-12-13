@@ -270,8 +270,14 @@ storvsc_attach(device_t dev)
 	}
 
 	// XXX avoid Giant?
-	sc->sim = cam_sim_alloc(storvsc_action, storvsc_poll, "vscsi", sc, sc->unit, &Giant, 1,
-							STORVSC_MAX_IO_REQUESTS * STORVSC_MAX_TARGETS, devq);
+	sc->sim = cam_sim_alloc(storvsc_action,
+							storvsc_poll,
+							"storvsc",
+							sc,
+							sc->unit,
+							&Giant, 1,
+							(STORVSC_MAX_IO_REQUESTS * STORVSC_MAX_TARGETS),
+							devq);
 
 	if (sc->sim == NULL) {
 		printf("Failed to alloc sim\n");
