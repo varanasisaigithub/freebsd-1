@@ -136,7 +136,7 @@ static void scan_for_luns(struct storvsc_softc * storvsc_softc)
 			return;
 		}
 
-		xpt_setup_ccb(&request_ccb->ccb_h, new_path, CAM_PRIORITY_XPT);
+		xpt_setup_ccb(&request_ccb->ccb_h, new_path, 5);
 		request_ccb->ccb_h.func_code = XPT_SCAN_LUN;
 		request_ccb->ccb_h.cbfcnp = xptscandone;
 		request_ccb->crcn.flags = CAM_FLAG_NONE;
@@ -342,7 +342,7 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 {
 	struct storvsc_softc *sc = cam_sim_softc(sim);
 	STORVSC_DRIVER_OBJECT *stor_drv_obj = &g_storvsc_drv.drv_obj;
-
+	int res;
 
     switch (ccb->ccb_h.func_code) {
 	case XPT_PATH_INQ: {
@@ -402,12 +402,16 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		xpt_done(ccb);
 		return;
 	}
-	case  XPT_RESET_BUS: {
-		ccb->ccb_h.status = CAM_REQ_CMP;
-		xpt_done(ccb);
-		return;
-	}
+	case  XPT_RESET_BUS:
 	case  XPT_RESET_DEV:{
+#ifdef notyet
+		if ((res = stor_drv_obj->OnHostReset(sc->storvsc_dev)) != 0) {
+			printf("OnHostReset failed with %d\n", res);
+			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
+			xpt_done(ccb);
+			return;
+		}
+#endif
 		ccb->ccb_h.status = CAM_REQ_CMP;
 		xpt_done(ccb);
 		return;
@@ -416,37 +420,16 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 	case XPT_IMMED_NOTIFY: {
 		struct ccb_scsiio *csio = &ccb->csio;
 		STORVSC_REQUEST *reqp = NULL;
-        int res;
 		LIST_ENTRY *entry;
-		uint8_t scsiio_code;
 
-		if (csio->cdb_len > 0) {
-			if(ccb->ccb_h.flags & CAM_CDB_POINTER) {
-				scsiio_code = csio->cdb_io.cdb_ptr[0];
-				//printf("scsi cmd 0x%x ptr\n", scsiio_code);
-				
-			} else {
-				scsiio_code = csio->cdb_io.cdb_bytes[0];
-				//printf("scsi cmd 0x%x bytes\n", scsiio_code);
-			}
-		} else {
-			panic("cdb_len is 0\n");
-		}
-
-		if (scsiio_code == 0x12) {
-			if(ccb->ccb_h.flags & CAM_CDB_POINTER) {
-				//printf("SCSI_INQUIRY page 0x%x\n", csio->cdb_io.cdb_ptr[2]);
-			} else {
-				//printf("SCSI_INQUIRY page 0x%x\n", csio->cdb_io.cdb_bytes[2]);
-			}
-		}
+		KASSERT((csio->cdb_len > 0), "cdl_len is 0\n");
 
 		SpinlockAcquire(sc->free_list_lock);
 		if (IS_LIST_EMPTY(&sc->free_list)) {
-			printf("no free requests\n");
-			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
-			xpt_done(ccb);
 			SpinlockRelease(sc->free_list_lock);
+			printf("no free requests\n");
+			ccb->ccb_h.status = CAM_RESRC_UNAVAIL;
+			xpt_done(ccb);
 			return;
 		}
 
@@ -458,9 +441,6 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
         ccb->ccb_h.status = CAM_SIM_QUEUED;	    
 
 		create_storvsc_request(ccb, reqp);
-		// XXX we need to consider if the vmbus channel can service this request
-		// If not, we need to do some kind of queuing and deferred processing
-		// until there is space in the ring buffer
 		if ((res = stor_drv_obj->OnIORequest(sc->storvsc_dev, reqp)) == -1) {
 			printf("OnIORequest failed with %d\n", res);
 			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
@@ -472,9 +452,8 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 	}
 
 	default:
-		ccb->ccb_h.status = CAM_PROVIDE_FAIL;
+		ccb->ccb_h.status = CAM_REQ_INVALID;
 		xpt_done(ccb);
-        panic("Unsupported command\n");
 		return;
 	}
 }
