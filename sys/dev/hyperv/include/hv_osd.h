@@ -38,15 +38,15 @@
 //
 
 #ifndef PAGE_SIZE
-#define PAGE_SIZE 0x1000
+#define PAGE_SIZE		0x1000
 #endif
 
 #ifndef PAGE_SHIFT
-#define PAGE_SHIFT 12
+#define PAGE_SHIFT		12
 #endif
 
-#define MAX_PAGE_BUFFER_COUNT 16
-#define HW_MACADDR_LEN          6
+#define MAX_PAGE_BUFFER_COUNT	16
+#define HW_MACADDR_LEN		6
 
 
 
@@ -67,8 +67,8 @@
 #define MAX(a, b)       ((a) > (b)? (a): (b))
 #endif
 
-#define LOWORD(dw)		((unsigned short) (dw))
-#define HIWORD(dw)		((unsigned short) (((unsigned int) (dw) >> 16) & 0xFFFF))
+#define LOWORD(dw)	((unsigned short) (dw))
+#define HIWORD(dw)	((unsigned short) (((unsigned int) (dw) >> 16) & 0xFFFF))
 
 #define FIELD_OFFSET(t, f)    ((unsigned int)(unsigned long)&(((t *)0)->f))
 
@@ -93,8 +93,8 @@
 #endif
 
 typedef struct _DLIST_ENTRY {
-   struct _DLIST_ENTRY *Flink;
-   struct _DLIST_ENTRY *Blink;
+	struct _DLIST_ENTRY *Flink;
+	struct _DLIST_ENTRY *Blink;
 } DLIST_ENTRY;
 
 //
@@ -117,31 +117,31 @@ typedef unsigned char		UCHAR;
 //
 // signed types
 //
-typedef char				INT8;
-typedef short				INT16;
-typedef int					INT32;
+typedef char			INT8;
+typedef short			INT16;
+typedef int			INT32;
 #ifdef __x86_64__
-typedef long				INT64;
+typedef long			INT64;
 #else
 typedef long long		INT64;
 #endif
 
-typedef int					LONG;
-typedef char				CHAR;
-typedef long long			LONGLONG;
+typedef int			LONG;
+typedef char			CHAR;
+typedef long long		LONGLONG;
 
 //
 // Other types
 //
 typedef unsigned long		SIZE_T;
-typedef void				VOID;
+typedef void			VOID;
 //typedef unsigned char		GUID[16];
-typedef void*				PVOID;
+typedef void*			PVOID;
 typedef unsigned char		BOOL;
 typedef unsigned char		BOOLEAN;
-typedef void*				HANDLE;
-typedef UINT32				DWORD;
-typedef char*				PCHAR;
+typedef void*			HANDLE;
+typedef UINT32			DWORD;
+typedef char*			PCHAR;
 typedef unsigned char		BYTE;
 
 typedef unsigned long		ULONG_PTR;
@@ -239,7 +239,7 @@ extern void MemoryFence(VOID);
 
 extern HANDLE TimerCreate(PFN_TIMER_CALLBACK pfnTimerCB, void* context);
 extern void TimerClose(HANDLE hTimer);
-extern int TimerStop(HANDLE hTimer);
+extern int  TimerStop(HANDLE hTimer);
 extern void TimerStart(HANDLE hTimer, UINT32 expirationInUs);
 extern SIZE_T GetTickCount(void);
 
@@ -248,15 +248,15 @@ extern void adj_guesttime(winfiletime_t hosttime, UINT8 flags);
 extern HANDLE WaitEventCreate(void);
 extern void WaitEventClose(HANDLE hWait);
 extern void WaitEventSet(HANDLE hWait);
-extern int	WaitEventWait(HANDLE hWait);
+extern int  WaitEventWait(HANDLE hWait);
 
 // If >0, hWait got signaled. If ==0, timeout. If < 0, error
-extern int	WaitEventWaitEx(HANDLE hWait, UINT32 TimeoutInMs);
+extern int  WaitEventWaitEx(HANDLE hWait, UINT32 TimeoutInMs);
 
 extern HANDLE SpinlockCreate(void);
 extern void SpinlockClose(HANDLE hSpin);
 extern void SpinlockAcquire(HANDLE hSpin);
-extern void	SpinlockRelease(HANDLE hSpin);
+extern void SpinlockRelease(HANDLE hSpin);
 
 
 #define GetVirtualAddress Physical2LogicalAddr
@@ -273,14 +273,16 @@ void PageUnmapVirtualAddress(void* VirtAddr);
 
 extern HANDLE WorkQueueCreate(char* name);
 extern void WorkQueueClose(HANDLE hWorkQueue);
-extern int WorkQueueQueueWorkItem(HANDLE hWorkQueue, PFN_WORKITEM_CALLBACK workItem, void* context);
+extern int WorkQueueQueueWorkItem(HANDLE hWorkQueue,
+				  PFN_WORKITEM_CALLBACK workItem,
+				  void* context);
 
 extern void QueueWorkItem(PFN_WORKITEM_CALLBACK workItem, void* context);
 
 extern int getCpuId(void);
 
 extern int doOnAllCpus(void (*func) (void *info), void *info,
-                              int retry, int wait);
+                       int retry, int wait);
 
 extern void* PageAllocAtomic(unsigned int);
 

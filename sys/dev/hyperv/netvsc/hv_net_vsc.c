@@ -20,6 +20,8 @@
  *
  * Copyright (c) 2010-2011, Citrix, Inc.
  *
+ * Ported from lis21 code drop
+ *
  * HyperV vmbus network vsc module
  *
  *****************************************************************************/
@@ -55,42 +57,15 @@
  */
 
 
-/* Fixme:  Added these includes to get struct arpcom definition */
 #include <sys/param.h>
-//#include <sys/systm.h>
-//#include <sys/sockio.h>
-//#include <sys/mbuf.h>
-//#include <sys/malloc.h>
-//#include <sys/module.h>
 #include <sys/kernel.h>
 #include <sys/socket.h>
-//#include <sys/queue.h>
 #include <sys/lock.h>
-//#include <sys/sx.h>
-
 #include <net/if.h>
 #include <net/if_arp.h>
 
-
-#ifdef REMOVED
-/* Fixme:  Removed */
-#include "logging.h"
-#endif
 #include <dev/hyperv/include/hv_osd.h>
 #include <dev/hyperv/include/hv_logging.h>
-
-#ifdef REMOVED
-/* Fixme:  Removed */
-  #include "VmbusPacketFormat.h"
-    #include <VmbusChannelInterface.h>
-  #include "nvspprotocol.h"
-    #include "osd.h"
-  #include "List.h"
-      #include "osd.h"
-    #include "vmbusvar.h"
-  #include "NetVscApi.h"
-#include "NetVsc.h"
-#endif
 #include <dev/hyperv/include/hv_list.h>
 #include <dev/hyperv/include/hv_vmbus_channel_interface.h>
 #include <dev/hyperv/include/hv_vmbus_packet_format.h>
@@ -99,13 +74,6 @@
 #include <dev/hyperv/include/hv_net_vsc_api.h>
 #include <dev/hyperv/vmbus/hv_connection.h>
 #include <dev/hyperv/include/hv_net_vsc.h>
-
-#ifdef REMOVED
-  #include "osd.h"
-  #include "NetVsc.h"
-  #include "rndis.h"
-#include "RndisFilter.h"
-#endif
 #include <dev/hyperv/include/hv_rndis_filter.h>
 #include <dev/hyperv/include/hv_rndis.h>
 
@@ -378,8 +346,6 @@ NetVscInitializeReceiveBufferWithNetVsp(
 
 	DPRINT_DBG(NETVSC, "Establishing receive buffer's GPADL...");
 
-//	printf("RecvBuffer: Virt: %x, cnt: %x\n", (ULONG_PTR)netDevice->ReceiveBuffer, netDevice->ReceiveBufferSize >> PAGE_SHIFT);
-
 	// Establish the gpadl handle for this buffer on this channel.
 	// Note: This call uses the vmbus connection rather than the channel to establish
 	// the gpadl handle. 
@@ -506,7 +472,6 @@ NetVscInitializeSendBufferWithNetVsp(
 	ASSERT(((ULONG_PTR)netDevice->SendBuffer & (PAGE_SIZE-1)) == 0); // page-aligned buffer
 
 	DPRINT_DBG(NETVSC, "Establishing send buffer's GPADL...");
-//	printf("SendBuffer: Virt: %x, cnt: %x\n", (ULONG_PTR)netDevice->SendBuffer, netDevice->SendBufferSize >> PAGE_SHIFT);
 
 	// Establish the gpadl handle for this buffer on this channel.
 	// Note: This call uses the vmbus connection rather than the channel to establish
@@ -1146,7 +1111,7 @@ NetVscOnSend(
 																			Packet->PageBufferCount, 
 																			&sendMessage, 
 																			sizeof(NVSP_MESSAGE), 
-																			(UINT64)Packet);
+																			(ULONG_PTR)Packet);
 	}
 	else
 	{
@@ -1172,6 +1137,10 @@ NetVscOnSend(
 }
 
 
+/*
+ * In the FreeBSD Hyper-V virtual world, this function deals exclusively
+ * with virtual addresses.
+ */
 static void 
 NetVscOnReceive(
 	DEVICE_OBJECT		*Device,
@@ -1184,22 +1153,11 @@ NetVscOnReceive(
 	NETVSC_PACKET *netvscPacket=NULL;
 	LIST_ENTRY* entry;
 	ULONG_PTR start;
-	ULONG_PTR end;
-//#ifdef REMOVED
-	/* Fixme:  Removed to mitigate warning */
-	ULONG_PTR endVirtual;
-//#endif
-	//NETVSC_DRIVER_OBJECT *netvscDriver;
 	XFERPAGE_PACKET *xferpagePacket=NULL;
 	LIST_ENTRY listHead;
 
 	int i=0;
 	int count=0;
-//#ifdef REMOVED
-	/* Fixme:  Removed to mitigate warning */
-	int bytesRemain=0;
-	int j=0;
-//#endif
 
 	DPRINT_ENTER(NETVSC);
 
@@ -1263,7 +1221,7 @@ NetVscOnReceive(
 	// i.e. we can handled some of the xfer page packet ranges...
 	if (count < 2)
 	{
-//		DPRINT_ERR(NETVSC, "Got only %d netvsc pkt...needed %d pkts. Dropping this xfer page packet completely!", count, vmxferpagePacket->RangeCount+1);
+		DPRINT_ERR(NETVSC, "Got only %d netvsc pkt...needed %d pkts. Dropping this xfer page packet completely!", count, vmxferpagePacket->RangeCount+1);
 
 		// Return it to the freelist
 		SpinlockAcquire(netDevice->ReceivePacketListLock);
@@ -1290,7 +1248,7 @@ NetVscOnReceive(
 
 	if (xferpagePacket->Count != vmxferpagePacket->RangeCount)
 	{
-//		DPRINT_DBG(NETVSC, "Needed %d netvsc pkts to satisy this xfer page...got %d", vmxferpagePacket->RangeCount, xferpagePacket->Count);
+		DPRINT_DBG(NETVSC, "Needed %d netvsc pkts to satisy this xfer page...got %d", vmxferpagePacket->RangeCount, xferpagePacket->Count);
 	}
 
 	// Each range represents 1 RNDIS pkt that contains 1 ethernet frame
@@ -1313,76 +1271,24 @@ NetVscOnReceive(
 
 		netvscPacket->PageBuffers[0].Length = vmxferpagePacket->Ranges[i].ByteCount;
 
-		start = (void*)((ULONG_PTR)netDevice->ReceiveBuffer + vmxferpagePacket->Ranges[i].ByteOffset);
+		/* The virtual address of the packet in the receive buffer */
+		start = ((ULONG_PTR)netDevice->ReceiveBuffer + vmxferpagePacket->Ranges[i].ByteOffset);
 		start = ((unsigned long)start) & ~(PAGE_SIZE - 1);
 
+		/* The page number of the virtual page containing the packet start */
 		netvscPacket->PageBuffers[0].Pfn = start >> PAGE_SHIFT;
 
-		end = (void*)((ULONG_PTR)netDevice->ReceiveBuffer
-		    + vmxferpagePacket->Ranges[i].ByteOffset 
-		    + vmxferpagePacket->Ranges[i].ByteCount -1);
-		end = ((unsigned long)end) & ~(PAGE_SIZE - 1);
-
-		// Fixme: For now, assume we are within a page
-#ifndef NETSCALER
-		/*
-		 * Fixme:  This assert causing the intermittent problem
-		 * crashing us to DDB during pings or other data transfers.
-		 */
-		// Latest release requires more changes here 
-		//ASSERT((end >> PAGE_SHIFT) == (start >> PAGE_SHIFT));
-#endif
 
 		// Calculate the page relative offset
 		netvscPacket->PageBuffers[0].Offset = vmxferpagePacket->Ranges[i].ByteOffset & (PAGE_SIZE -1);
 
-
 		/*
-		 * Fixme:  This code pulled in from lis21.  It does not
-		 * work correctly at present.  It seems to be related to
-		 * the intermittent problem crashing us to DDB during
-		 * pings or other data transfers.
+		 * In this implementation, we are dealing with virtual
+		 * addresses exclusively.  Since we aren't using physical
+		 * addresses at all, we don't care if a packet crosses a
+		 * page boundary.  For this reason, the original code to
+		 * check for and handle page crossings has been removed.
 		 */
-		if ((end >> PAGE_SHIFT) != (start >> PAGE_SHIFT)) {
-printf("NetVscOnReceive():  Frame across multiple pages!\n");
-printf("  start 0x%lx end 0x%lx\n"
-       " start page 0x%lx end page 0x%lx\n",
-    start, end, (start >> PAGE_SHIFT), (end >> PAGE_SHIFT));
-		    //Handle frame across multiple pages:
-printf("  length 0x%x\n", netvscPacket->PageBuffers[0].Length);
-printf("  new length 0x%lx\n",
-    (netvscPacket->PageBuffers[0].Pfn << PAGE_SHIFT) + PAGE_SIZE - start);
-#ifdef REMOVED
-		    netvscPacket->PageBuffers[0].Length = 
-			(netvscPacket->PageBuffers[0].Pfn << PAGE_SHIFT) +
-			PAGE_SIZE - start;
-#endif
-		    bytesRemain = netvscPacket->TotalDataBufferLength -
-			netvscPacket->PageBuffers[0].Length;
-
-printf("  bytesRemain 0x%x\n", bytesRemain);
-
-#ifdef REMOVED
-		    for (j=1; j < NETVSC_PACKET_MAXPAGE; j++) {
-			netvscPacket->PageBuffers[j].Offset = 0;
-			if (bytesRemain <= PAGE_SIZE) {
-			    netvscPacket->PageBuffers[j].Length = bytesRemain;
-			    bytesRemain = 0;
-			} else {
-			    netvscPacket->PageBuffers[j].Length = PAGE_SIZE;
-			    bytesRemain -= PAGE_SIZE;
-			}
-			netvscPacket->PageBuffers[j].Pfn = 
-			    GetPhysicalAddress((void*)(endVirtual -
-			    bytesRemain)) >> PAGE_SHIFT;
-			netvscPacket->PageBufferCount++;
-			if (bytesRemain == 0) 
-			    break;
-		    }
-		    ASSERT(bytesRemain == 0);
-#endif
-		}
-
 
 		DPRINT_DBG(NETVSC, "[%d] - (abs offset %u len %u) => (pfn %llx, offset %u, len %u)", 
 			i, 
@@ -1395,6 +1301,10 @@ printf("  bytesRemain 0x%x\n", bytesRemain);
 		// Pass it to the upper layer
 		((NETVSC_DRIVER_OBJECT*)Device->Driver)->OnReceiveCallback(Device, netvscPacket);
 
+		/*
+		 * The receive completion call has been moved into the
+		 * callback function above.
+		 */
 		// NetVscOnReceiveCompletion(netvscPacket->Completion.Recv.ReceiveCompletionContext);
 	}
 
@@ -1490,7 +1400,6 @@ NetVscOnReceiveCompletion(
 		PutNetDevice(device);
 		DPRINT_EXIT(NETVSC);
 	}
-		
 
 	packet->XferPagePacket->Count--;
 

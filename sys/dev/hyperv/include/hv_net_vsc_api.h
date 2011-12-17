@@ -32,7 +32,7 @@
 #include "vmbusvar.h"
 #endif
 
-typedef void (*PFN_ON_SENDRECVCOMPLETION) (void *);
+typedef void (*PFN_ON_SENDRECVCOMPLETION)(void *);
 
 #define NETVSC_DEVICE_RING_BUFFER_SIZE 64*PAGE_SIZE //netvsc_drv_freebsd  -> 122
 #define NETVSC_PACKET_MAXPAGE 4
@@ -50,8 +50,8 @@ typedef struct  {
 			PFN_ON_SENDRECVCOMPLETION OnReceiveCompletion;
 		} Recv;	
 		struct {
-			UINT64 	 SendCompletionTid; //RndisFilter.c: 383
-			PVOID	SendCompletionContext; //RndisFilter.c  : 381 -> 72 &  				RNDIS_REQUEST*  
+			UINT64 	SendCompletionTid; //RndisFilter.c: 383
+			PVOID	SendCompletionContext; //RndisFilter.c  : 381 -> 72 &  RNDIS_REQUEST*  
 			PFN_ON_SENDRECVCOMPLETION   OnSendCompletion;
 		} Send;	
 	} Completion;
@@ -68,11 +68,11 @@ typedef struct {
 	UINT32		RingBufferSize; //netvsc_drv_freebsd.c  : 197->122
 	UINT32		RequestExtSize;  //RndisFilter.c  : 768 -> 1120  size assumption
 	UINT32		AdditionalRequestPageBufferCount; //netvsc_drv_freebsd.c 		: 515
-	UINT32		(*OnReceiveCallback) (DEVICE_OBJECT *, NETVSC_PACKET *);
+	INT32		(*OnReceiveCallback)(DEVICE_OBJECT *, NETVSC_PACKET *);
 	VOID		(*OnLinkStatusChanged)(DEVICE_OBJECT *, UINT32) ;
-	UINT32		(*OnOpen)(DEVICE_OBJECT *);
-	UINT32		(*OnClose)(DEVICE_OBJECT *);
-	UINT32		(*OnSend)(DEVICE_OBJECT *,NETVSC_PACKET* );
+	INT32		(*OnOpen)(DEVICE_OBJECT *);
+	INT32		(*OnClose)(DEVICE_OBJECT *);
+	INT32		(*OnSend)(DEVICE_OBJECT *, NETVSC_PACKET *);
 	PVOID		context;
 } NETVSC_DRIVER_OBJECT;	
 
@@ -84,6 +84,7 @@ typedef struct {
 
 /*
  * ported from sys/nic/ns_hn.h (NetScaler-only file)
+ * Fixme:  May need some pruning.
  */
 
 typedef struct hn_softc {
@@ -110,10 +111,6 @@ typedef struct hn_softc {
  */
 extern int promisc_mode;
 
-/* Fixme:  NetScaler extensions:  Do we need these? */
-//extern int  NetVscSetMode(DEVICE_OBJECT *Device, int mode);
-//extern void NetVscOnChannelCallback2(PVOID Context, int rxlimit);
-//extern int  NetVscRxReady(PVOID Context);
 extern void NetVscOnReceiveCompletion(PVOID Context);
 
 
