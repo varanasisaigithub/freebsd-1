@@ -6,8 +6,6 @@
  */
 
 #include <sys/param.h>
-
-#include <sys/param.h>
 #include <sys/kernel.h>
 #include <sys/bus.h>
 #include <sys/module.h>
@@ -26,7 +24,15 @@
 #include <include/hv_osd.h>
 #include <include/hv_logging.h>
 
-#define HEARTBEAT_DEVNAME "heartbeat"
+#define TIMESYNC_DEVNAME "timesync"
+
+struct timesync_softc {
+	DEVICE_OBJECT *storvsc_dev;
+	int unit;
+//	LIST_ENTRY free_list;
+//	HANDLE free_list_lock;
+} timesync_softc;
+
 
 static const GUID gtimesyncDeviceType={ //{9527E630-D0AE-497b-ADCE-E80AB0175CAF}
 		 .Data = {
@@ -42,7 +48,7 @@ static void timesync_init(void)
 static int timesync_probe(device_t dev)
 {
 	const char *p = vmbus_get_type(dev);
-
+	printf("timesync_probe\n"); // temp debug line
 	if (!memcmp(p, &gtimesyncDeviceType.Data, sizeof(GUID))) {
 		device_set_desc(dev, "vmbus-timesync support");
 		printf("vmbus-timesync detected\n");
@@ -89,14 +95,14 @@ static device_method_t timesync_methods[] = {
 };
 
 static driver_t timesync_driver = {
-		HEARTBEAT_DEVNAME,
+		TIMESYNC_DEVNAME,
         timesync_methods,
-        sizeof(hn_softc_t)
+        sizeof(timesync_softc)
 };
 
 static devclass_t timesync_devclass;
 
-DRIVER_MODULE(heartbeat, vmbus, timesync_driver, timesync_devclass, 0, 0);
+DRIVER_MODULE(timesync, vmbus, timesync_driver, timesync_devclass, 0, 0);
 
 //SYSINIT(timesync_initx, SI_SUB_RUN_SCHEDULER, SI_ORDER_MIDDLE + 1, timesync_init, NULL);
 
