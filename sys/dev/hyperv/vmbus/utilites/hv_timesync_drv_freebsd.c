@@ -27,8 +27,8 @@
 #define TIMESYNC_DEVNAME "timesync"
 
 struct timesync_softc {
-	DEVICE_OBJECT *storvsc_dev;
-	int unit;
+	DEVICE_OBJECT *device_object;
+//	int unit;
 //	LIST_ENTRY free_list;
 //	HANDLE free_list_lock;
 } timesync_softc;
@@ -43,6 +43,7 @@ static const GUID gtimesyncDeviceType={ //{9527E630-D0AE-497b-ADCE-E80AB0175CAF}
 
 static void timesync_init(void)
 {
+    printf("timesync initializing.... ");
 }
 
 static int timesync_probe(device_t dev)
@@ -84,12 +85,10 @@ static void timesync_shutdown(device_t dev)
 //	return 0;
 //}
 
-static device_method_t timesync_methods[] = {
-        /* Device interface */
+static device_method_t timesync_methods[] = { /* Device interface */
         DEVMETHOD(device_probe,         timesync_probe),
         DEVMETHOD(device_attach,        timesync_attach),
         DEVMETHOD(device_detach,        timesync_detach),
-	/* Fixme:  warning: assignment from incompatible pointer type */
         DEVMETHOD(device_shutdown,      timesync_shutdown),
         { 0, 0 }
 };
@@ -103,6 +102,7 @@ static driver_t timesync_driver = {
 static devclass_t timesync_devclass;
 
 DRIVER_MODULE(timesync, vmbus, timesync_driver, timesync_devclass, 0, 0);
-
-//SYSINIT(timesync_initx, SI_SUB_RUN_SCHEDULER, SI_ORDER_MIDDLE + 1, timesync_init, NULL);
+MODULE_DEPEND(timesync, vmbus, 1, 1, 1);
+MODULE_VERSION(timesync, 1);
+SYSINIT(timesync_initx, SI_SUB_RUN_SCHEDULER, SI_ORDER_MIDDLE + 1, timesync_init, NULL);
 
