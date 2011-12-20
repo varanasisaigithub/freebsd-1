@@ -81,42 +81,11 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
 #include <machine/intr_machdep.h>
 
-
-
-#ifdef REMOVED
-/* Fixme:  Removed */
-#include "logging.h"
-#include "vmbus.h"
-#include "vmbusvar.h"
-#endif
-
 #include <dev/hyperv/include/hv_osd.h>
 #include <dev/hyperv/include/hv_logging.h>
-
-#ifdef REMOVED
-/* Fixme:  Removed */
-#include "hv_vmbus_var.h"
-#include "hv_vmbus_api.h"
-#include "hv_vmbus.h"
-#endif
-/* Fixme:  Needed? */
 #include <dev/hyperv/vmbus/hv_vmbus_var.h>
-/* Fixme:  Needed? */
 #include <dev/hyperv/vmbus/hv_vmbus_api.h>
-/* Fixme:  Needed? */
 #include <dev/hyperv/vmbus/hv_vmbus.h>
-
-#ifdef REMOVED
-/* Fixme:  Removed */
-
-    #include "osd.h"
-
-  #include "vmbusvar.h"
-
-#include "NetVscApi.h"
-#endif
-// Fixme -- moved up
-//#include <dev/hyperv/include/hv_vmbus_var.h>
 #include <dev/hyperv/include/hv_net_vsc_api.h>
 
 #define NETVSC_DEVNAME "hn"
@@ -178,8 +147,8 @@ static int  hn_start_locked (struct ifnet *ifp);
 static void hn_start(struct ifnet *ifp);
 
 static void netvsc_xmit_completion(void *context);
-static unsigned int netvsc_recv_callback(DEVICE_OBJECT *device_obj,
-					 NETVSC_PACKET* packet);
+static int netvsc_recv_callback(DEVICE_OBJECT *device_obj,
+				NETVSC_PACKET *packet);
 static int  netvsc_drv_init(PFN_DRIVERINITIALIZE pfn_drv_init);
 static void netvsc_linkstatus_callback(DEVICE_OBJECT *, unsigned int);
 
@@ -202,7 +171,6 @@ int netvsc_drv_init(PFN_DRIVERINITIALIZE pfn_drv_init)
 	vmbus_get_interface(&net_drv_obj->Base.VmbusChannelInterface);
 
 	net_drv_obj->RingBufferSize = netvsc_ringbuffer_size;
-	/* Fixme:  warning: assignment from incompatible pointer type */
 	net_drv_obj->OnReceiveCallback = netvsc_recv_callback;
 	net_drv_obj->OnLinkStatusChanged = netvsc_linkstatus_callback;
 
@@ -216,7 +184,7 @@ int netvsc_drv_init(PFN_DRIVERINITIALIZE pfn_drv_init)
 
 	DPRINT_EXIT(NETVSC_DRV);
 
-	return ret;
+	return (ret);
 }
 
 static void netvsc_init(void)
@@ -243,9 +211,6 @@ netvsc_probe(device_t dev)
 	return (ENXIO);
 }
 
-// Fixme -- ugly global, belongs at top
-DEVICE_OBJECT *dev_obj;
-
 static int
 netvsc_attach(device_t dev)
 {
@@ -257,20 +222,18 @@ netvsc_attach(device_t dev)
 	struct ifnet *ifp;
 	int ret;
 
-        /* Don't add new nic if NetScaler is already running */
-
-	/* Fixme:  Is this correct? */
 	sc = device_get_softc(dev);
 	if (sc == NULL) {
 		DPRINT_ERR(NETVSC_DRV, "%s%d not configured", NETVSC_DEVNAME,
 		    unit);
-		ret = ENOMEM;
-		return ret;
+
+		return (ENOMEM);
 	}
 
 	if (!net_drv_obj->Base.OnDeviceAdd) {
 		DPRINT_ERR(NETVSC_DRV, "OnDeviceAdd is not initialized");
-		return -1;
+
+		return (-1);
 	}
 
 	bzero(sc, sizeof(hn_softc_t));
@@ -289,7 +252,7 @@ netvsc_attach(device_t dev)
 		DPRINT_ERR(NETVSC_DRV, "unable to add netvsc device (ret %d)",
 		    ret);
 		
-		return ret;
+		return (ret);
 	}
 
 	if (device_info.LinkState == 0) {
@@ -339,18 +302,21 @@ netvsc_attach(device_t dev)
 	// Fixme -- should we have a copy of MAC addr in softc?
 	ether_ifattach(ifp, device_info.MacAddr);
 
-	return 0;
+	return (0);
 }
 
 static int netvsc_detach(device_t dev)
 {
 	printf("netvsc_detach\n");
-	return 0;
+
+	return (0);
 }
 
-static void netvsc_shutdown(device_t dev)
+static int netvsc_shutdown(device_t dev)
 {
 //	printf("netvsc_shutdown\n");
+
+	return (0);
 }
 
 /*++
@@ -373,9 +339,11 @@ void netvsc_xmit_completion(void *context)
 
 	DPRINT_ENTER(NETVSC_DRV);
 
-	m = (struct mbuf *)(ULONG_PTR)packet->Completion.Send.SendCompletionTid;
+	m = (struct mbuf *)packet->Completion.Send.SendCompletionTid;
+	/* Fixme:  magic number */
 	buf = ((unsigned char *)packet) - 16;
-	sc = (void  *)(*(vm_offset_t *)buf);
+	/* Fixme:  not used */
+	sc = (void *)(*(vm_offset_t *)buf);
 
 	free(buf, M_DEVBUF);
 
@@ -394,7 +362,7 @@ Desc:	Start a send
 
 --*/
 
-static int hn_start_locked (struct ifnet *ifp)
+static int hn_start_locked(struct ifnet *ifp)
 {
 	int ret = 0;
 	hn_softc_t *sc = ifp->if_softc;
@@ -404,7 +372,7 @@ static int hn_start_locked (struct ifnet *ifp)
 	int i = 0;
 	unsigned char *buf;
 
-	NETVSC_PACKET* packet;
+	NETVSC_PACKET *packet;
 	int num_frags = 0;
 	int retries = 0;
 	struct mbuf *m_head, *m;
@@ -414,6 +382,7 @@ static int hn_start_locked (struct ifnet *ifp)
 	DPRINT_ENTER(NETVSC_DRV);
 
 	while (!IFQ_DRV_IS_EMPTY(&sc->hn_ifp->if_snd)) {
+
 		IFQ_DRV_DEQUEUE(&sc->hn_ifp->if_snd, m_head);
 		if (m_head == NULL) {
 			break;
@@ -436,6 +405,7 @@ static int hn_start_locked (struct ifnet *ifp)
 		num_frags += net_drv_obj->AdditionalRequestPageBufferCount;
 
 		// Allocate a netvsc packet based on # of frags.
+		/* Fixme:  magic number */
 		buf = malloc(16 + sizeof(NETVSC_PACKET) + 
 		    (num_frags * sizeof(PAGE_BUFFER)) + 
 		    net_drv_obj->RequestExtSize, 
@@ -443,9 +413,10 @@ static int hn_start_locked (struct ifnet *ifp)
 
 		if (buf == NULL) {
 			DPRINT_ERR(NETVSC_DRV, "unable to allocate NETVSC_PACKET");
-			return -1;
+			return (-1);
 		}
 
+		/* Fixme:  magic number */
 		packet = (NETVSC_PACKET *)(buf + 16);
 		*(vm_offset_t *)buf = 0;
 
@@ -455,11 +426,11 @@ static int hn_start_locked (struct ifnet *ifp)
 		// Setup the rndis header
 		packet->PageBufferCount = num_frags;
 
-		// TODO: Flush all write buffers/ memory fence ???
+		// TODO: Flush all write buffers / memory fence ???
 		//wmb();
 	
 		// Initialize it from the mbuf
-		packet->TotalDataBufferLength	= len;
+		packet->TotalDataBufferLength = len;
 
 		// Start filling in the page buffers starting at
 		// AdditionalRequestPageBufferCount offset
@@ -472,23 +443,18 @@ static int hn_start_locked (struct ifnet *ifp)
 				packet->PageBuffers[i].Offset = paddr & (PAGE_SIZE - 1);
 				packet->PageBuffers[i].Length = m->m_len;
 				DPRINT_DBG(NETVSC_DRV, 
-						"vaddr: %p, pfn: %llx, Off: %x, len: %x\n", 
-						paddr, packet->PageBuffers[i].Pfn, 
-						packet->PageBuffers[i].Offset, 
-						packet->PageBuffers[i].Length);
+				    "vaddr: %p, pfn: %llx, Off: %x, len: %x\n", 
+				    paddr, packet->PageBuffers[i].Pfn, 
+				    packet->PageBuffers[i].Offset, 
+				    packet->PageBuffers[i].Length);
 
 				i++;
 			}
 		}
 
-
-		// Set the completion routine
-		/*
-		 * Fixme:  Research the netvsc_xmit_completion() function
-		 * and figure out what to do about it.  It is currently too
-		 * messed up to port easily.
-		 */
-		packet->Completion.Send.OnSendCompletion = netvsc_xmit_completion;
+		/* Set the completion routine */
+		packet->Completion.Send.OnSendCompletion =
+		    netvsc_xmit_completion;
 		packet->Completion.Send.SendCompletionContext = packet;
 		packet->Completion.Send.SendCompletionTid = (ULONG_PTR)m_head;
 retry_send:
@@ -515,6 +481,7 @@ retry_send:
 			ifp->if_drv_flags |= IFF_DRV_OACTIVE;
 
 			ret = -1;
+			// Fixme: ???
 //			net_device_ctx->stats.tx_dropped++;
 
 			// Null it since the caller will free it instead of
@@ -531,7 +498,7 @@ retry_send:
 //	    net_device_ctx->stats.tx_packets, net_device_ctx->stats.tx_bytes);
 
 	DPRINT_EXIT(NETVSC_DRV);
-	return ret;
+	return (ret);
 }
 
 /*++
@@ -544,7 +511,7 @@ Desc:	Link up/down notification
 static void netvsc_linkstatus_callback(DEVICE_OBJECT *device_obj,
 				       unsigned int status)
 {
-	struct device_context* device_ctx = to_device_context(device_obj);
+	struct device_context *device_ctx = to_device_context(device_obj);
 	hn_softc_t *sc = device_get_softc(device_ctx->device);
 
 	DPRINT_ENTER(NETVSC_DRV);
@@ -570,67 +537,72 @@ Name:	netvsc_recv_callback()
 Desc:	Callback when we receive a packet from the "wire" on the specify device
 
 --*/
-static unsigned int
-netvsc_recv_callback(DEVICE_OBJECT *device_obj, NETVSC_PACKET* packet)
+static int
+netvsc_recv_callback(DEVICE_OBJECT *device_obj, NETVSC_PACKET *packet)
 {
 	struct device_context *device_ctx = to_device_context(device_obj);
 	hn_softc_t *sc = (hn_softc_t *)device_get_softc(device_ctx->device);
 
 	struct mbuf *m_new;
 	struct ifnet *ifp = sc->hn_ifp;
-	int i = 0;
+	int i;
 
 	DPRINT_ENTER(NETVSC_DRV);
 
 	if (!sc) {
 		DPRINT_ERR(NETVSC_DRV, "got receive callback but net device "
 		    "not yet initialized");
-		return 0;
+		return (0);
 	}
 	
 	ifp = sc->arpcom.ac_ifp;
 
 	if (!(ifp->if_drv_flags & IFF_DRV_RUNNING)) {
-		return 0;
+		return (0);
 	}
 
 	if (packet->TotalDataBufferLength > MCLBYTES) {
 		DPRINT_ERR(NETVSC_DRV, "rx error: packet length: %x", 
 		    packet->TotalDataBufferLength);
-		return 0;
+		return (0);
 	}
 
 	MGETHDR(m_new, M_DONTWAIT, MT_DATA);
 	if (m_new == NULL) {
 		DPRINT_ERR(NETVSC_DRV, "Failed to allocate mbuf header");
-		return 0;
+		return (0);
 	}
 	MCLGET(m_new, M_DONTWAIT);
 	if ((m_new->m_flags & M_EXT) == 0) {
 		DPRINT_ERR(NETVSC_DRV, "Failed to allocate mbuf cluster");
 		m_freem(m_new);
-		return 0;
+		return (0);
 	}
 
-
-	// Copy to mbuf. 
-	// This copy is needed here since the memory pointed by NETVSC_PACKET
-	// cannot be deallocated
-	for (i=0; i<packet->PageBufferCount; i++) {
+	/*
+	 * Copy the received packet to one or more mbufs. 
+	 * The copy is required since the memory pointed to by NETVSC_PACKET
+	 * cannot be deallocated
+	 */
+	for (i=0; i < packet->PageBufferCount; i++) {
+		/* Shifts virtual page number to form virtual page address */
 		unsigned char *vaddr = PageMapVirtualAddress((unsigned long)
 		    (packet->PageBuffers[i].Pfn));
+#ifdef REMOVED
+		/* Function cannot fail */
 		if (vaddr == NULL) {
 			DPRINT_ERR(NETVSC_DRV, "NETVSC: Unable to map page");
 			m_freem(m_new);
-			return 0;
+			return (0);
 		}
+#endif
 
 		m_append(m_new, packet->PageBuffers[i].Length,
 		    vaddr + packet->PageBuffers[i].Offset);
 
+		/* no-op */
 		PageUnmapVirtualAddress(vaddr);
 	}
-
 
 	m_new->m_pkthdr.len = m_new->m_len = packet->TotalDataBufferLength -
 	    ETHER_CRC_LEN;
@@ -645,7 +617,7 @@ netvsc_recv_callback(DEVICE_OBJECT *device_obj, NETVSC_PACKET* packet)
 
 	DPRINT_EXIT(NETVSC_DRV);
 
-	return 0;
+	return (0);
 }
 
 static int
@@ -658,11 +630,6 @@ hn_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 	int mask, error = 0;
 
 	switch(cmd) {
-#ifdef REMOVED
-	/* Fixme:  NetScaler, probably not needed */
-	case SIOCDIFADDR:
-		break;
-#endif
 	case SIOCSIFADDR:
 	case SIOCGIFADDR:
 		error = ether_ioctl(ifp, cmd, data);
@@ -741,6 +708,7 @@ hn_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 		break;
 	default:
 		error = ether_ioctl(ifp, cmd, data);
+		break;
 	}
     
 	return (error);
@@ -834,7 +802,6 @@ static device_method_t netvsc_methods[] = {
         DEVMETHOD(device_probe,         netvsc_probe),
         DEVMETHOD(device_attach,        netvsc_attach),
         DEVMETHOD(device_detach,        netvsc_detach),
-	/* Fixme:  warning: assignment from incompatible pointer type */
         DEVMETHOD(device_shutdown,      netvsc_shutdown),
 
         { 0, 0 }
@@ -850,5 +817,6 @@ static devclass_t netvsc_devclass;
 
 DRIVER_MODULE(hn, vmbus, netvsc_driver, netvsc_devclass, 0, 0);
 
-SYSINIT(netvsc_initx, SI_SUB_RUN_SCHEDULER, SI_ORDER_MIDDLE + 1, netvsc_init, NULL);
+SYSINIT(netvsc_initx, SI_SUB_RUN_SCHEDULER, SI_ORDER_MIDDLE + 1, netvsc_init,
+     NULL);
 

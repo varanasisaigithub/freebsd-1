@@ -56,42 +56,13 @@
  *   Hank Janssen  <hjanssen@microsoft.com>
  */
 
-/* Fixme:  Added these includes to get struct arpcom definition */
 #include <sys/param.h>
-//#include <sys/systm.h>
-//#include <sys/sockio.h>
 #include <sys/mbuf.h>
-//#include <sys/malloc.h>
-//#include <sys/module.h>
-//#include <sys/kernel.h>
 #include <sys/socket.h>
-//#include <sys/queue.h>
-//#include <sys/lock.h>
-//#include <sys/sx.h>
-
-//#include <net/if.h>
 #include <net/if_arp.h>
 
-
-#ifdef REMOVED
-/* Fixme:  Removed */
-#include "logging.h"
-#endif
 #include <dev/hyperv/include/hv_osd.h>
 #include <dev/hyperv/include/hv_logging.h>
-
-#ifdef REMOVED
-/* Fixme:  Removed */
-  #include "VmbusPacketFormat.h"
-    #include <VmbusChannelInterface.h>
-  #include "nvspprotocol.h"
-    #include "osd.h"
-  #include "List.h"
-      #include "osd.h"
-    #include "vmbusvar.h"
-  #include "NetVscApi.h"
-//#include "NetVsc.h"
-#endif
 #include <dev/hyperv/include/hv_list.h>
 #include <dev/hyperv/include/hv_vmbus_channel_interface.h>
 #include <dev/hyperv/include/hv_vmbus_packet_format.h>
@@ -99,13 +70,6 @@
 #include <dev/hyperv/vmbus/hv_vmbus_var.h>
 #include <dev/hyperv/include/hv_net_vsc_api.h>
 #include <dev/hyperv/include/hv_net_vsc.h>
-
-#ifdef REMOVED
-  #include "osd.h"
-  #include "NetVsc.h"
-  #include "rndis.h"
-#include "RndisFilter.h"
-#endif
 #include <dev/hyperv/include/hv_rndis_filter.h>
 #include <dev/hyperv/include/hv_rndis.h>
 
@@ -632,7 +596,7 @@ RndisFilterOnReceive(
 
 	memcpy(&rndisMessage, rndisHeader, (rndisHeader->MessageLength > sizeof(RNDIS_MESSAGE))?sizeof(RNDIS_MESSAGE):rndisHeader->MessageLength);
 
-	PageUnmapVirtualAddress((void*)(ULONG_PTR)rndisHeader - Packet->PageBuffers[0].Offset);
+	PageUnmapVirtualAddress((void*)((ULONG_PTR)rndisHeader - Packet->PageBuffers[0].Offset));
 
 	DumpRndisMessage(&rndisMessage);
 
@@ -789,7 +753,7 @@ RndisFilterSetPacketFilter(
 	set->InformationBufferLength = sizeof(UINT32);
 	set->InformationBufferOffset = sizeof(RNDIS_SET_REQUEST); 
 
-	memcpy((void*)(ULONG_PTR)set + sizeof(RNDIS_SET_REQUEST), &NewFilter, sizeof(UINT32));
+	memcpy((void*)((ULONG_PTR)set + sizeof(RNDIS_SET_REQUEST)), &NewFilter, sizeof(UINT32));
 
 	ret = RndisFilterSendRequest(Device, request);
 	if (ret != 0)
@@ -865,6 +829,7 @@ RndisFilterInit(
 	Driver->Base.OnDeviceAdd = RndisFilterOnDeviceAdd;
 	Driver->Base.OnDeviceRemove = RndisFilterOnDeviceRemove;
 	Driver->Base.OnCleanup = RndisFilterOnCleanup;
+
 	/* Fixme:  Prototype mismatch */
 	Driver->OnSend = RndisFilterOnSend;
 	/* Fixme:  Prototype mismatch */
