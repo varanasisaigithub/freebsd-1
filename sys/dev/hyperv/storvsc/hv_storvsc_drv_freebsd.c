@@ -353,7 +353,7 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		cpi->version_num = 1;
 		cpi->hba_inquiry = PI_TAG_ABLE|PI_SDTR_ABLE;
 		cpi->target_sprt = 0;
-		cpi->hba_misc = 0;
+		cpi->hba_misc = PIM_NOBUSRESET;
 		cpi->hba_eng_cnt = 0;
 		cpi->max_target = STORVSC_MAX_TARGETS;
 		cpi->max_lun = STORVSC_MAX_LUNS_PER_TARGET;
@@ -404,14 +404,12 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 	}
 	case  XPT_RESET_BUS:
 	case  XPT_RESET_DEV:{
-#ifdef notyet
 		if ((res = stor_drv_obj->OnHostReset(sc->storvsc_dev)) != 0) {
 			printf("OnHostReset failed with %d\n", res);
 			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
 			xpt_done(ccb);
 			return;
 		}
-#endif
 		ccb->ccb_h.status = CAM_REQ_CMP;
 		xpt_done(ccb);
 		return;
@@ -422,7 +420,9 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		STORVSC_REQUEST *reqp = NULL;
 		LIST_ENTRY *entry;
 
-		KASSERT((csio->cdb_len > 0), "cdl_len is 0\n");
+		if (csio->cdb_len == 0) {
+			panic("cdl_len is 0\n");
+		}
 
 		SpinlockAcquire(sc->free_list_lock);
 		if (IS_LIST_EMPTY(&sc->free_list)) {

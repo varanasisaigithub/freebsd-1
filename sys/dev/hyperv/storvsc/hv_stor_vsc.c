@@ -657,6 +657,11 @@ StorVscOnHostReset(
 	// At this point, all outstanding requests in the adapter should have been flushed out and return to us
 
 Cleanup:
+
+	SpinlockAcquire(storDevice->lock);
+	storDevice->reset = 0;
+	SpinlockRelease(storDevice->lock);
+
 	PutStorDevice(Device);
 	DPRINT_EXIT(STORVSC);
 	return ret;
