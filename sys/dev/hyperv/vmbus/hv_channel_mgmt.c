@@ -366,7 +366,7 @@ void shutdown_onchannelcallback(void *context)
 
 	if (recvlen > 0) 
 	{
-		DPRINT_DBG(VMBUS, "shutdown packet: len=%d, requestid=%lld", 
+		DPRINT_DBG(VMBUS, "shutdown packet: len=%d, requestid=%ld",
 			   recvlen, requestid);
 
 		icmsghdrp = (struct icmsg_hdr *)&buf[
@@ -487,10 +487,10 @@ void heartbeat_onchannelcallback(void *context)
 
 	if (recvlen > 0) 
 	{
-		DPRINT_DBG(VMBUS, "heartbeat packet: len=%d, requestid=%lld", 
+		DPRINT_DBG(VMBUS, "heartbeat packet: len=%d, requestid=%ld",
 			   recvlen, requestid);
 
-	//	printf("heartbeat packet: len=%d, requestid=%lld", 
+	//	printf("heartbeat packet: len=%d, requestid=%ld",
 	//		   recvlen, requestid);
 
 		icmsghdrp = (struct icmsg_hdr *)&buf[
@@ -524,7 +524,7 @@ void heartbeat_onchannelcallback(void *context)
 				sizeof(struct vmbuspipe_hdr) +
 				sizeof(struct icmsg_hdr)];
 
-		DPRINT_DBG(VMBUS, "heartbeat seq = %lld", 
+		DPRINT_DBG(VMBUS, "heartbeat seq = %ld",
 			   heartbeat_msg->seq_num);
 		// printf("heartbeat seq = %lld", 
 		//	   heartbeat_msg->seq_num);

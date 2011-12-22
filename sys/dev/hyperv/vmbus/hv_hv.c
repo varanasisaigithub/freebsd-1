@@ -118,6 +118,12 @@ Description:
 #include <sys/time.h>
 #include <sys/pcpu.h>
 
+static inline void do_cpuid_inline(unsigned int op, unsigned int *eax, unsigned int *ebx, unsigned int *ecx, unsigned int *edx)
+{
+	__asm__ __volatile__("cpuid" : "=a" (*eax), "=b" (*ebx), "=c" (*ecx), "=d" (*edx) : "0" (op), "c" (ecx));
+}
+
+
 //
 // Globals
 //
@@ -156,7 +162,7 @@ HvQueryHypervisorPresence (
     ecx = 0;
     edx = 0;
     op = HvCpuIdFunctionVersionAndFeatures;
-    do_cpuid(op, &eax, &ebx, &ecx, &edx);
+    do_cpuid_inline(op, &eax, &ebx, &ecx, &edx);
 
 	return (ecx & HV_PRESENT_BIT);
 }
@@ -193,7 +199,7 @@ HvQueryHypervisorInfo (
     ecx = 0;
     edx = 0;
     op = HvCpuIdFunctionHvVendorAndMaxFunction;
-    do_cpuid(op, &eax, &ebx, &ecx, &edx);
+    do_cpuid_inline(op, &eax, &ebx, &ecx, &edx);
 
     DPRINT_INFO(VMBUS, "Vendor ID: %c%c%c%c%c%c%c%c%c%c%c%c",
            (ebx & 0xFF),
@@ -215,7 +221,7 @@ HvQueryHypervisorInfo (
     ecx = 0;
     edx = 0;
     op = HvCpuIdFunctionHvInterface;
-    do_cpuid(op, &eax, &ebx, &ecx, &edx);
+    do_cpuid_inline(op, &eax, &ebx, &ecx, &edx);
 
     DPRINT_INFO(VMBUS, "Interface ID: %c%c%c%c",
            (eax & 0xFF),
@@ -229,7 +235,7 @@ HvQueryHypervisorInfo (
         ecx = 0;
         edx = 0;
         op = HvCpuIdFunctionMsHvVersion;
-        do_cpuid(op, &eax, &ebx, &ecx, &edx);
+        do_cpuid_inline(op, &eax, &ebx, &ecx, &edx);
         DPRINT_INFO(VMBUS, "OS Build:%d-%d.%d-%d-%d.%d",
                eax,
                ebx >> 16,
@@ -263,7 +269,7 @@ HvDoHypercall (
 	UINT64 outputAddress = (Output)? GetPhysicalAddress(Output) : 0;
     volatile void* hypercallPage = gHvContext.HypercallPage;
 
-    DPRINT_DBG(VMBUS, "Hypercall <control %llx input phys %llx virt %p output phys %llx virt %p hypercall %p>", 
+    DPRINT_DBG(VMBUS, "Hypercall <control %lx input phys %lx virt %p output phys %lx virt %p hypercall %p>",
 		Control,
 		inputAddress,
 		Input,
@@ -274,7 +280,7 @@ HvDoHypercall (
 	__asm__ __volatile__ ("mov %0, %%r8" : : "r" (outputAddress):  "r8");
 	__asm__ __volatile__ ("call *%3" : "=a"(hvStatus): "c" (Control), "d" (inputAddress), "m" (hypercallPage));
 
-    DPRINT_DBG(VMBUS, "Hypercall <return %llx>",  hvStatus);
+    DPRINT_DBG(VMBUS, "Hypercall <return %lx>",  hvStatus);
 
     return hvStatus;
 
@@ -292,7 +298,7 @@ HvDoHypercall (
     UINT32 outputAddressLo = outputAddress & 0xFFFFFFFF;
     volatile void* hypercallPage = gHvContext.HypercallPage;
 
-    DPRINT_DBG(VMBUS, "Hypercall <control %llx input %p output %p>", 
+    DPRINT_DBG(VMBUS, "Hypercall <control %lx input %p output %p>",
 		Control,
 		Input,
 		Output);
@@ -300,7 +306,7 @@ HvDoHypercall (
 	__asm__ __volatile__ ("call *%8" : "=d"(hvStatusHi), "=a"(hvStatusLo) : "d" (controlHi), "a" (controlLo), "b" (inputAddressHi), "c" (inputAddressLo), "D"(outputAddressHi), "S"(outputAddressLo), "m" (hypercallPage));
 
 	
-    DPRINT_DBG(VMBUS, "Hypercall <return %llx>",  hvStatusLo | ((UINT64)hvStatusHi << 32));
+    DPRINT_DBG(VMBUS, "Hypercall <return %lx>",  hvStatusLo | ((UINT64)hvStatusHi << 32));
 
     return (hvStatusLo | ((UINT64)hvStatusHi << 32));
 #endif // __x86_64__
@@ -390,7 +396,7 @@ HvInit (
 	}
 	else
 	{
-		DPRINT_ERR(VMBUS, "Unknown guest id (0x%llx)!!", gHvContext.GuestId);
+		DPRINT_ERR(VMBUS, "Unknown guest id (0x%lx)!!", gHvContext.GuestId);
 		goto Cleanup;
 	}
 
@@ -411,7 +417,7 @@ HvInit (
 	gHvContext.SignalEventParam->FlagNumber = 0;
 	gHvContext.SignalEventParam->RsvdZ = 0;
 
-	//DPRINT_DBG(VMBUS, "My id %llu", HvGetCurrentPartitionId());
+	//DPRINT_DBG(VMBUS, "My id %lu", HvGetCurrentPartitionId());
 
 	DPRINT_EXIT(VMBUS);
 
@@ -653,7 +659,7 @@ HvSynicInit (
 		    GetPhysicalAddress(gHvContext.synICMessagePage[cpu]) >>
 		    PAGE_SHIFT;
 
-		DPRINT_DBG(VMBUS, "HV_X64_MSR_SIMP msr set to: %llx",
+		DPRINT_DBG(VMBUS, "HV_X64_MSR_SIMP msr set to: %lx",
 		    simp.AsUINT64);
 
 		WriteMsr(HV_X64_MSR_SIMP, simp.AsUINT64);
@@ -667,7 +673,7 @@ HvSynicInit (
 		    GetPhysicalAddress(gHvContext.synICEventPage[cpu]) >>
 		    PAGE_SHIFT;
 
-		DPRINT_DBG(VMBUS, "HV_X64_MSR_SIEFP msr set to: %llx",
+		DPRINT_DBG(VMBUS, "HV_X64_MSR_SIEFP msr set to: %lx",
 		    siefp.AsUINT64);
 
 		WriteMsr(HV_X64_MSR_SIEFP, siefp.AsUINT64);
@@ -689,7 +695,7 @@ HvSynicInit (
 	sharedSint.Masked = FALSE;
 	sharedSint.AutoEoi = FALSE;
 
-	DPRINT_DBG(VMBUS, "HV_X64_MSR_SINT1 msr set to: %llx", sharedSint.AsUINT64);
+	DPRINT_DBG(VMBUS, "HV_X64_MSR_SINT1 msr set to: %lx", sharedSint.AsUINT64);
 
 	WriteMsr(HV_X64_MSR_SINT0 + VMBUS_MESSAGE_SINT, sharedSint.AsUINT64);
 

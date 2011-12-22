@@ -175,8 +175,8 @@ VmbusConnect(void)
 	INSERT_TAIL_LIST(&gVmbusConnection.ChannelMsgList, &msgInfo->MsgListEntry);
 	SpinlockRelease(gVmbusConnection.ChannelMsgLock);
 
-	DPRINT_DBG(VMBUS, "Vmbus connection:  interrupt pfn %llx, monitor1 pfn "
-		"%llx,, monitor2 pfn %llx", 
+	DPRINT_DBG(VMBUS, "Vmbus connection:  interrupt pfn %lx, monitor1 pfn "
+		"%lx,, monitor2 pfn %lx",
 		msg->InterruptPage, msg->MonitorPage1, msg->MonitorPage2);
 
 	DPRINT_DBG(VMBUS, "Sending channel initiate msg...");
@@ -382,7 +382,7 @@ VmbusProcessChannelEvent(
 	}
 	else
 	{
-        DPRINT_ERR(VMBUS, "channel not found for relid - %d.", relId);
+        DPRINT_ERR(VMBUS, "channel not found for relid - %ud.", relId);
 	}
 }
 

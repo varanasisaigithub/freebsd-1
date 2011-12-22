@@ -5,34 +5,36 @@
  *      Author: Larry Melia
  */
 
-#include <sys/param.h>
-#include <sys/kernel.h>
-#include <sys/bus.h>
-#include <sys/module.h>
+// TODO--remove includes that aren't needed
 
+#include <sys/types.h>
+#include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/sockio.h>
 #include <sys/mbuf.h>
 #include <sys/malloc.h>
 #include <sys/module.h>
 #include <sys/kernel.h>
-#include <sys/socket.h>
 #include <sys/queue.h>
 #include <sys/lock.h>
 #include <sys/sx.h>
+#include <sys/taskqueue.h>
+#include <sys/bus.h>
+#include <sys/mutex.h>
+#include <vm/vm.h>
+#include <vm/pmap.h>
 
-#include <include/hv_osd.h>
-#include <include/hv_logging.h>
+#include <hv_osd.h>
+#include <hv_vmbus_var.h>
+#include <hv_vmbus_api.h>
+#include <hv_vmbus.h>
+#include <hv_logging.h>
 
 #define TIMESYNC_DEVNAME "timesync"
 
-struct timesync_softc {
-	DEVICE_OBJECT *device_object;
-//	int unit;
-//	LIST_ENTRY free_list;
-//	HANDLE free_list_lock;
+typedef struct timesync_softc {
+	//DEVICE_OBJECT *device_object;
 } timesync_softc;
-
 
 static const GUID gtimesyncDeviceType={ //{9527E630-D0AE-497b-ADCE-E80AB0175CAF}
 		 .Data = {
@@ -41,40 +43,56 @@ static const GUID gtimesyncDeviceType={ //{9527E630-D0AE-497b-ADCE-E80AB0175CAF}
 		        }
 };
 
+// prototypes
+static void timesync_init(void);
+static int timesync_probe(device_t dev);
+static int timesync_attach(device_t dev);
+static int timesync_detach(device_t dev);
+static int timesync_shutdown(device_t dev);
+
 static void timesync_init(void)
-{
+{   DPRINT_ENTER(VMBUS_UTILITY);
     printf("timesync initializing.... ");
+    DPRINT_EXIT(VMBUS_UTILITY);
 }
 
 static int timesync_probe(device_t dev)
 {
+	int rtn_value = ENXIO;
+	DPRINT_ENTER(VMBUS_UTILITY);
+
 	const char *p = vmbus_get_type(dev);
-	printf("timesync_probe\n"); // temp debug line
 	if (!memcmp(p, &gtimesyncDeviceType.Data, sizeof(GUID))) {
 		device_set_desc(dev, "vmbus-timesync support");
 		printf("vmbus-timesync detected\n");
-		// return (0);
+		rtn_value = 0;
 	}
-
-	return (ENXIO);
+	DPRINT_EXIT(VMBUS_UTILITY);
+	return (rtn_value);
 }
 
 static int timesync_attach(device_t dev)
 {
-	printf("timesync_attach\n");
+	DPRINT_ENTER(VMBUS_UTILITY);
+	DPRINT_EXIT(VMBUS_UTILITY);
 	return 0;
 }
 
 static int timesync_detach(device_t dev)
 {
-	printf("timesync_detach\n");
+	DPRINT_ENTER(VMBUS_UTILITY);
+	DPRINT_EXIT(VMBUS_UTILITY);
 	return 0;
 }
 
-static void timesync_shutdown(device_t dev)
+static int timesync_shutdown(device_t dev)
 {
-   printf("timesync_shutdown\n");
+	DPRINT_ENTER(VMBUS_UTILITY);
+	DPRINT_EXIT(VMBUS_UTILITY);
+    return 0;
 }
+
+/************************************************************************************/
 
 //static unsigned int
 //timesync_recv_callback(DEVICE_OBJECT *device_obj, timesync_PACKET* packet)
@@ -102,7 +120,6 @@ static driver_t timesync_driver = {
 static devclass_t timesync_devclass;
 
 DRIVER_MODULE(timesync, vmbus, timesync_driver, timesync_devclass, 0, 0);
-MODULE_DEPEND(timesync, vmbus, 1, 1, 1);
-MODULE_VERSION(timesync, 1);
+
 SYSINIT(timesync_initx, SI_SUB_RUN_SCHEDULER, SI_ORDER_MIDDLE + 1, timesync_init, NULL);
 
