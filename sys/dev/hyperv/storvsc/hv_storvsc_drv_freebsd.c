@@ -404,12 +404,14 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 	}
 	case  XPT_RESET_BUS:
 	case  XPT_RESET_DEV:{
+#if notyet
 		if ((res = stor_drv_obj->OnHostReset(sc->storvsc_dev)) != 0) {
 			printf("OnHostReset failed with %d\n", res);
 			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
 			xpt_done(ccb);
 			return;
 		}
+#endif	/* notyet */
 		ccb->ccb_h.status = CAM_REQ_CMP;
 		xpt_done(ccb);
 		return;
