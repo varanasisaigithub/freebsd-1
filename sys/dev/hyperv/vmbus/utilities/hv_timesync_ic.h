@@ -58,11 +58,8 @@
 #ifndef __HV_TIMESYNC_IC_H__
 #define __HV_TIMESYNC_IC_H__
 
-#ifdef REMOVED
-/* Fixme -- removed */
-#include "osd.h"
-#include "ic.h"
-#endif
+#include <dev/hyperv/include/hv_osd.h>
+#include <dev/hyperv/vmbus/hv_ic.h>
 
 struct ictimesync_data {
     winfiletime_t parenttime;

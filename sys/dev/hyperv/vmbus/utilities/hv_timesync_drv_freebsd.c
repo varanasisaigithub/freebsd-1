@@ -30,18 +30,15 @@
 #include <hv_vmbus.h>
 #include <hv_logging.h>
 
+#include <hv_timesync_ic.h>
+
 #define TIMESYNC_DEVNAME "timesync"
 
 typedef struct timesync_softc {
 	//DEVICE_OBJECT *device_object;
 } timesync_softc;
 
-static const GUID gtimesyncDeviceType={ //{9527E630-D0AE-497b-ADCE-E80AB0175CAF}
-		 .Data = {
-		                0x30, 0xe6, 0x27, 0x95, 0xae, 0xd0, 0x7b, 0x49,
-		                0xad, 0xce, 0xe8, 0x0a, 0xb0, 0x17, 0x5c, 0xaf
-		        }
-};
+static VMBUS_CHANNEL_INTERFACE vmbus_channel_interface;
 
 // prototypes
 static void timesync_init(void);
@@ -53,55 +50,60 @@ static int timesync_shutdown(device_t dev);
 static void timesync_init(void)
 {   DPRINT_ENTER(VMBUS_UTILITY);
     printf("timesync initializing.... ");
+    vmbus_get_interface(&vmbus_channel_interface);
     DPRINT_EXIT(VMBUS_UTILITY);
 }
 
 static int timesync_probe(device_t dev)
 {
+	static const GUID gtimesyncDeviceType={ //{9527E630-D0AE-497b-ADCE-E80AB0175CAF}
+		.Data = {0x30, 0xe6, 0x27, 0x95, 0xae, 0xd0, 0x7b, 0x49,
+				 0xad, 0xce, 0xe8, 0x0a, 0xb0, 0x17, 0x5c, 0xaf
+				}
+	};
+
 	int rtn_value = ENXIO;
-	DPRINT_ENTER(VMBUS_UTILITY);
 
 	const char *p = vmbus_get_type(dev);
 	if (!memcmp(p, &gtimesyncDeviceType.Data, sizeof(GUID))) {
 		device_set_desc(dev, "vmbus-timesync support");
-		printf("vmbus-timesync detected\n");
+		printf("timesync_probe: vmbus-timesync detected\n");
 		rtn_value = 0;
 	}
-	DPRINT_EXIT(VMBUS_UTILITY);
-	return (rtn_value);
+
+	return rtn_value;
 }
 
 static int timesync_attach(device_t dev)
 {
-	DPRINT_ENTER(VMBUS_UTILITY);
-	DPRINT_EXIT(VMBUS_UTILITY);
+	DPRINT_INFO(VMBUS_UTILITY, "timesync_attach");
+
+	DPRINT_INFO(VMBUS, "Opening Timesync channel...");
+	struct device_context *device_ctx = vmbus_get_devctx(dev);
+	DPRINT_INFO(VMBUS, "timesync_attach: channel addr: %p", device_ctx->device_obj.context);
+//	int stat = vmbus_channel_interface.Open(device_ctx->device_obj.context,
+//			10*PAGE_SIZE, 10*PAGE_SIZE, NULL, 0,
+//		    timesync_channel_cb, device_ctx->device_obj.context);
+	int stat = VmbusChannelOpen(device_ctx->device_obj.context,
+			10*PAGE_SIZE, 10*PAGE_SIZE, NULL, 0,
+		    timesync_channel_cb, device_ctx->device_obj.context);
+	if(stat == 0)
+       DPRINT_INFO(VMBUS, "Opened Timesync channel successfully");
+
 	return 0;
 }
 
 static int timesync_detach(device_t dev)
 {
-	DPRINT_ENTER(VMBUS_UTILITY);
-	DPRINT_EXIT(VMBUS_UTILITY);
 	return 0;
 }
 
 static int timesync_shutdown(device_t dev)
 {
-	DPRINT_ENTER(VMBUS_UTILITY);
-	DPRINT_EXIT(VMBUS_UTILITY);
     return 0;
 }
 
 /************************************************************************************/
-
-//static unsigned int
-//timesync_recv_callback(DEVICE_OBJECT *device_obj, timesync_PACKET* packet)
-//{
-//	struct device_context *device_ctx = to_device_context(device_obj);
-//	hn_softc_t *sc = (hn_softc_t *)device_get_softc(device_ctx->device);
-//
-//	return 0;
-//}
 
 static device_method_t timesync_methods[] = { /* Device interface */
         DEVMETHOD(device_probe,         timesync_probe),

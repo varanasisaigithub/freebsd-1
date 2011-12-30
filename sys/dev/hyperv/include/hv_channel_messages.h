@@ -63,10 +63,7 @@
 
 #pragma once
 
-#ifdef REMOVED
-/* Fixme:  Removed */
-#include <VmbusPacketFormat.h>
-#endif
+#include "hv_vmbus_channel_interface.h"
 
 #define C_ASSERT(x)
 typedef UINT32 NTSTATUS;

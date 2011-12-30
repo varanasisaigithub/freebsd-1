@@ -27,11 +27,7 @@
 #ifndef __HV_VMBUS_VAR_H__
 #define __HV_VMBUS_VAR_H__
 
-#ifdef REMOVED
-// Fixme -- removed
-#include "osd.h"
-#endif
-
+#include "../include/hv_osd.h"
 
 #define BLKVSC_RING_BUFFER_SIZE 32
 
@@ -39,7 +35,7 @@ typedef struct {
 		int Length; //channel.c :->897->936
 		int Offset; //channel.c :->937
 		UINT64  Pfn;    //channel.c:-> 938
-}PAGE_BUFFER; //channel.c : 897
+} PAGE_BUFFER; //channel.c : 897
 
 #define MAX_MULTIPAGE_BUFFER_COUNT 32
 
@@ -47,7 +43,7 @@ typedef struct { // Channel.c : 980
 		int Length;  // channel.c :1019
 		int Offset;  //channel.c :1020
 		UINT64  PfnArray[MAX_MULTIPAGE_BUFFER_COUNT]; //channel.c : 1022
-}MULTIPAGE_BUFFER;
+} MULTIPAGE_BUFFER;
 
 typedef struct {
 		int InterruptMask;
@@ -55,7 +51,7 @@ typedef struct {
 		int WriteIndex;
 		int BytesAvailToRead;
 		int BytesAvailToWrite;
-}BOUND;
+} BOUND;
 
 typedef struct {
 		int ChannelId; //ChannelInterface.c:  188
@@ -70,7 +66,7 @@ typedef struct {
 		int ClientMonitorLatency;
 		int ClientMonitorConnectionId;
 		BOUND  Inbound,Outbound;
-}DEVICE_INFO;
+} DEVICE_INFO;
 
 typedef void (*VMBUS_CHANNEL_CALLBACK)(PVOID context);
 
@@ -82,7 +78,7 @@ typedef struct {
 	GUID deviceInstance; //,, ,, : 282 ->:: vmbus.c ->258
 	void *context; // vmbus_drv_obj : 280->
 	void *Extension; // :172
-}DEVICE_OBJECT;
+} DEVICE_OBJECT;
 
 typedef struct {//ChannelInterface.c : 160
 		int (*Open)(DEVICE_OBJECT*, UINT32, UINT32, PVOID, UINT32, VMBUS_CHANNEL_CALLBACK, PVOID);
@@ -107,7 +103,7 @@ typedef struct _DRIVER_OBJECT{//BlkVsc.c : 56
 	char **	(*OnGetDeviceIds)(void);
 	void (*OnCleanup)(struct _DRIVER_OBJECT *);
 	VMBUS_CHANNEL_INTERFACE  VmbusChannelInterface;
-}DRIVER_OBJECT;
+} DRIVER_OBJECT;
 
 #define PDEVICE_OBJECT DEVICE_OBJECT*
 #define PDRIVER_OBJECT DRIVER_OBJECT*

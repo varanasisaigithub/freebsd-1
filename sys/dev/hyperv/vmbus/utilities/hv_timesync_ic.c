@@ -60,12 +60,11 @@
 #include "timesync_ic.h"
 #endif
 
-///////////// TODO - maybe should use enum for this
+///////////// TODO - maybe we should use enum for this
 /* HYPER-V Time Sync IC defs */
 #define ICTIMESYNCFLAG_PROBE 			0
 #define ICTIMESYNCFLAG_SYNC 			1
 #define ICTIMESYNCFLAG_SAMPLE 			2
-
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -97,7 +96,6 @@
 #include "hv_connection.h"
 #include "hv_channel.h"
 #include "hv_channel_interface.h"
-#include "hv_ic.h"
 
 #include "hv_timesync_ic.h"
 #include "hv_vmbus_private.h"
@@ -120,9 +118,32 @@ void timesync_channel_cb(void *context) {
 
 	VmbusChannelRecvPacket(channel, buf, buflen, &recvlen, &requestid);
 
+// ***************** todo: NEED TO PUT SOMEKIND OF INDIRECTION LATER ON...
+//	static int m = 0;
+//	if (m == 0) { // << not exactly the correct way to do this... but...
+//		m++;
+//		if (channel->DeviceObject == NULL) {
+//			DPRINT_ERR(VMBUS, "channel->DeviceObject == NULL");
+//		} else if (channel->DeviceObject->Driver == NULL) {
+//			DPRINT_ERR(VMBUS, "channel->DeviceObject->Driver == NULL");
+//		} else if (channel->DeviceObject->Driver->VmbusChannelInterface.RecvPacket
+//				== NULL) {
+//			DPRINT_ERR(
+//					VMBUS,
+//					"channel->DeviceObject->Driver->VmbusChannelInterface.RecvPacket == NULL");
+//		} else {
+//			DPRINT_ERR(VMBUS, "**** all pointers are valid *****");
+//		}
+//	}
+//  channel->DeviceObject->Driver->VmbusChannelInterface.RecvPacket(channel, buf, buflen, &recvlen, &requestid);
+
 	if (recvlen > 0) {
-		DPRINT_DBG(VMBUS, "timesync packet: recvlen=%d, requestid=%ld",
-				recvlen, requestid);
+
+//		static int debug_counter = 0;
+//		if(debug_counter++ < 10)
+//		   DPRINT_INFO(VMBUS, "timesync packet: recvlen=%d, requestid=%ld", recvlen, requestid);
+
+		DPRINT_DBG(VMBUS, "timesync packet: recvlen=%d, requestid=%ld", recvlen, requestid);
 
 		icmsghdrp = (struct icmsg_hdr *) &buf[sizeof(struct vmbuspipe_hdr)];
 
