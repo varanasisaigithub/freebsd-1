@@ -118,7 +118,7 @@ void timesync_channel_cb(void *context) {
 
 	VmbusChannelRecvPacket(channel, buf, buflen, &recvlen, &requestid);
 
-// ***************** todo: NEED TO PUT SOMEKIND OF INDIRECTION LATER ON...
+// ***************** todo: NEED TO PUT SOME KIND OF INDIRECTION LATER ON-- coded to get around memory leak!
 //	static int m = 0;
 //	if (m == 0) { // << not exactly the correct way to do this... but...
 //		m++;
