@@ -12,14 +12,14 @@ New features/limitations-
  
 -Network storage device support has been added
 
--Storage and networking devices only support one controller- waiting on a
- resolution from Microsoft to enable persistent ordering for multiple
- controllers
+-While storage and networking devices support multiple controllers, we're
+ waiting on a resolution from Microsoft to enable persistent and consistent
+ numbering between boots. 
   
 -Hyper-V bus has been ported with support code from Citrix to handle clock
  synchronization between guest and host. Clock synchronization and heartbeat
  logic have been moved to two drivers, respectively- this separation is part
- of the initial steps of a refactoring the Hyper-V bus driver from the,
+ of the initial steps of a refactoring of the Hyper-V bus driver from the
  LIS 2.1 codebase.
  
 Bug fixes-
