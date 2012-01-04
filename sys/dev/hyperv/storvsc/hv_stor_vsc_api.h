@@ -7,7 +7,6 @@
 #include <hv_osd.h>
 #include <hv_vmbus_api.h>
 #include "hv_vstorage.h"
-#include <hv_list.h>
 
 #include <cam/cam.h>
 #include <cam/cam_ccb.h>
@@ -28,9 +27,8 @@ enum storvsc_request_type {
 	UNKNOWN_TYPE
 };
 
-typedef struct storvsc_request_s  STORVSC_REQUEST;
-struct storvsc_request_s {
-	LIST_ENTRY ListEntry;
+struct storvsc_request {
+	LIST_ENTRY(storvsc_request) link;
 	void *Extension;
 	ULONG Host;
 	UCHAR TargetId;
@@ -41,7 +39,7 @@ struct storvsc_request_s {
 	UCHAR Cdb[CDB16GENERIC_LENGTH];
 	enum storvsc_request_type Type;
 	MULTIPAGE_BUFFER DataBuffer;
-	void (*OnIOCompletion)(	STORVSC_REQUEST *request);
+	void (*OnIOCompletion)(struct storvsc_request *request);
 	UCHAR Status;
 	UCHAR SenseBufferSize;
 	PVOID SenseBuffer;
@@ -55,7 +53,7 @@ typedef struct storvsc_driver_object_s {
 	UINT32 RequestExtSize;
 	UINT32 MaxOutstandingRequestsPerChannel;
        int (*OnHostReset)(DEVICE_OBJECT *Device);
-      int (*OnIORequest)(DEVICE_OBJECT *Device, STORVSC_REQUEST *Request);
+      int (*OnIORequest)(DEVICE_OBJECT *Device, struct storvsc_request *Request);
 } STORVSC_DRIVER_OBJECT;
 
 typedef struct storvsc_device_info STORVSC_DEVICE_INFO;

@@ -47,9 +47,7 @@
 // Data types
 //
 typedef struct _STORVSC_REQUEST_EXTENSION {
-	//LIST_ENTRY						ListEntry;
-
-	STORVSC_REQUEST					*Request;
+	struct storvsc_request			*Request;
 	DEVICE_OBJECT					*Device;
 
 	// Synchronize the request/response if needed
@@ -109,7 +107,7 @@ static const GUID gBlkVscDeviceType={
 static int BlkVscOnDeviceAdd( DEVICE_OBJECT *Device, void *AdditionalInfo);
 static int StorVscOnDeviceAdd( DEVICE_OBJECT *Device, void *AdditionalInfo);
 static int StorVscOnDeviceRemove( DEVICE_OBJECT	*Device);
-static int StorVscOnIORequest( DEVICE_OBJECT *Device, STORVSC_REQUEST *Request);
+static int StorVscOnIORequest( DEVICE_OBJECT *Device, struct storvsc_request *Request);
 static int StorVscOnHostReset( DEVICE_OBJECT *Device);
 static void StorVscOnCleanup( DRIVER_OBJECT *Device);
 static void StorVscOnChannelCallback( PVOID Context);
@@ -249,8 +247,8 @@ StorVscInitialize( DRIVER_OBJECT *Driver)
 
 	DPRINT_ENTER(STORVSC);
 		
-	DPRINT_DBG(STORVSC, "sizeof(STORVSC_REQUEST)=%d sizeof(STORVSC_REQUEST_EXTENSION)=%d sizeof(VSTOR_PACKET)=%d, sizeof(VMSCSI_REQUEST)=%d",
-		sizeof(STORVSC_REQUEST), sizeof(STORVSC_REQUEST_EXTENSION), sizeof(VSTOR_PACKET), sizeof(VMSCSI_REQUEST));
+	DPRINT_DBG(STORVSC, "sizeof(struct storvsc_request)=%d sizeof(STORVSC_REQUEST_EXTENSION)=%d sizeof(VSTOR_PACKET)=%d, sizeof(VMSCSI_REQUEST)=%d",
+		sizeof(struct storvsc_request), sizeof(STORVSC_REQUEST_EXTENSION), sizeof(VSTOR_PACKET), sizeof(VMSCSI_REQUEST));
 
 	// Make sure we are at least 2 pages since 1 page is used for control
 	KASSERT(storDriver->RingBufferSize >= (PAGE_SIZE << 1), ("RingBufferSize is too big (%u)"));
@@ -767,7 +765,7 @@ Description:
 
 --*/
 int
-StorVscOnIORequest( DEVICE_OBJECT *Device, STORVSC_REQUEST *Request)
+StorVscOnIORequest( DEVICE_OBJECT *Device, struct storvsc_request *Request)
 {
 	STORVSC_DEVICE *storDevice;
 	STORVSC_REQUEST_EXTENSION* requestExtension = (STORVSC_REQUEST_EXTENSION*) Request->Extension;
@@ -884,7 +882,7 @@ StorVscOnIOCompletion(
 	STORVSC_REQUEST_EXTENSION *RequestExt
 	)
 {
-	STORVSC_REQUEST *request;
+	struct storvsc_request *request;
 	STORVSC_DEVICE *storDevice;
 
 	DPRINT_ENTER(STORVSC);

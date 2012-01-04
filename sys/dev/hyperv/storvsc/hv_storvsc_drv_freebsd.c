@@ -1,5 +1,4 @@
 #include <sys/types.h>
-#include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/sockio.h>
 #include <sys/mbuf.h>
@@ -30,11 +29,14 @@
 #include <hv_vmbus_api.h>
 #include <hv_vmbus.h>
 #include <hv_logging.h>
+
 #include "hv_stor_vsc_api.h"
 
 
 struct storvsc_driver_context {
-	// !! These must be the first 2 fields !!
+	/*
+	 * These must be the first two fields
+	 */
 	struct driver_context    drv_ctx;
 	STORVSC_DRIVER_OBJECT    drv_obj;
 	const char		*drv_name;
@@ -48,8 +50,8 @@ struct storvsc_softc {
 	int unit;
 	struct cam_sim *sim;
 	struct cam_path *path;
-	LIST_ENTRY free_list;
-	HANDLE free_list_lock;
+	LIST_HEAD(, storvsc_request) free_list;
+	struct mtx free_list_lock;
 };
 
 
@@ -69,10 +71,10 @@ static int storvsc_drv_init(struct storvsc_driver_context *vsc_drv,
 static void storvsc_poll(struct cam_sim * sim);
 static void storvsc_action(struct cam_sim * sim, union ccb * ccb);
 static void scan_for_luns(struct storvsc_softc * storvsc_softc);
-static void create_storvsc_request(union ccb *ccb, STORVSC_REQUEST *reqp);
-static void storvsc_free_request(struct storvsc_softc *sc, STORVSC_REQUEST *reqp);
+static void create_storvsc_request(union ccb *ccb, struct storvsc_request *reqp);
+static void storvsc_free_request(struct storvsc_softc *sc, struct storvsc_request *reqp);
 static struct storvsc_driver_context *storvsc_get_storage_type(device_t dev);
-static void storvsc_io_completion(STORVSC_REQUEST *reqp);
+static void storvsc_io_completion(struct storvsc_request *reqp);
 
 static device_method_t storvsc_methods[] = {
 	/* Device interface */
@@ -235,8 +237,7 @@ storvsc_attach(device_t dev)
 	struct storvsc_softc *sc;
 	struct cam_devq *devq;
 	int ret, i;
-	STORVSC_REQUEST *reqp;
-	LIST_ENTRY *entry;
+	struct storvsc_request *reqp;
 
 	sc = device_get_softc(dev);
 	if (sc == NULL) {
@@ -265,24 +266,24 @@ storvsc_attach(device_t dev)
 	sc->unit	= device_get_unit(dev);
 	sc->storvsc_dev = &device_ctx->device_obj;
 
-	INITIALIZE_LIST_HEAD(&sc->free_list);
-	sc->free_list_lock = SpinlockCreate();
+	LIST_INIT(&sc->free_list);
+	mtx_init(&sc->free_list_lock, "storvsc free list lock", NULL, MTX_SPIN | MTX_RECURSE);
 
 	for (i = 0; i < sc->sto_drv->drv_max_ios_per_target; ++i) {
-		reqp = MemAllocZeroed(sizeof(STORVSC_REQUEST));
+		reqp = malloc(sizeof(struct storvsc_request), M_DEVBUF, M_NOWAIT | M_ZERO);
 		if (reqp == NULL) {
-			printf("cannot alloc STORVSC_REQUEST\n");
+			printf("cannot alloc struct storvsc_request\n");
 			goto cleanup;
 		}
 
 		reqp->Softc = sc;
-		reqp->Extension = MemAllocZeroed(storvsc_drv_obj->RequestExtSize);
+		reqp->Extension = malloc(storvsc_drv_obj->RequestExtSize, M_DEVBUF, M_NOWAIT | M_ZERO);
 		if (reqp->Extension == NULL) {
 			printf("cannot alloc request extension\n");
 			goto cleanup;
 		}
 
-		INSERT_TAIL_LIST(&sc->free_list, &reqp->ListEntry);
+		LIST_INSERT_HEAD(&sc->free_list, reqp, link);
 	}
 
 	ret = storvsc_drv_obj->Base.OnDeviceAdd(&device_ctx->device_obj, (void*)&device_info);
@@ -337,32 +338,33 @@ storvsc_attach(device_t dev)
 
  cleanup:
 
-	while (!IS_LIST_EMPTY(&sc->free_list)) {
-		entry = REMOVE_HEAD_LIST(&sc->free_list);
-		reqp = CONTAINING_RECORD(entry, STORVSC_REQUEST, ListEntry);
+	while (!LIST_EMPTY(&sc->free_list)) {
+		reqp = LIST_FIRST(&sc->free_list);
+		LIST_REMOVE(reqp, link);
+
 		if (reqp->Extension) {
-			MemFree(reqp->Extension);
+			free(reqp->Extension, M_DEVBUF);
 		}
-		MemFree(reqp);
+		free(reqp, M_DEVBUF);
 	}
 	return -1;
 }
 static int storvsc_detach(device_t dev)
 {
 	struct storvsc_softc *sc = device_get_softc(dev);
-	STORVSC_REQUEST *reqp = NULL;
-	LIST_ENTRY *entry;
+	struct storvsc_request *reqp = NULL;
 
-	SpinlockAcquire(sc->free_list_lock);
-	while (!IS_LIST_EMPTY(&sc->free_list)) {
-		entry = REMOVE_HEAD_LIST(&sc->free_list);
-		reqp = CONTAINING_RECORD(entry, STORVSC_REQUEST, ListEntry);
+	mtx_lock(&sc->free_list_lock);
+	while (!LIST_EMPTY(&sc->free_list)) {
+		reqp = LIST_FIRST(&sc->free_list);
+		LIST_REMOVE(reqp, link);
+
 		if (reqp->Extension) {
-			MemFree(reqp->Extension);
+			free(reqp->Extension, M_DEVBUF);
 		}
-		MemFree(reqp);
+		free(reqp, M_DEVBUF);
 	}
-	SpinlockRelease(sc->free_list_lock);
+	mtx_unlock(&sc->free_list_lock);
 	return 0;
 }
 
@@ -451,26 +453,24 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 	}
 	case XPT_SCSI_IO:
 	case XPT_IMMED_NOTIFY: {
-		STORVSC_REQUEST *reqp = NULL;
-		LIST_ENTRY *entry;
-
+		struct storvsc_request *reqp = NULL;
 
 		if (ccb->csio.cdb_len == 0) {
 			panic("cdl_len is 0\n");
 		}
 
-		SpinlockAcquire(sc->free_list_lock);
-		if (IS_LIST_EMPTY(&sc->free_list)) {
-			SpinlockRelease(sc->free_list_lock);
+		mtx_lock(&sc->free_list_lock);
+		if (LIST_EMPTY(&sc->free_list)) {
+			mtx_unlock(&sc->free_list_lock);
 			printf("no free requests\n");
 			ccb->ccb_h.status = CAM_RESRC_UNAVAIL;
 			xpt_done(ccb);
 			return;
 		}
 
-		entry = REMOVE_HEAD_LIST(&sc->free_list);
-		reqp = CONTAINING_RECORD(entry, STORVSC_REQUEST, ListEntry);
-		SpinlockRelease(sc->free_list_lock);
+		reqp = LIST_FIRST(&sc->free_list);
+		LIST_REMOVE(reqp, link);
+		mtx_unlock(&sc->free_list_lock);
 		ASSERT(reqp);
 
 		ccb->ccb_h.status = CAM_SIM_QUEUED;	    
@@ -494,7 +494,7 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 }
 
 static void
-create_storvsc_request(union ccb *ccb, STORVSC_REQUEST *reqp)
+create_storvsc_request(union ccb *ccb, struct storvsc_request *reqp)
 {
 	struct ccb_scsiio *csio = &ccb->csio;
 	uint64_t phys_addr;
@@ -562,7 +562,7 @@ create_storvsc_request(union ccb *ccb, STORVSC_REQUEST *reqp)
 }
 
 static void
-storvsc_io_completion(STORVSC_REQUEST *reqp)
+storvsc_io_completion(struct storvsc_request *reqp)
 {
 	union ccb *ccb = reqp->Ccb;
 	struct storvsc_softc *sc = reqp->Softc;
@@ -575,7 +575,7 @@ storvsc_io_completion(STORVSC_REQUEST *reqp)
 }
 	
 static void
-storvsc_free_request(struct storvsc_softc *sc, STORVSC_REQUEST *reqp)
+storvsc_free_request(struct storvsc_softc *sc, struct storvsc_request *reqp)
 {
 	struct storvsc_driver_context *sto_drv = sc->sto_drv;
 	void *extp;
@@ -584,13 +584,13 @@ storvsc_free_request(struct storvsc_softc *sc, STORVSC_REQUEST *reqp)
 	bzero(reqp->Extension, sto_drv->drv_obj.RequestExtSize);
 	extp = reqp->Extension;
 	reqp->Extension = NULL;
-	bzero(reqp, sizeof(STORVSC_REQUEST));
+	bzero(reqp, sizeof(struct storvsc_request));
 	reqp->Extension = extp;
 	reqp->Softc = sc;
 
-	SpinlockAcquire(sc->free_list_lock);
-	INSERT_TAIL_LIST(&sc->free_list, &reqp->ListEntry);
-	SpinlockRelease(sc->free_list_lock);
+	mtx_lock(&sc->free_list_lock);
+	LIST_INSERT_HEAD(&sc->free_list, reqp, link);
+	mtx_unlock(&sc->free_list_lock);
 }
 
 static struct storvsc_driver_context *
