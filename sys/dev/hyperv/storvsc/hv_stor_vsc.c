@@ -90,17 +90,23 @@ typedef struct _STORVSC_DEVICE{
 //
 // Globals
 //
-static const char* gDriverName="storvsc";
+static const char* gStorDriverName="storvsc";
+static const char* gBlkDriverName="blkvsc";
 
 //{ba6163d9-04a1-4d29-b605-72e2ffb1dc7f}
 static const GUID gStorVscDeviceType={
 	.Data = {0xd9, 0x63, 0x61, 0xba, 0xa1, 0x04, 0x29, 0x4d, 0xb6, 0x05, 0x72, 0xe2, 0xff, 0xb1, 0xdc, 0x7f}
+};
+//{32412632-86cb-44a2-9b5c-50d1417354f5}
+static const GUID gBlkVscDeviceType={
+	.Data = {0x32, 0x26, 0x41, 0x32, 0xcb, 0x86, 0xa2, 0x44, 0x9b, 0x5c, 0x50, 0xd1, 0x41, 0x73, 0x54, 0xf5}
 };
 
 //
 // Internal routines
 //
 
+static int BlkVscOnDeviceAdd( DEVICE_OBJECT *Device, void *AdditionalInfo);
 static int StorVscOnDeviceAdd( DEVICE_OBJECT *Device, void *AdditionalInfo);
 static int StorVscOnDeviceRemove( DEVICE_OBJECT	*Device);
 static int StorVscOnIORequest( DEVICE_OBJECT *Device, STORVSC_REQUEST *Request);
@@ -250,7 +256,7 @@ StorVscInitialize( DRIVER_OBJECT *Driver)
 	KASSERT(storDriver->RingBufferSize >= (PAGE_SIZE << 1), ("RingBufferSize is too big (%u)"));
 
 	memcpy(&Driver->deviceType, &gStorVscDeviceType, sizeof(GUID));
-	Driver->name			= gDriverName;
+	Driver->name			= gStorDriverName;
 	storDriver->RequestExtSize	= sizeof(STORVSC_REQUEST_EXTENSION);
 
 	// Divide the ring buffer data size (which is 1 page less than the ring buffer size since that page is reserved for the ring buffer indices)
@@ -269,6 +275,51 @@ StorVscInitialize( DRIVER_OBJECT *Driver)
 	storDriver->OnHostReset		= StorVscOnHostReset;
 
 	DPRINT_EXIT(STORVSC);
+
+	return ret;
+}
+
+/*++;
+
+
+Name: 
+	BlkVscInitialize()
+
+Description:
+	Main entry point
+
+--*/
+
+int 
+BlkVscInitialize(DRIVER_OBJECT *Driver)
+{
+	STORVSC_DRIVER_OBJECT* storDriver = (STORVSC_DRIVER_OBJECT*)Driver;
+	int ret=0;
+
+	DPRINT_ENTER(BLKVSC);
+		
+	// Make sure we are at least 2 pages since 1 page is used for control
+	ASSERT(storDriver->RingBufferSize >= (PAGE_SIZE << 1));
+
+	Driver->name = gBlkDriverName;
+	memcpy(&Driver->deviceType, &gBlkVscDeviceType, sizeof(GUID));
+
+	storDriver->RequestExtSize			= sizeof(STORVSC_REQUEST_EXTENSION);
+	// Divide the ring buffer data size (which is 1 page less than the ring buffer size since that page is reserved for the ring buffer indices)
+	// by the max request size (which is VMBUS_CHANNEL_PACKET_MULITPAGE_BUFFER + VSTOR_PACKET + UINT64) 
+	storDriver->MaxOutstandingRequestsPerChannel = 
+		((storDriver->RingBufferSize - PAGE_SIZE) / ALIGN_UP(MAX_MULTIPAGE_BUFFER_PACKET + sizeof(VSTOR_PACKET) + sizeof(UINT64),sizeof(UINT64)));
+
+	DPRINT_INFO(BLKVSC, "max io outstd %u", storDriver->MaxOutstandingRequestsPerChannel);
+
+	// Setup the dispatch table
+	storDriver->Base.OnDeviceAdd	= BlkVscOnDeviceAdd;
+	storDriver->Base.OnDeviceRemove	= StorVscOnDeviceRemove;
+	storDriver->Base.OnCleanup	= StorVscOnCleanup;
+
+	storDriver->OnIORequest		= StorVscOnIORequest;
+
+	DPRINT_EXIT(BLKVSC);
 
 	return ret;
 }
@@ -327,6 +378,45 @@ Cleanup:
 
 	return ret;
 }
+
+
+/*++
+
+Name: 
+	BlkVscOnDeviceAdd()
+
+Description:
+	Callback when the device belonging to this driver is added
+
+--*/
+int 
+BlkVscOnDeviceAdd(DEVICE_OBJECT	*Device, void *AdditionalInfo)
+{
+	int ret = 0;
+	STORVSC_DEVICE_INFO *deviceInfo = (STORVSC_DEVICE_INFO*)AdditionalInfo;
+
+	DPRINT_ENTER(BLKVSC);
+
+	ret = StorVscOnDeviceAdd(Device, AdditionalInfo);
+
+	if (ret != 0) {
+		DPRINT_EXIT(BLKVSC);
+
+		return ret;
+	}
+	
+	// We need to use the device instance guid to set the path and target id. For IDE devices, the
+	// device instance id is formatted as <bus id> - <device id> - 8899 - 000000000000.
+	deviceInfo->PathId = Device->deviceInstance.Data[3] << 24 | Device->deviceInstance.Data[2] << 16 |
+		Device->deviceInstance.Data[1] << 8 |Device->deviceInstance.Data[0];
+
+	deviceInfo->TargetId = Device->deviceInstance.Data[5] << 8 | Device->deviceInstance.Data[4];
+
+	DPRINT_EXIT(BLKVSC);
+
+	return ret;
+}
+
 
 static int StorVscChannelInit(DEVICE_OBJECT *Device)
 {

@@ -52,6 +52,7 @@ struct storvsc_softc {
 	HANDLE free_list_lock;
 };
 
+
 // The one and only one
 /* SCSI HBA */
 static struct storvsc_driver_context g_storvsc_drv;
@@ -169,7 +170,6 @@ storvsc_probe(device_t dev)
 static void storvsc_init(void)
 {
 	DPRINT_ENTER(STORVSC_DRV);
-	printf("Blkvsc initializing....");
 
 	/*
 	 * SCSI adapters.

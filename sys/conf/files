@@ -314,7 +314,7 @@ dev/hyperv/netvsc/hv_netvsc_drv_freebsd.c	optional hv_vmbus \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"
 dev/hyperv/netvsc/hv_rndis_filter.c           optional hv_vmbus \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"
-dev/hyperv/storvsc/hv_blk_vsc.c             optional hv_vmbus \
+dev/hyperv/storvsc/hv_stor_vsc.c             optional hv_vmbus \
  	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"
 dev/hyperv/storvsc/hv_storvsc_drv_freebsd.c	optional hv_vmbus \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"

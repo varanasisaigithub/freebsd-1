@@ -65,7 +65,4 @@ struct storvsc_device_info {
 	UCHAR TargetId;
 };
 
-int StorVscInitialize( DRIVER_OBJECT *Driver);
-int BlkVscInitialize( DRIVER_OBJECT *Driver);
-
 #endif /* __HV_STORVSC_API_H__ */
