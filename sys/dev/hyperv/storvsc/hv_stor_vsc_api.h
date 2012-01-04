@@ -13,10 +13,12 @@
 #include <cam/cam_ccb.h>
 
 #define MAX_MULTIPAGE_BUFFER_PACKET (4096)
-#define STORVSC_MAX_IO_REQUESTS (32)
-#define STORVSC_RINGBUFFER_SIZE (20*PAGE_SIZE)
-#define STORVSC_MAX_LUNS_PER_TARGET (64)
-#define STORVSC_MAX_TARGETS (1)
+#define STORVSC_RINGBUFFER_SIZE		(20*PAGE_SIZE)
+#define STORVSC_MAX_LUNS_PER_TARGET	(64)
+#define STORVSC_MAX_IO_REQUESTS		(STORVSC_MAX_LUNS_PER_TARGET * 2)
+#define BLKVSC_MAX_IDE_DISKS_PER_TARGET	(2)
+#define BLKVSC_MAX_IO_REQUESTS		STORVSC_MAX_IO_REQUESTS
+#define STORVSC_MAX_TARGETS		(1)
 
 struct storvsc_softc;
 
@@ -30,7 +32,7 @@ typedef struct storvsc_request_s  STORVSC_REQUEST;
 struct storvsc_request_s {
 	LIST_ENTRY ListEntry;
 	void *Extension;
-    ULONG Host;
+	ULONG Host;
 	UCHAR TargetId;
 	UCHAR PathId;
 	UCHAR LunId;
@@ -48,21 +50,22 @@ struct storvsc_request_s {
 	ULONG BytesXfer;
 };
 typedef struct storvsc_driver_object_s {
-        DRIVER_OBJECT Base;
-        UINT32 RingBufferSize;
-        UINT32 RequestExtSize;
-        UINT32 MaxOutstandingRequestsPerChannel;
+	DRIVER_OBJECT Base;
+	UINT32 RingBufferSize;
+	UINT32 RequestExtSize;
+	UINT32 MaxOutstandingRequestsPerChannel;
        int (*OnHostReset)(DEVICE_OBJECT *Device);
       int (*OnIORequest)(DEVICE_OBJECT *Device, STORVSC_REQUEST *Request);
 } STORVSC_DRIVER_OBJECT;
 
 typedef struct storvsc_device_info STORVSC_DEVICE_INFO;
 struct storvsc_device_info {
-        ULONG PortNumber;
-        UCHAR                   PathId;
-        UCHAR                   TargetId;
+	ULONG PortNumber;
+	UCHAR PathId;
+	UCHAR TargetId;
 };
 
 int StorVscInitialize( DRIVER_OBJECT *Driver);
+int BlkVscInitialize( DRIVER_OBJECT *Driver);
 
 #endif /* __HV_STORVSC_API_H__ */
