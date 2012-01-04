@@ -60,8 +60,10 @@
 #ifndef __HV_VMBUS_CHANNEL_INTERFACE_H__
 #define __HV_VMBUS_CHANNEL_INTERFACE_H__
 
-
 #pragma once
+
+#include "hv_osd.h"
+
 // allow nameless unions
 //#pragma warning(disable : 4201)
 

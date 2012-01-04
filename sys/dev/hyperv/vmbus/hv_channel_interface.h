@@ -58,11 +58,8 @@
 #ifndef __HV_CHANNEL_INTERFACE_H__
 #define __HV_CHANNEL_INTERFACE_H__
 
-#ifdef REMOVED
-/* Fixme:  Removed */
-#include "VmbusApi.h"
-#endif
- 
+#include "hv_vmbus_var.h"
+
 INTERNAL void
 GetChannelInterface(
 	VMBUS_CHANNEL_INTERFACE *ChannelInterface

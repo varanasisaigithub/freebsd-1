@@ -27,16 +27,13 @@
 #ifndef __HV_LOGGING_H__
 #define __HV_LOGGING_H__
 
-//#include <linux/init.h>
-//#include <linux/module.h>
+#include <sys/types.h>
+#include <sys/systm.h>
 
-#define DEBUG
+//#define DEBUG
+#define LogMsg printf
 
-#ifdef REMOVED
-/* Fixme -- removed */
-#include "osd.h"
-#endif
-
+// WARNING: only 16 bits allowed for modules
 #define VMBUS				0x0001
 #define STORVSC				0x0002
 #define NETVSC				0x0004
@@ -47,6 +44,7 @@
 #define NETVSC_DRV			0x0400
 #define INPUTVSC_DRV		0x0800
 #define BLKVSC_DRV			0x1000
+#define VMBUS_UTILITY		0x2000
 
 #define ALL_MODULES			(VMBUS		|\
 							STORVSC		|\
@@ -57,7 +55,8 @@
 							STORVSC_DRV	|\
 							NETVSC_DRV	|\
 							INPUTVSC_DRV|\
-							BLKVSC_DRV) 
+							BLKVSC_DRV  |\
+							VMBUS_UTILITY)
 
 // Logging Level
 #define CRITICAL_LVL				2
@@ -117,6 +116,8 @@ extern unsigned int vmbus_loglevel;
 #define DPRINT_EXIT(mod)
 #endif
 
+#ifdef REMOVED
+// TODO -- this needs to be reworked
 static inline void PrintBytes(const unsigned char* bytes, int len)
 {
 	int i=0;
@@ -147,7 +148,7 @@ static inline void PrintBytes(const unsigned char* bytes, int len)
 static inline int LogMsg(const char *fmt, ...)
 {
 	int retval = 0;
-#ifdef REMOVED
+
 	va_list ap;
 	int savintr;
 	struct putchar_arg pca;
@@ -168,10 +169,10 @@ endif
 	if (!panicstr)
 		msgbuftrigger = 1;
 	consintr = savintr;             /* reenable interrupts */
-#endif
 
 	return (retval);
 }
+#endif
 
 
 

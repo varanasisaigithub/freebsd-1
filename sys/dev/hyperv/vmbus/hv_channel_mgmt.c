@@ -72,18 +72,6 @@
 //#include <net/if.h>
 //#include <net/if_arp.h>
 
-
-#ifdef REMOVED
-/* Fixme:  Removed */
-#include "osd.h"
-#include "logging.h"
-
-#include "VmbusPrivate.h"
-#include <sys/reboot.h>
-#include <sys/systm.h>
-#endif
-
-
 #include <dev/hyperv/include/hv_osd.h>
 #include <dev/hyperv/include/hv_logging.h>
 #include "hv_hv.h"
@@ -366,7 +354,7 @@ void shutdown_onchannelcallback(void *context)
 
 	if (recvlen > 0) 
 	{
-		DPRINT_DBG(VMBUS, "shutdown packet: len=%d, requestid=%lld", 
+		DPRINT_DBG(VMBUS, "shutdown packet: len=%d, requestid=%ld",
 			   recvlen, requestid);
 
 		icmsghdrp = (struct icmsg_hdr *)&buf[
@@ -487,10 +475,10 @@ void heartbeat_onchannelcallback(void *context)
 
 	if (recvlen > 0) 
 	{
-		DPRINT_DBG(VMBUS, "heartbeat packet: len=%d, requestid=%lld", 
+		DPRINT_DBG(VMBUS, "heartbeat packet: len=%d, requestid=%ld",
 			   recvlen, requestid);
 
-	//	printf("heartbeat packet: len=%d, requestid=%lld", 
+	//	printf("heartbeat packet: len=%d, requestid=%ld",
 	//		   recvlen, requestid);
 
 		icmsghdrp = (struct icmsg_hdr *)&buf[
@@ -524,7 +512,7 @@ void heartbeat_onchannelcallback(void *context)
 				sizeof(struct vmbuspipe_hdr) +
 				sizeof(struct icmsg_hdr)];
 
-		DPRINT_DBG(VMBUS, "heartbeat seq = %lld", 
+		DPRINT_DBG(VMBUS, "heartbeat seq = %ld",
 			   heartbeat_msg->seq_num);
 		// printf("heartbeat seq = %lld", 
 		//	   heartbeat_msg->seq_num);
@@ -607,6 +595,10 @@ VmbusChannelProcessOffer(
 
 	DPRINT_DBG(VMBUS, "child device object allocated - %p", newChannel->DeviceObject);
 
+	// todo - the CHANNEL_OPEN_STATE flag should not be set below but in the "open" channel
+	//			request. The ret != 0 logic below doesn't take into account that a channel
+	//          may have been opened successfully
+
 	// Add the new device to the bus. This will kick off device-driver binding
 	// which eventually invokes the device driver's AddDevice() method.
 	ret = VmbusChildDeviceAdd(newChannel->DeviceObject);
@@ -628,14 +620,14 @@ VmbusChannelProcessOffer(
 		// we can cleanup properly
 		newChannel->State = CHANNEL_OPEN_STATE;
 
-		if (memcmp(&newChannel->OfferMsg.Offer.InterfaceType,
-		    &gSupportedDeviceClasses[4], sizeof(GUID)) == 0) {
-			DPRINT_INFO(VMBUS, "Opening Timesync channel...");
-			if(VmbusChannelOpen(newChannel, 10*PAGE_SIZE,
-					    10*PAGE_SIZE, NULL, 0,
-					    timesync_channel_cb, newChannel) == 0)
-				DPRINT_INFO(VMBUS, "Opened Timesync channel successfully:%p", newChannel);
-		}
+//		if (memcmp(&newChannel->OfferMsg.Offer.InterfaceType,
+//		    &gSupportedDeviceClasses[4], sizeof(GUID)) == 0) {
+//			DPRINT_INFO(VMBUS, "Opening Timesync channel...");
+//			if(VmbusChannelOpen(newChannel, 10*PAGE_SIZE,
+//					    10*PAGE_SIZE, NULL, 0,
+//					    timesync_channel_cb, newChannel) == 0)
+//				DPRINT_INFO(VMBUS, "Opened Timesync channel successfully addr: %p", newChannel);
+//		}
 
 		if (memcmp(&newChannel->OfferMsg.Offer.InterfaceType,
 			   &gSupportedDeviceClasses[5], sizeof(GUID)) == 0) {
@@ -661,14 +653,14 @@ VmbusChannelProcessOffer(
                                     guidType->Data[14], guidType->Data[15]);
 		}
 
-		if (memcmp(&newChannel->OfferMsg.Offer.InterfaceType,
-		    &gSupportedDeviceClasses[6], sizeof(GUID)) == 0) {
-			DPRINT_INFO(VMBUS, "Opening Heartbeat channel...");
-			if(VmbusChannelOpen(newChannel, 10*PAGE_SIZE,
-					    10*PAGE_SIZE, NULL, 0,
-					    heartbeat_onchannelcallback, newChannel) == 0)
-				DPRINT_INFO(VMBUS, "Opened Heartbeat channel successfully:%p", newChannel);
-		}
+//		if (memcmp(&newChannel->OfferMsg.Offer.InterfaceType,
+//		    &gSupportedDeviceClasses[6], sizeof(GUID)) == 0) {
+//			DPRINT_INFO(VMBUS, "Opening Heartbeat channel...");
+//			if(VmbusChannelOpen(newChannel, 10*PAGE_SIZE,
+//					    10*PAGE_SIZE, NULL, 0,
+//					    heartbeat_onchannelcallback, newChannel) == 0)
+//				DPRINT_INFO(VMBUS, "Opened Heartbeat channel successfully:%p", newChannel);
+//		}
 	}
 	DPRINT_EXIT(VMBUS);
 }

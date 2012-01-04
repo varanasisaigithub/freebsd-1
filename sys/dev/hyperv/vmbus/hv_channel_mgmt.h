@@ -59,17 +59,15 @@
 #ifndef __HV_CHANNEL_MGMT_H__
 #define __HV_CHANNEL_MGMT_H__
 
-#ifdef REMOVED
-/* Fixme -- removed */
-#include "osd.h"
-#include "List.h"
-#include "RingBuffer.h"
+#include "../include/hv_osd.h"
+#include "../include/hv_list.h"
+#include "../include/hv_channel_messages.h"
 
-#include "VmbusChannelInterface.h"
-#include "ChannelMessages.h"
-#endif
-
-
+#include "hv_ring_buffer.h"
+#include "hv_channel_interface.h"
+//
+//#include "VmbusChannelInterface.h"
+//#include "ChannelMessages.h"
 
 typedef void (*PFN_CHANNEL_CALLBACK)(PVOID context);
 
@@ -110,7 +108,6 @@ typedef struct _VMBUS_CHANNEL {
 	PVOID						ChannelCallbackContext;
 
 } VMBUS_CHANNEL;
-
 
 typedef struct _VMBUS_CHANNEL_DEBUG_INFO {
 	UINT32						RelId;

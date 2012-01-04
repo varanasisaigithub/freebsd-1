@@ -28,7 +28,7 @@
 #define __HV_OSD_H__
 
 /* Fixme -- added these for FreeBSD build */
-#define do_cpuid x2v_do_cpuid  /* kludge to avoid namespace collision */
+// #define do_cpuid x2v_do_cpuid  /* kludge to avoid namespace collision ************* TODO LM - renamed do_cpuid */
 #ifndef __x86_64__
 #define __x86_64__  
 #endif
@@ -189,7 +189,7 @@ typedef UINT64 winfiletime_t; /* Windows FILETIME type */
 #endif
 
 
-//#ifdef REMOVED
+#ifdef REMOVED
 /*
  * Fixme:  This confilics with a definition in /usr/include/machine/cpufunc.h
  * Fixme:  Prototype is different than this one.
@@ -198,17 +198,11 @@ static inline void do_cpuid(unsigned int op, unsigned int *eax, unsigned int *eb
 {
 	__asm__ __volatile__("cpuid" : "=a" (*eax), "=b" (*ebx), "=c" (*ecx), "=d" (*edx) : "0" (op), "c" (ecx));
 }
-//#endif
+#endif
 
 //
 // operating system dependent routines
 //
-#ifdef REMOVED
-/* Fixme:  Made a static inline in hv_logging.h for now */
-extern void LogMsg(const char *fmt, ...);
-#endif
-/* Fixme:  Added this to keep compiler from hyperventilating */
-static inline int LogMsg(const char *fmt, ...);
 
 extern void BitSet(unsigned int* addr, int value);
 extern void BitClear(unsigned int* addr, int value);
@@ -243,7 +237,7 @@ extern int  TimerStop(HANDLE hTimer);
 extern void TimerStart(HANDLE hTimer, UINT32 expirationInUs);
 extern SIZE_T GetTickCount(void);
 
-extern void adj_guesttime(winfiletime_t hosttime, UINT8 flags);
+//extern void adj_guesttime(winfiletime_t hosttime, UINT8 flags);
 
 extern HANDLE WaitEventCreate(void);
 extern void WaitEventClose(HANDLE hWait);

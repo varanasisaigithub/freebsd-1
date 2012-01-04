@@ -62,8 +62,7 @@ void vmbus_get_interface(VMBUS_CHANNEL_INTERFACE *);
         typeof( ((type *)0)->member ) *__mptr = (ptr);  \
         (type *)( (char *)__mptr - offsetof(type,member) );})
 
-static inline struct device_context *to_device_context(DEVICE_OBJECT *device_obj
-)
+static inline struct device_context *to_device_context(DEVICE_OBJECT *device_obj)
 {
         return container_of(device_obj, struct device_context, device_obj);
 }
