@@ -95,7 +95,6 @@
 #include "hv_channel_interface.h"
 #include "hv_ic.h"
 // Fixme:  need this?  Was in hv_vmbus_private.h
-#include "hv_timesync_ic.h"
 #include "hv_vmbus_private.h"
 
 

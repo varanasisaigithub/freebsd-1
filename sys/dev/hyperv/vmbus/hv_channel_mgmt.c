@@ -86,7 +86,6 @@
 #include "hv_channel.h"
 #include "hv_channel_interface.h"
 #include "hv_ic.h"
-#include "hv_timesync_ic.h"
 #include "hv_vmbus_private.h"
 
 #include <sys/reboot.h>

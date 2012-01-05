@@ -30,7 +30,7 @@
 #include <hv_vmbus.h>
 #include <hv_logging.h>
 
-#include <hv_timesync_ic.h>
+#include "hv_timesync_ic.h"
 
 #define TIMESYNC_DEVNAME "timesync"
 
