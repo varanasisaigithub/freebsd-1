@@ -5,7 +5,8 @@
  *      Author: Larry Melia
  */
 
-// TODO--remove includes that aren't needed
+// todo--need correct BSD banner here...
+// todo--remove includes that aren't needed
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -33,6 +34,7 @@
 #include <hv_vmbus_api.h>
 #include <hv_vmbus.h>
 #include <hv_logging.h>
+#include <hv_channel.h>
 
 #define heartbeat_DEVNAME "heartbeat"
 
@@ -63,9 +65,9 @@ static void heartbeat_init(void)
 static int heartbeat_probe(device_t dev)
 {
 	static const GUID gheartbeatDeviceType={
-			.Data = // VMBus channel type GUID {57164f39-9115-4e78-ab55-382f3bd5422d}
-				0x39, 0x4f, 0x16, 0x57, 0x15, 0x91, 0x78, 0x4e,
-				0xab, 0x55, 0x38, 0x2f, 0x3b, 0xd5, 0x42, 0x2d
+		.Data = // VMBus channel type GUID {57164f39-9115-4e78-ab55-382f3bd5422d}
+				{0x39, 0x4f, 0x16, 0x57, 0x15, 0x91, 0x78, 0x4e,
+				 0xab, 0x55, 0x38, 0x2f, 0x3b, 0xd5, 0x42, 0x2d}
 	};
 
 	int rtn_value = ENXIO;

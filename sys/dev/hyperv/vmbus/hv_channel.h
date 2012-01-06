@@ -59,14 +59,11 @@
 #ifndef __HV_CHANNEL_H__
 #define __HV_CHANNEL_H__
 
-#ifdef REMOVED
-/* Fixme -- removed */
-#include "osd.h"
-#include "ChannelMgmt.h"
-#endif
+#include "hv_vmbus_var.h"
+#include "hv_channel_mgmt.h"
+#include <dev/hyperv/include/hv_channel_messages.h>
 
 #pragma pack(push,1)
-
 
 // The format must be the same as VMDATA_GPA_DIRECT
 typedef struct _VMBUS_CHANNEL_PACKET_PAGE_BUFFER {

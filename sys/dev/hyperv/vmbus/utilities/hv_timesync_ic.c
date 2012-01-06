@@ -82,27 +82,22 @@
 #include <sys/mutex.h>
 #include <sys/timetc.h>
 
-#include <dev/hyperv/include/hv_osd.h>
-#include <dev/hyperv/include/hv_logging.h>
-#include "hv_hv.h"
-#include "hv_vmbus_var.h"
-#include "hv_vmbus_api.h"
-#include <dev/hyperv/include/hv_list.h>
-#include "hv_ring_buffer.h"
-#include <dev/hyperv/include/hv_vmbus_channel_interface.h>
-#include <dev/hyperv/include/hv_vmbus_packet_format.h>
-#include <dev/hyperv/include/hv_channel_messages.h>
-#include "hv_channel_mgmt.h"
-#include "hv_connection.h"
-#include "hv_channel.h"
-#include "hv_channel_interface.h"
+#include <hv_osd.h>
+#include <hv_ic.h>
+#include <hv_vmbus_packet_format.h>
+#include <hv_channel_messages.h>
+#include <hv_channel_mgmt.h>
+#include <hv_vmbus_var.h>
+#include <hv_vmbus_api.h>
+#include <hv_vmbus.h>
+#include <hv_logging.h>
+#include <hv_channel.h>
 
 #include "hv_timesync_ic.h"
-#include "hv_vmbus_private.h"
 
 static void adj_guesttime(winfiletime_t hosttime, UINT8 flags);
 
-void timesync_channel_cb(void *context) {
+extern void timesync_channel_cb(void *context) {
 	VMBUS_CHANNEL *channel = context;
 	u8 *buf;
 	u32 buflen, recvlen;
@@ -116,26 +111,8 @@ void timesync_channel_cb(void *context) {
 	buflen = PAGE_SIZE;
 	buf = MemAllocAtomic(buflen);
 
+	// todo NEED TO PUT SOME KIND OF INDIRECTION LATER ON-- coded to get around memory leak!
 	VmbusChannelRecvPacket(channel, buf, buflen, &recvlen, &requestid);
-
-// ***************** todo: NEED TO PUT SOME KIND OF INDIRECTION LATER ON-- coded to get around memory leak!
-//	static int m = 0;
-//	if (m == 0) { // << not exactly the correct way to do this... but...
-//		m++;
-//		if (channel->DeviceObject == NULL) {
-//			DPRINT_ERR(VMBUS, "channel->DeviceObject == NULL");
-//		} else if (channel->DeviceObject->Driver == NULL) {
-//			DPRINT_ERR(VMBUS, "channel->DeviceObject->Driver == NULL");
-//		} else if (channel->DeviceObject->Driver->VmbusChannelInterface.RecvPacket
-//				== NULL) {
-//			DPRINT_ERR(
-//					VMBUS,
-//					"channel->DeviceObject->Driver->VmbusChannelInterface.RecvPacket == NULL");
-//		} else {
-//			DPRINT_ERR(VMBUS, "**** all pointers are valid *****");
-//		}
-//	}
-//  channel->DeviceObject->Driver->VmbusChannelInterface.RecvPacket(channel, buf, buflen, &recvlen, &requestid);
 
 	if (recvlen > 0) {
 

@@ -27,7 +27,7 @@
 #ifndef __HV_VMBUS_VAR_H__
 #define __HV_VMBUS_VAR_H__
 
-#include "../include/hv_osd.h"
+#include <dev/hyperv/include/hv_osd.h>
 
 #define BLKVSC_RING_BUFFER_SIZE 32
 

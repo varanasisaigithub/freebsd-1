@@ -270,7 +270,7 @@ Description:
 	Open the specified channel.
 
 --*/
-int
+INTERNAL int
 VmbusChannelOpen(
 	VMBUS_CHANNEL			*NewChannel,
 	UINT32					SendRingBufferSize,
