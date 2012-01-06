@@ -307,7 +307,7 @@ dev/hyperv/vmbus/hv_ring_buffer.c             optional hv_vmbus \
 dev/hyperv/vmbus/hv_hv.c                      optional hv_vmbus \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
 dev/hyperv/vmbus/utilities/hv_timesync_ic.c optional hv_vmbus \
-	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
+	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"
 dev/hyperv/vmbus/utilities/hv_heartbeat_drv_freebsd.c optional hv_vmbus \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"
 dev/hyperv/vmbus/utilities/hv_timesync_drv_freebsd.c optional hv_vmbus \

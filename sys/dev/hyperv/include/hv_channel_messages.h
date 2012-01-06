@@ -64,6 +64,7 @@
 #pragma once
 
 #include "hv_vmbus_channel_interface.h"
+#include "hv_vmbus_packet_format.h"
 
 #define C_ASSERT(x)
 typedef UINT32 NTSTATUS;

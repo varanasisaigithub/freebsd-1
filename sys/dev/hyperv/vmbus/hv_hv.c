@@ -400,8 +400,8 @@ HvInit (
 		goto Cleanup;
 	}
 
-	DPRINT_INFO(VMBUS, "Hypercall page VA=0x%08x, PA=0x%08x",
-               (unsigned long)gHvContext.HypercallPage,
+	DPRINT_INFO(VMBUS, "Hypercall page VA=%p, PA=0x%0lx",
+               gHvContext.HypercallPage,
                (unsigned long)hypercallMsr.GuestPhysicalAddress << PAGE_SHIFT);
 
 	// Setup the global signal event param for the signal event hypercall

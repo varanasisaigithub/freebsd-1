@@ -29,6 +29,7 @@
 #include <hv_vmbus_api.h>
 #include <hv_vmbus.h>
 #include <hv_logging.h>
+#include <hv_channel.h>
 
 #include "hv_timesync_ic.h"
 
