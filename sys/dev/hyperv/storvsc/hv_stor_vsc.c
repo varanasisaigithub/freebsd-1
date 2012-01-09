@@ -29,6 +29,17 @@
  */
 #include <sys/types.h>
 #include <sys/systm.h>
+#include <sys/sockio.h>
+#include <sys/mbuf.h>
+#include <sys/malloc.h>
+#include <sys/module.h>
+#include <sys/kernel.h>
+#include <sys/queue.h>
+#include <sys/lock.h>
+#include <sys/sx.h>
+#include <sys/taskqueue.h>
+#include <sys/bus.h>
+#include <sys/mutex.h>
 #include <hv_osd.h>
 #include <hv_logging.h>
 
@@ -51,7 +62,9 @@ typedef struct _STORVSC_REQUEST_EXTENSION {
 	DEVICE_OBJECT					*Device;
 
 	// Synchronize the request/response if needed
-	HANDLE							WaitEvent;
+	struct {
+		struct mtx mtx;
+	} event;
 
 	VSTOR_PACKET					VStorPacket;
 } STORVSC_REQUEST_EXTENSION;
@@ -64,18 +77,15 @@ typedef struct _STORVSC_DEVICE{
 	int		RefCount; // 0 indicates the device is being destroyed
 
 	int		reset;
-	HANDLE          lock;
+	struct mtx 	lock;
 	int		NumOutstandingRequests;
 
 	//  Each unique Port/Path/Target represents 1 channel ie scsi 
         // controller. In reality, the pathid, targetid is always 0
 	// and the port is set by us
-	ULONG			PortNumber;
-	UCHAR			PathId;
-	UCHAR			TargetId;
-
-	//LIST_ENTRY		OutstandingRequestList;
-	//HANDLE		OutstandingRequestLock;
+	uint32_t		PortNumber;
+	uint8_t			PathId;
+	uint8_t			TargetId;
 
 	// Used for vsc/vsp channel reset process
 	STORVSC_REQUEST_EXTENSION	InitRequest; 
@@ -128,7 +138,7 @@ static inline STORVSC_DEVICE* AllocStorDevice(DEVICE_OBJECT *Device)
 
 	storDevice->Device = Device;
 	storDevice->reset = 0;
-	storDevice->lock  = SpinlockCreate();
+	mtx_init(&storDevice->lock, "storvsc device lock", NULL, MTX_SPIN | MTX_RECURSE);
 	Device->Extension = storDevice;
 
 	return storDevice;
@@ -137,7 +147,8 @@ static inline STORVSC_DEVICE* AllocStorDevice(DEVICE_OBJECT *Device)
 static inline void FreeStorDevice(STORVSC_DEVICE *Device)
 {
 	KASSERT(Device->RefCount == 0, ("no storvsc to free"));
-	SpinlockClose(Device->lock);
+	mtx_destroy(&Device->lock);
+	free(&Device->lock, M_DEVBUF);
 	MemFree(Device);
 }
 
@@ -147,10 +158,10 @@ static inline STORVSC_DEVICE* GetStorDevice(DEVICE_OBJECT *Device)
 	STORVSC_DEVICE *storDevice;
 
 	storDevice = (STORVSC_DEVICE*)Device->Extension;
-	SpinlockAcquire(storDevice->lock);
+	mtx_lock(&storDevice->lock);
 
 	if (storDevice->reset == 1) {
-		SpinlockRelease(storDevice->lock);
+		mtx_unlock(&storDevice->lock);
 		return NULL;
 	} 
 
@@ -160,7 +171,7 @@ static inline STORVSC_DEVICE* GetStorDevice(DEVICE_OBJECT *Device)
 		storDevice = NULL;
 	}
 
-	SpinlockRelease(storDevice->lock);
+	mtx_unlock(&storDevice->lock);
 	return storDevice;
 }
 
@@ -170,7 +181,7 @@ static inline STORVSC_DEVICE* MustGetStorDevice(DEVICE_OBJECT *Device)
 	STORVSC_DEVICE *storDevice;
 
 	storDevice = (STORVSC_DEVICE*)Device->Extension;
-	SpinlockAcquire(storDevice->lock);
+	mtx_lock(&storDevice->lock);
 
 	if (storDevice && storDevice->RefCount) {
 		InterlockedIncrement(&storDevice->RefCount);
@@ -178,7 +189,7 @@ static inline STORVSC_DEVICE* MustGetStorDevice(DEVICE_OBJECT *Device)
 		storDevice = NULL;
 	}
 
-	SpinlockRelease(storDevice->lock);
+	mtx_unlock(&storDevice->lock);
 
 	return storDevice;
 }
@@ -260,7 +271,7 @@ StorVscInitialize( DRIVER_OBJECT *Driver)
 	// Divide the ring buffer data size (which is 1 page less than the ring buffer size since that page is reserved for the ring buffer indices)
 	// by the max request size (which is VMBUS_CHANNEL_PACKET_MULITPAGE_BUFFER + VSTOR_PACKET + UINT64) 
 	storDriver->MaxOutstandingRequestsPerChannel = 
-		((storDriver->RingBufferSize - PAGE_SIZE) / ALIGN_UP(MAX_MULTIPAGE_BUFFER_PACKET + sizeof(VSTOR_PACKET) + sizeof(UINT64),sizeof(UINT64)));
+		((storDriver->RingBufferSize - PAGE_SIZE) / ALIGN_UP(MAX_MULTIPAGE_BUFFER_PACKET + sizeof(VSTOR_PACKET) + sizeof(uint64_t),sizeof(uint64_t)));
 
 	DPRINT_INFO(STORVSC, "max io %u, currently %u\n", storDriver->MaxOutstandingRequestsPerChannel, STORVSC_MAX_IO_REQUESTS);
 
@@ -304,9 +315,9 @@ BlkVscInitialize(DRIVER_OBJECT *Driver)
 
 	storDriver->RequestExtSize			= sizeof(STORVSC_REQUEST_EXTENSION);
 	// Divide the ring buffer data size (which is 1 page less than the ring buffer size since that page is reserved for the ring buffer indices)
-	// by the max request size (which is VMBUS_CHANNEL_PACKET_MULITPAGE_BUFFER + VSTOR_PACKET + UINT64) 
+	// by the max request size (which is VMBUS_CHANNEL_PACKET_MULITPAGE_BUFFER + VSTOR_PACKET + uint64_t) 
 	storDriver->MaxOutstandingRequestsPerChannel = 
-		((storDriver->RingBufferSize - PAGE_SIZE) / ALIGN_UP(MAX_MULTIPAGE_BUFFER_PACKET + sizeof(VSTOR_PACKET) + sizeof(UINT64),sizeof(UINT64)));
+		((storDriver->RingBufferSize - PAGE_SIZE) / ALIGN_UP(MAX_MULTIPAGE_BUFFER_PACKET + sizeof(VSTOR_PACKET) + sizeof(uint64_t),sizeof(uint64_t)));
 
 	DPRINT_INFO(BLKVSC, "max io outstd %u", storDriver->MaxOutstandingRequestsPerChannel);
 
@@ -437,21 +448,17 @@ static int StorVscChannelInit(DEVICE_OBJECT *Device)
 	// Now, initiate the vsc/vsp initialization protocol on the open channel
 
 	memset(request, 0, sizeof(STORVSC_REQUEST_EXTENSION));
-	request->WaitEvent = WaitEventCreate();
+	mtx_init(&request->event.mtx, "storvsc channel wait event mutex", NULL, MTX_DEF);
 
 	vstorPacket->Operation = VStorOperationBeginInitialization;
 	vstorPacket->Flags = REQUEST_COMPLETION_FLAG;
-
-	/*SpinlockAcquire(gDriverExt.packetListLock);
-	INSERT_TAIL_LIST(&gDriverExt.packetList, &packet->listEntry.entry);
-	SpinlockRelease(gDriverExt.packetListLock);*/
 
 	DPRINT_INFO(STORVSC, "BEGIN_INITIALIZATION_OPERATION...");
 
 	ret = Device->Driver->VmbusChannelInterface.SendPacket(Device,
 										vstorPacket, 
 										sizeof(VSTOR_PACKET), 
-										(ULONG_PTR)request,
+										(uint64_t)request,
 										VmbusPacketTypeDataInBand, 
 										VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	if ( ret != 0)
@@ -460,7 +467,9 @@ static int StorVscChannelInit(DEVICE_OBJECT *Device)
 		goto Cleanup;
 	}
 
-	WaitEventWait(request->WaitEvent);
+	mtx_lock(&request->event.mtx);
+	msleep(&request->event, &request->event.mtx, PWAIT, "storvsc channel wait event", 0);
+	mtx_unlock(&request->event.mtx);
 
 	if (vstorPacket->Operation != VStorOperationCompleteIo || vstorPacket->Status != 0)
 	{
@@ -481,7 +490,7 @@ static int StorVscChannelInit(DEVICE_OBJECT *Device)
 	ret = Device->Driver->VmbusChannelInterface.SendPacket(Device,
 															vstorPacket, 
 															sizeof(VSTOR_PACKET), 
-															(ULONG_PTR)request,
+															(uint64_t)request,
 															VmbusPacketTypeDataInBand, 
 															VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	if ( ret != 0)
@@ -490,7 +499,9 @@ static int StorVscChannelInit(DEVICE_OBJECT *Device)
 		goto Cleanup;
 	}
 	
-	WaitEventWait(request->WaitEvent);
+	mtx_lock(&request->event.mtx);
+	msleep(&request->event, &request->event.mtx, PWAIT, "storvsc channel wait event", 0);
+	mtx_unlock(&request->event.mtx);
 
 	// TODO: Check returned version 
 	if (vstorPacket->Operation != VStorOperationCompleteIo || vstorPacket->Status != 0)
@@ -510,7 +521,7 @@ static int StorVscChannelInit(DEVICE_OBJECT *Device)
 	ret = Device->Driver->VmbusChannelInterface.SendPacket(Device,
 															vstorPacket, 
 															sizeof(VSTOR_PACKET), 
-															(ULONG_PTR)request,
+															(uint64_t)request,
 															VmbusPacketTypeDataInBand, 
 															VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
@@ -520,7 +531,9 @@ static int StorVscChannelInit(DEVICE_OBJECT *Device)
 		goto Cleanup;
 	}
 
-	WaitEventWait(request->WaitEvent);
+	mtx_lock(&request->event.mtx);
+	msleep(&request->event, &request->event.mtx, PWAIT, "storvsc channel wait event", 0);
+	mtx_unlock(&request->event.mtx);
 
 	// TODO: Check returned version 
 	if (vstorPacket->Operation != VStorOperationCompleteIo || vstorPacket->Status != 0)
@@ -548,7 +561,7 @@ static int StorVscChannelInit(DEVICE_OBJECT *Device)
 	ret = Device->Driver->VmbusChannelInterface.SendPacket(Device,
 															vstorPacket, 
 															sizeof(VSTOR_PACKET), 
-															(ULONG_PTR)request,
+															(uint64_t)request,
 															VmbusPacketTypeDataInBand, 
 															VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
@@ -558,7 +571,9 @@ static int StorVscChannelInit(DEVICE_OBJECT *Device)
 		goto Cleanup;
 	}
 	
-	WaitEventWait(request->WaitEvent);
+	mtx_lock(&request->event.mtx);
+	msleep(&request->event, &request->event.mtx, PWAIT, "storvsc channel wait event", 0);
+	mtx_unlock(&request->event.mtx);
 
 	if (vstorPacket->Operation != VStorOperationCompleteIo || vstorPacket->Status != 0)
 	{
@@ -569,12 +584,6 @@ static int StorVscChannelInit(DEVICE_OBJECT *Device)
 	DPRINT_INFO(STORVSC, "**** storage channel up and running!! ****");
 
 Cleanup:
-	if (request->WaitEvent)
-	{
-		WaitEventClose(request->WaitEvent);
-		request->WaitEvent = NULL;
-	}
-	
 	PutStorDevice(Device);
 	
 	DPRINT_EXIT(STORVSC);
@@ -705,9 +714,9 @@ StorVscOnHostReset(
 		return -1;
 	}
 
-	SpinlockAcquire(storDevice->lock);
+	mtx_lock(&storDevice->lock);
 	storDevice->reset = 1;
-	SpinlockRelease(storDevice->lock);
+	mtx_unlock(&storDevice->lock);
 
 	/*
 	 * Wait for traffic in transit to complete
@@ -718,7 +727,7 @@ StorVscOnHostReset(
 	request = &storDevice->ResetRequest;
 	vstorPacket = &request->VStorPacket;
 
-	request->WaitEvent = WaitEventCreate();
+	mtx_init(&request->event.mtx, "storvsc on host reset wait event mutex", NULL, MTX_DEF);
 
     vstorPacket->Operation = VStorOperationResetBus;
     vstorPacket->Flags = REQUEST_COMPLETION_FLAG;
@@ -727,7 +736,7 @@ StorVscOnHostReset(
 	ret = Device->Driver->VmbusChannelInterface.SendPacket(Device,
 															vstorPacket, 
 															sizeof(VSTOR_PACKET),
-															(ULONG_PTR)&storDevice->ResetRequest,
+															(uint64_t)&storDevice->ResetRequest,
 															VmbusPacketTypeDataInBand, 
 															VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	if (ret != 0)
@@ -736,19 +745,21 @@ StorVscOnHostReset(
 		goto Cleanup;
 	}
 
-	// FIXME: Add a timeout
-	WaitEventWait(request->WaitEvent);
+	// XXX add timeout
+	mtx_lock(&request->event.mtx);
+	msleep(&request->event, &request->event.mtx, PWAIT, "storvsc host reset wait event", 0);
+	mtx_unlock(&request->event.mtx);
 
-	WaitEventClose(request->WaitEvent);
+	mtx_destroy(&request->event.mtx);
 	DPRINT_INFO(STORVSC, "host adapter reset completed");
 
 	// At this point, all outstanding requests in the adapter should have been flushed out and return to us
 
 Cleanup:
 
-	SpinlockAcquire(storDevice->lock);
+	mtx_lock(&storDevice->lock);
 	storDevice->reset = 0;
-	SpinlockRelease(storDevice->lock);
+	mtx_unlock(&storDevice->lock);
 
 	PutStorDevice(Device);
 	DPRINT_EXIT(STORVSC);
@@ -831,14 +842,14 @@ StorVscOnIORequest( DEVICE_OBJECT *Device, struct storvsc_request *Request)
 				&requestExtension->Request->DataBuffer,
 				vstorPacket, 
 				sizeof(VSTOR_PACKET), 
-				(ULONG_PTR)requestExtension);
+				(uint64_t)requestExtension);
 	}
 	else
 	{
 		ret = Device->Driver->VmbusChannelInterface.SendPacket(Device,
 															vstorPacket, 
 															sizeof(VSTOR_PACKET),
-															(ULONG_PTR)requestExtension,
+															(uint64_t)requestExtension,
 															VmbusPacketTypeDataInBand, 
 															VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	}
@@ -990,8 +1001,8 @@ StorVscOnChannelCallback(
 	DEVICE_OBJECT *device = (DEVICE_OBJECT*)Context;
 	STORVSC_DEVICE *storDevice;
 	UINT32 bytesRecvd;
-	UINT64 requestId;
-	UCHAR packet[ALIGN_UP(sizeof(VSTOR_PACKET),8)];
+	uint64_t requestId;
+	uint8_t packet[ALIGN_UP(sizeof(VSTOR_PACKET),8)];
 	STORVSC_REQUEST_EXTENSION *request;
 
 	DPRINT_ENTER(STORVSC);
@@ -1019,7 +1030,7 @@ StorVscOnChannelCallback(
 
 			//ASSERT(bytesRecvd == sizeof(VSTOR_PACKET));
 	
-			request = (STORVSC_REQUEST_EXTENSION*)(ULONG_PTR)requestId;
+			request = (STORVSC_REQUEST_EXTENSION*)(uint64_t)requestId;
 			KASSERT(request, ("request"));
 
 			//if (vstorPacket.Flags & SYNTHETIC_FLAG)
@@ -1029,7 +1040,9 @@ StorVscOnChannelCallback(
 
 				memcpy(&request->VStorPacket, packet, sizeof(VSTOR_PACKET));
 
-				WaitEventSet(request->WaitEvent);
+				mtx_lock(&request->event.mtx);
+				wakeup(&request->event);
+				mtx_unlock(&request->event.mtx);
 			}
 			else
 			{			
