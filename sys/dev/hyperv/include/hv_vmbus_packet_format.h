@@ -61,6 +61,8 @@
 
 #pragma once
 
+#include "hv_vmbus_packet_format.h"
+
 //#ifndef PAGE_SIZE
 //#if defined(_IA64_)
 //#error This does not work for IA64

@@ -22,7 +22,7 @@
  *
  * Ported from lis21 code drop
  *
- * HyperV channel timesync code
+ * HyperV channel timesync header file
  *
  *****************************************************************************/
 
@@ -55,90 +55,21 @@
  *   Haiyang Zhang <haiyangz@microsoft.com>
  *   Hank Janssen  <hjanssen@microsoft.com>
  */
-
-#ifdef REMOVED
-#include "timesync_ic.h"
-#endif
+#ifndef __HV_TIMESYNC_IC_H__
+#define __HV_TIMESYNC_IC_H__
 
 #include <dev/hyperv/include/hv_osd.h>
-#include <dev/hyperv/include/hv_logging.h>
-#include "hv_hv.h"
-#include "hv_vmbus_var.h"
-#include "hv_vmbus_api.h"
-#include <dev/hyperv/include/hv_list.h>
-#include "hv_ring_buffer.h"
-#include <dev/hyperv/include/hv_vmbus_channel_interface.h>
-#include <dev/hyperv/include/hv_vmbus_packet_format.h>
-#include <dev/hyperv/include/hv_channel_messages.h>
-#include "hv_channel_mgmt.h"
-#include "hv_connection.h"
-#include "hv_channel.h"
-#include "hv_channel_interface.h"
-#include "hv_ic.h"
-// Fixme:  need this?  Was in hv_vmbus_private.h
-#include "hv_timesync_ic.h"
-#include "hv_vmbus_private.h"
+#include <dev/hyperv/vmbus/hv_ic.h>
+
+struct ictimesync_data {
+    winfiletime_t parenttime;
+    winfiletime_t childtime;
+    winfiletime_t roundtriptime;
+    u8 flags;
+} __attribute__((packed));
 
 
-void timesync_channel_cb(void *context){
-        VMBUS_CHANNEL *channel = context;
-	u8 *buf;
-	u32 buflen, recvlen;
-	u64 requestid;
-	struct icmsg_hdr *icmsghdrp;
-	struct icmsg_negotiate *negop;
-	struct ictimesync_data *timedatap;
+extern void timesync_channel_cb(void *context);
 
-	DPRINT_ENTER(VMBUS);
-
-	buflen = PAGE_SIZE;
-	buf = MemAllocAtomic(buflen);
-
-	VmbusChannelRecvPacket(channel, buf, buflen, &recvlen, &requestid);
-
-	if(recvlen > 0) {
-	    DPRINT_DBG(VMBUS, "timesync packet: recvlen=%d, requestid=%ld", 
-			recvlen, requestid);
-
-	    icmsghdrp = (struct icmsg_hdr *)&buf[sizeof(struct vmbuspipe_hdr)];
-	    
-
-	    if(icmsghdrp->icmsgtype == ICMSGTYPE_NEGOTIATE) {
-		icmsghdrp->icmsgsize = 0x10;
-		negop = (struct icmsg_negotiate *)&buf[
-		    sizeof(struct vmbuspipe_hdr) +
-		    sizeof(struct icmsg_hdr)];
-		if(negop->icframe_vercnt == 2 &&
-		   negop->icversion_data[1].major == 3) {
-		    negop->icversion_data[0].major = 3;
-		    negop->icversion_data[0].minor = 0;
-		    negop->icversion_data[1].major = 3;
-		    negop->icversion_data[1].minor = 0;
-		} else {
-		    negop->icversion_data[0].major = 1;
-		    negop->icversion_data[0].minor = 0;
-		    negop->icversion_data[1].major = 1;
-		    negop->icversion_data[1].minor = 0;
-		}
-		negop->icframe_vercnt = 1;
-		negop->icmsg_vercnt = 1;
-	    } else {
-		timedatap = (struct ictimesync_data *)&buf[
-		    sizeof(struct vmbuspipe_hdr) +
-		    sizeof(struct icmsg_hdr)];
-		adj_guesttime(timedatap->parenttime, timedatap->flags);
-	    }
-
-	    icmsghdrp->icflags = ICMSGHDRFLAG_TRANSACTION 
-		| ICMSGHDRFLAG_RESPONSE;
-
-	    VmbusChannelSendPacket(channel, buf,
-				   recvlen, requestid,
-				   VmbusPacketTypeDataInBand, 0);
-	}
-
-	MemFree(buf);
-
-	DPRINT_EXIT(VMBUS);
-}
+#endif  /* __HV_TIMESYNC_IC_H__ */
 

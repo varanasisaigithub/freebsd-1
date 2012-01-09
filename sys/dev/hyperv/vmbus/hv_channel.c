@@ -95,7 +95,6 @@
 #include "hv_channel_interface.h"
 #include "hv_ic.h"
 // Fixme:  need this?  Was in hv_vmbus_private.h
-#include "hv_timesync_ic.h"
 #include "hv_vmbus_private.h"
 
 
@@ -135,14 +134,14 @@ DumpMonitorPage(
 
 	for (i=0; i<4; i++)
 	{
-		DPRINT_DBG(VMBUS, "trigger group (%d) - %llx", i, MonitorPage->TriggerGroup[i].AsUINT64);
+		DPRINT_DBG(VMBUS, "trigger group (%d) - %lx", i, MonitorPage->TriggerGroup[i].AsUINT64);
 	}
 		
 	for (i=0; i<4; i++)
 	{
 		for (j=0; j<32; j++)
 		{
-			DPRINT_DBG(VMBUS, "latency (%d)(%d) - %llx", i, j, MonitorPage->Latency[i][j]);
+			DPRINT_DBG(VMBUS, "latency (%d)(%d) - %lx", i, j, MonitorPage->Latency[i][j]);
 		}
 	}
 	for (i=0; i<4; i++)
@@ -271,7 +270,7 @@ Description:
 	Open the specified channel.
 
 --*/
-int
+INTERNAL int
 VmbusChannelOpen(
 	VMBUS_CHANNEL			*NewChannel,
 	UINT32					SendRingBufferSize,
@@ -408,11 +407,11 @@ static void DumpGpadlBody(
 	int pfnCount=0;
 
 	pfnCount = (Len - sizeof(VMBUS_CHANNEL_GPADL_BODY))/ sizeof(UINT64);
-	DPRINT_DBG(VMBUS, "gpadl body - len %d pfn count %d", Len, pfnCount);
+	DPRINT_DBG(VMBUS, "gpadl body - len %ud pfn count %d", Len, pfnCount);
 
 	for (i=0; i< pfnCount; i++)
 	{
-		DPRINT_DBG(VMBUS, "gpadl body  - %d) pfn %llu", i, Gpadl->Pfn[i]);
+		DPRINT_DBG(VMBUS, "gpadl body  - %d) pfn %lu", i, Gpadl->Pfn[i]);
 	}
 }
 
@@ -466,7 +465,7 @@ static void DumpGpadlHeader(
 
 		for (j=0; j< pageCount; j++)
 		{
-			DPRINT_DBG(VMBUS, "%d) pfn %llu", j, Gpadl->Range[i].PfnArray[j]);
+			DPRINT_DBG(VMBUS, "%d) pfn %lu", j, Gpadl->Range[i].PfnArray[j]);
 		}
 	}
 }
@@ -682,9 +681,9 @@ VmbusChannelEstablishGpadl(
 
 	DPRINT_DBG(VMBUS, "buffer %p, size %d msg cnt %d", Kbuffer, Size, msgCount);
 
-	DPRINT_DBG(VMBUS, "Sending GPADL Header - len %d", msgInfo->MessageSize - sizeof(VMBUS_CHANNEL_MSGINFO));
+	DPRINT_DBG(VMBUS, "Sending GPADL Header - len %d", msgInfo->MessageSize - (UINT32)sizeof(VMBUS_CHANNEL_MSGINFO));
 
-	ret = VmbusPostMessage(gpadlMsg, msgInfo->MessageSize - sizeof(VMBUS_CHANNEL_MSGINFO));
+	ret = VmbusPostMessage(gpadlMsg, msgInfo->MessageSize - (UINT32)sizeof(VMBUS_CHANNEL_MSGINFO));
 	if (ret != 0)
 	{
 		DPRINT_ERR(VMBUS, "Unable to open channel - %d", ret);
@@ -703,18 +702,18 @@ VmbusChannelEstablishGpadl(
 			gpadlBody->Header.MessageType = ChannelMessageGpadlBody;
 			gpadlBody->Gpadl = nextGpadlHandle;
 
-			DPRINT_DBG(VMBUS, "Sending GPADL Body - len %d", subMsgInfo->MessageSize - sizeof(VMBUS_CHANNEL_MSGINFO));
+			DPRINT_DBG(VMBUS, "Sending GPADL Body - len %d", subMsgInfo->MessageSize - (UINT32)sizeof(VMBUS_CHANNEL_MSGINFO));
 
-			DumpGpadlBody(gpadlBody, subMsgInfo->MessageSize - sizeof(VMBUS_CHANNEL_MSGINFO));
+			DumpGpadlBody(gpadlBody, subMsgInfo->MessageSize - (UINT32)sizeof(VMBUS_CHANNEL_MSGINFO));
 retry:
-			ret = VmbusPostMessage(gpadlBody, subMsgInfo->MessageSize - sizeof(VMBUS_CHANNEL_MSGINFO));
+			ret = VmbusPostMessage(gpadlBody, subMsgInfo->MessageSize - (UINT32)sizeof(VMBUS_CHANNEL_MSGINFO));
 			/* Fixme:  NetScaler */
 			if (ret != 0) {
 				if ((ret == HV_STATUS_INSUFFICIENT_BUFFERS) 
 					&& (retrycnt < 5)) {
 					printf("Failed to send GPADL body (%d): %x, retry: %d\n", mcnt, (unsigned int)ret, retrycnt);
 					DumpGpadlHeader2(gpadlMsg);
-					DumpGpadlBody2(gpadlBody, subMsgInfo->MessageSize - sizeof(VMBUS_CHANNEL_MSGINFO));
+					DumpGpadlBody2(gpadlBody, subMsgInfo->MessageSize - (UINT32)sizeof(VMBUS_CHANNEL_MSGINFO));
 					Sleep(5000);
 					retrycnt++;
 					goto retry;
@@ -1159,7 +1158,7 @@ VmbusChannelRecvPacket(
 	userLen = packetLen - (desc.DataOffset8 << 3);
 	//ASSERT(userLen > 0);
 
-	DPRINT_DBG(VMBUS, "packet received on channel %p relid %d <type %d flag %d tid %llx pktlen %d datalen %d> ", 
+	DPRINT_DBG(VMBUS, "packet received on channel %p relid %d <type %d flag %d tid %lx pktlen %d datalen %d> ",
 		Channel, 
 		Channel->OfferMsg.ChildRelId, 
 		desc.Type, 
@@ -1236,7 +1235,7 @@ VmbusChannelRecvPacketRaw(
 	packetLen = desc.Length8 << 3;
 	userLen = packetLen - (desc.DataOffset8 << 3);
 
-	DPRINT_DBG(VMBUS, "packet received on channel %p relid %d <type %d flag %d tid %llx pktlen %d datalen %d> ", 
+	DPRINT_DBG(VMBUS, "packet received on channel %p relid %d <type %d flag %d tid %lx pktlen %d datalen %d> ",
 		Channel, 
 		Channel->OfferMsg.ChildRelId, 
 		desc.Type, 

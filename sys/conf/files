@@ -306,8 +306,12 @@ dev/hyperv/vmbus/hv_ring_buffer.c             optional hv_vmbus \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
 dev/hyperv/vmbus/hv_hv.c                      optional hv_vmbus \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
-dev/hyperv/vmbus/hv_timesync_ic.c             optional hv_vmbus \
-	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
+dev/hyperv/vmbus/utilities/hv_timesync_ic.c optional hv_vmbus \
+	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"
+dev/hyperv/vmbus/utilities/hv_heartbeat_drv_freebsd.c optional hv_vmbus \
+	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"
+dev/hyperv/vmbus/utilities/hv_timesync_drv_freebsd.c optional hv_vmbus \
+	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"
 dev/hyperv/netvsc/hv_net_vsc.c			optional hv_vmbus \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"
 dev/hyperv/netvsc/hv_netvsc_drv_freebsd.c	optional hv_vmbus \
@@ -317,7 +321,7 @@ dev/hyperv/netvsc/hv_rndis_filter.c           optional hv_vmbus \
 dev/hyperv/storvsc/hv_stor_vsc.c             optional hv_vmbus \
  	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"
 dev/hyperv/storvsc/hv_storvsc_drv_freebsd.c	optional hv_vmbus \
-	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"
+	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"	
 contrib/ipfilter/netinet/fil.c	optional ipfilter inet \
 	compile-with "${NORMAL_C} -I$S/contrib/ipfilter"
 contrib/ipfilter/netinet/ip_auth.c optional ipfilter inet \
