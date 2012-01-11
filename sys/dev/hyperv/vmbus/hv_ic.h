@@ -1,4 +1,4 @@
-/*****************************************************************************
+/*-
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -18,15 +18,15 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * Ported from lis21 code drop
  *
  * HyperV common header for Hyper-V ICs
  *
- *****************************************************************************/
+ */
 
-/*
+/*-
  * Copyright (c) 2009, Microsoft Corporation - All rights reserved.
  *
  *     Redistribution and use in source and binary forms, with or
@@ -80,7 +80,7 @@ typedef UINT64 u64;
 #define ICMSGHDRFLAG_REQUEST 2
 #define ICMSGHDRFLAG_RESPONSE 4
 
-struct vmbuspipe_hdr{
+struct vmbuspipe_hdr {
     u32 flags;
     u32 msgsize;
 } __attribute__((packed));
@@ -101,23 +101,21 @@ struct icmsg_hdr {
     u8 reserved[2];
 } __attribute__((packed));   
 
-struct icmsg_negotiate{
+struct icmsg_negotiate {
     u16 icframe_vercnt;
     u16 icmsg_vercnt;
     u32 reserved;
     struct ic_version icversion_data[1]; /* any size array */
 } __attribute__((packed));
 
-struct shutdown_msg_data
-{
+struct shutdown_msg_data {
         u32 reason_code;
         u32 timeout_seconds;
         u32 flags;
         u8  display_message[2048];
 } __attribute__((packed));
 
-struct heartbeat_msg_data
-{
+struct heartbeat_msg_data {
 	u64 seq_num;
 	u32 reserved[8];
 } __attribute__((packed));

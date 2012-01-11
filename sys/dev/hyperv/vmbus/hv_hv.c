@@ -1,4 +1,4 @@
-/*****************************************************************************
+/*-
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -18,15 +18,15 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * Ported from lis21 code drop
  *
  * Implements low-level interactions with windows hypervisor
  *
- *****************************************************************************/
+ */
 
-/*
+/*-
  * Copyright (c) 2009, Microsoft Corporation - All rights reserved.
  *
  *     Redistribution and use in source and binary forms, with or
@@ -56,40 +56,9 @@
  *   Hank Janssen  <hjanssen@microsoft.com>
  */
 
-/*++
-
-File:
-	Hv.c
-
-Description:
-	Implements low-level interactions with windows hypervisor
-
---*/
-
 /* Fixme:  Added these includes to get memset, MAXCPU */
 #include <sys/param.h>
-//#include <sys/systm.h>
-//#include <sys/sockio.h>
 #include <sys/mbuf.h>
-//#include <sys/malloc.h>
-//#include <sys/module.h>
-//#include <sys/kernel.h>
-//#include <sys/socket.h>
-//#include <sys/queue.h>
-//#include <sys/lock.h>
-//#include <sys/sx.h>
-
-//#include <net/if.h>
-//#include <net/if_arp.h>
-
-
-#ifdef REMOVED
-#include "logging.h"
-#include "VmbusPrivate.h"
-#include "../../../src/config.h"
-#include <sys/time.h>
-#include <sys/pcpu.h>
-#endif
 
 #include <dev/hyperv/include/hv_osd.h>
 #include <dev/hyperv/include/hv_logging.h>
@@ -108,9 +77,6 @@ Description:
 //#include "timesync_ic.h"
 #include "hv_vmbus_private.h"
 
-// Fixme -- causes problems
-//#include <sys/param.h>
-
 // Fixme -- this may need some work
 // Fixme -- this may not be needed after all
 #include <dev/hyperv/include/hv_config.h>
@@ -118,9 +84,12 @@ Description:
 #include <sys/time.h>
 #include <sys/pcpu.h>
 
-static inline void do_cpuid_inline(unsigned int op, unsigned int *eax, unsigned int *ebx, unsigned int *ecx, unsigned int *edx)
+static inline void
+do_cpuid_inline(unsigned int op, unsigned int *eax, unsigned int *ebx,
+		unsigned int *ecx, unsigned int *edx)
 {
-	__asm__ __volatile__("cpuid" : "=a" (*eax), "=b" (*ebx), "=c" (*ecx), "=d" (*edx) : "0" (op), "c" (ecx));
+	__asm__ __volatile__("cpuid" : "=a" (*eax), "=b" (*ebx), "=c" (*ecx),
+			     "=d" (*edx) : "0" (op), "c" (ecx));
 }
 
 
@@ -786,6 +755,5 @@ HvSynicCleanup(
 
 	DPRINT_EXIT(VMBUS);
 }
-
 
 // eof

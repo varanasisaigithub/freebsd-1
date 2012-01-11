@@ -1,4 +1,4 @@
-/*****************************************************************************
+/*-
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -18,19 +18,22 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * HyperV version information header file
  *
- *****************************************************************************/
+ */
 
-/*++
+#ifndef __HV_VERSION_INFO_H__
+#define __HV_VERSION_INFO_H__
+
+/*-
 
 Copyright 2008 Microsoft Corporation. All Rights Reserved.
 
---*/
+ */
 
-/*++
+/*-
 
 Copyright (c) Microsoft Corporation.  All rights reserved.
 
@@ -40,14 +43,14 @@ File:
 Description:
 	version file 
 
---*/
-
-#pragma once
+ */
 
 //
-//Fixme:  Not such a good idea to declare globals in header files
+// Fixme:  Not such a good idea to declare globals in header files
 //
 const char VersionDate[]=__DATE__;
 const char VersionTime[]=__TIME__;
 const char VersionDesc[]= "Version 1.0";
+
+#endif  /* __HV_VERSION_INFO_H__ */
 

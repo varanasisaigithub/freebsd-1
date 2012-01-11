@@ -18,7 +18,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * Ported from lis21 code drop
  *
@@ -59,10 +59,6 @@
 #ifndef __HV_VMBUS_PACKET_FORMAT_H__
 #define __HV_VMBUS_PACKET_FORMAT_H__
 
-#pragma once
-
-#include "hv_vmbus_packet_format.h"
-
 //#ifndef PAGE_SIZE
 //#if defined(_IA64_)
 //#error This does not work for IA64
@@ -71,15 +67,9 @@
 //#endif
 //#endif
 
-// allow nameless unions
-//#pragma warning(disable : 4201)
-
-typedef struct
-{
-    union
-    {
-        struct 
-        {
+typedef struct {
+    union {
+        struct {
             volatile UINT32  In;        // Offset in bytes from the ring base
             volatile UINT32  Out;       // Offset in bytes from the ring base
         };
@@ -92,18 +82,13 @@ typedef struct
     //
 
     volatile UINT32 InterruptMask;
-
 } VMRCB, *PVMRCB;
 
-typedef struct 
-{
-    union
-    {
-        struct
-        {
+typedef struct {
+    union {
+        struct {
             VMRCB Control;
         };
-        
         UINT8 Reserved[PAGE_SIZE];
     };
     
@@ -116,8 +101,7 @@ typedef struct
 
 #pragma pack(push, 1)
 
-typedef struct
-{
+typedef struct {
     UINT16 Type;
     UINT16 DataOffset8;
     UINT16 Length8;
@@ -127,73 +111,36 @@ typedef struct
 
 typedef UINT32 PREVIOUS_PACKET_OFFSET, *PPREVIOUS_PACKET_OFFSET;
 
-typedef struct 
-{
+typedef struct {
     PREVIOUS_PACKET_OFFSET  PreviousPacketStartOffset;
     VMPACKET_DESCRIPTOR     Descriptor;
 } VMPACKET_HEADER, *PVMPACKET_HEADER;
 
-typedef struct
-{
+typedef struct {
     UINT32  ByteCount;
     UINT32  ByteOffset;
 } VMTRANSFER_PAGE_RANGE, *PVMTRANSFER_PAGE_RANGE;
 
-#ifdef __cplusplus
-
-typedef struct _VMTRANSFER_PAGE_PACKET_HEADER : VMPACKET_DESCRIPTOR {
-
-#else
-
 typedef struct VMTRANSFER_PAGE_PACKET_HEADER {
-    
-    VMPACKET_DESCRIPTOR d;
-    
-#endif
-
+    VMPACKET_DESCRIPTOR     d;
     UINT16                  TransferPageSetId;
     BOOLEAN                 SenderOwnsSet;
     UINT8                   Reserved;
     UINT32                  RangeCount;
     VMTRANSFER_PAGE_RANGE   Ranges[1];
-    
 } VMTRANSFER_PAGE_PACKET_HEADER, *PVMTRANSFER_PAGE_PACKET_HEADER;
 
-
-#ifdef __cplusplus
-
-typedef struct _VMGPADL_PACKET_HEADER : VMPACKET_DESCRIPTOR {
-
-#else
-
 typedef struct _VMGPADL_PACKET_HEADER {
-    
     VMPACKET_DESCRIPTOR d;
-    
-#endif
-
-
     UINT32  Gpadl;
     UINT32  Reserved;
-    
 } VMGPADL_PACKET_HEADER, *PVMGPADL_PACKET_HEADER;
 
-#ifdef __cplusplus
-
-typedef struct _VMADD_REMOVE_TRANSFER_PAGE_SET : VMPACKET_DESCRIPTOR {
-
-#else
-
 typedef struct _VMADD_REMOVE_TRANSFER_PAGE_SET {
-    
     VMPACKET_DESCRIPTOR d;
-    
-#endif
-    
     UINT32  Gpadl;
     UINT16  TransferPageSetId;
     UINT16  Reserved;
-    
 } VMADD_REMOVE_TRANSFER_PAGE_SET, *PVMADD_REMOVE_TRANSFER_PAGE_SET;
 
 #pragma pack(pop)
@@ -204,13 +151,10 @@ typedef struct _VMADD_REMOVE_TRANSFER_PAGE_SET {
 // 
 
 typedef struct _GPA_RANGE {
-
     UINT32  ByteCount;
     UINT32  ByteOffset;
     UINT64  PfnArray[0];
-
 } GPA_RANGE, *PGPA_RANGE;
-
 
 
 #pragma pack(push, 1)
@@ -223,22 +167,11 @@ typedef struct _GPA_RANGE {
 // VA ranges.
 // 
 
-#ifdef __cplusplus
-
-typedef struct _VMESTABLISH_GPADL : VMPACKET_DESCRIPTOR {
-
-#else
-
 typedef struct _VMESTABLISH_GPADL {
-    
     VMPACKET_DESCRIPTOR d;
-    
-#endif
-
     UINT32      Gpadl;
     UINT32      RangeCount;
     GPA_RANGE   Range[1];
-
 } VMESTABLISH_GPADL, *PVMESTABLISH_GPADL;
 
 
@@ -247,18 +180,8 @@ typedef struct _VMESTABLISH_GPADL {
 // GPADL handle in the Establish Gpadl packet will never be referenced again.
 //
 
-#ifdef __cplusplus
-
-typedef struct _VMTEARDOWN_GPADL : VMPACKET_DESCRIPTOR {
-
-#else
-
 typedef struct _VMTEARDOWN_GPADL {
-    
     VMPACKET_DESCRIPTOR d;
-
-#endif    
-
     UINT32  Gpadl;
     UINT32  Reserved; // for alignment to a 8-byte boundary
 } VMTEARDOWN_GPADL, *PVMTEARDOWN_GPADL;
@@ -269,47 +192,24 @@ typedef struct _VMTEARDOWN_GPADL {
 // ranges, in addition to commands and/or data.
 // 
 
-#ifdef __cplusplus
-
-typedef struct _VMDATA_GPA_DIRECT : VMPACKET_DESCRIPTOR {
-
-#else
-
 typedef struct _VMDATA_GPA_DIRECT {
-    
     VMPACKET_DESCRIPTOR d;
-    
-#endif
-    
     UINT32      Reserved;
     UINT32      RangeCount;
     GPA_RANGE   Range[1];
-    
 } VMDATA_GPA_DIRECT, *PVMDATA_GPA_DIRECT;
-
 
 
 //
 // This is the format for a Additional Data Packet.
 // 
 
-#ifdef __cplusplus
-
-typedef struct _VMADDITIONAL_DATA : VMPACKET_DESCRIPTOR {
-
-#else
-
 typedef struct _VMADDITIONAL_DATA {
-    
     VMPACKET_DESCRIPTOR d;
-    
-#endif
-    
     UINT64  TotalBytes;
     UINT32  ByteOffset;
     UINT32  ByteCount;
     UCHAR   Data[1];
-    
 } VMADDITIONAL_DATA, *PVMADDITIONAL_DATA;
 
 

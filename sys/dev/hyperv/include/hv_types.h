@@ -18,7 +18,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * Ported from lis21 code drop
  *
@@ -59,7 +59,6 @@
 #ifndef __HV_TYPES_H__
 #define __HV_TYPES_H__
 
-#pragma once
 
 typedef UINT64 HV_GPA, *PHV_GPA;
 

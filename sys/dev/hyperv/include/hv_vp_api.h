@@ -18,7 +18,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * Ported from lis21 code drop
  *
@@ -59,7 +59,7 @@
 #ifndef __HV_VP_API_H__
 #define __HV_VP_API_H__
 
-#pragma once
+
 //
 // Virtual Processor Indices
 //
@@ -70,9 +70,7 @@ typedef UINT32 HV_VP_INDEX, *PHV_VP_INDEX;
 // is set by CPUID(HvCpuIdFunctionVersionAndFeatures).
 // ==========================================================================
 //
-
-typedef enum _HV_CPUID_FUNCTION
-{
+typedef enum _HV_CPUID_FUNCTION {
     HvCpuIdFunctionVersionAndFeatures           = 0x00000001,
     HvCpuIdFunctionHvVendorAndMaxFunction       = 0x40000000,
     HvCpuIdFunctionHvInterface                  = 0x40000001,

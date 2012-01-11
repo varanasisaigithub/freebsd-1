@@ -18,7 +18,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * Ported from lis21 code drop
  *
@@ -60,12 +60,7 @@
 #ifndef __HV_VMBUS_CHANNEL_INTERFACE_H__
 #define __HV_VMBUS_CHANNEL_INTERFACE_H__
 
-#pragma once
-
 #include "hv_osd.h"
-
-// allow nameless unions
-//#pragma warning(disable : 4201)
 
 // 
 // A revision number of vmbus that is used for ensuring both ends on a
@@ -104,7 +99,6 @@
 
 typedef struct
 {
-
     GUID    InterfaceType;
     GUID    InterfaceInstance;
     UINT64  InterruptLatencyIn100nsUnits;

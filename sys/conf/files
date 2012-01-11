@@ -282,12 +282,6 @@ contrib/dev/acpica/utilities/utxferror.c	optional acpi
 #
 # Hyper-V
 #
-#dev/hyperv/vmbus/Sources.c          optional hv_vmbus \
-#	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
-#dev/hyperv/netvsc/NetVsc.c          optional hv_vmbus \
-#	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
-#dev/hyperv/netvsc/RndisFilter.c     optional hv_vmbus \
-#	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
 dev/hyperv/vmbus/hv_vmbus.c                   optional hv_vmbus \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
 dev/hyperv/vmbus/hv_osd_freebsd.c             optional hv_vmbus \

@@ -18,7 +18,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * HyperV logging header file
  *
@@ -42,28 +42,28 @@
 #define VMBUS_DRV			0x0100
 #define STORVSC_DRV			0x0200
 #define NETVSC_DRV			0x0400
-#define INPUTVSC_DRV		0x0800
+#define INPUTVSC_DRV			0x0800
 #define BLKVSC_DRV			0x1000
-#define VMBUS_UTILITY		0x2000
+#define VMBUS_UTILITY			0x2000
 
-#define ALL_MODULES			(VMBUS		|\
-							STORVSC		|\
-							NETVSC		|\
-							INPUTVSC	|\
-							BLKVSC		|\
-							VMBUS_DRV	|\
-							STORVSC_DRV	|\
-							NETVSC_DRV	|\
-							INPUTVSC_DRV|\
-							BLKVSC_DRV  |\
-							VMBUS_UTILITY)
+#define ALL_MODULES			(VMBUS		| \
+					STORVSC		| \
+					NETVSC		| \
+					INPUTVSC	| \
+					BLKVSC		| \
+					VMBUS_DRV	| \
+					STORVSC_DRV	| \
+					NETVSC_DRV	| \
+					INPUTVSC_DRV	| \
+					BLKVSC_DRV	| \
+					VMBUS_UTILITY)
 
 // Logging Level
 #define CRITICAL_LVL				2
-#define ERROR_LVL					3
-#define WARNING_LVL					4
-#define INFO_LVL					6
-#define DEBUG_LVL					7
+#define ERROR_LVL				3
+#define WARNING_LVL				4
+#define INFO_LVL				6
+#define DEBUG_LVL				7
 #define DEBUG_LVL_ENTEREXIT			8
 #define DEBUG_RING_LVL				9
 
@@ -180,3 +180,4 @@ static inline int LogMsg(const char *fmt, ...) {
 
 
 #endif  /* __HV_LOGGING_H__ */
+

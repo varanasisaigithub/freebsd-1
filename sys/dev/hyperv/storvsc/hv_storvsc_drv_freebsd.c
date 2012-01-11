@@ -83,8 +83,7 @@ MODULE_VERSION(storvsc, 1);
 SYSINIT(storvsc_initx, SI_SUB_RUN_SCHEDULER, SI_ORDER_MIDDLE + 1, storvsc_init, NULL);
 
 static void
-xptscandone(struct cam_periph *periph, union ccb *done_ccb)
-{
+xptscandone(struct cam_periph *periph, union ccb *done_ccb) {
         xpt_release_path(done_ccb->ccb_h.path);
         free(done_ccb->ccb_h.path, M_CAMXPT);
         free(done_ccb, M_CAMXPT);
@@ -207,7 +206,7 @@ storvsc_attach(device_t dev)
 
 	STORVSC_DEVICE_INFO device_info;
 	struct storvsc_softc *sc;
-    struct cam_devq *devq;
+	struct cam_devq *devq;
 	int ret, i;
 	STORVSC_REQUEST *reqp;
 	LIST_ENTRY *entry;
@@ -344,7 +343,7 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 	STORVSC_DRIVER_OBJECT *stor_drv_obj = &g_storvsc_drv.drv_obj;
 	int res;
 
-    switch (ccb->ccb_h.func_code) {
+	switch (ccb->ccb_h.func_code) {
 	case XPT_PATH_INQ: {
 		struct ccb_pathinq *cpi = &ccb->cpi;
 		DPRINT_INFO(STORVSC, "XPT_PATH_INQ %d:%d:%d %s\n", cam_sim_bus(sim),
@@ -440,7 +439,7 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		SpinlockRelease(sc->free_list_lock);
 		ASSERT(reqp);
 
-        ccb->ccb_h.status = CAM_SIM_QUEUED;	    
+		ccb->ccb_h.status = CAM_SIM_QUEUED;	    
 
 		create_storvsc_request(ccb, reqp);
 		if ((res = stor_drv_obj->OnIORequest(sc->storvsc_dev, reqp)) == -1) {

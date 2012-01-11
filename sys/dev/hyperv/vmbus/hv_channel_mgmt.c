@@ -1,4 +1,4 @@
-/*****************************************************************************
+/*-
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -24,9 +24,9 @@
  *
  * HyperV channel code
  *
- *****************************************************************************/
+ */
 
-/*
+/*-
  * Copyright (c) 2009, Microsoft Corporation - All rights reserved.
  *
  *     Redistribution and use in source and binary forms, with or
@@ -58,19 +58,7 @@
 
 /* Fixme:  Added these includes to get memset, memcmp, shutdown_nice */
 #include <sys/param.h>
-//#include <sys/systm.h>
-//#include <sys/sockio.h>
 #include <sys/mbuf.h>
-//#include <sys/malloc.h>
-//#include <sys/module.h>
-//#include <sys/kernel.h>
-//#include <sys/socket.h>
-//#include <sys/queue.h>
-//#include <sys/lock.h>
-//#include <sys/sx.h>
-
-//#include <net/if.h>
-//#include <net/if_arp.h>
 
 #include <dev/hyperv/include/hv_osd.h>
 #include <dev/hyperv/include/hv_logging.h>
@@ -89,8 +77,6 @@
 #include "hv_vmbus_private.h"
 
 #include <sys/reboot.h>
-/* Fixme:  commented out for now.  Causes a huge number of compile errors */
-//#include <sys/systm.h>
 
 
 //
@@ -254,22 +240,19 @@ VMBUS_CHANNEL* AllocVmbusChannel(void)
 	VMBUS_CHANNEL* channel;
 
 	channel = (VMBUS_CHANNEL*) MemAllocAtomic(sizeof(VMBUS_CHANNEL));
-	if (!channel)
-	{
+	if (!channel) {
 		return NULL;
 	}
 
 	memset(channel, 0,sizeof(VMBUS_CHANNEL));
 	channel->InboundLock = SpinlockCreate();
-	if (!channel->InboundLock)
-	{
+	if (!channel->InboundLock) {
 		MemFree(channel);
 		return NULL;
 	}
 
 	channel->PollTimer = TimerCreate(VmbusChannelOnTimer, channel);
-	if (!channel->PollTimer)
-	{
+	if (!channel->PollTimer) {
 		SpinlockClose(channel->InboundLock);
 		MemFree(channel);
 		return NULL;
@@ -277,8 +260,7 @@ VMBUS_CHANNEL* AllocVmbusChannel(void)
 
 	//channel->dataWorkQueue = WorkQueueCreate("data");
 	channel->ControlWQ = WorkQueueCreate("control");
-	if (!channel->ControlWQ)
-	{
+	if (!channel->ControlWQ) {
 		TimerClose(channel->PollTimer);
 		SpinlockClose(channel->InboundLock);
 		MemFree(channel);
@@ -351,16 +333,14 @@ void shutdown_onchannelcallback(void *context)
 
 	VmbusChannelRecvPacket(channel, buf, buflen, &recvlen, &requestid);
 
-	if (recvlen > 0) 
-	{
+	if (recvlen > 0) {
 		DPRINT_DBG(VMBUS, "shutdown packet: len=%d, requestid=%ld",
 			   recvlen, requestid);
 
 		icmsghdrp = (struct icmsg_hdr *)&buf[
 			sizeof(struct vmbuspipe_hdr)];
 	    
-		if(icmsghdrp->icmsgtype == ICMSGTYPE_NEGOTIATE) 
-		{
+		if (icmsghdrp->icmsgtype == ICMSGTYPE_NEGOTIATE) {
 			icmsghdrp->icmsgsize = 0x10;
 
 			negop = (struct icmsg_negotiate *)&buf[
@@ -395,8 +375,7 @@ void shutdown_onchannelcallback(void *context)
  *			
  *			printk(KERN_INFO "\n");
  */
-			switch(shutdown_msg->flags) 
-			{
+			switch (shutdown_msg->flags) {
 /*
  * Interactive shutdown requests are not supported on Linux (e.g. Screen locked
  * If it was, this is what you would be sending.
@@ -419,7 +398,7 @@ void shutdown_onchannelcallback(void *context)
 				execute_shutdown = true;
 				
 				DPRINT_INFO(VMBUS, "Shutdown request received -"
-					    "gracefull shutdown initiated");
+					    "graceful shutdown initiated");
 				break;
 			default:
 				icmsghdrp->status = HV_E_FAIL;
@@ -443,8 +422,7 @@ void shutdown_onchannelcallback(void *context)
 
 	DPRINT_EXIT(VMBUS);
 
-	if (execute_shutdown == true)
-	{
+	if (execute_shutdown == true) {
 		/*
 		 * Fixme:  This replaces several lines of Linux shutdown code
 		 */
@@ -479,26 +457,22 @@ VmbusChannelProcessOffer(
 	// Make sure this is a new offer
 	SpinlockAcquire(gVmbusConnection.ChannelLock);
 
-	ITERATE_LIST_ENTRIES(anchor, curr, &gVmbusConnection.ChannelList)
-	{		
+	ITERATE_LIST_ENTRIES(anchor, curr, &gVmbusConnection.ChannelList) {		
 		channel = CONTAINING_RECORD(curr, VMBUS_CHANNEL, ListEntry);
 
 		if (!memcmp(&channel->OfferMsg.Offer.InterfaceType, &newChannel->OfferMsg.Offer.InterfaceType,sizeof(GUID)) &&
-			!memcmp(&channel->OfferMsg.Offer.InterfaceInstance, &newChannel->OfferMsg.Offer.InterfaceInstance, sizeof(GUID)))
-		{
+			!memcmp(&channel->OfferMsg.Offer.InterfaceInstance, &newChannel->OfferMsg.Offer.InterfaceInstance, sizeof(GUID))) {
 			fNew = FALSE;
 			break;
 		}
 	}
 
-	if (fNew)
-	{
+	if (fNew) {
 		INSERT_TAIL_LIST(&gVmbusConnection.ChannelList, &newChannel->ListEntry);
 	}
 	SpinlockRelease(gVmbusConnection.ChannelLock);
 
-	if (!fNew)
-	{
+	if (!fNew) {
 		DPRINT_DBG(VMBUS, "Ignoring duplicate offer for relid (%d)", newChannel->OfferMsg.ChildRelId);
 		FreeVmbusChannel(newChannel);
 		DPRINT_EXIT(VMBUS);
@@ -521,8 +495,7 @@ VmbusChannelProcessOffer(
 	// Add the new device to the bus. This will kick off device-driver binding
 	// which eventually invokes the device driver's AddDevice() method.
 	ret = VmbusChildDeviceAdd(newChannel->DeviceObject);
-	if (ret != 0)
-	{
+	if (ret != 0) {
 		DPRINT_ERR(VMBUS, "unable to add child device object (relid %d)", 
 			newChannel->OfferMsg.ChildRelId);
 
@@ -531,9 +504,7 @@ VmbusChannelProcessOffer(
 		SpinlockRelease(gVmbusConnection.ChannelLock);
 
 		FreeVmbusChannel(newChannel);
-	}
-	else
-	{
+	} else {
 		// This state is used to indicate a successful open 
 		// so that when we do close the channel normally,
 		// we can cleanup properly
@@ -634,8 +605,7 @@ VmbusChannelOnOffer(
 
 	DPRINT_ENTER(VMBUS);
 
-	for (i=0; i<MAX_NUM_DEVICE_CLASSES_SUPPORTED; i++)
-	{
+	for (i=0; i<MAX_NUM_DEVICE_CLASSES_SUPPORTED; i++) {
 		if (memcmp(&offer->Offer.InterfaceType, &gSupportedDeviceClasses[i], sizeof(GUID)) == 0)
 		{
 			fSupported = 1;
@@ -643,8 +613,7 @@ VmbusChannelOnOffer(
 		}
 	}
 
-	if (!fSupported)
-	{
+	if (!fSupported) {
 		DPRINT_DBG(VMBUS, "Ignoring channel offer notification for child relid %d", offer->ChildRelId);
 		DPRINT_EXIT(VMBUS);
 
@@ -665,8 +634,7 @@ VmbusChannelOnOffer(
 
 	// Allocate the channel object and save this offer.
 	newChannel = AllocVmbusChannel();
-	if (!newChannel)
-	{
+	if (!newChannel) {
 		DPRINT_ERR(VMBUS, "unable to allocate channel object");
 		return;
 	}
@@ -705,8 +673,7 @@ VmbusChannelOnOfferRescind(
 	DPRINT_ENTER(VMBUS);
 
 	channel = GetChannelFromRelId(rescind->ChildRelId);
-	if (channel == NULL)
-	{
+	if (channel == NULL) {
 		DPRINT_DBG(VMBUS, "channel not found for relId %d", rescind->ChildRelId);
 		return;
 	}
@@ -767,17 +734,14 @@ VmbusChannelOnOpenResult(
 	// Find the open msg, copy the result and signal/unblock the wait event
 	SpinlockAcquire(gVmbusConnection.ChannelMsgLock);
 
-	ITERATE_LIST_ENTRIES(anchor, curr, &gVmbusConnection.ChannelMsgList)
-	{
+	ITERATE_LIST_ENTRIES(anchor, curr, &gVmbusConnection.ChannelMsgList) {
 		msgInfo = (VMBUS_CHANNEL_MSGINFO*) curr;
 		requestHeader = (VMBUS_CHANNEL_MESSAGE_HEADER*)msgInfo->Msg;
 
-		if (requestHeader->MessageType == ChannelMessageOpenChannel)
-		{
+		if (requestHeader->MessageType == ChannelMessageOpenChannel) {
 			openMsg = (VMBUS_CHANNEL_OPEN_CHANNEL*)msgInfo->Msg;
 			if (openMsg->ChildRelId == result->ChildRelId &&
-				openMsg->OpenId == result->OpenId)
-			{
+				openMsg->OpenId == result->OpenId) {
 				memcpy(&msgInfo->Response.OpenResult, result, sizeof(VMBUS_CHANNEL_OPEN_RESULT));
 				WaitEventSet(msgInfo->WaitEvent);
 				break;
@@ -820,18 +784,15 @@ VmbusChannelOnGpadlCreated(
 	// Find the establish msg, copy the result and signal/unblock the wait event
 	SpinlockAcquire(gVmbusConnection.ChannelMsgLock);
 
-	ITERATE_LIST_ENTRIES(anchor, curr, &gVmbusConnection.ChannelMsgList)
-	{
+	ITERATE_LIST_ENTRIES(anchor, curr, &gVmbusConnection.ChannelMsgList) {
 		msgInfo = (VMBUS_CHANNEL_MSGINFO*) curr;
 		requestHeader = (VMBUS_CHANNEL_MESSAGE_HEADER*)msgInfo->Msg;
 
-		if (requestHeader->MessageType == ChannelMessageGpadlHeader)
-		{
+		if (requestHeader->MessageType == ChannelMessageGpadlHeader) {
 			gpadlHeader = (VMBUS_CHANNEL_GPADL_HEADER*)requestHeader;
 
 			if ((gpadlCreated->ChildRelId == gpadlHeader->ChildRelId) &&
-					(gpadlCreated->Gpadl == gpadlHeader->Gpadl))
-			{
+			    (gpadlCreated->Gpadl == gpadlHeader->Gpadl)) {
 				memcpy(&msgInfo->Response.GpadlCreated, gpadlCreated, sizeof(VMBUS_CHANNEL_GPADL_CREATED));
 				WaitEventSet(msgInfo->WaitEvent);
 				break;
@@ -872,17 +833,14 @@ VmbusChannelOnGpadlTorndown(
 	// Find the open msg, copy the result and signal/unblock the wait event
 	SpinlockAcquire(gVmbusConnection.ChannelMsgLock);
 
-	ITERATE_LIST_ENTRIES(anchor, curr, &gVmbusConnection.ChannelMsgList)
-	{
+	ITERATE_LIST_ENTRIES(anchor, curr, &gVmbusConnection.ChannelMsgList) {
 		msgInfo = (VMBUS_CHANNEL_MSGINFO*) curr;
 		requestHeader = (VMBUS_CHANNEL_MESSAGE_HEADER*)msgInfo->Msg;
 
-		if (requestHeader->MessageType == ChannelMessageGpadlTeardown)
-		{
+		if (requestHeader->MessageType == ChannelMessageGpadlTeardown) {
 			gpadlTeardown = (VMBUS_CHANNEL_GPADL_TEARDOWN*)requestHeader;
 
-			if (gpadlTorndown->Gpadl == gpadlTeardown->Gpadl)
-			{
+			if (gpadlTorndown->Gpadl == gpadlTeardown->Gpadl) {
 				memcpy(&msgInfo->Response.GpadlTorndown, gpadlTorndown, sizeof(VMBUS_CHANNEL_GPADL_TORNDOWN));
 				WaitEventSet(msgInfo->WaitEvent);
 				break;
@@ -922,13 +880,11 @@ VmbusChannelOnVersionResponse(
 
 	SpinlockAcquire(gVmbusConnection.ChannelMsgLock);
 
-	ITERATE_LIST_ENTRIES(anchor, curr, &gVmbusConnection.ChannelMsgList)
-	{
+	ITERATE_LIST_ENTRIES(anchor, curr, &gVmbusConnection.ChannelMsgList) {
 		msgInfo = (VMBUS_CHANNEL_MSGINFO*) curr;
 		requestHeader = (VMBUS_CHANNEL_MESSAGE_HEADER*)msgInfo->Msg;
 
-		if (requestHeader->MessageType == ChannelMessageInitiateContact)
-		{
+		if (requestHeader->MessageType == ChannelMessageInitiateContact) {
 			initiate = (VMBUS_CHANNEL_INITIATE_CONTACT*)requestHeader;
 			memcpy(&msgInfo->Response.VersionResponse, versionResponse, sizeof(VMBUS_CHANNEL_VERSION_RESPONSE));
 			WaitEventSet(msgInfo->WaitEvent);			
@@ -966,20 +922,16 @@ VmbusOnChannelMessage(
 	
 	DPRINT_DBG(VMBUS, "message type %d size %d", hdr->MessageType, size);
 
-	if (hdr->MessageType >= ChannelMessageCount)
-	{
+	if (hdr->MessageType >= ChannelMessageCount) {
 		DPRINT_ERR(VMBUS, "Received invalid channel message type %d size %d", hdr->MessageType, size);
 //		PrintBytes((unsigned char *)msg->u.Payload, size);
 		MemFree(msg);
 		return;
 	}
 
-	if (gChannelMessageTable[hdr->MessageType].messageHandler)
-	{
+	if (gChannelMessageTable[hdr->MessageType].messageHandler) {
 		gChannelMessageTable[hdr->MessageType].messageHandler(hdr);
-	}
-	else
-	{
+	} else {
 		DPRINT_ERR(VMBUS, "Unhandled channel message type %d", hdr->MessageType);
 	}
 
@@ -1023,8 +975,7 @@ VmbusChannelRequestOffers(
 	SpinlockRelease(gVmbusConnection.channelMsgLock);*/
 
 	ret = VmbusPostMessage(msg, sizeof(VMBUS_CHANNEL_MESSAGE_HEADER));
-	if (ret != 0)
-	{
+	if (ret != 0) {
 		DPRINT_ERR(VMBUS, "Unable to request offers - %d", ret);
 
 		/*SpinlockAcquire(gVmbusConnection.channelMsgLock);
@@ -1041,8 +992,7 @@ VmbusChannelRequestOffers(
 
 
 Cleanup:
-	if (msgInfo)
-	{
+	if (msgInfo) {
 		WaitEventClose(msgInfo->WaitEvent);
 		MemFree(msgInfo);
 	}
@@ -1072,26 +1022,21 @@ VmbusChannelReleaseUnattachedChannels(
 
 	SpinlockAcquire(gVmbusConnection.ChannelLock);
 
-	while (!IsListEmpty(&gVmbusConnection.ChannelList))
-	{	
+	while (!IsListEmpty(&gVmbusConnection.ChannelList)) {	
 		entry = TOP_LIST_ENTRY(&gVmbusConnection.ChannelList);
 		channel = CONTAINING_RECORD(entry, VMBUS_CHANNEL, ListEntry);
 
 		if (channel == start)
 			break;
 
-		if (!channel->DeviceObject->Driver)
-		{
+		if (!channel->DeviceObject->Driver) {
 			REMOVE_ENTRY_LIST(&channel->ListEntry);
 			DPRINT_INFO(VMBUS, "Releasing unattached device object %p", channel->DeviceObject);
 
 			VmbusChildDeviceRemove(channel->DeviceObject);
 			FreeVmbusChannel(channel);
-		}
-		else
-		{
-			if (!start)
-			{
+		} else {
+			if (!start) {
 				start = channel;
 			}
 		}
