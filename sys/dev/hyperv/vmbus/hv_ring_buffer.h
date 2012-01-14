@@ -59,112 +59,83 @@
 #ifndef __HV_RING_BUFFER_H__
 #define __HV_RING_BUFFER_H__
 
-#ifdef REMOVED
-/* Fixme:  Removed */
-#include "osd.h"
-#endif
+#include <sys/param.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
 
 typedef struct _SG_BUFFER_LIST {
-	PVOID	Data;
+	void	*Data;
 	UINT32	Length;
 } SG_BUFFER_LIST;
 
 typedef struct _RING_BUFFER {
-    volatile UINT32	WriteIndex;     // Offset in bytes from the start of ring data below
-    volatile UINT32	ReadIndex;      // Offset in bytes from the start of ring data below
+	volatile UINT32 WriteIndex;	// Offset in bytes from the start of ring data below
+	volatile UINT32 ReadIndex;	// Offset in bytes from the start of ring data below
 
 	volatile UINT32 InterruptMask;
-	UINT8	Reserved[4084];			// Pad it to PAGE_SIZE so that data starts on page boundary
+	UINT8 Reserved[4084];// Pad it to PAGE_SIZE so that data starts on page boundary
 	// NOTE: The InterruptMask field is used only for channels but since our vmbus connection
 	// also uses this data structure and its data starts here, we commented out this field.
 	// volatile UINT32 InterruptMask;
 	// Ring data starts here + RingDataStartOffset !!! DO NOT place any fields below this !!!
-    UINT8		Buffer[0];
-} STRUCT_PACKED RING_BUFFER;
+	UINT8 Buffer[0];
+}STRUCT_PACKED RING_BUFFER;
 
 typedef struct _RING_BUFFER_INFO {
-    RING_BUFFER*	RingBuffer;
-    UINT32			RingSize;			// Include the shared header
-	HANDLE			RingLock;
+	RING_BUFFER* RingBuffer;
+	UINT32 RingSize;	// Include the shared header
+	struct mtx *RingLock;
 
-    UINT32			RingDataSize;		// < ringSize
-	UINT32			RingDataStartOffset;
+	UINT32 RingDataSize;	// < ringSize
+	UINT32 RingDataStartOffset;
 
 } RING_BUFFER_INFO;
 
-
 typedef struct _RING_BUFFER_DEBUG_INFO {
-	UINT32		CurrentInterruptMask;
-	UINT32		CurrentReadIndex;
-	UINT32		CurrentWriteIndex;
-	UINT32		BytesAvailToRead;
-	UINT32		BytesAvailToWrite;
-}RING_BUFFER_DEBUG_INFO;
-
+	UINT32 CurrentInterruptMask;
+	UINT32 CurrentReadIndex;
+	UINT32 CurrentWriteIndex;
+	UINT32 BytesAvailToRead;
+	UINT32 BytesAvailToWrite;
+} RING_BUFFER_DEBUG_INFO;
 
 //
 // Interface
 //
 
-INTERNAL int
-RingBufferInit(
-	RING_BUFFER_INFO	*RingInfo,
-	PVOID				Buffer,
-	UINT32				BufferLen
-	);
+extern int
+RingBufferInit(RING_BUFFER_INFO *RingInfo, void *Buffer, UINT32 BufferLen);
 
-INTERNAL void
-RingBufferCleanup(
-	RING_BUFFER_INFO	*RingInfo
-	);
+extern void
+RingBufferCleanup(RING_BUFFER_INFO *RingInfo);
 
-INTERNAL int
-RingBufferWrite(
-	RING_BUFFER_INFO	*RingInfo,
-	SG_BUFFER_LIST		SgBuffers[],
-	UINT32				SgBufferCount
-	);
+extern int
+RingBufferWrite(RING_BUFFER_INFO *RingInfo, SG_BUFFER_LIST SgBuffers[],
+	UINT32 SgBufferCount);
 
-INTERNAL int
-RingBufferPeek(
-	RING_BUFFER_INFO	*RingInfo,
-	PVOID				Buffer,
-	UINT32				BufferLen
-	);
+extern int
+RingBufferPeek(RING_BUFFER_INFO *RingInfo, void *Buffer, UINT32 BufferLen);
 
-INTERNAL int
-RingBufferRead(
-	RING_BUFFER_INFO	*RingInfo,
-	PVOID				Buffer,
-	UINT32				BufferLen,
-	UINT32				Offset
-	);
+extern int
+RingBufferRead(RING_BUFFER_INFO *RingInfo, void *Buffer, UINT32 BufferLen,
+	UINT32 Offset);
 
-INTERNAL UINT32 
-GetRingBufferInterruptMask(
-	RING_BUFFER_INFO *RingInfo
-	);
+extern UINT32
+GetRingBufferInterruptMask(RING_BUFFER_INFO *RingInfo);
 
-INTERNAL void
-DumpRingInfo(
-	RING_BUFFER_INFO* RingInfo, 
-	char *Prefix
-	);
+extern void
+DumpRingInfo(RING_BUFFER_INFO* RingInfo, char *Prefix);
 
-INTERNAL void
-RingBufferGetDebugInfo(
-	RING_BUFFER_INFO		*RingInfo,
-	RING_BUFFER_DEBUG_INFO	*DebugInfo
-	);
-
+extern void
+RingBufferGetDebugInfo(RING_BUFFER_INFO *RingInfo,
+	RING_BUFFER_DEBUG_INFO *DebugInfo);
 
 /*
  * Externs
  */
 extern void SetRingBufferInterruptMask(RING_BUFFER_INFO *rbi);
 extern void ClearRingBufferInterruptMask(RING_BUFFER_INFO *rbi);
-extern int  RingBufferCheck(RING_BUFFER_INFO *rbi);
-
+extern int RingBufferCheck(RING_BUFFER_INFO *rbi);
 
 #endif  /* __HV_RING_BUFFER_H__ */
 

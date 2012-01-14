@@ -27,6 +27,8 @@
 #ifndef __HV_OSD_H__
 #define __HV_OSD_H__
 
+#include <sys/param.h>
+
 /* Fixme -- added these for FreeBSD build */
 // #define do_cpuid x2v_do_cpuid  /* kludge to avoid namespace collision ************* TODO LM - renamed do_cpuid */
 #ifndef __x86_64__
@@ -37,9 +39,9 @@
 // Defines
 //
 
-#ifndef PAGE_SIZE
-#define PAGE_SIZE		0x1000
-#endif
+//#ifndef PAGE_SIZE
+//#define PAGE_SIZE		0x1000
+//#endif
 
 #ifndef PAGE_SHIFT
 #define PAGE_SHIFT		12
@@ -47,8 +49,6 @@
 
 #define MAX_PAGE_BUFFER_COUNT	16
 #define HW_MACADDR_LEN		6
-
-
 
 #define STRUCT_PACKED		__attribute__((__packed__))
 #define STRUCT_ALIGNED(x)	__attribute__((__aligned__(x)))
@@ -58,14 +58,6 @@
 #define ALIGN_UP(value, align)			( ((value) & (align-1))? ( ((value) + (align-1)) & ~(align-1) ): (value) )
 #define ALIGN_DOWN(value, align)		( (value) & ~(align-1) )
 #define NUM_PAGES_SPANNED(addr, len)	( (ALIGN_UP(addr+len, PAGE_SIZE) - ALIGN_DOWN(addr, PAGE_SIZE)) >> PAGE_SHIFT )
-
-#ifndef MIN
-#define MIN(a, b)       ((a) < (b)? (a): (b))
-#endif
-
-#ifndef MAX
-#define MAX(a, b)       ((a) > (b)? (a): (b))
-#endif
 
 #define LOWORD(dw)	((unsigned short) (dw))
 #define HIWORD(dw)	((unsigned short) (((unsigned int) (dw) >> 16) & 0xFFFF))

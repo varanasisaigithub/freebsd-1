@@ -59,9 +59,7 @@
 #ifndef __HV_VMBUS_PACKET_FORMAT_H__
 #define __HV_VMBUS_PACKET_FORMAT_H__
 
-#pragma once
-
-#include "hv_vmbus_packet_format.h"
+#include "hv_osd.h"
 
 //#ifndef PAGE_SIZE
 //#if defined(_IA64_)

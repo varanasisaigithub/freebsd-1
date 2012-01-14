@@ -37,20 +37,19 @@
 struct driver_context { //blkvsc_drv.c 
 	GUID	class_id;
 	UINT32	driver;
-	int		(*probe)(struct device*);
-	int		(*remove)(struct device* );
-	void	(*shutdown)(struct device* );
-};	
-
-struct device_context {
-        GUID                     class_id;
-        GUID                     device_id;
-        int                      probe_error;
-        struct task              probe_failed_work_item;
-        device_t                 device;
-        DEVICE_OBJECT            device_obj;
+	int	(*probe)(struct device*);
+	int	(*remove)(struct device*);
+	void	(*shutdown)(struct device*);
 };
 
+struct device_context {
+	GUID	class_id;
+	GUID	device_id;
+	int	probe_error;
+	struct task probe_failed_work_item;
+	device_t	device;
+	DEVICE_OBJECT	device_obj;
+};
 
 /*
  * This function defined in vmbus_drv_freebsd.c and used in
@@ -62,23 +61,17 @@ void vmbus_get_interface(VMBUS_CHANNEL_INTERFACE *);
         typeof( ((type *)0)->member ) *__mptr = (ptr);  \
         (type *)( (char *)__mptr - offsetof(type,member) );})
 
-static inline struct device_context *to_device_context(DEVICE_OBJECT *device_obj)
-{
-        return container_of(device_obj, struct device_context, device_obj);
+static inline struct device_context *to_device_context(
+	DEVICE_OBJECT *device_obj) {
+	return container_of(device_obj, struct device_context, device_obj);
 }
 
-static inline struct device_context *device_to_device_context(device_t *device)
-{
-        return container_of(device, struct device_context, device);
+static inline struct device_context *device_to_device_context(device_t *device) {
+	return container_of(device, struct device_context, device);
 }
-
-
 
 enum {
-		VMBUS_IVAR_TYPE,
-		VMBUS_IVAR_INSTANCE,
-		VMBUS_IVAR_NODE,
-		VMBUS_IVAR_DEVCTX
+	VMBUS_IVAR_TYPE, VMBUS_IVAR_INSTANCE, VMBUS_IVAR_NODE, VMBUS_IVAR_DEVCTX
 };
 
 #ifdef REMOVED
@@ -95,8 +88,8 @@ enum {
 #define VMBUS_ACCESSOR(var, ivar, type) \
 		__BUS_ACCESSOR(vmbus, var, VMBUS, ivar, type)
 
-VMBUS_ACCESSOR(type, TYPE,  const char *)
-VMBUS_ACCESSOR(devctx, DEVCTX,  struct device_context *)
+VMBUS_ACCESSOR(type, TYPE, const char *)
+VMBUS_ACCESSOR(devctx, DEVCTX, struct device_context *)
 
 void vmbus_child_driver_register(struct driver_context* driver_ctx);
 

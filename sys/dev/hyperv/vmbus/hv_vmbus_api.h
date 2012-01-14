@@ -27,23 +27,18 @@
 #ifndef __HV_VMBUS_API_H__
 #define __HV_VMBUS_API_H__
 
-#ifdef REMOVED
-// Fixme -- removed
-#include "vmbusvar.h"
-#endif
-
 typedef struct {
 	DRIVER_OBJECT Base; //vmbus.c : 161
-	DEVICE_OBJECT*  (*OnChildDeviceCreate)(GUID,GUID,void *);//vmbus.c : 263 				:: vmbus_drv_freebsd.c : 255
+	DEVICE_OBJECT* (*OnChildDeviceCreate)(GUID, GUID, void *); //vmbus.c : 263 :: vmbus_drv_freebsd.c : 255
 	void (*OnChildDeviceDestroy)(DEVICE_OBJECT *);
-    int (*OnChildDeviceAdd)(DEVICE_OBJECT *,DEVICE_OBJECT *);   //:285  vmbus_						drv_freebsd.c : 421
-	void (*OnChildDeviceRemove)(DEVICE_OBJECT *);//vmbus_drv_freebsd.c : 422
-	int  (*OnIsr)(DRIVER_OBJECT *); //vmbus.c :164
+	int (*OnChildDeviceAdd)(DEVICE_OBJECT *, DEVICE_OBJECT *); //:285  vmbus_						drv_freebsd.c : 421
+	void (*OnChildDeviceRemove)(DEVICE_OBJECT *); //vmbus_drv_freebsd.c : 422
+	int (*OnIsr)(DRIVER_OBJECT *); //vmbus.c :164
 	void (*OnMsgDpc)(DRIVER_OBJECT *);
 	void (*OnEventDpc)(DRIVER_OBJECT *);
-	void (*GetChannelOffers)(void );
+	void (*GetChannelOffers)(void);
 	void (*GetChannelInterface)(VMBUS_CHANNEL_INTERFACE *);
-	void (*GetChannelInfo)(DEVICE_OBJECT *,DEVICE_INFO *);
+	void (*GetChannelInfo)(DEVICE_OBJECT *, DEVICE_INFO *);
 } VMBUS_DRIVER_OBJECT;
 
 int VmbusInitialize(DRIVER_OBJECT* drv);

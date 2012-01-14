@@ -59,9 +59,9 @@
 #ifndef __HV_VMBUS_PRIVATE_H__
 #define __HV_VMBUS_PRIVATE_H__
 
-#ifndef INTERNAL
-#define INTERNAL static
-#endif
+#include <sys/param.h>
+#include <sys/mbuf.h>
+#include <sys/mutex.h>
 
 #ifdef REMOVED
 /* Fixme:  Removed */
@@ -77,7 +77,6 @@
 #include "timesync_ic.h"
 #endif
 
-
 //
 // Defines
 //
@@ -85,7 +84,6 @@
 // Maximum channels is determined by the size of the interrupt page which is PAGE_SIZE. 1/2 of PAGE_SIZE is for
 // send endpoint interrupt and the other is receive endpoint interrupt
 #define MAX_NUM_CHANNELS				(PAGE_SIZE >> 1) << 3  // 16348 channels
-
 // The value here must be in multiple of 32
 // TODO: Need to make this configurable
 #define MAX_NUM_CHANNELS_SUPPORTED		256
@@ -95,19 +93,16 @@
 //
 
 typedef enum {
-	Disconnected,
-	Connecting,
-	Connected,
-	Disconnecting
+	Disconnected, Connecting, Connected, Disconnecting
 } VMBUS_CONNECT_STATE;
 
 #define MAX_SIZE_CHANNEL_MESSAGE			HV_MESSAGE_PAYLOAD_BYTE_COUNT
 
 typedef struct _VMBUS_CONNECTION {
 
-	VMBUS_CONNECT_STATE					ConnectState;
+	VMBUS_CONNECT_STATE ConnectState;
 
-	UINT32								NextGpadlHandle;
+	UINT32 NextGpadlHandle;
 
 	// Represents channel interrupts. Each bit position
 	// represents a channel.
@@ -116,94 +111,70 @@ typedef struct _VMBUS_CONNECTION {
 	// calls Hv to generate a port event. The other end
 	// receives the port event and parse the recvInterruptPage
 	// to see which bit is set
-	VOID*								InterruptPage;
-	VOID*								SendInterruptPage;
-	VOID*								RecvInterruptPage;
+	void* InterruptPage;
+	void* SendInterruptPage;
+	void* RecvInterruptPage;
 
 	// 2 pages - 1st page for parent->child notification and 2nd is child->parent notification
-	VOID*								MonitorPages;
-	LIST_ENTRY							ChannelMsgList;
-	HANDLE								ChannelMsgLock;
+	void* MonitorPages;
+	LIST_ENTRY ChannelMsgList;
+	struct mtx *ChannelMsgLock;
 
 	// List of channels
-	LIST_ENTRY							ChannelList;
-	HANDLE								ChannelLock;
+	LIST_ENTRY ChannelList;
+	struct mtx *ChannelLock;
 
-	HANDLE								WorkQueue;
+	HANDLE WorkQueue;
 } VMBUS_CONNECTION;
-
 
 typedef struct _VMBUS_MSGINFO {
 	// Bookkeeping stuff
-	LIST_ENTRY			MsgListEntry;
+	LIST_ENTRY MsgListEntry;
 
 	// Synchronize the request/response if needed
-	HANDLE				WaitEvent;
+	HANDLE WaitEvent;
 
 	// The message itself
-	unsigned char		Msg[0];
+	unsigned char Msg[0];
 } VMBUS_MSGINFO;
-
-
 //
 // Externs
 //
 extern VMBUS_CONNECTION gVmbusConnection;
-
 //
 // General vmbus interface
 //
-INTERNAL DEVICE_OBJECT*
-VmbusChildDeviceCreate(
-	GUID deviceType,
-	GUID deviceInstance,
-	void *context);
+extern DEVICE_OBJECT*
+VmbusChildDeviceCreate(GUID deviceType, GUID deviceInstance, void *context);
 
-INTERNAL int
-VmbusChildDeviceAdd(
-	DEVICE_OBJECT* Device);
+extern int
+VmbusChildDeviceAdd(DEVICE_OBJECT* Device);
 
-INTERNAL void
-VmbusChildDeviceRemove(
-   DEVICE_OBJECT* Device);
-
-//INTERNAL void
+extern void
+VmbusChildDeviceRemove(DEVICE_OBJECT* Device);
+//extern void
 //VmbusChildDeviceDestroy(
 //	DEVICE_OBJECT*);
-
-INTERNAL VMBUS_CHANNEL*
-GetChannelFromRelId(
-	UINT32 relId
-	);
+extern VMBUS_CHANNEL*
+GetChannelFromRelId(UINT32 relId);
 
 //
 // Connection interface
 //
-INTERNAL int
-VmbusConnect(
-	VOID
-	);
+extern int
+VmbusConnect(void);
 
-INTERNAL int
-VmbusDisconnect(
-	VOID
-	);
+extern int
+VmbusDisconnect(void);
 
-INTERNAL int
-VmbusPostMessage(
-	PVOID			buffer,
-	SIZE_T			bufSize
-	);
+extern int
+VmbusPostMessage(void * buffer, SIZE_T bufSize);
 
-INTERNAL int
-VmbusSetEvent(
-	UINT32 childRelId
-	);
+extern int
+VmbusSetEvent(UINT32 childRelId);
 
-INTERNAL VOID
-VmbusOnEvents(
-  VOID
-	);
+extern void
+VmbusOnEvents(void);
 
 #endif  /* __HV_VMBUS_PRIVATE_H__ */
 

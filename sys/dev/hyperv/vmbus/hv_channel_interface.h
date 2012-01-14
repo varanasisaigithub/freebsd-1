@@ -55,21 +55,17 @@
  *   Haiyang Zhang <haiyangz@microsoft.com>
  *   Hank Janssen  <hjanssen@microsoft.com>
  */
+
 #ifndef __HV_CHANNEL_INTERFACE_H__
 #define __HV_CHANNEL_INTERFACE_H__
 
 #include "hv_vmbus_var.h"
 
-INTERNAL void
-GetChannelInterface(
-	VMBUS_CHANNEL_INTERFACE *ChannelInterface
-	);
+extern void
+GetChannelInterface(VMBUS_CHANNEL_INTERFACE *ChannelInterface);
 
-INTERNAL void
-GetChannelInfo(
-	PDEVICE_OBJECT		Device,
-	DEVICE_INFO			*DeviceInfo
-	);
+extern void
+GetChannelInfo(PDEVICE_OBJECT Device, DEVICE_INFO *DeviceInfo);
 
 #endif  /* __HV_CHANNEL_INTERFACE_H__ */
 

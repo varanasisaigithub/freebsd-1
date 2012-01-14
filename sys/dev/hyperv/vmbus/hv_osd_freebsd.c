@@ -24,7 +24,6 @@
  *
  *****************************************************************************/
 
-
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/sysctl.h>
@@ -76,9 +75,9 @@ typedef struct _TIMER {
 } TIMER;
 
 typedef struct _WAITEVENT {
-	int					condition;
-	struct 				mtx mtx;
-	wait_queue_head_t	event;
+	int condition;
+	struct mtx mtx;
+	wait_queue_head_t event;
 } WAITEVENT;
 
 typedef struct _WORKQUEUE {
@@ -97,34 +96,28 @@ static void WorkItemCallback(void *work, int pending);
 
 /* Use critical sections for spinlocks */
 // #define USE_CRITICAL_SECTION 1
-
 //
 // Global
 //
-
 /* External Interfaces */
 
-void BitSet(unsigned int *addr, int bit)
-{
+void BitSet(unsigned int *addr, int bit) {
 	asm("bts %1,%0" : "+m" (*addr) : "Ir" (bit));
 }
 
-int BitTest(unsigned int *addr, int bit)
-{
-        unsigned char v;
+int BitTest(unsigned int *addr, int bit) {
+	unsigned char v;
 
-        asm("btl %2,%1; setc %0" : "=qm" (v) : "m" (*addr), "Ir" (bit));
+	asm("btl %2,%1; setc %0" : "=qm" (v) : "m" (*addr), "Ir" (bit));
 
-        return ((int)v);
+	return ((int) v);
 }
 
-void BitClear(unsigned int *addr, int bit)
-{
+void BitClear(unsigned int *addr, int bit) {
 	asm("btr %1,%0" : "+m" (*addr) : "Ir" (bit));
 }
 
-int BitTestAndClear(unsigned int *addr, int bit)
-{
+int BitTestAndClear(unsigned int *addr, int bit) {
 	int oldbit;
 
 	asm volatile("lock; btr %2,%1; sbb %0,%0"
@@ -133,8 +126,7 @@ int BitTestAndClear(unsigned int *addr, int bit)
 	return (oldbit);
 }
 
-int BitTestAndSet(unsigned int *addr, int bit)
-{
+int BitTestAndSet(unsigned int *addr, int bit) {
 	int oldbit;
 
 	asm volatile("lock; bts %2,%1; sbb %0,%0"
@@ -143,27 +135,23 @@ int BitTestAndSet(unsigned int *addr, int bit)
 	return (oldbit);
 }
 
-static inline int atomic_add_return(int i, int *addr)
-{
+static inline int atomic_add_return(int i, int *addr) {
 	int __i = i;
 	asm volatile("lock; xadd %0, %1"
-			: "+r" (i), "+m" (*addr)
-			: : "memory");
+		: "+r" (i), "+m" (*addr)
+		: : "memory");
 	return (i + __i);
 }
 
-int InterlockedIncrement(int *val)
-{
+int InterlockedIncrement(int *val) {
 	return (atomic_add_return(1, val));
 }
 
-int InterlockedDecrement(int *val)
-{
+int InterlockedDecrement(int *val) {
 	return (atomic_add_return(-1, val));
 }
 
-int InterlockedCompareExchange(int *val, int new, int curr)
-{
+int InterlockedCompareExchange(int *val, int new, int curr) {
 	int prev;
 
 	asm volatile("lock; cmpxchg %1,%2"
@@ -174,13 +162,11 @@ int InterlockedCompareExchange(int *val, int new, int curr)
 	return (prev);
 }
 
-void Sleep(unsigned long usecs)
-{
+void Sleep(unsigned long usecs) {
 	DELAY(usecs);
 }
 
-void *VirtualAllocExec(unsigned int size)
-{
+void *VirtualAllocExec(unsigned int size) {
 	void *p;
 
 	p = malloc(size, M_DEVBUF, M_ZERO);
@@ -188,17 +174,15 @@ void *VirtualAllocExec(unsigned int size)
 	return (p);
 }
 
-void VirtualFree(void *VirtAddr)
-{
+void VirtualFree(void *VirtAddr) {
 	return (free(VirtAddr, M_DEVBUF));
 }
 
-void *PageAlloc(unsigned int count)
-{
+void *PageAlloc(unsigned int count) {
 	void *p;
 
-	p = contigmalloc(count * PAGE_SIZE, M_DEVBUF, M_WAITOK, 
-	    BUS_SPACE_MAXADDR_24BIT, BUS_SPACE_MAXADDR, PAGE_SIZE, 0);
+	p = contigmalloc(count * PAGE_SIZE, M_DEVBUF, M_WAITOK,
+		BUS_SPACE_MAXADDR_24BIT, BUS_SPACE_MAXADDR, PAGE_SIZE, 0);
 	if (p) {
 		memset(p, 0, count * PAGE_SIZE);
 	}
@@ -206,76 +190,63 @@ void *PageAlloc(unsigned int count)
 	return (p);
 }
 
-void PageFree(void *page, unsigned int count)
-{
+void PageFree(void *page, unsigned int count) {
 	contigfree(page, PAGE_SIZE * count, M_DEVBUF);
 }
 
 /*
  *
  */
-void *PageMapVirtualAddress(unsigned long Pfn)
-{
+void *PageMapVirtualAddress(unsigned long Pfn) {
 	unsigned long va = Pfn << PAGE_SHIFT;
 //	invlpg(va);
-	return ((void *)(va));
+	return ((void *) (va));
 }
 
-void PageUnmapVirtualAddress(void *VirtAddr)
-{
+void PageUnmapVirtualAddress(void *VirtAddr) {
 }
 
-void *MemAlloc(unsigned int size)
-{
+void *MemAlloc(unsigned int size) {
 	return (malloc(size, M_DEVBUF, M_NOWAIT));
 }
 
-void *MemAllocZeroed(unsigned int size)
-{
+void *MemAllocZeroed(unsigned int size) {
 	return (malloc(size, M_DEVBUF, M_NOWAIT | M_ZERO));
 }
 
-void *MemAllocAtomic(unsigned int size)
-{
+void *MemAllocAtomic(unsigned int size) {
 	return (malloc(size, M_DEVBUF, M_NOWAIT));
 }
 
-void MemFree(void *buf)
-{
+void MemFree(void *buf) {
 	free(buf, M_DEVBUF);
 }
 
-void *MemMapIO(unsigned long phys, unsigned long size)
-{
+void *MemMapIO(unsigned long phys, unsigned long size) {
 	/* no users of this function */
 	printf("MemMapIO - Error\n");
 
 	return (NULL);
 }
 
-void MemUnmapIO(void *virt)
-{
+void MemUnmapIO(void *virt) {
 	/* Fixme:  Implement it */
 	printf("MemUnmapIO - Error\n");
 }
 
-void MemoryFence()
-{
+void MemoryFence() {
 	__asm volatile("mfence" ::: "memory");
 }
 
-static void TimerCallback(void *data)
-{
-	TIMER *t = (TIMER*)data;
+static void TimerCallback(void *data) {
+	TIMER *t = (TIMER*) data;
 
 	t->callback(t->context);
 }
 
-HANDLE TimerCreate(PFN_TIMER_CALLBACK pfnTimerCB, void *context)
-{
+HANDLE TimerCreate(PFN_TIMER_CALLBACK pfnTimerCB, void *context) {
 	TIMER *t = malloc(sizeof(TIMER), M_DEVBUF, M_NOWAIT);
-	if (!t)
-	{
+	if (!t) {
 		printf("Failed to create timer\n");
 		return (NULL);
 	}
@@ -287,25 +258,22 @@ HANDLE TimerCreate(PFN_TIMER_CALLBACK pfnTimerCB, void *context)
 	return (t);
 }
 
-void TimerStart(HANDLE hTimer, UINT32 expirationInUs)
-{
-	TIMER *t  = (TIMER *)hTimer;
+void TimerStart(HANDLE hTimer, UINT32 expirationInUs) {
+	TIMER *t = (TIMER *) hTimer;
 
-	t->handle = timeout(TimerCallback, t, expirationInUs/1000);
+	t->handle = timeout(TimerCallback, t, expirationInUs / 1000);
 }
 
-int TimerStop(HANDLE hTimer)
-{
-	TIMER *t  = (TIMER *)hTimer;
+int TimerStop(HANDLE hTimer) {
+	TIMER *t = (TIMER *) hTimer;
 
 	untimeout(TimerCallback, t, t->handle);
 
 	return (0);
 }
 
-void TimerClose(HANDLE hTimer)
-{
-	TIMER *t  = (TIMER *)hTimer;
+void TimerClose(HANDLE hTimer) {
+	TIMER *t = (TIMER *) hTimer;
 
 	untimeout(TimerCallback, t, t->handle);
 
@@ -313,8 +281,7 @@ void TimerClose(HANDLE hTimer)
 }
 
 /* Not used */
-SIZE_T GetTickCount(void)
-{
+SIZE_T GetTickCount(void) {
 	return (ticks);
 }
 
@@ -328,8 +295,7 @@ static signed long long GetTimestamp(void)
 }
 #endif
 
-HANDLE WaitEventCreate(void)
-{
+HANDLE WaitEventCreate(void) {
 	WAITEVENT *wait = malloc(sizeof(WAITEVENT), M_DEVBUF, M_ZERO);
 	if (!wait) {
 		printf("Failed to create WaitEvent\n");
@@ -342,18 +308,16 @@ HANDLE WaitEventCreate(void)
 	return (wait);
 }
 
-void WaitEventClose(HANDLE hWait)
-{
-	WAITEVENT *waitEvent = (WAITEVENT *)hWait;
+void WaitEventClose(HANDLE hWait) {
+	WAITEVENT *waitEvent = (WAITEVENT *) hWait;
 
 	/* Do we need to care about the waiting processes - if any */
 	mtx_destroy(&waitEvent->mtx);
 	free(waitEvent, M_DEVBUF);
 }
 
-void WaitEventSet(HANDLE hWait)
-{
-	WAITEVENT *waitEvent = (WAITEVENT *)hWait;
+void WaitEventSet(HANDLE hWait) {
+	WAITEVENT *waitEvent = (WAITEVENT *) hWait;
 #if 1
 	mtx_lock(&waitEvent->mtx);
 	waitEvent->condition = 1;
@@ -364,10 +328,9 @@ void WaitEventSet(HANDLE hWait)
 #endif
 }
 
-int WaitEventWait(HANDLE hWait)
-{
+int WaitEventWait(HANDLE hWait) {
 	int ret = 0;
-	WAITEVENT *waitEvent = (WAITEVENT *)hWait;
+	WAITEVENT *waitEvent = (WAITEVENT *) hWait;
 
 #if 1
 	mtx_lock(&waitEvent->mtx);
@@ -375,29 +338,27 @@ int WaitEventWait(HANDLE hWait)
 		waitEvent->condition = 0;
 	} else {
 		ret = msleep(&waitEvent->event, &waitEvent->mtx,
-		    PWAIT | PCATCH, "hv sleep", 0);
+			PWAIT | PCATCH, "hv sleep", 0);
 //		if (ret == 0)
-			waitEvent->condition = 0;
-	}
-	mtx_unlock(&waitEvent->mtx);
+		waitEvent->condition = 0;
+	}mtx_unlock(&waitEvent->mtx);
 #else
 	ret = tsleep(&waitEvent->event, PWAIT | PCATCH, "hv sleep", 0);
 #endif
 	return (ret);
 }
 
-int WaitEventWaitEx(HANDLE hWait, UINT32 TimeoutInMs)
-{
+int WaitEventWaitEx(HANDLE hWait, UINT32 TimeoutInMs) {
 	int ret = 1;
-	WAITEVENT *waitEvent = (WAITEVENT *)hWait;
+	WAITEVENT *waitEvent = (WAITEVENT *) hWait;
 
 #if 1
 	mtx_lock(&waitEvent->mtx);
 	if (waitEvent->condition) {
 		waitEvent->condition = 0;
 	} else {
-		ret = msleep(&waitEvent->event, &waitEvent->mtx, 
-		    PWAIT | PCATCH, "hv sleep tw", TimeoutInMs);
+		ret = msleep(&waitEvent->event, &waitEvent->mtx,
+			PWAIT | PCATCH, "hv sleep tw", TimeoutInMs);
 		if (ret == 0) {
 			ret = 1;
 		} else if (ret == EWOULDBLOCK) {
@@ -406,19 +367,17 @@ int WaitEventWaitEx(HANDLE hWait, UINT32 TimeoutInMs)
 			ret = -ret;
 		}
 //		if (ret == 0)
-			waitEvent->condition = 0;
+		waitEvent->condition = 0;
 	}
 	mtx_unlock(&waitEvent->mtx);
 #else
 	ret = tsleep(&waitEvent->event, PWAIT | PCATCH, "hv sleep tw",
-	    TimeoutInMs);
+		TimeoutInMs);
 #endif
 	return (ret);
 }
 
-
-HANDLE SpinlockCreate(VOID)
-{
+HANDLE SpinlockCreate(VOID) {
 #ifdef USE_CRITICAL_SECTION
 	return ((HANDLE)1);
 #else
@@ -433,58 +392,52 @@ HANDLE SpinlockCreate(VOID)
 #endif
 }
 
-VOID SpinlockAcquire(HANDLE hSpin)
-{
+VOID SpinlockAcquire(HANDLE hSpin) {
 #ifdef USE_CRITICAL_SECTION
 	critical_enter();
 #else
-	SPINLOCK *spin = (SPINLOCK *)hSpin;
-	
+	SPINLOCK *spin = (SPINLOCK *) hSpin;
+
 	mtx_lock(spin);
 #endif
 }
 
-VOID SpinlockRelease(HANDLE hSpin)
-{
+VOID SpinlockRelease(HANDLE hSpin) {
 #ifdef USE_CRITICAL_SECTION
 	critical_exit();
 #else
-	SPINLOCK *spin = (SPINLOCK *)hSpin;
-	
+	SPINLOCK *spin = (SPINLOCK *) hSpin;
+
 	mtx_unlock(spin);
 #endif
 }
 
-VOID SpinlockClose(HANDLE hSpin)
-{
+VOID SpinlockClose(HANDLE hSpin) {
 #ifdef USE_CRITICAL_SECTION
 #else
-	SPINLOCK *spin = (SPINLOCK *)hSpin;
+	SPINLOCK *spin = (SPINLOCK *) hSpin;
 
 	mtx_destroy(spin);
 	free(spin, M_DEVBUF);
 #endif
 }
 
-void *Physical2LogicalAddr(ULONG_PTR PhysAddr)
-{
+void *Physical2LogicalAddr(ULONG_PTR PhysAddr) {
 	/* Should not be executed  - used in vmbus/hv.c */
 	printf("NOTYET - Physical2LogicalAddr\n");
 
 	return (NULL);
 }
 
-ULONG_PTR Logical2PhysicalAddr(PVOID LogicalAddr)
-{
+ULONG_PTR Logical2PhysicalAddr(PVOID LogicalAddr) {
 	ULONG_PTR ret;
 
-	ret = (vtophys(LogicalAddr) | ((vm_offset_t)LogicalAddr & PAGE_MASK));
+	ret = (vtophys(LogicalAddr) | ((vm_offset_t) LogicalAddr & PAGE_MASK));
 
 	return (ret);
 }
 
-ULONG_PTR Virtual2Physical(PVOID VirtAddr)
-{
+ULONG_PTR Virtual2Physical(PVOID VirtAddr) {
 	ULONG_PTR ret;
 
 	ret = vtophys(VirtAddr);
@@ -492,9 +445,8 @@ ULONG_PTR Virtual2Physical(PVOID VirtAddr)
 	return (ret);
 }
 
-static void WorkItemCallback(void *work, int pending)
-{
-	WORKITEM *w = (WORKITEM*)work;
+static void WorkItemCallback(void *work, int pending) {
+	WORKITEM *w = (WORKITEM*) work;
 
 	critical_enter();
 	w->callback(w->context);
@@ -503,8 +455,7 @@ static void WorkItemCallback(void *work, int pending)
 	free(w, M_DEVBUF);
 }
 
-HANDLE WorkQueueCreate(char *name)
-{
+HANDLE WorkQueueCreate(char *name) {
 	static unsigned int qid = 0;
 	char qname[64];
 	int pri;
@@ -529,12 +480,12 @@ HANDLE WorkQueueCreate(char *name)
 	 * We need to research the implications of these changes.
 	 * Fixme:  Not sure when the changes were introduced.
 	 */
-	wq->queue = taskqueue_create(qname, M_NOWAIT,
-	    taskqueue_thread_enqueue, &wq->queue
+	wq->queue = taskqueue_create(qname, M_NOWAIT, taskqueue_thread_enqueue,
+		&wq->queue
 #if __FreeBSD_version < 800000
-	    , &wq->proc
+		, &wq->proc
 #endif
-	    );
+		);
 
 	if (wq->queue == NULL) {
 		free(wq, M_DEVBUF);
@@ -552,9 +503,8 @@ HANDLE WorkQueueCreate(char *name)
 	return (wq);
 }
 
-void WorkQueueClose(HANDLE hWorkQueue)
-{
-	WORKQUEUE *wq = (WORKQUEUE *)hWorkQueue;
+void WorkQueueClose(HANDLE hWorkQueue) {
+	WORKQUEUE *wq = (WORKQUEUE *) hWorkQueue;
 
 //	taskqueue_drain(wq->tq, );
 	taskqueue_free(wq->queue);
@@ -562,9 +512,8 @@ void WorkQueueClose(HANDLE hWorkQueue)
 }
 
 int WorkQueueQueueWorkItem(HANDLE hWorkQueue, PFN_WORKITEM_CALLBACK workItem,
-			   void *context)
-{
-	WORKQUEUE *wq = (WORKQUEUE *)hWorkQueue;
+	void *context) {
+	WORKQUEUE *wq = (WORKQUEUE *) hWorkQueue;
 
 	WORKITEM *w = malloc(sizeof(WORKITEM), M_DEVBUF, M_NOWAIT);
 	if (!w) {
@@ -581,19 +530,15 @@ int WorkQueueQueueWorkItem(HANDLE hWorkQueue, PFN_WORKITEM_CALLBACK workItem,
 }
 
 /* Not used */
-void QueueWorkItem(PFN_WORKITEM_CALLBACK workItem, void *context)
-{
+void QueueWorkItem(PFN_WORKITEM_CALLBACK workItem, void *context) {
 	(workItem)(context);
 }
 
-int getCpuId(void)
-{
-        return (PCPU_GET(cpuid));
+int getCpuId(void) {
+	return (PCPU_GET(cpuid));
 }
 
-int doOnAllCpus(void (*func) (void *info), void *info,
-                              int retry, int wait)
-{
+int doOnAllCpus(void(*func)(void *info), void *info, int retry, int wait) {
 	smp_rendezvous(NULL, func, NULL, info);
 
 	/* Fixme:  added this to silence a warning */
@@ -601,15 +546,14 @@ int doOnAllCpus(void (*func) (void *info), void *info,
 }
 
 void*
-PageAllocAtomic(unsigned int count)
-{
+PageAllocAtomic(unsigned int count) {
 	void *p;
 
-	p = contigmalloc(count * PAGE_SIZE, M_DEVBUF, M_WAITOK, 
-	    BUS_SPACE_MAXADDR_24BIT, BUS_SPACE_MAXADDR, PAGE_SIZE, 0);
+	p = contigmalloc(count * PAGE_SIZE, M_DEVBUF, M_WAITOK,
+		BUS_SPACE_MAXADDR_24BIT, BUS_SPACE_MAXADDR, PAGE_SIZE, 0);
 	if (p) {
 		memset(p, 0, count * PAGE_SIZE);
 	}
-        return (p);
+	return (p);
 }
 
