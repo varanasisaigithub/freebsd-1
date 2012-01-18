@@ -274,8 +274,7 @@ static void TimerCallback(void *data)
 HANDLE TimerCreate(PFN_TIMER_CALLBACK pfnTimerCB, void *context)
 {
 	TIMER *t = malloc(sizeof(TIMER), M_DEVBUF, M_NOWAIT);
-	if (!t)
-	{
+	if (!t) {
 		printf("Failed to create timer\n");
 		return (NULL);
 	}

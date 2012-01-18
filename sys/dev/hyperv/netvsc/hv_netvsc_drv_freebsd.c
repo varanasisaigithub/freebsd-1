@@ -162,8 +162,8 @@ int
 netvsc_drv_init(PFN_DRIVERINITIALIZE pfn_drv_init)
 {
 	int ret = 0;
-	NETVSC_DRIVER_OBJECT *net_drv_obj=&g_netvsc_drv.drv_obj;
-	struct driver_context *drv_ctx=&g_netvsc_drv.drv_ctx;
+	NETVSC_DRIVER_OBJECT *net_drv_obj = &g_netvsc_drv.drv_obj;
+	struct driver_context *drv_ctx = &g_netvsc_drv.drv_ctx;
 
 	DPRINT_ENTER(NETVSC_DRV);
 
@@ -187,7 +187,7 @@ netvsc_drv_init(PFN_DRIVERINITIALIZE pfn_drv_init)
 }
 
 /*
- *
+ * NetVsc global initialization entry point
  */
 static void
 netvsc_init(void)
@@ -195,7 +195,7 @@ netvsc_init(void)
 	DPRINT_ENTER(NETVSC_DRV);
 	printf("Netvsc initializing....");
 
-	netvsc_drv_init(NetVscInitialize);
+	netvsc_drv_init(hv_net_vsc_initialize);
 
 	DPRINT_EXIT(NETVSC_DRV);
 }
@@ -504,7 +504,7 @@ retry_send:
 			 * Release the resources since we will not get any
 			 * send completion
 			 */
-			netvsc_xmit_completion((void*)packet);
+			netvsc_xmit_completion(packet);
 		}
 	}
 
@@ -623,7 +623,7 @@ netvsc_recv_callback(DEVICE_OBJECT *device_obj, NETVSC_PACKET *packet)
 	    ETHER_CRC_LEN;
 	m_new->m_pkthdr.rcvif = ifp;
 
-	NetVscOnReceiveCompletion(
+	hv_nv_on_receive_completion(
 	    (void *)packet->Completion.Recv.ReceiveCompletionContext);
 	ifp->if_ipackets++;
 	/* Fixme:  Is the lock held? */

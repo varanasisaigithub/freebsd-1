@@ -1,4 +1,4 @@
-/*****************************************************************************
+/*-
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -18,15 +18,15 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * Ported from lis21 code drop
  *
  * HyperV vmbus network vsc file
  *
- *****************************************************************************/
+ */
 
-/*
+/*-
  * Copyright (c) 2009, Microsoft Corporation - All rights reserved.
  *
  *     Redistribution and use in source and binary forms, with or
@@ -56,22 +56,13 @@
  *   Hank Janssen  <hjanssen@microsoft.com>
  */
 
-
 #ifndef __HV_RNDIS_FILTER_H__
 #define __HV_RNDIS_FILTER_H__
 
 
 #define __struct_bcount(x)
 
-#ifdef REMOVED
-/* Fixme:  Removed */
-#include "osd.h"
-#include "NetVsc.h"
-
-#include "rndis.h"
-#endif
-
-#define RNDIS_HEADER_SIZE	(sizeof(RNDIS_MESSAGE) - sizeof(RNDIS_MESSAGE_CONTAINER))
+#define RNDIS_HEADER_SIZE (sizeof(RNDIS_MESSAGE) - sizeof(RNDIS_MESSAGE_CONTAINER))
 
 #define NDIS_PACKET_TYPE_DIRECTED	0x00000001
 #define NDIS_PACKET_TYPE_MULTICAST	0x00000002
@@ -87,19 +78,10 @@
 #define NDIS_PACKET_TYPE_MAC_FRAME	0x00000800
 
 
-
-//
-// Interface
-//
-int
-RndisFilterInit(
-	NETVSC_DRIVER_OBJECT *Driver
-	);
-
 /*
  * Externs
  */
-extern int RndisSetMode(DEVICE_OBJECT *Device, int mode);
+extern int hv_rndis_filter_init(NETVSC_DRIVER_OBJECT *Driver);
 
 
 #endif  /* __HV_RNDIS_FILTER_H__ */

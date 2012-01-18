@@ -111,7 +111,7 @@ typedef struct hn_softc {
  */
 extern int promisc_mode;
 
-extern void NetVscOnReceiveCompletion(PVOID Context);
+extern void hv_nv_on_receive_completion(PVOID Context);
 
 
 #endif  /* __HV_NET_VSC_API_H__ */

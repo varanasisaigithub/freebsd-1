@@ -1,4 +1,4 @@
-/*****************************************************************************
+/*-
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -18,11 +18,11 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * HyperV vmbus header file
  *
- *****************************************************************************/
+ */
 
 #ifndef __HV_VMBUS_VAR_H__
 #define __HV_VMBUS_VAR_H__
@@ -108,14 +108,14 @@ typedef struct _DRIVER_OBJECT{//BlkVsc.c : 56
 #define PDEVICE_OBJECT DEVICE_OBJECT*
 #define PDRIVER_OBJECT DRIVER_OBJECT*
 
-extern  int NetVscInitialize(PDRIVER_OBJECT);
+extern int hv_net_vsc_initialize(DRIVER_OBJECT *drv);
 
-extern  VOID		shutdown_onchannelcallback(PVOID); // drivers/closed/vmbus/ChannelMgmt.c
+extern VOID shutdown_onchannelcallback(PVOID);
 
-typedef struct _XFERPAGE{
+typedef struct _XFERPAGE {
 		DLIST_ENTRY         ListEntry;
 		UINT32              Count;
-}XFERPAGE_PACKET;
+} XFERPAGE_PACKET;
 
 typedef int (*PFN_DRIVERINITIALIZE)(DRIVER_OBJECT*);
 typedef int (*PFN_DRIVEREXIT)(DRIVER_OBJECT* );

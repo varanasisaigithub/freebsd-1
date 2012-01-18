@@ -1,4 +1,4 @@
-/*****************************************************************************
+/*-
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -18,11 +18,11 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * HyperV operating system dependent header file
  *
- *****************************************************************************/
+ */
 
 #ifndef __HV_OSD_H__
 #define __HV_OSD_H__
@@ -138,6 +138,8 @@ typedef void			VOID;
 //typedef unsigned char		GUID[16];
 typedef void*			PVOID;
 typedef unsigned char		BOOL;
+// Fixme:  customarily unsigned int
+typedef unsigned char		bool;
 typedef unsigned char		BOOLEAN;
 typedef void*			HANDLE;
 typedef UINT32			DWORD;

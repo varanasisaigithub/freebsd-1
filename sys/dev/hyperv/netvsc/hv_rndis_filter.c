@@ -78,35 +78,35 @@
  * Data types
  */
 
-typedef struct _RNDIS_FILTER_DRIVER_OBJECT {
+typedef struct rndis_filter_driver_object_ {
 	/* The original driver */
 	NETVSC_DRIVER_OBJECT		InnerDriver;
-} RNDIS_FILTER_DRIVER_OBJECT;
+} rndis_filter_driver_object;
 
 typedef enum {
 	RNDIS_DEV_UNINITIALIZED = 0,
 	RNDIS_DEV_INITIALIZING,
 	RNDIS_DEV_INITIALIZED,
 	RNDIS_DEV_DATAINITIALIZED,
-} RNDIS_DEVICE_STATE;
+} rndis_device_state;
 
-typedef struct _RNDIS_DEVICE {
+typedef struct rndis_device_ {
 	NETVSC_DEVICE			*NetDevice;
 
-	RNDIS_DEVICE_STATE		State;
-	UINT32				LinkStatus;
-	UINT32				NewRequestId;
+	rndis_device_state		State;
+	uint32_t			LinkStatus;
+	uint32_t			NewRequestId;
 
-	HANDLE				RequestLock;
+	void				*RequestLock;
 	LIST_ENTRY			RequestList;
 
-	UCHAR				HwMacAddr[HW_MACADDR_LEN];
-} RNDIS_DEVICE;
+	uint8_t				HwMacAddr[HW_MACADDR_LEN];
+} rndis_device;
 
 
-typedef struct _RNDIS_REQUEST {
+typedef struct rndis_request_ {
 	LIST_ENTRY			ListEntry;
-	HANDLE				WaitEvent;	
+	void				*WaitEvent;	
 
 	/*
 	 * Fixme:  We assumed a fixed size response here.  If we do ever
@@ -120,68 +120,72 @@ typedef struct _RNDIS_REQUEST {
 	PAGE_BUFFER			Buffer;
 	/* Fixme:  We assumed a fixed size request here. */
 	RNDIS_MESSAGE			RequestMessage;
-} RNDIS_REQUEST;
+} rndis_request;
 
 
-typedef struct _RNDIS_FILTER_PACKET {
+/* Fixme:  not used */
+typedef struct rndis_filter_packet_ {
 	void				*CompletionContext;
 	PFN_ON_SENDRECVCOMPLETION	OnCompletion;
 
 	RNDIS_MESSAGE			Message;
-} RNDIS_FILTER_PACKET;
+} rndis_filter_packet;
 
 /*
  * Forward declarations
  */
-static int  RndisFilterSendRequest(RNDIS_DEVICE *Device,
-				   RNDIS_REQUEST *Request);
-static void RndisFilterReceiveResponse(RNDIS_DEVICE *Device,
+static int  hv_rf_send_request(rndis_device *Device,
+				   rndis_request *Request);
+static void hv_rf_receive_response(rndis_device *Device,
 				       RNDIS_MESSAGE *Response);
-static void RndisFilterReceiveIndicateStatus(RNDIS_DEVICE *Device,
+static void hv_rf_receive_indicate_status(rndis_device *Device,
 					     RNDIS_MESSAGE *Response);
-static void RndisFilterReceiveData(RNDIS_DEVICE *Device, RNDIS_MESSAGE *Message,
+// Fixme
+extern void hv_rf_receive_data(rndis_device *Device, RNDIS_MESSAGE *Message,
+//static void hv_rf_receive_data(rndis_device *Device, RNDIS_MESSAGE *Message,
 				   NETVSC_PACKET *Packet);
-static int  RndisFilterOnReceive(DEVICE_OBJECT *Device, NETVSC_PACKET *Packet);
-static int  RndisFilterQueryDevice(RNDIS_DEVICE *Device, UINT32 Oid,
-				   VOID *Result, UINT32 *ResultSize);
-static inline int RndisFilterQueryDeviceMac(RNDIS_DEVICE	*Device);
-static inline int RndisFilterQueryDeviceLinkStatus(RNDIS_DEVICE *Device);
-static int  RndisFilterSetPacketFilter(RNDIS_DEVICE *Device, UINT32 NewFilter);
-static int  RndisFilterInitDevice(RNDIS_DEVICE *Device);
-static int  RndisFilterOpenDevice(RNDIS_DEVICE *Device);
-static int  RndisFilterCloseDevice(RNDIS_DEVICE *Device);
-static int  RndisFilterOnDeviceAdd(DEVICE_OBJECT *Device, void *AdditionalInfo);
-static int  RndisFilterOnDeviceRemove(DEVICE_OBJECT *Device);
-static void RndisFilterOnCleanup(DRIVER_OBJECT *Driver);
-static int  RndisFilterOnOpen(DEVICE_OBJECT *Device);
-static int  RndisFilterOnClose(DEVICE_OBJECT *Device);
-static int  RndisFilterOnSend(DEVICE_OBJECT *Device, NETVSC_PACKET *Packet);
-static void RndisFilterOnSendCompletion(void *Context);
-static void RndisFilterOnSendRequestCompletion(void *Context);
+static int  hv_rf_on_receive(DEVICE_OBJECT *Device, NETVSC_PACKET *Packet);
+static int  hv_rf_query_device(rndis_device *Device, uint32_t Oid,
+				   VOID *Result, uint32_t *ResultSize);
+static inline int hv_rf_query_device_mac(rndis_device *Device);
+static inline int hv_rf_query_device_link_status(rndis_device *Device);
+static int  hv_rf_set_packet_filter(rndis_device *Device, uint32_t NewFilter);
+static int  hv_rf_init_device(rndis_device *Device);
+static int  hv_rf_open_device(rndis_device *Device);
+static int  hv_rf_close_device(rndis_device *Device);
+static int  hv_rf_on_device_add(DEVICE_OBJECT *Device, void *AdditionalInfo);
+static int  hv_rf_on_device_remove(DEVICE_OBJECT *Device);
+static void hv_rf_on_cleanup(DRIVER_OBJECT *Driver);
+static int  hv_rf_on_open(DEVICE_OBJECT *Device);
+static int  hv_rf_on_close(DEVICE_OBJECT *Device);
+static int  hv_rf_on_send(DEVICE_OBJECT *Device, NETVSC_PACKET *Packet);
+static void hv_rf_on_send_completion(void *Context);
+static void hv_rf_on_send_request_completion(void *Context);
 
 /*
  * Global variables
  */
 
 /* The one and only */
-RNDIS_FILTER_DRIVER_OBJECT gRndisFilter;
+rndis_filter_driver_object gRndisFilter;
 
 /*
  * Allow module_param to work and override to switch to promiscuous mode.
  */
-static inline RNDIS_DEVICE *
-GetRndisDevice(void)
+static inline rndis_device *
+hv_get_rndis_device(void)
 {
-	RNDIS_DEVICE *device;
+	rndis_device *device;
 
-	device = MemAllocZeroed(sizeof(RNDIS_DEVICE));
+	device = malloc(sizeof(rndis_device), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (!device) {
 		return (NULL);
 	}
 
 	device->RequestLock = SpinlockCreate();
 	if (!device->RequestLock) {
-		MemFree(device);
+		free(device, M_DEVBUF);
+
 		return (NULL);
 	}
 
@@ -196,30 +200,32 @@ GetRndisDevice(void)
  *
  */
 static inline void
-PutRndisDevice(RNDIS_DEVICE *Device)
+hv_put_rndis_device(rndis_device *Device)
 {
 	SpinlockClose(Device->RequestLock);
-	MemFree(Device);
+	free(Device, M_DEVBUF);
 }
 
 /*
  *
  */
-static inline RNDIS_REQUEST *
-GetRndisRequest(RNDIS_DEVICE *Device, UINT32 MessageType, UINT32 MessageLength)
+static inline rndis_request *
+hv_rndis_request(rndis_device *Device, uint32_t MessageType,
+		 uint32_t MessageLength)
 {
-	RNDIS_REQUEST *request;
+	rndis_request *request;
 	RNDIS_MESSAGE *rndisMessage;
 	RNDIS_SET_REQUEST *set;
 
-	request = MemAllocZeroed(sizeof(RNDIS_REQUEST));
+	request = malloc(sizeof(rndis_request), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (!request) {
 		return (NULL);
 	}
 
 	request->WaitEvent = WaitEventCreate();
 	if (!request->WaitEvent) {
-		MemFree(request);
+		free(request, M_DEVBUF);
+
 		return (NULL);
 	}
 	
@@ -233,7 +239,7 @@ GetRndisRequest(RNDIS_DEVICE *Device, UINT32 MessageType, UINT32 MessageLength)
 	 * as a template.
 	 */
 	set = &rndisMessage->Message.SetRequest;
-	set->RequestId = InterlockedIncrement((int*)&Device->NewRequestId);
+	set->RequestId = InterlockedIncrement((int *)&Device->NewRequestId);
 
 	/* Add to the request list */
 	SpinlockAcquire(Device->RequestLock);
@@ -246,82 +252,84 @@ GetRndisRequest(RNDIS_DEVICE *Device, UINT32 MessageType, UINT32 MessageLength)
 /*
  *
  */
-static inline void PutRndisRequest(RNDIS_DEVICE *Device, RNDIS_REQUEST *Request)
+static inline void
+hv_put_rndis_request(rndis_device *Device, rndis_request *Request)
 {
 	SpinlockAcquire(Device->RequestLock);
 	REMOVE_ENTRY_LIST(&Request->ListEntry);
 	SpinlockRelease(Device->RequestLock);
 
 	WaitEventClose(Request->WaitEvent);
-	MemFree(Request);
+	free(Request, M_DEVBUF);
 }
 
 /*
  *
  */
-static inline void DumpRndisMessage(RNDIS_MESSAGE *RndisMessage)
+static inline void
+hv_dump_rndis_message(RNDIS_MESSAGE *rndis_msg)
 {
-	switch (RndisMessage->NdisMessageType) {
+	switch (rndis_msg->NdisMessageType) {
 	case REMOTE_NDIS_PACKET_MSG:
 		DPRINT_DBG(NETVSC, "REMOTE_NDIS_PACKET_MSG (len %u, data "
 		    "offset %u data len %u, # oob %u, oob offset %u, oob "
 		    "len %u, pkt offset %u, pkt len %u", 
-		    RndisMessage->MessageLength,
-		    RndisMessage->Message.Packet.DataOffset,
-		    RndisMessage->Message.Packet.DataLength,
-		    RndisMessage->Message.Packet.NumOOBDataElements,
-		    RndisMessage->Message.Packet.OOBDataOffset,
-		    RndisMessage->Message.Packet.OOBDataLength,
-		    RndisMessage->Message.Packet.PerPacketInfoOffset,
-		    RndisMessage->Message.Packet.PerPacketInfoLength);
+		    rndis_msg->MessageLength,
+		    rndis_msg->Message.Packet.DataOffset,
+		    rndis_msg->Message.Packet.DataLength,
+		    rndis_msg->Message.Packet.NumOOBDataElements,
+		    rndis_msg->Message.Packet.OOBDataOffset,
+		    rndis_msg->Message.Packet.OOBDataLength,
+		    rndis_msg->Message.Packet.PerPacketInfoOffset,
+		    rndis_msg->Message.Packet.PerPacketInfoLength);
 		break;
 
 	case REMOTE_NDIS_INITIALIZE_CMPLT:
 		DPRINT_DBG(NETVSC, "REMOTE_NDIS_INITIALIZE_CMPLT (len %u, "
 		    "id 0x%x, status 0x%x, major %d, minor %d, device flags "
 		    "%d, max xfer size 0x%x, max pkts %u, pkt aligned %u)", 
-		    RndisMessage->MessageLength,
-		    RndisMessage->Message.InitializeComplete.RequestId,
-		    RndisMessage->Message.InitializeComplete.Status,
-		    RndisMessage->Message.InitializeComplete.MajorVersion,
-		    RndisMessage->Message.InitializeComplete.MinorVersion,
-		    RndisMessage->Message.InitializeComplete.DeviceFlags,
-		    RndisMessage->Message.InitializeComplete.MaxTransferSize,
-		    RndisMessage->Message.InitializeComplete.MaxPacketsPerMessage,
-		    RndisMessage->Message.InitializeComplete.PacketAlignmentFactor);
+		    rndis_msg->MessageLength,
+		    rndis_msg->Message.InitializeComplete.RequestId,
+		    rndis_msg->Message.InitializeComplete.Status,
+		    rndis_msg->Message.InitializeComplete.MajorVersion,
+		    rndis_msg->Message.InitializeComplete.MinorVersion,
+		    rndis_msg->Message.InitializeComplete.DeviceFlags,
+		    rndis_msg->Message.InitializeComplete.MaxTransferSize,
+		    rndis_msg->Message.InitializeComplete.MaxPacketsPerMessage,
+		    rndis_msg->Message.InitializeComplete.PacketAlignmentFactor);
 		break;
 
 	case REMOTE_NDIS_QUERY_CMPLT:
 		DPRINT_DBG(NETVSC, "REMOTE_NDIS_QUERY_CMPLT (len %u, id 0x%x, "
 		    "status 0x%x, buf len %u, buf offset %u)", 
-		    RndisMessage->MessageLength,
-		    RndisMessage->Message.QueryComplete.RequestId,
-		    RndisMessage->Message.QueryComplete.Status,
-		    RndisMessage->Message.QueryComplete.InformationBufferLength,
-		    RndisMessage->Message.QueryComplete.InformationBufferOffset);
+		    rndis_msg->MessageLength,
+		    rndis_msg->Message.QueryComplete.RequestId,
+		    rndis_msg->Message.QueryComplete.Status,
+		    rndis_msg->Message.QueryComplete.InformationBufferLength,
+		    rndis_msg->Message.QueryComplete.InformationBufferOffset);
 		break;
 
 	case REMOTE_NDIS_SET_CMPLT:
 		DPRINT_DBG(NETVSC, "REMOTE_NDIS_SET_CMPLT (len %u, id 0x%x, "
 		    "status 0x%x)", 
-		    RndisMessage->MessageLength,
-		    RndisMessage->Message.SetComplete.RequestId,
-		    RndisMessage->Message.SetComplete.Status);
+		    rndis_msg->MessageLength,
+		    rndis_msg->Message.SetComplete.RequestId,
+		    rndis_msg->Message.SetComplete.Status);
 		break;
 
 	case REMOTE_NDIS_INDICATE_STATUS_MSG:
 		DPRINT_DBG(NETVSC, "REMOTE_NDIS_INDICATE_STATUS_MSG (len %u, "
 		    "status 0x%x, buf len %u, buf offset %u)", 
-		    RndisMessage->MessageLength,
-		    RndisMessage->Message.IndicateStatus.Status,
-		    RndisMessage->Message.IndicateStatus.StatusBufferLength,
-		    RndisMessage->Message.IndicateStatus.StatusBufferOffset);
+		    rndis_msg->MessageLength,
+		    rndis_msg->Message.IndicateStatus.Status,
+		    rndis_msg->Message.IndicateStatus.StatusBufferLength,
+		    rndis_msg->Message.IndicateStatus.StatusBufferOffset);
 		break;
 
 	default:
 		DPRINT_DBG(NETVSC, "0x%x (len %u)",
-		    RndisMessage->NdisMessageType,
-		    RndisMessage->MessageLength);
+		    rndis_msg->NdisMessageType,
+		    rndis_msg->MessageLength);
 		break;
 	}
 }
@@ -330,7 +338,7 @@ static inline void DumpRndisMessage(RNDIS_MESSAGE *RndisMessage)
  *
  */
 static int
-RndisFilterSendRequest(RNDIS_DEVICE *Device, RNDIS_REQUEST *Request)
+hv_rf_send_request(rndis_device *Device, rndis_request *Request)
 {
 	int ret = 0;
 	NETVSC_PACKET *packet;
@@ -350,9 +358,9 @@ RndisFilterSendRequest(RNDIS_DEVICE *Device, RNDIS_REQUEST *Request)
 	packet->PageBuffers[0].Offset =
 	    (ULONG_PTR)&Request->RequestMessage & (PAGE_SIZE - 1);
 
-	packet->Completion.Send.SendCompletionContext = Request;//packet;
+	packet->Completion.Send.SendCompletionContext = Request; //packet;
 	packet->Completion.Send.OnSendCompletion =
-	    RndisFilterOnSendRequestCompletion;
+	    hv_rf_on_send_request_completion;
 	packet->Completion.Send.SendCompletionTid = (ULONG_PTR)Device;
 
 	ret = gRndisFilter.InnerDriver.OnSend(Device->NetDevice->Device,
@@ -363,21 +371,21 @@ RndisFilterSendRequest(RNDIS_DEVICE *Device, RNDIS_REQUEST *Request)
 }
 
 /*
- *
+ * RNDIS filter receive response
  */
 static void 
-RndisFilterReceiveResponse(RNDIS_DEVICE *Device, RNDIS_MESSAGE *Response)
+hv_rf_receive_response(rndis_device *Device, RNDIS_MESSAGE *Response)
 {
 	LIST_ENTRY *anchor;
 	LIST_ENTRY *curr;
-	RNDIS_REQUEST *request = NULL;
-	BOOL found=FALSE;
+	rndis_request *request = NULL;
+	BOOL found = FALSE;
 
 	DPRINT_ENTER(NETVSC);
 
 	SpinlockAcquire(Device->RequestLock);
 	ITERATE_LIST_ENTRIES(anchor, curr, &Device->RequestList) {		
-		request = CONTAINING_RECORD(curr, RNDIS_REQUEST, ListEntry);
+		request = CONTAINING_RECORD(curr, rndis_request, ListEntry);
 
 		/*
 		 * All request/response message contains RequestId as the
@@ -405,7 +413,7 @@ RndisFilterReceiveResponse(RNDIS_DEVICE *Device, RNDIS_MESSAGE *Response)
 			DPRINT_ERR(NETVSC, "rndis response buffer overflow "
 			    "detected (size %u max %u)",
 			    Response->MessageLength,
-			    sizeof(RNDIS_FILTER_PACKET));
+			    sizeof(rndis_filter_packet));
 
 			if (Response->NdisMessageType == REMOTE_NDIS_RESET_CMPLT) {
 				// does not have a request id field
@@ -429,10 +437,10 @@ RndisFilterReceiveResponse(RNDIS_DEVICE *Device, RNDIS_MESSAGE *Response)
 }
 
 /*
- *
+ * RNDIS filter receive indicate status
  */
 static void 
-RndisFilterReceiveIndicateStatus(RNDIS_DEVICE *Device, RNDIS_MESSAGE *Response)
+hv_rf_receive_indicate_status(rndis_device *Device, RNDIS_MESSAGE *Response)
 {
 	RNDIS_INDICATE_STATUS *indicate = &Response->Message.IndicateStatus;
 		
@@ -449,18 +457,20 @@ RndisFilterReceiveIndicateStatus(RNDIS_DEVICE *Device, RNDIS_MESSAGE *Response)
 }
 
 /*
- *
+ * RNDIS filter receive data
  */
-static void
-RndisFilterReceiveData(RNDIS_DEVICE *Device, RNDIS_MESSAGE *Message,
+// Fixme:  Hacked to make function name visible to debugger
+//static void
+void
+hv_rf_receive_data(rndis_device *Device, RNDIS_MESSAGE *Message,
 		       NETVSC_PACKET *Packet)
 {
 	RNDIS_PACKET *rndisPacket;
-	UINT32 dataOffset;
+	uint32_t dataOffset;
 
 	DPRINT_ENTER(NETVSC);
 
-	// empty ethernet frame ??
+	/* Empty Ethernet frame ?? */
 	ASSERT(
 	    Packet->PageBuffers[0].Length > RNDIS_MESSAGE_SIZE(RNDIS_PACKET));
 
@@ -487,13 +497,13 @@ RndisFilterReceiveData(RNDIS_DEVICE *Device, RNDIS_MESSAGE *Message,
 }
 
 /*
- *
+ * RNDIS filter on receive
  */
 static int
-RndisFilterOnReceive(DEVICE_OBJECT *Device, NETVSC_PACKET *Packet)
+hv_rf_on_receive(DEVICE_OBJECT *Device, NETVSC_PACKET *Packet)
 {
-	NETVSC_DEVICE *netDevice = (NETVSC_DEVICE*)Device->Extension;
-	RNDIS_DEVICE *rndisDevice;
+	NETVSC_DEVICE *netDevice = (NETVSC_DEVICE *)Device->Extension;
+	rndis_device *rndisDevice;
 	RNDIS_MESSAGE rndisMessage;
 	RNDIS_MESSAGE *rndisHeader;
 
@@ -510,7 +520,7 @@ RndisFilterOnReceive(DEVICE_OBJECT *Device, NETVSC_PACKET *Packet)
 		return (-1);
 	}
 
-	rndisDevice = (RNDIS_DEVICE*)netDevice->Extension;
+	rndisDevice = (rndis_device *)netDevice->Extension;
 	if (rndisDevice->State == RNDIS_DEV_UNINITIALIZED) {
 		DPRINT_ERR(NETVSC, "got rndis message but rndis device "
 		    "uninitialized... dropping this message!");
@@ -533,7 +543,7 @@ RndisFilterOnReceive(DEVICE_OBJECT *Device, NETVSC_PACKET *Packet)
 	 */
 #if 0
 	if (Packet->TotalDataBufferLength != rndisHeader->MessageLength) {
-		PageUnmapVirtualAddress((void*)(ULONG_PTR)rndisHeader -
+		PageUnmapVirtualAddress((void *)(ULONG_PTR)rndisHeader -
 		    Packet->PageBuffers[0].Offset);
 
 		DPRINT_ERR(NETVSC, "invalid rndis message? (expected %u "
@@ -556,16 +566,16 @@ RndisFilterOnReceive(DEVICE_OBJECT *Device, NETVSC_PACKET *Packet)
 	    (rndisHeader->MessageLength > sizeof(RNDIS_MESSAGE)) ?
 	    sizeof(RNDIS_MESSAGE) : rndisHeader->MessageLength);
 
-	PageUnmapVirtualAddress((void*)((ULONG_PTR)rndisHeader -
+	PageUnmapVirtualAddress((void *)((ULONG_PTR)rndisHeader -
 	    Packet->PageBuffers[0].Offset));
 
-	DumpRndisMessage(&rndisMessage);
+	hv_dump_rndis_message(&rndisMessage);
 
 	switch (rndisMessage.NdisMessageType) {
 
 	/* data message */
 	case REMOTE_NDIS_PACKET_MSG:
-		RndisFilterReceiveData(rndisDevice, &rndisMessage, Packet);
+		hv_rf_receive_data(rndisDevice, &rndisMessage, Packet);
 		break;
 
 	/* completion messages */
@@ -574,12 +584,12 @@ RndisFilterOnReceive(DEVICE_OBJECT *Device, NETVSC_PACKET *Packet)
 	case REMOTE_NDIS_SET_CMPLT:
 	//case REMOTE_NDIS_RESET_CMPLT:
 	//case REMOTE_NDIS_KEEPALIVE_CMPLT:
-		RndisFilterReceiveResponse(rndisDevice, &rndisMessage);
+		hv_rf_receive_response(rndisDevice, &rndisMessage);
 		break;
 
 	/* notification message */
 	case REMOTE_NDIS_INDICATE_STATUS_MSG:
-		RndisFilterReceiveIndicateStatus(rndisDevice, &rndisMessage);
+		hv_rf_receive_indicate_status(rndisDevice, &rndisMessage);
 		break;
 	default:
 		DPRINT_ERR(NETVSC, "unhandled rndis message (type %u len %u)",
@@ -593,14 +603,14 @@ RndisFilterOnReceive(DEVICE_OBJECT *Device, NETVSC_PACKET *Packet)
 }
 
 /*
- *
+ * RNDIS filter query device
  */
 static int
-RndisFilterQueryDevice(RNDIS_DEVICE *Device, UINT32 Oid, VOID *Result,
-		       UINT32 *ResultSize)
+hv_rf_query_device(rndis_device *Device, uint32_t Oid, VOID *Result,
+		       uint32_t *ResultSize)
 {
-	RNDIS_REQUEST *request;
-	UINT32 inresultSize = *ResultSize;
+	rndis_request *request;
+	uint32_t inresultSize = *ResultSize;
 	RNDIS_QUERY_REQUEST *query;
 	RNDIS_QUERY_COMPLETE *queryComplete;
 	int ret = 0;
@@ -610,7 +620,7 @@ RndisFilterQueryDevice(RNDIS_DEVICE *Device, UINT32 Oid, VOID *Result,
 	ASSERT(Result);
 
 	*ResultSize = 0;
-	request = GetRndisRequest(Device, REMOTE_NDIS_QUERY_MSG,
+	request = hv_rndis_request(Device, REMOTE_NDIS_QUERY_MSG,
 	    RNDIS_MESSAGE_SIZE(RNDIS_QUERY_REQUEST));
 	if (!request) {
 		ret = -1;
@@ -624,7 +634,7 @@ RndisFilterQueryDevice(RNDIS_DEVICE *Device, UINT32 Oid, VOID *Result,
 	query->InformationBufferLength = 0;
 	query->DeviceVcHandle = 0;
 
-	ret = RndisFilterSendRequest(Device, request);
+	ret = hv_rf_send_request(Device, request);
 	if (ret != 0) {
 		/* Fixme:  printf added */
 		printf("RNDISFILTER request failed to Send!\n");
@@ -642,7 +652,7 @@ RndisFilterQueryDevice(RNDIS_DEVICE *Device, UINT32 Oid, VOID *Result,
 	}
 
 	memcpy(Result, 
-	    (void*)((ULONG_PTR)queryComplete +
+	    (void *)((ULONG_PTR)queryComplete +
 	    queryComplete->InformationBufferOffset),
 	    queryComplete->InformationBufferLength);
 
@@ -650,7 +660,7 @@ RndisFilterQueryDevice(RNDIS_DEVICE *Device, UINT32 Oid, VOID *Result,
 
 Cleanup:
 	if (request) {
-		PutRndisRequest(Device, request);
+		hv_put_rndis_request(Device, request);
 	}
 	DPRINT_EXIT(NETVSC);
 
@@ -658,63 +668,63 @@ Cleanup:
 }
 
 /*
- *
+ * RNDIS filter query device MAC address
  */
 static inline int
-RndisFilterQueryDeviceMac(RNDIS_DEVICE *Device)
+hv_rf_query_device_mac(rndis_device *Device)
 {
-	UINT32 size = HW_MACADDR_LEN;
+	uint32_t size = HW_MACADDR_LEN;
 
-	return (RndisFilterQueryDevice(Device,
+	return (hv_rf_query_device(Device,
 	    RNDIS_OID_802_3_PERMANENT_ADDRESS, Device->HwMacAddr, &size));
 }
 
 /*
- *
+ * RNDIS filter query device link status
  */
 static inline int
-RndisFilterQueryDeviceLinkStatus(RNDIS_DEVICE *Device)
+hv_rf_query_device_link_status(rndis_device *Device)
 {
-	UINT32 size = sizeof(UINT32);
+	uint32_t size = sizeof(uint32_t);
 
-	return (RndisFilterQueryDevice(Device,
+	return (hv_rf_query_device(Device,
 	    RNDIS_OID_GEN_MEDIA_CONNECT_STATUS, &Device->LinkStatus, &size));
 }
 
 /*
- *
+ * RNDIS filter set packet filter
  */
 static int
-RndisFilterSetPacketFilter(RNDIS_DEVICE *Device, UINT32 NewFilter)
+hv_rf_set_packet_filter(rndis_device *Device, uint32_t NewFilter)
 {
-	RNDIS_REQUEST *request;
+	rndis_request *request;
 	RNDIS_SET_REQUEST *set;
 	RNDIS_SET_COMPLETE *setComplete;
-	UINT32 status;
+	uint32_t status;
 	int ret;
 
 	DPRINT_ENTER(NETVSC);
 
-	ASSERT(RNDIS_MESSAGE_SIZE(RNDIS_SET_REQUEST) + sizeof(UINT32) <=
+	ASSERT(RNDIS_MESSAGE_SIZE(RNDIS_SET_REQUEST) + sizeof(uint32_t) <=
 	    sizeof(RNDIS_MESSAGE));
 
-	request = GetRndisRequest(Device, REMOTE_NDIS_SET_MSG,
-	    RNDIS_MESSAGE_SIZE(RNDIS_SET_REQUEST) + sizeof(UINT32));
+	request = hv_rndis_request(Device, REMOTE_NDIS_SET_MSG,
+	    RNDIS_MESSAGE_SIZE(RNDIS_SET_REQUEST) + sizeof(uint32_t));
 	if (!request) {
 		ret = -1;
 		goto Cleanup;
 	}
 
-	// Setup the rndis set
+	/* Set up the rndis set */
 	set = &request->RequestMessage.Message.SetRequest;
 	set->Oid = RNDIS_OID_GEN_CURRENT_PACKET_FILTER;
-	set->InformationBufferLength = sizeof(UINT32);
+	set->InformationBufferLength = sizeof(uint32_t);
 	set->InformationBufferOffset = sizeof(RNDIS_SET_REQUEST); 
 
-	memcpy((void*)((ULONG_PTR)set + sizeof(RNDIS_SET_REQUEST)),
-	    &NewFilter, sizeof(UINT32));
+	memcpy((void *)((ULONG_PTR)set + sizeof(RNDIS_SET_REQUEST)),
+	    &NewFilter, sizeof(uint32_t));
 
-	ret = RndisFilterSendRequest(Device, request);
+	ret = hv_rf_send_request(Device, request);
 	if (ret != 0) {
 		DPRINT_ERR(NETVSC, "RNDISFILTER request failed to send!  "
 		    "ret %d", ret);
@@ -742,7 +752,7 @@ RndisFilterSetPacketFilter(RNDIS_DEVICE *Device, UINT32 NewFilter)
 
 Cleanup:
 	if (request) {
-		PutRndisRequest(Device, request);
+		hv_put_rndis_request(Device, request);
 	}
 Exit:
 	DPRINT_EXIT(NETVSC);
@@ -751,22 +761,22 @@ Exit:
 }
 
 /*
- *
+ * RNDIS filter init
  */
 int
-RndisFilterInit(NETVSC_DRIVER_OBJECT *Driver)
+hv_rndis_filter_init(NETVSC_DRIVER_OBJECT *Driver)
 {
 	DPRINT_ENTER(NETVSC);
 
-	DPRINT_DBG(NETVSC, "sizeof(RNDIS_FILTER_PACKET) == %d",
-	    sizeof(RNDIS_FILTER_PACKET));
+	DPRINT_DBG(NETVSC, "sizeof(rndis_filter_packet) == %d",
+	    sizeof(rndis_filter_packet));
 
-	Driver->RequestExtSize = sizeof(RNDIS_FILTER_PACKET);
+	Driver->RequestExtSize = sizeof(rndis_filter_packet);
 	Driver->AdditionalRequestPageBufferCount = 1; // For rndis header
 
 	//Driver->Context = rndisDriver;
 
-	memset(&gRndisFilter, 0, sizeof(RNDIS_FILTER_DRIVER_OBJECT));
+	memset(&gRndisFilter, 0, sizeof(rndis_filter_driver_object));
 
 #ifdef REMOVED
 	/* Fixme:  Don't know why this code was commented out */
@@ -790,15 +800,15 @@ RndisFilterInit(NETVSC_DRIVER_OBJECT *Driver)
 	    Driver->OnLinkStatusChanged;
 
 	/* Override */
-	Driver->Base.OnDeviceAdd = RndisFilterOnDeviceAdd;
-	Driver->Base.OnDeviceRemove = RndisFilterOnDeviceRemove;
-	Driver->Base.OnCleanup = RndisFilterOnCleanup;
+	Driver->Base.OnDeviceAdd = hv_rf_on_device_add;
+	Driver->Base.OnDeviceRemove = hv_rf_on_device_remove;
+	Driver->Base.OnCleanup = hv_rf_on_cleanup;
 
-	Driver->OnSend = RndisFilterOnSend;
-	Driver->OnOpen = RndisFilterOnOpen;
-	Driver->OnClose = RndisFilterOnClose;
-	//Driver->QueryLinkStatus = RndisFilterQueryDeviceLinkStatus;
-	Driver->OnReceiveCallback = RndisFilterOnReceive;
+	Driver->OnSend = hv_rf_on_send;
+	Driver->OnOpen = hv_rf_on_open;
+	Driver->OnClose = hv_rf_on_close;
+	//Driver->QueryLinkStatus = hv_rf_query_device_link_status;
+	Driver->OnReceiveCallback = hv_rf_on_receive;
 
 	DPRINT_EXIT(NETVSC);
 
@@ -806,20 +816,20 @@ RndisFilterInit(NETVSC_DRIVER_OBJECT *Driver)
 }
 
 /*
- *
+ * RNDIS filter init device
  */
 static int
-RndisFilterInitDevice(RNDIS_DEVICE *Device)
+hv_rf_init_device(rndis_device *Device)
 {
-	RNDIS_REQUEST *request;
+	rndis_request *request;
 	RNDIS_INITIALIZE_REQUEST *init;
 	RNDIS_INITIALIZE_COMPLETE *initComplete;
-	UINT32 status;
+	uint32_t status;
 	int ret;
 
 	DPRINT_ENTER(NETVSC);
 
-	request = GetRndisRequest(Device, REMOTE_NDIS_INITIALIZE_MSG,
+	request = hv_rndis_request(Device, REMOTE_NDIS_INITIALIZE_MSG,
 	    RNDIS_MESSAGE_SIZE(RNDIS_INITIALIZE_REQUEST));
 	if (!request) {
 		ret = -1;
@@ -835,7 +845,7 @@ RndisFilterInitDevice(RNDIS_DEVICE *Device)
 	
 	Device->State = RNDIS_DEV_INITIALIZING;
 
-	ret = RndisFilterSendRequest(Device, request);
+	ret = hv_rf_send_request(Device, request);
 	if (ret != 0) {
 		Device->State = RNDIS_DEV_UNINITIALIZED;
 		goto Cleanup;
@@ -855,7 +865,7 @@ RndisFilterInitDevice(RNDIS_DEVICE *Device)
 
 Cleanup:
 	if (request) {
-		PutRndisRequest(Device, request);
+		hv_put_rndis_request(Device, request);
 	}
 	DPRINT_EXIT(NETVSC);
 
@@ -863,44 +873,44 @@ Cleanup:
 }
 
 /*
- *
+ * RNDIS filter halt device
  */
 static void
-RndisFilterHaltDevice(RNDIS_DEVICE *Device)
+hv_rf_halt_device(rndis_device *Device)
 {
-	RNDIS_REQUEST *request;
+	rndis_request *request;
 	RNDIS_HALT_REQUEST *halt;
 
 	DPRINT_ENTER(NETVSC);
 
-	// Attempt to do a rndis device halt
-	request = GetRndisRequest(Device, REMOTE_NDIS_HALT_MSG,
+	/* Attempt to do a rndis device halt */
+	request = hv_rndis_request(Device, REMOTE_NDIS_HALT_MSG,
 	    RNDIS_MESSAGE_SIZE(RNDIS_HALT_REQUEST));
 	if (!request) {
 		goto Cleanup;
 	}
 
-	// Setup the rndis set
+	/* Set up the rndis set */
 	halt = &request->RequestMessage.Message.HaltRequest;
-	halt->RequestId = InterlockedIncrement((int*)&Device->NewRequestId);
+	halt->RequestId = InterlockedIncrement((int *)&Device->NewRequestId);
 	
-	// Ignore return since this msg is optional.
-	RndisFilterSendRequest(Device, request);
+	/* Ignore return since this msg is optional. */
+	hv_rf_send_request(Device, request);
 	
 	Device->State = RNDIS_DEV_UNINITIALIZED;
 
 Cleanup:
 	if (request) {
-		PutRndisRequest(Device, request);
+		hv_put_rndis_request(Device, request);
 	}
 	DPRINT_EXIT(NETVSC);
 }
 
 /*
- *
+ * RNDIS filter open device
  */
 static int
-RndisFilterOpenDevice(RNDIS_DEVICE *Device)
+hv_rf_open_device(rndis_device *Device)
 {
 	int ret = 0;
 
@@ -911,13 +921,13 @@ RndisFilterOpenDevice(RNDIS_DEVICE *Device)
 	}
 
 	if (promisc_mode != 1) {
-		ret = RndisFilterSetPacketFilter(Device, 
+		ret = hv_rf_set_packet_filter(Device, 
 		    NDIS_PACKET_TYPE_BROADCAST     |
 		    NDIS_PACKET_TYPE_ALL_MULTICAST |
 		    NDIS_PACKET_TYPE_DIRECTED);
 		DPRINT_INFO(NETVSC, "Network set to normal mode");
 	} else {
-		ret = RndisFilterSetPacketFilter(Device, 
+		ret = hv_rf_set_packet_filter(Device, 
 		    NDIS_PACKET_TYPE_PROMISCUOUS);
 		DPRINT_INFO(NETVSC, "Network set to promiscuous mode");
 	}
@@ -932,21 +942,21 @@ RndisFilterOpenDevice(RNDIS_DEVICE *Device)
 }
 
 /*
- *
+ * RNDIS filter close device
  */
 static int
-RndisFilterCloseDevice(RNDIS_DEVICE *Device)
+hv_rf_close_device(rndis_device *Device)
 {
 	int ret;
 
 	DPRINT_ENTER(NETVSC);
 
-	if (Device->State != RNDIS_DEV_DATAINITIALIZED)
+	if (Device->State != RNDIS_DEV_DATAINITIALIZED) {
 		return (0);
+	}
 
-	ret = RndisFilterSetPacketFilter(Device, 0);
-	if (ret == 0)
-	{
+	ret = hv_rf_set_packet_filter(Device, 0);
+	if (ret == 0) {
 		Device->State = RNDIS_DEV_INITIALIZED;
 	}
 
@@ -956,20 +966,19 @@ RndisFilterCloseDevice(RNDIS_DEVICE *Device)
 }
 
 /*
- *
+ * RNDIS filter on device add
  */
-int
-RndisFilterOnDeviceAdd( DEVICE_OBJECT *Device, void *AdditionalInfo)
+static int
+hv_rf_on_device_add(DEVICE_OBJECT *Device, void *AdditionalInfo)
 {
 	int ret;
 	NETVSC_DEVICE *netDevice;
-	RNDIS_DEVICE *rndisDevice;
-	NETVSC_DEVICE_INFO *deviceInfo = (NETVSC_DEVICE_INFO*)AdditionalInfo;
+	rndis_device *rndisDevice;
+	NETVSC_DEVICE_INFO *deviceInfo = (NETVSC_DEVICE_INFO *)AdditionalInfo;
 
 	DPRINT_ENTER(NETVSC);
 
-	//rndisDevice = MemAlloc(sizeof(RNDIS_DEVICE));
-	rndisDevice = GetRndisDevice();
+	rndisDevice = hv_get_rndis_device();
 	if (!rndisDevice) {
 		DPRINT_EXIT(NETVSC);
 		return (-1);
@@ -980,11 +989,11 @@ RndisFilterOnDeviceAdd( DEVICE_OBJECT *Device, void *AdditionalInfo)
 	/*
 	 * Let the inner driver handle this first to create the netvsc channel
 	 * NOTE! Once the channel is created, we may get a receive callback 
-	 * (RndisFilterOnReceive()) before this call is completed
+	 * (hv_rf_on_receive()) before this call is completed
 	 */
 	ret = gRndisFilter.InnerDriver.Base.OnDeviceAdd(Device, AdditionalInfo);
 	if (ret != 0) {
-		PutRndisDevice(rndisDevice);
+		hv_put_rndis_device(rndisDevice);
 		DPRINT_EXIT(NETVSC);
 		return (ret);
 	}
@@ -992,7 +1001,7 @@ RndisFilterOnDeviceAdd( DEVICE_OBJECT *Device, void *AdditionalInfo)
 	/*
 	 * Initialize the rndis device
 	 */
-	netDevice = (NETVSC_DEVICE*)Device->Extension;
+	netDevice = (NETVSC_DEVICE *)Device->Extension;
 	ASSERT(netDevice);
 	ASSERT(netDevice->Device);
 
@@ -1000,7 +1009,7 @@ RndisFilterOnDeviceAdd( DEVICE_OBJECT *Device, void *AdditionalInfo)
 	rndisDevice->NetDevice = netDevice;
 
 	/* Send the rndis initialization message */
-	ret = RndisFilterInitDevice(rndisDevice);
+	ret = hv_rf_init_device(rndisDevice);
 	if (ret != 0) {
 		/*
 		 * TODO: If rndis init failed, we will need to shut down
@@ -1009,7 +1018,7 @@ RndisFilterOnDeviceAdd( DEVICE_OBJECT *Device, void *AdditionalInfo)
 	}
 
 	/* Get the mac address */
-	ret = RndisFilterQueryDeviceMac(rndisDevice);
+	ret = hv_rf_query_device_mac(rndisDevice);
 	if (ret != 0) {
 		/* TODO: shutdown rndis device and the channel */
 	}
@@ -1021,7 +1030,7 @@ RndisFilterOnDeviceAdd( DEVICE_OBJECT *Device, void *AdditionalInfo)
 
 	memcpy(deviceInfo->MacAddr, rndisDevice->HwMacAddr, HW_MACADDR_LEN);
 
-	RndisFilterQueryDeviceLinkStatus(rndisDevice);
+	hv_rf_query_device_link_status(rndisDevice);
 	
 	deviceInfo->LinkState = rndisDevice->LinkStatus;
 	DPRINT_INFO(NETVSC, "Device 0x%p link state %s", rndisDevice,
@@ -1033,20 +1042,20 @@ RndisFilterOnDeviceAdd( DEVICE_OBJECT *Device, void *AdditionalInfo)
 }
 
 /*
- *
+ * RNDIS filter on device remove
  */
 static int
-RndisFilterOnDeviceRemove(DEVICE_OBJECT *Device)
+hv_rf_on_device_remove(DEVICE_OBJECT *Device)
 {
-	NETVSC_DEVICE *netDevice = (NETVSC_DEVICE*)Device->Extension;
-	RNDIS_DEVICE *rndisDevice = (RNDIS_DEVICE*)netDevice->Extension;
+	NETVSC_DEVICE *netDevice = (NETVSC_DEVICE *)Device->Extension;
+	rndis_device *rndisDevice = (rndis_device *)netDevice->Extension;
 
 	DPRINT_ENTER(NETVSC);
 
 	/* Halt and release the rndis device */
-	RndisFilterHaltDevice(rndisDevice);
+	hv_rf_halt_device(rndisDevice);
 
-	PutRndisDevice(rndisDevice);
+	hv_put_rndis_device(rndisDevice);
 	netDevice->Extension = NULL;
 
 	/* Pass control to inner driver to remove the device */
@@ -1058,10 +1067,10 @@ RndisFilterOnDeviceRemove(DEVICE_OBJECT *Device)
 }
 
 /*
- *
+ * RNDIS filter on cleanup
  */
 static void
-RndisFilterOnCleanup(DRIVER_OBJECT *Driver)
+hv_rf_on_cleanup(DRIVER_OBJECT *Driver)
 {
 	DPRINT_ENTER(NETVSC);
 
@@ -1069,17 +1078,18 @@ RndisFilterOnCleanup(DRIVER_OBJECT *Driver)
 }
 
 /*
- *
+ * RNDIS filter on open
  */
-static int RndisFilterOnOpen(DEVICE_OBJECT *Device)
+static int
+hv_rf_on_open(DEVICE_OBJECT *Device)
 {
 	int ret;
-	NETVSC_DEVICE *netDevice = (NETVSC_DEVICE*)Device->Extension;
+	NETVSC_DEVICE *netDevice = (NETVSC_DEVICE *)Device->Extension;
 	
 	DPRINT_ENTER(NETVSC);
 	
 	ASSERT(netDevice);
-	ret = RndisFilterOpenDevice((RNDIS_DEVICE*)netDevice->Extension);
+	ret = hv_rf_open_device((rndis_device *)netDevice->Extension);
 
 	DPRINT_EXIT(NETVSC);
 
@@ -1087,18 +1097,18 @@ static int RndisFilterOnOpen(DEVICE_OBJECT *Device)
 }
 
 /*
- *
+ * RNDIS filter on close
  */
 static int 
-RndisFilterOnClose(DEVICE_OBJECT *Device)
+hv_rf_on_close(DEVICE_OBJECT *Device)
 {
 	int ret;
-	NETVSC_DEVICE *netDevice = (NETVSC_DEVICE*)Device->Extension;
+	NETVSC_DEVICE *netDevice = (NETVSC_DEVICE *)Device->Extension;
 	
 	DPRINT_ENTER(NETVSC);
 	
 	ASSERT(netDevice);
-	ret = RndisFilterCloseDevice((RNDIS_DEVICE*)netDevice->Extension);
+	ret = hv_rf_close_device((rndis_device *)netDevice->Extension);
 
 	DPRINT_EXIT(NETVSC);
 
@@ -1106,23 +1116,24 @@ RndisFilterOnClose(DEVICE_OBJECT *Device)
 }
 
 /*
- *
+ * RNDIS filter on send
  */
-static int RndisFilterOnSend(DEVICE_OBJECT *Device, NETVSC_PACKET *Packet)
+static int
+hv_rf_on_send(DEVICE_OBJECT *Device, NETVSC_PACKET *Packet)
 {
 	int ret=0;
-	RNDIS_FILTER_PACKET *filterPacket;
+	rndis_filter_packet *filterPacket;
 	RNDIS_MESSAGE *rndisMessage;
 	RNDIS_PACKET *rndisPacket;
-	UINT32 rndisMessageSize;
+	uint32_t rndisMessageSize;
 
 	DPRINT_ENTER(NETVSC);
 
 	/* Add the rndis header */
-	filterPacket = (RNDIS_FILTER_PACKET*)Packet->Extension;
+	filterPacket = (rndis_filter_packet *)Packet->Extension;
 	ASSERT(filterPacket);
 
-	memset(filterPacket, 0, sizeof(RNDIS_FILTER_PACKET));
+	memset(filterPacket, 0, sizeof(rndis_filter_packet));
 
 	rndisMessage = &filterPacket->Message;
 	rndisMessageSize = RNDIS_MESSAGE_SIZE(RNDIS_PACKET);
@@ -1148,7 +1159,7 @@ static int RndisFilterOnSend(DEVICE_OBJECT *Device, NETVSC_PACKET *Packet)
 	    Packet->Completion.Send.SendCompletionContext;
 
 	/* Use ours */
-	Packet->Completion.Send.OnSendCompletion = RndisFilterOnSendCompletion;
+	Packet->Completion.Send.OnSendCompletion = hv_rf_on_send_completion;
 	Packet->Completion.Send.SendCompletionContext = filterPacket;
 
 	ret = gRndisFilter.InnerDriver.OnSend(Device, Packet);
@@ -1168,12 +1179,12 @@ static int RndisFilterOnSend(DEVICE_OBJECT *Device, NETVSC_PACKET *Packet)
 }
 
 /*
- *
+ * RNDIS filter on send completion
  */
 static void 
-RndisFilterOnSendCompletion(void *Context)
+hv_rf_on_send_completion(void *Context)
 {
-	RNDIS_FILTER_PACKET *filterPacket = (RNDIS_FILTER_PACKET *)Context;
+	rndis_filter_packet *filterPacket = (rndis_filter_packet *)Context;
 
 	DPRINT_ENTER(NETVSC);
 
@@ -1184,36 +1195,14 @@ RndisFilterOnSendCompletion(void *Context)
 }
 
 /*
- *
+ * RNDIS filter on send request completion
  */
 static void 
-RndisFilterOnSendRequestCompletion(void *Context)
+hv_rf_on_send_request_completion(void *Context)
 {
 	DPRINT_ENTER(NETVSC);
 
 	/* Noop */
 	DPRINT_EXIT(NETVSC);
-}
-
-/*
- * Fixme:  Is this needed for HyperV on FreeBSD?
- */
-int RndisSetMode(DEVICE_OBJECT *Device, int mode)
-{
-	NETVSC_DEVICE *netDevice = (NETVSC_DEVICE*)Device->Extension;
-	RNDIS_DEVICE *rndisDevice = (RNDIS_DEVICE*)netDevice->Extension;
-	int ret;
-
-	if (mode) {
-		ret = RndisFilterSetPacketFilter(rndisDevice,
-		    NDIS_PACKET_TYPE_PROMISCUOUS);
-	} else {
-		ret = RndisFilterSetPacketFilter(rndisDevice,
-		    NDIS_PACKET_TYPE_BROADCAST |
-		    NDIS_PACKET_TYPE_ALL_MULTICAST |
-		    NDIS_PACKET_TYPE_DIRECTED);
-	}
-
-	return (ret);
 }
 
