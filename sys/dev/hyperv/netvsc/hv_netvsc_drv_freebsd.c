@@ -89,7 +89,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 #include <dev/hyperv/include/hv_net_vsc_api.h>
 
 #define NETVSC_DEVNAME "hn"
-#define ETH_ALEN 6
+#define ETH_ALEN       6
 
 
 /*
@@ -104,7 +104,7 @@ struct net_device_context {
 struct netvsc_driver_context {
 	/* !! These must be the first 2 fields !! */
 	struct driver_context   drv_ctx;
-	NETVSC_DRIVER_OBJECT    drv_obj;
+	netvsc_driver_object    drv_obj;
 };
 
 #define SN_LOCK_INIT(_sc, _name) \
@@ -150,7 +150,7 @@ static void hn_start(struct ifnet *ifp);
 
 static void netvsc_xmit_completion(void *context);
 static int  netvsc_recv_callback(DEVICE_OBJECT *device_obj,
-				 NETVSC_PACKET *packet);
+				 netvsc_packet *packet);
 static int  netvsc_drv_init(PFN_DRIVERINITIALIZE pfn_drv_init);
 static void netvsc_linkstatus_callback(DEVICE_OBJECT *, unsigned int);
 
@@ -162,7 +162,7 @@ int
 netvsc_drv_init(PFN_DRIVERINITIALIZE pfn_drv_init)
 {
 	int ret = 0;
-	NETVSC_DRIVER_OBJECT *net_drv_obj = &g_netvsc_drv.drv_obj;
+	netvsc_driver_object *net_drv_obj = &g_netvsc_drv.drv_obj;
 	struct driver_context *drv_ctx = &g_netvsc_drv.drv_ctx;
 
 	DPRINT_ENTER(NETVSC_DRV);
@@ -210,7 +210,7 @@ netvsc_probe(device_t dev)
 
 	if (!memcmp(p, &g_netvsc_drv.drv_obj.Base.deviceType, sizeof(GUID))) {
 		device_set_desc(dev, "Synthetic Network Interface");
-		printf("Netvsc probe ....DONE \n");
+		printf("Netvsc probe... DONE \n");
 		return (0);
 	}
 
@@ -223,9 +223,9 @@ netvsc_probe(device_t dev)
 static int
 netvsc_attach(device_t dev)
 {
-	NETVSC_DRIVER_OBJECT *net_drv_obj = &g_netvsc_drv.drv_obj;
+	netvsc_driver_object *net_drv_obj = &g_netvsc_drv.drv_obj;
 	struct device_context *device_ctx = vmbus_get_devctx(dev);
-	NETVSC_DEVICE_INFO device_info;
+	netvsc_device_info device_info;
 	hn_softc_t *sc;
 	int unit = device_get_unit(dev);
 	struct ifnet *ifp;
@@ -268,15 +268,6 @@ netvsc_attach(device_t dev)
 		sc->hn_carrier = 1;
 	}
 
-#ifdef REMOVED
-	/*
-	 * Fixme:  _ac_enaddr no longer exists in 8.2 "struct arpcom"
-	 * So, we don't need to populate it.
-	 */
-	memcpy((void *)&sc->arpcom._ac_enaddr, 
-				(void *)&device_info.MacAddr, ETH_ALEN);
-#endif
-
 	DPRINT_DBG(NETVSC_DRV, 
 	    "netvsc_attach: mac address: %02x %02x %02x %02x %02x %02x\n",
 	    device_info.MacAddr[0], device_info.MacAddr[1],
@@ -302,12 +293,6 @@ netvsc_attach(device_t dev)
 	ifp->if_snd.ifq_drv_maxlen = 511;
 	IFQ_SET_READY(&ifp->if_snd);
 
-#ifdef REMOVED
-	/*
-	 * Fixme:  _ac_enaddr no longer exists in 8.2 "struct arpcom"
-	 */
-	ether_ifattach(ifp, sc->arpcom._ac_enaddr);
-#endif
 	/* Fixme -- should we have a copy of MAC addr in softc? */
 	ether_ifattach(ifp, device_info.MacAddr);
 
@@ -342,7 +327,7 @@ netvsc_shutdown(device_t dev)
 void
 netvsc_xmit_completion(void *context)
 {
-	NETVSC_PACKET *packet = (NETVSC_PACKET *)context;
+	netvsc_packet *packet = (netvsc_packet *)context;
 	struct mbuf *m;
 	unsigned char *buf;
 	//void *sc;
@@ -372,13 +357,13 @@ hn_start_locked(struct ifnet *ifp)
 {
 	int ret = 0;
 	hn_softc_t *sc = ifp->if_softc;
-	NETVSC_DRIVER_OBJECT *net_drv_obj = &g_netvsc_drv.drv_obj;
+	netvsc_driver_object *net_drv_obj = &g_netvsc_drv.drv_obj;
 	struct device_context *device_ctx = vmbus_get_devctx(sc->hn_dev);
 
 	int i;
 	unsigned char *buf;
 
-	NETVSC_PACKET *packet;
+	netvsc_packet *packet;
 	int num_frags = 0;
 	int retries = 0;
 	struct mbuf *m_head, *m;
@@ -412,22 +397,22 @@ hn_start_locked(struct ifnet *ifp)
 
 		/* Allocate a netvsc packet based on # of frags. */
 		/* Fixme:  magic number */
-		buf = malloc(16 + sizeof(NETVSC_PACKET) + 
+		buf = malloc(16 + sizeof(netvsc_packet) + 
 		    (num_frags * sizeof(PAGE_BUFFER)) + 
 		    net_drv_obj->RequestExtSize, 
 		    M_DEVBUF, M_ZERO | M_WAITOK);
 
 		if (buf == NULL) {
-			DPRINT_ERR(NETVSC_DRV, "Cannot allocate NETVSC_PACKET");
+			DPRINT_ERR(NETVSC_DRV, "Cannot allocate netvsc_packet");
 			return (-1);
 		}
 
 		/* Fixme:  magic number */
-		packet = (NETVSC_PACKET *)(buf + 16);
+		packet = (netvsc_packet *)(buf + 16);
 		*(vm_offset_t *)buf = 0;
 
 		packet->Extension = (void*)((unsigned long)packet + 
-		    sizeof(NETVSC_PACKET) + (num_frags * sizeof(PAGE_BUFFER))) ;
+		    sizeof(netvsc_packet) + (num_frags * sizeof(PAGE_BUFFER))) ;
 
 		/* Set up the rndis header */
 		packet->PageBufferCount = num_frags;
@@ -548,7 +533,7 @@ netvsc_linkstatus_callback(DEVICE_OBJECT *device_obj,
  * specified device
  */
 static int
-netvsc_recv_callback(DEVICE_OBJECT *device_obj, NETVSC_PACKET *packet)
+netvsc_recv_callback(DEVICE_OBJECT *device_obj, netvsc_packet *packet)
 {
 	struct device_context *device_ctx = to_device_context(device_obj);
 	hn_softc_t *sc = (hn_softc_t *)device_get_softc(device_ctx->device);
@@ -595,7 +580,7 @@ netvsc_recv_callback(DEVICE_OBJECT *device_obj, NETVSC_PACKET *packet)
 
 	/*
 	 * Copy the received packet to one or more mbufs. 
-	 * The copy is required since the memory pointed to by NETVSC_PACKET
+	 * The copy is required since the memory pointed to by netvsc_packet
 	 * cannot be deallocated
 	 */
 	for (i=0; i < packet->PageBufferCount; i++) {
@@ -740,7 +725,7 @@ hn_stop(hn_softc_t *sc)
 {
 	struct ifnet *ifp;
 	int ret;
-	NETVSC_DRIVER_OBJECT *net_drv_obj = &g_netvsc_drv.drv_obj;
+	netvsc_driver_object *net_drv_obj = &g_netvsc_drv.drv_obj;
 	struct device_context *device_ctx = vmbus_get_devctx(sc->hn_dev);
 
 	SN_LOCK_ASSERT(sc);
@@ -777,7 +762,7 @@ static void
 hn_ifinit_locked(hn_softc_t *sc)
 {
 	struct ifnet *ifp;
-	NETVSC_DRIVER_OBJECT *net_drv_obj = &g_netvsc_drv.drv_obj;
+	netvsc_driver_object *net_drv_obj = &g_netvsc_drv.drv_obj;
 	struct device_context *device_ctx = vmbus_get_devctx(sc->hn_dev);
 	int ret;
 

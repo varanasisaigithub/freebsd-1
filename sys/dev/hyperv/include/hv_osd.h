@@ -149,7 +149,7 @@ typedef unsigned char		BYTE;
 typedef unsigned long		ULONG_PTR;
 
 typedef struct {
-	unsigned char	Data[16];
+	unsigned char		Data[16];
 } GUID;
 
 typedef void (*PFN_WORKITEM_CALLBACK)(void* context);

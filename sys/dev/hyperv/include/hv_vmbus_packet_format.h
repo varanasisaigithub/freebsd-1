@@ -59,13 +59,6 @@
 #ifndef __HV_VMBUS_PACKET_FORMAT_H__
 #define __HV_VMBUS_PACKET_FORMAT_H__
 
-//#ifndef PAGE_SIZE
-//#if defined(_IA64_)
-//#error This does not work for IA64
-//#else
-//#define PAGE_SIZE 0x1000
-//#endif
-//#endif
 
 typedef struct {
     union {

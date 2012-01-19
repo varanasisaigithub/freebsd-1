@@ -98,28 +98,28 @@ static void hv_nv_on_cleanup(DRIVER_OBJECT *Driver);
 static void hv_nv_on_channel_callback(void *context);
 static int  hv_nv_init_send_buffer_with_net_vsp(DEVICE_OBJECT *Device);
 static int  hv_nv_init_rx_buffer_with_net_vsp(DEVICE_OBJECT *Device);
-static int  hv_nv_destroy_send_buffer(NETVSC_DEVICE *NetDevice);
-static int  hv_nv_destroy_rx_buffer(NETVSC_DEVICE *NetDevice);
+static int  hv_nv_destroy_send_buffer(netvsc_dev *NetDevice);
+static int  hv_nv_destroy_rx_buffer(netvsc_dev *NetDevice);
 static int  hv_nv_connect_to_vsp(DEVICE_OBJECT *Device);
 static void hv_nv_on_send_completion(DEVICE_OBJECT *Device,
-				   VMPACKET_DESCRIPTOR *Packet);
-static int  hv_nv_on_send(DEVICE_OBJECT *Device, NETVSC_PACKET *Packet);
+				     VMPACKET_DESCRIPTOR *Packet);
+static int  hv_nv_on_send(DEVICE_OBJECT *Device, netvsc_packet *Packet);
 // Fixme
 extern void hv_nv_on_receive(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet);
 //static void hv_nv_on_receive(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet);
 static void hv_nv_send_receive_completion(DEVICE_OBJECT *Device,
-					uint64_t TransactionId);
+					  uint64_t TransactionId);
 
 
 /*
  *
  */
-static inline NETVSC_DEVICE *
+static inline netvsc_dev *
 hv_nv_alloc_net_device(DEVICE_OBJECT *Device)
 {
-	NETVSC_DEVICE *netDevice;
+	netvsc_dev *netDevice;
 
-	netDevice = malloc(sizeof(NETVSC_DEVICE), M_DEVBUF, M_NOWAIT | M_ZERO);
+	netDevice = malloc(sizeof(netvsc_dev), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (!netDevice) {
 		return (NULL);
 	}
@@ -137,7 +137,7 @@ hv_nv_alloc_net_device(DEVICE_OBJECT *Device)
  *
  */
 static inline void
-hv_nv_free_net_device(NETVSC_DEVICE *Device)
+hv_nv_free_net_device(netvsc_dev *Device)
 {
 	ASSERT(Device->RefCount == 0);
 	Device->Device->Extension = NULL;
@@ -148,12 +148,12 @@ hv_nv_free_net_device(NETVSC_DEVICE *Device)
 /*
  * Get the net device object iff exists and its refcount > 1
  */
-static inline NETVSC_DEVICE *
+static inline netvsc_dev *
 hv_nv_get_outbound_net_device(DEVICE_OBJECT *Device)
 {
-	NETVSC_DEVICE *netDevice;
+	netvsc_dev *netDevice;
 
-	netDevice = (NETVSC_DEVICE *)Device->Extension;
+	netDevice = (netvsc_dev *)Device->Extension;
 	if (netDevice && netDevice->RefCount > 1) {
 		InterlockedIncrement(&netDevice->RefCount);
 	} else {
@@ -166,12 +166,12 @@ hv_nv_get_outbound_net_device(DEVICE_OBJECT *Device)
 /*
  * Get the net device object iff exists and its refcount > 0
  */
-static inline NETVSC_DEVICE *
+static inline netvsc_dev *
 hv_nv_get_inbound_net_device(DEVICE_OBJECT *Device)
 {
-	NETVSC_DEVICE *netDevice;
+	netvsc_dev *netDevice;
 
-	netDevice = (NETVSC_DEVICE *)Device->Extension;
+	netDevice = (netvsc_dev *)Device->Extension;
 	if (netDevice && netDevice->RefCount) {
 		InterlockedIncrement(&netDevice->RefCount);
 	} else {
@@ -187,9 +187,9 @@ hv_nv_get_inbound_net_device(DEVICE_OBJECT *Device)
 static inline void
 hv_nv_put_net_device(DEVICE_OBJECT *Device)
 {
-	NETVSC_DEVICE *netDevice;
+	netvsc_dev *netDevice;
 
-	netDevice = (NETVSC_DEVICE *)Device->Extension;
+	netDevice = (netvsc_dev *)Device->Extension;
 	ASSERT(netDevice);
 
 	InterlockedDecrement(&netDevice->RefCount);
@@ -198,12 +198,12 @@ hv_nv_put_net_device(DEVICE_OBJECT *Device)
 /*
  *
  */
-static inline NETVSC_DEVICE *
+static inline netvsc_dev *
 hv_nv_release_outbound_net_device(DEVICE_OBJECT *Device)
 {
-	NETVSC_DEVICE *netDevice;
+	netvsc_dev *netDevice;
 
-	netDevice = (NETVSC_DEVICE *)Device->Extension;
+	netDevice = (netvsc_dev *)Device->Extension;
 	if (netDevice == NULL) {
 		return (NULL);
 	}
@@ -219,12 +219,12 @@ hv_nv_release_outbound_net_device(DEVICE_OBJECT *Device)
 /*
  *
  */
-static inline NETVSC_DEVICE *
+static inline netvsc_dev *
 hv_nv_release_inbound_net_device(DEVICE_OBJECT *Device)
 {
-	NETVSC_DEVICE *netDevice;
+	netvsc_dev *netDevice;
 
-	netDevice = (NETVSC_DEVICE *)Device->Extension;
+	netDevice = (netvsc_dev *)Device->Extension;
 	if (netDevice == NULL) {
 		return (NULL);
 	}
@@ -245,14 +245,14 @@ hv_nv_release_inbound_net_device(DEVICE_OBJECT *Device)
 int 
 hv_net_vsc_initialize(DRIVER_OBJECT *drv)
 {
-	NETVSC_DRIVER_OBJECT *driver = (NETVSC_DRIVER_OBJECT *)drv;
+	netvsc_driver_object *driver = (netvsc_driver_object *)drv;
 	int ret = 0;
 
 	DPRINT_ENTER(NETVSC);
 
-	DPRINT_DBG(NETVSC, "sizeof(NETVSC_PACKET)=%d, sizeof(NVSP_MESSAGE)=%d, "
+	DPRINT_DBG(NETVSC, "sizeof(netvsc_packet)=%d, sizeof(NVSP_MESSAGE)=%d, "
 	    "sizeof(VMTRANSFER_PAGE_PACKET_HEADER)=%d",
-	    sizeof(NETVSC_PACKET), sizeof(NVSP_MESSAGE),
+	    sizeof(netvsc_packet), sizeof(NVSP_MESSAGE),
 	    sizeof(VMTRANSFER_PAGE_PACKET_HEADER));
 
 	/* Make sure we are at least 2 pages since 1 page is used for control */
@@ -286,7 +286,7 @@ static int
 hv_nv_init_rx_buffer_with_net_vsp(DEVICE_OBJECT *Device)
 {
 	int ret = 0;
-	NETVSC_DEVICE *netDevice;
+	netvsc_dev *netDevice;
 	NVSP_MESSAGE *initPacket;
 
 	DPRINT_ENTER(NETVSC);
@@ -424,7 +424,7 @@ static int
 hv_nv_init_send_buffer_with_net_vsp(DEVICE_OBJECT *Device)
 {
 	int ret = 0;
-	NETVSC_DEVICE *netDevice;
+	netvsc_dev *netDevice;
 	NVSP_MESSAGE *initPacket;
 
 	DPRINT_ENTER(NETVSC);
@@ -524,7 +524,7 @@ Exit:
  * Net VSC destroy receive buffer
  */
 static int
-hv_nv_destroy_rx_buffer(NETVSC_DEVICE *NetDevice)
+hv_nv_destroy_rx_buffer(netvsc_dev *NetDevice)
 {
 	NVSP_MESSAGE *revokePacket;
 	int ret = 0;
@@ -611,7 +611,7 @@ hv_nv_destroy_rx_buffer(NETVSC_DEVICE *NetDevice)
  * Net VSC destroy send buffer
  */
 static int
-hv_nv_destroy_send_buffer(NETVSC_DEVICE *NetDevice)
+hv_nv_destroy_send_buffer(netvsc_dev *NetDevice)
 {
 	NVSP_MESSAGE *revokePacket;
 	int ret = 0;
@@ -693,7 +693,7 @@ static int
 hv_nv_connect_to_vsp(DEVICE_OBJECT *Device)
 {
 	int ret = 0;
-	NETVSC_DEVICE *netDevice;
+	netvsc_dev *netDevice;
 	NVSP_MESSAGE *initPacket;
 	int ndisVersion;
 
@@ -803,7 +803,7 @@ Cleanup:
  * Net VSC disconnect from VSP
  */
 static void
-hv_nv_disconnect_from_vsp(NETVSC_DEVICE *NetDevice)
+hv_nv_disconnect_from_vsp(netvsc_dev *NetDevice)
 {
 	DPRINT_ENTER(NETVSC);
 
@@ -824,11 +824,12 @@ hv_nv_on_device_add(DEVICE_OBJECT *Device, void *AdditionalInfo)
 	int ret = 0;
 	int i;
 
-	NETVSC_DEVICE* netDevice;
-	NETVSC_PACKET* packet;
+	netvsc_dev* netDevice;
+	netvsc_packet *packet;
 	LIST_ENTRY *entry;
 
-	NETVSC_DRIVER_OBJECT *netDriver = (NETVSC_DRIVER_OBJECT *)Device->Driver;
+	netvsc_driver_object *netDriver =
+	    (netvsc_driver_object *)Device->Driver;
 
 	DPRINT_ENTER(NETVSC);
 
@@ -849,7 +850,7 @@ hv_nv_on_device_add(DEVICE_OBJECT *Device, void *AdditionalInfo)
 	INITIALIZE_LIST_HEAD(&netDevice->ReceivePacketList);
 
 	for (i=0; i < NETVSC_RECEIVE_PACKETLIST_COUNT; i++) {
-		packet = malloc(sizeof(NETVSC_PACKET) +
+		packet = malloc(sizeof(netvsc_packet) +
 		    (NETVSC_RECEIVE_SG_COUNT * sizeof(PAGE_BUFFER)),
 		    M_DEVBUF, M_NOWAIT | M_ZERO);
 		if (!packet) {
@@ -904,7 +905,7 @@ Cleanup:
 
 		while (!IsListEmpty(&netDevice->ReceivePacketList)) {	
 			entry = REMOVE_HEAD_LIST(&netDevice->ReceivePacketList);
-			packet = CONTAINING_RECORD(entry, NETVSC_PACKET,
+			packet = CONTAINING_RECORD(entry, netvsc_packet,
 			    ListEntry);
 			free(packet, M_DEVBUF);
 		}
@@ -930,8 +931,8 @@ Cleanup:
 static int
 hv_nv_on_device_remove(DEVICE_OBJECT *Device)
 {
-	NETVSC_DEVICE *netDevice;
-	NETVSC_PACKET *netvscPacket;
+	netvsc_dev *netDevice;
+	netvsc_packet *netvscPacket;
 	int ret = 0;
 	LIST_ENTRY *entry;
 
@@ -976,7 +977,7 @@ hv_nv_on_device_remove(DEVICE_OBJECT *Device)
 	while (!IsListEmpty(&netDevice->ReceivePacketList)) {	
 		entry = REMOVE_HEAD_LIST(&netDevice->ReceivePacketList);
 		netvscPacket =
-		    CONTAINING_RECORD(entry, NETVSC_PACKET, ListEntry);
+		    CONTAINING_RECORD(entry, netvsc_packet, ListEntry);
 
 		free(netvscPacket, M_DEVBUF);
 	}
@@ -1009,9 +1010,9 @@ hv_nv_on_cleanup(DRIVER_OBJECT *drv)
 static void 
 hv_nv_on_send_completion(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 {
-	NETVSC_DEVICE* netDevice;
+	netvsc_dev* netDevice;
 	NVSP_MESSAGE *nvspPacket;
-	NETVSC_PACKET *nvscPacket;
+	netvsc_packet *nvscPacket;
 
 	DPRINT_ENTER(NETVSC);
 
@@ -1042,7 +1043,7 @@ hv_nv_on_send_completion(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 	} else if (nvspPacket->Header.MessageType ==
 				    NvspMessage1TypeSendRNDISPacketComplete) {
 		/* Get the send context */
-		nvscPacket = (NETVSC_PACKET *)(ULONG_PTR)Packet->TransactionId;
+		nvscPacket = (netvsc_packet *)(ULONG_PTR)Packet->TransactionId;
 		ASSERT(nvscPacket);
 
 		/* Notify the layer above us */
@@ -1063,9 +1064,9 @@ hv_nv_on_send_completion(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
  * Net VSC on send
  */
 static int
-hv_nv_on_send(DEVICE_OBJECT *Device, NETVSC_PACKET *Packet)
+hv_nv_on_send(DEVICE_OBJECT *Device, netvsc_packet *Packet)
 {
-	NETVSC_DEVICE* netDevice;
+	netvsc_dev* netDevice;
 	int ret = 0;
 
 	NVSP_MESSAGE send_msg;
@@ -1134,10 +1135,10 @@ hv_nv_on_send(DEVICE_OBJECT *Device, NETVSC_PACKET *Packet)
 void 
 hv_nv_on_receive(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 {
-	NETVSC_DEVICE* netDevice;
+	netvsc_dev* netDevice;
 	VMTRANSFER_PAGE_PACKET_HEADER *vmxferpagePacket;
 	NVSP_MESSAGE *nvspPacket;
-	NETVSC_PACKET *netvscPacket=NULL;
+	netvsc_packet *netvscPacket=NULL;
 	LIST_ENTRY* entry;
 	ULONG_PTR start;
 	XFERPAGE_PACKET *xferpagePacket=NULL;
@@ -1208,7 +1209,7 @@ hv_nv_on_receive(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 	SpinlockAcquire(netDevice->ReceivePacketListLock);
 	while (!IsListEmpty(&netDevice->ReceivePacketList)) {	
 		entry = REMOVE_HEAD_LIST(&netDevice->ReceivePacketList);
-		netvscPacket = CONTAINING_RECORD(entry, NETVSC_PACKET, ListEntry);
+		netvscPacket = CONTAINING_RECORD(entry, netvsc_packet, ListEntry);
 
 		INSERT_TAIL_LIST(&listHead, &netvscPacket->ListEntry);
 
@@ -1231,7 +1232,7 @@ hv_nv_on_receive(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 		SpinlockAcquire(netDevice->ReceivePacketListLock);
 		for (i=count; i != 0; i--) {
 			entry = REMOVE_HEAD_LIST(&listHead);
-			netvscPacket = CONTAINING_RECORD(entry, NETVSC_PACKET,
+			netvscPacket = CONTAINING_RECORD(entry, netvsc_packet,
 			    ListEntry);
 
 			INSERT_TAIL_LIST(&netDevice->ReceivePacketList,
@@ -1263,7 +1264,7 @@ hv_nv_on_receive(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 	/* Each range represents 1 RNDIS pkt that contains 1 ethernet frame */
 	for (i=0; i < (count - 1); i++) {
 		entry = REMOVE_HEAD_LIST(&listHead);
-		netvscPacket = CONTAINING_RECORD(entry, NETVSC_PACKET,
+		netvscPacket = CONTAINING_RECORD(entry, netvsc_packet,
 		    ListEntry);
 
 		/* Initialize the netvsc packet */
@@ -1319,7 +1320,7 @@ hv_nv_on_receive(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 		    netvscPacket->PageBuffers[0].Length);
 
 		/* Pass it to the upper layer */
-		((NETVSC_DRIVER_OBJECT *)Device->Driver)->OnReceiveCallback(Device,
+		((netvsc_driver_object *)Device->Driver)->OnReceiveCallback(Device,
 		    netvscPacket);
 
 		/*
@@ -1391,9 +1392,9 @@ retry_send_cmplt:
 void
 hv_nv_on_receive_completion(void *Context)
 {
-	NETVSC_PACKET *packet = (NETVSC_PACKET *)Context;
+	netvsc_packet *packet = (netvsc_packet *)Context;
 	DEVICE_OBJECT *device = (DEVICE_OBJECT *)packet->Device;
-	NETVSC_DEVICE* netDevice;
+	netvsc_dev* netDevice;
 	uint64_t       transactionId = 0;
 	BOOL fSendReceiveComp = FALSE;
 
@@ -1457,7 +1458,7 @@ hv_nv_on_channel_callback(void *Context)
 	const int netPacketSize = 2048;
 	int ret = 0;
 	DEVICE_OBJECT *device = (DEVICE_OBJECT *)Context;
-	NETVSC_DEVICE *netDevice;
+	netvsc_dev *netDevice;
 
 	uint32_t bytesRecvd;
 	uint64_t requestId;

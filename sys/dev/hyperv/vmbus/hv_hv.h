@@ -1,4 +1,4 @@
-/*****************************************************************************
+/*-
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -18,15 +18,15 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * Ported from lis21 code drop
  *
  * HyperV low-level hypervisor interface definition file 
  *
- *****************************************************************************/
+ */
 
-/*
+/*-
  * Copyright (c) 2009, Microsoft Corporation - All rights reserved.
  *
  *     Redistribution and use in source and binary forms, with or
@@ -59,26 +59,6 @@
 #ifndef __HV_HV_H__
 #define __HV_HV_H__
 
-#ifdef REMOVED
-/* Fixme -- removed */
-#include "osd.h"
-
-#include "HvTypes.h"
-#include "HvStatus.h"
-//#include "HvVmApi.h"
-//#include "HvKeApi.h"
-//#include "HvMmApi.h"
-//#include "HvCpuApi.h"
-#include "HvHalApi.h"
-#include "HvVpApi.h"
-//#include "HvTrApi.h"
-#include "HvSynicApi.h"
-//#include "HvAmApi.h" 
-//#include "HvHkApi.h"
-//#include "HvValApi.h"
-#include "HvHcApi.h"
-#include "HvPtApi.h"
-#endif
 
 /*
  * Fixme -- not at all thrilled about including these in header file
@@ -106,9 +86,10 @@ enum
     VMBUS_MONITOR_PORT_ID       = 3,
     VMBUS_MESSAGE_SINT          = 2
 };
-// 
-// #defines
-//
+
+/* 
+ * #defines
+ */
 #define HV_PRESENT_BIT				0x80000000
 
 #define HV_XENLINUX_GUEST_ID_LO     0x00000000
@@ -166,7 +147,7 @@ typedef struct {
 	UINT64	GuestId;			// XenLinux or native Linux. If XenLinux, the hypercall and synic pages has already been initialized
 	void*	HypercallPage;
 
-	BOOL	SynICInitialized;
+	bool	SynICInitialized;
 	// This is used as an input param to HvCallSignalEvent hypercall. The input param is immutable 
 	// in our usage and must be dynamic mem (vs stack or global). 
 	HV_INPUT_SIGNAL_EVENT_BUFFER *SignalEventBuffer;
@@ -177,9 +158,10 @@ typedef struct {
 } HV_CONTEXT;
 
 
-//
-// Inline routines
-//
+/*
+ * Inline functions
+ */
+
 static inline unsigned long long ReadMsr(int msr)
 {
 	unsigned long long val;
@@ -196,41 +178,17 @@ static inline void WriteMsr(int msr, UINT64 val)
 	return;
 }
 
-//
-// Hv Interface
-//
-INTERNAL int
-HvInit(
-    VOID
-    );
-
-INTERNAL VOID
-HvCleanup(
-    VOID
-    );
-
-INTERNAL HV_STATUS
-HvPostMessage(
-	HV_CONNECTION_ID connectionId,
-	HV_MESSAGE_TYPE  messageType,
-	PVOID            payload,
-	SIZE_T           payloadSize
-	);
-
-INTERNAL HV_STATUS
-HvSignalEvent(
-	VOID
-	);
-
-INTERNAL void 
-HvSynicInit(
-	void * irqArg
-	);
-
-INTERNAL VOID
-HvSynicCleanup(
-	VOID *arg
-	);
+/*
+ * HV Interface externs
+ */
+extern int HvInit(void);
+extern void HvCleanup(void);
+extern HV_STATUS HvPostMessage(HV_CONNECTION_ID connectionId,
+			       HV_MESSAGE_TYPE messageType, void *payload,
+			       SIZE_T payloadSize);
+extern HV_STATUS HvSignalEvent(void);
+extern void HvSynicInit(void *irqArg);
+extern void HvSynicCleanup(void *arg);
 
 /*
  * Externs
