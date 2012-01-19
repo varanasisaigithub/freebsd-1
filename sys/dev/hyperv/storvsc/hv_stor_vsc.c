@@ -128,13 +128,14 @@ static inline STORVSC_DEVICE* AllocStorDevice(DEVICE_OBJECT *Device)
 {
 	STORVSC_DEVICE *storDevice;
 
-	storDevice = MemAllocZeroed(sizeof(STORVSC_DEVICE));
-	if (!storDevice)
+	storDevice = malloc(sizeof(STORVSC_DEVICE), M_DEVBUF, M_NOWAIT | M_ZERO);
+	if (storDevice == NULL) {
 		return NULL;
+	}
 
 	// Set to 2 to allow both inbound and outbound traffics 
 	// (ie GetStorDevice() and MustGetStorDevice()) to proceed.
-	InterlockedCompareExchange(&storDevice->RefCount, 2, 0);
+	atomic_cmpset_int(&storDevice->RefCount, 0, 2);
 
 	storDevice->Device = Device;
 	storDevice->reset = 0;
@@ -149,7 +150,7 @@ static inline void FreeStorDevice(STORVSC_DEVICE *Device)
 	KASSERT(Device->RefCount == 0, ("no storvsc to free"));
 	mtx_destroy(&Device->lock);
 	free(&Device->lock, M_DEVBUF);
-	MemFree(Device);
+	free(Device, M_DEVBUF);
 }
 
 // Get the stordevice object iff exists and its refcount > 1
@@ -166,7 +167,7 @@ static inline STORVSC_DEVICE* GetStorDevice(DEVICE_OBJECT *Device)
 	} 
 
 	if (storDevice && storDevice->RefCount > 1) {
-		InterlockedIncrement(&storDevice->RefCount);
+		atomic_add_int(&storDevice->RefCount, 1);
 	} else {
 		storDevice = NULL;
 	}
@@ -184,7 +185,7 @@ static inline STORVSC_DEVICE* MustGetStorDevice(DEVICE_OBJECT *Device)
 	mtx_lock(&storDevice->lock);
 
 	if (storDevice && storDevice->RefCount) {
-		InterlockedIncrement(&storDevice->RefCount);
+		atomic_add_int(&storDevice->RefCount, 1);
 	} else {
 		storDevice = NULL;
 	}
@@ -201,43 +202,41 @@ static inline void PutStorDevice(DEVICE_OBJECT *Device)
 	storDevice = (STORVSC_DEVICE*)Device->Extension;
 	KASSERT(storDevice, ("storDevice NULL"));
 
-	InterlockedDecrement(&storDevice->RefCount);
+	atomic_subtract_int(&storDevice->RefCount, 1);
 	KASSERT(storDevice->RefCount, ("no storvsc"));
 }
 
-// Drop ref count to 1 to effectively disable GetStorDevice()
+/* Drop ref count to 1 to effectively disable GetStorDevice() */
 static inline STORVSC_DEVICE* ReleaseStorDevice(DEVICE_OBJECT *Device)
 {
-	STORVSC_DEVICE *storDevice;
+	STORVSC_DEVICE *stordev;
 
-	storDevice = (STORVSC_DEVICE*)Device->Extension;
-	KASSERT(storDevice, ("storDevice is NULL"));
+	stordev = (STORVSC_DEVICE*)Device->Extension;
+	KASSERT(stordev, ("stordev is NULL"));
 
-	// Busy wait until the ref drop to 2, then set it to 1 
-	while (InterlockedCompareExchange(&storDevice->RefCount, 1, 2) != 2)
-	{
-		Sleep(100);
+	/* Busy wait until the ref drop to 2, then set it to 1 */
+	while (atomic_cmpset_int(&stordev->RefCount, 2, 1) == 0) {
+		DELAY(100);
 	}
 
-	return storDevice;
+	return stordev;
 }
 
-// Drop ref count to 0. No one can use StorDevice object.
+/* Drop ref count to 0. No one can use StorDevice object. */
 static inline STORVSC_DEVICE* FinalReleaseStorDevice(DEVICE_OBJECT *Device)
 {
-	STORVSC_DEVICE *storDevice;
+	STORVSC_DEVICE *stordev;
 
-	storDevice = (STORVSC_DEVICE*)Device->Extension;
-	KASSERT(storDevice, ("no storDevice to release"));
+	stordev = (STORVSC_DEVICE*)Device->Extension;
+	KASSERT(stordev, ("no stordev to release"));
 
-	// Busy wait until the ref drop to 1, then set it to 0 
-	while (InterlockedCompareExchange(&storDevice->RefCount, 0, 1) != 1)
-	{
-		Sleep(100);
+	/* Busy wait until the ref drop to 1, then set it to 0 */
+	while (atomic_cmpset_int(&stordev->RefCount, 1, 0) == 0) {
+		DELAY(100);
 	}
 
 	Device->Extension = NULL;
-	return storDevice;
+	return stordev;
 }
 
 /*++;
@@ -859,7 +858,7 @@ StorVscOnIORequest( DEVICE_OBJECT *Device, struct storvsc_request *Request)
 		printf("Unable to send packet %p ret %d", vstorPacket, ret);
 	}
 
-	InterlockedIncrement(&storDevice->NumOutstandingRequests);
+	atomic_add_int(&storDevice->NumOutstandingRequests, 1);
 
 	PutStorDevice(Device);
 
@@ -950,7 +949,7 @@ StorVscOnIOCompletion(
 
 	request->OnIOCompletion(request);
 
-	InterlockedDecrement(&storDevice->NumOutstandingRequests);
+	atomic_subtract_int(&storDevice->NumOutstandingRequests, 1);
 
 	PutStorDevice(Device);
 
