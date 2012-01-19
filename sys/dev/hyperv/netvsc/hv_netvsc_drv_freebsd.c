@@ -35,6 +35,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
  */
 
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/sockio.h>
@@ -108,7 +109,7 @@ struct netvsc_driver_context {
 };
 
 #define SN_LOCK_INIT(_sc, _name) \
-	mtx_init(&(_sc)->hn_lock, _name, MTX_NETWORK_LOCK, MTX_DEF)
+	    mtx_init(&(_sc)->hn_lock, _name, MTX_NETWORK_LOCK, MTX_DEF)
 #define SN_LOCK(_sc)		mtx_lock(&(_sc)->hn_lock)
 #define SN_LOCK_ASSERT(_sc)	mtx_assert(&(_sc)->hn_lock, MA_OWNED)
 #define SN_UNLOCK(_sc)		mtx_unlock(&(_sc)->hn_lock)

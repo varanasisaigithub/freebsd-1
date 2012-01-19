@@ -1,4 +1,4 @@
-/*****************************************************************************
+/*-
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,13 +20,13 @@
  *
  * Ported from lis21 code drop
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * HyperV channel interface header
  *
- *****************************************************************************/
+ */
 
-/*
+/*-
  * Copyright (c) 2009, Microsoft Corporation - All rights reserved.
  *
  *     Redistribution and use in source and binary forms, with or
@@ -55,17 +55,18 @@
  *   Haiyang Zhang <haiyangz@microsoft.com>
  *   Hank Janssen  <hjanssen@microsoft.com>
  */
+
 #ifndef __HV_CHANNEL_INTERFACE_H__
 #define __HV_CHANNEL_INTERFACE_H__
 
 #include "hv_vmbus_var.h"
 
-INTERNAL void
+extern void
 GetChannelInterface(
 	VMBUS_CHANNEL_INTERFACE *ChannelInterface
 	);
 
-INTERNAL void
+extern void
 GetChannelInfo(
 	PDEVICE_OBJECT		Device,
 	DEVICE_INFO			*DeviceInfo

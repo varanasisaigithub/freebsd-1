@@ -1,4 +1,4 @@
-/*****************************************************************************
+/*-
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -24,9 +24,9 @@
  *
  * HyperV structures that define the format of the vmbus packets.
  *
- *****************************************************************************/
+ */
 
-/*
+/*-
  * Copyright (c) 2009, Microsoft Corporation - All rights reserved.
  *
  *     Redistribution and use in source and binary forms, with or
@@ -65,9 +65,9 @@ typedef struct {
         struct {
             volatile UINT32  In;        // Offset in bytes from the ring base
             volatile UINT32  Out;       // Offset in bytes from the ring base
-        };
+        } io;
         volatile LONGLONG    InOut;
-    };
+    } rio;
 
     //
     // If the receiving endpoint sets this to some non-zero value, the sending 
@@ -81,9 +81,9 @@ typedef struct {
     union {
         struct {
             VMRCB Control;
-        };
+        } ctl;
         UINT8 Reserved[PAGE_SIZE];
-    };
+    } rctl;
     
     //
     // Beginning of the ring data.  Note: It must be guaranteed that

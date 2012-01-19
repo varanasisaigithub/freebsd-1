@@ -96,7 +96,7 @@ typedef struct _VMBUS_CHANNEL_PACKET_MULITPAGE_BUFFER {
 // Routines
 //
 
-INTERNAL int
+extern int
 VmbusChannelOpen(
 	VMBUS_CHANNEL			*Channel,
 	UINT32					SendRingBufferSize,
@@ -107,12 +107,12 @@ VmbusChannelOpen(
 	PVOID					Context
 	);
 
-INTERNAL void
+extern void
 VmbusChannelClose(
 	VMBUS_CHANNEL		*Channel
 	);
 
-INTERNAL int
+extern int
 VmbusChannelSendPacket(
 	VMBUS_CHANNEL		*Channel,
 	const PVOID			Buffer,
@@ -122,7 +122,7 @@ VmbusChannelSendPacket(
 	UINT32				Flags
 );
 
-INTERNAL int
+extern int
 VmbusChannelSendPacketPageBuffer(
 	VMBUS_CHANNEL		*Channel,
 	PAGE_BUFFER			PageBuffers[],
@@ -132,7 +132,7 @@ VmbusChannelSendPacketPageBuffer(
 	UINT64				RequestId
 	);
 
-INTERNAL int
+extern int
 VmbusChannelSendPacketMultiPageBuffer(
 	VMBUS_CHANNEL		*Channel,
 	MULTIPAGE_BUFFER	*MultiPageBuffer,
@@ -141,7 +141,7 @@ VmbusChannelSendPacketMultiPageBuffer(
 	UINT64				RequestId
 );
 
-INTERNAL int
+extern int
 VmbusChannelEstablishGpadl(
 	VMBUS_CHANNEL		*Channel,
 	PVOID				Kbuffer,	// from kmalloc()
@@ -149,13 +149,13 @@ VmbusChannelEstablishGpadl(
 	UINT32				*GpadlHandle
 	);
 
-INTERNAL int
+extern int
 VmbusChannelTeardownGpadl(
 	VMBUS_CHANNEL	*Channel,
 	UINT32			GpadlHandle
 	);
 
-INTERNAL int
+extern int
 VmbusChannelRecvPacket(
 	VMBUS_CHANNEL		*Channel,
 	PVOID				Buffer,
@@ -164,7 +164,7 @@ VmbusChannelRecvPacket(
 	UINT64*				RequestId
 	);
 
-INTERNAL int
+extern int
 VmbusChannelRecvPacketRaw(
 	VMBUS_CHANNEL		*Channel,
 	PVOID				Buffer,
@@ -173,18 +173,18 @@ VmbusChannelRecvPacketRaw(
 	UINT64*				RequestId
 	);
 
-INTERNAL void
+extern void
 VmbusChannelOnChannelEvent(
 	VMBUS_CHANNEL		*Channel
 	);
 
-INTERNAL void
+extern void
 VmbusChannelGetDebugInfo(
 	VMBUS_CHANNEL				*Channel,
 	VMBUS_CHANNEL_DEBUG_INFO	*DebugInfo
 	);
 
-INTERNAL void
+extern void
 VmbusChannelOnTimer(
 	void		*Context
 	);

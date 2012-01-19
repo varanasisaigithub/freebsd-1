@@ -59,9 +59,10 @@
 #ifndef __HV_VMBUS_PRIVATE_H__
 #define __HV_VMBUS_PRIVATE_H__
 
-#ifndef INTERNAL
-#define INTERNAL static
-#endif
+/* Fixme:  Removed */
+//#ifndef INTERNAL
+//#define INTERNAL static
+//#endif
 
 #ifdef REMOVED
 /* Fixme:  Removed */
@@ -153,17 +154,17 @@ extern VMBUS_CONNECTION gVmbusConnection;
 //
 // General vmbus interface
 //
-INTERNAL DEVICE_OBJECT*
+extern DEVICE_OBJECT*
 VmbusChildDeviceCreate(
 	GUID deviceType,
 	GUID deviceInstance,
 	void *context);
 
-INTERNAL int
+extern int
 VmbusChildDeviceAdd(
 	DEVICE_OBJECT* Device);
 
-INTERNAL void
+extern void
 VmbusChildDeviceRemove(
    DEVICE_OBJECT* Device);
 
@@ -171,7 +172,7 @@ VmbusChildDeviceRemove(
 //VmbusChildDeviceDestroy(
 //	DEVICE_OBJECT*);
 
-INTERNAL VMBUS_CHANNEL*
+extern VMBUS_CHANNEL*
 GetChannelFromRelId(
 	UINT32 relId
 	);
@@ -179,28 +180,28 @@ GetChannelFromRelId(
 //
 // Connection interface
 //
-INTERNAL int
+extern int
 VmbusConnect(
 	VOID
 	);
 
-INTERNAL int
+extern int
 VmbusDisconnect(
 	VOID
 	);
 
-INTERNAL int
+extern int
 VmbusPostMessage(
 	PVOID			buffer,
 	SIZE_T			bufSize
 	);
 
-INTERNAL int
+extern int
 VmbusSetEvent(
 	UINT32 childRelId
 	);
 
-INTERNAL VOID
+extern VOID
 VmbusOnEvents(
   VOID
 	);
