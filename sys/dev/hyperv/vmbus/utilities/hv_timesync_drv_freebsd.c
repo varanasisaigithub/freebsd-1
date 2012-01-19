@@ -123,6 +123,8 @@ static driver_t timesync_driver = {
 static devclass_t timesync_devclass;
 
 DRIVER_MODULE(timesync, vmbus, timesync_driver, timesync_devclass, 0, 0);
+MODULE_VERSION(timesync, 1);
+MODULE_DEPEND(heartbeat,vmbus, 1, 1, 1);
 
 SYSINIT(timesync_initx, SI_SUB_RUN_SCHEDULER, SI_ORDER_MIDDLE + 1, timesync_init, NULL);
 

@@ -208,6 +208,8 @@ static driver_t heartbeat_driver = {
 static devclass_t heartbeat_devclass;
 
 DRIVER_MODULE(heartbeat, vmbus, heartbeat_driver, heartbeat_devclass, 0, 0);
+MODULE_VERSION(heartbeat, 1);
+MODULE_DEPEND(heartbeat, vmbus, 1, 1, 1);
 
 SYSINIT(heartbeat_initx, SI_SUB_RUN_SCHEDULER, SI_ORDER_MIDDLE + 1, heartbeat_init, NULL);
 

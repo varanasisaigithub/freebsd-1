@@ -65,4 +65,4 @@ BPF_JITTER		opt_bpf.h
 XENHVM			opt_global.h
 
 # Hyper-V
-HV_VMBUS		opt_global.h
+HYPERV			opt_global.h

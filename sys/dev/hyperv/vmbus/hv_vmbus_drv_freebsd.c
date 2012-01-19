@@ -594,6 +594,7 @@ unsigned int vmbus_loglevel = (ALL_MODULES << 16 | INFO_LVL);
 devclass_t vmbus_devclass;
 
 DRIVER_MODULE(vmbus, nexus, vmbus_driver, vmbus_devclass, vmbus_modevent, 0);
+MODULE_VERSION(vmbus,1);
 
 SYSINIT(vmb_init, SI_SUB_RUN_SCHEDULER, SI_ORDER_MIDDLE, vmbus_init, NULL);
 

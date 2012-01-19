@@ -282,45 +282,45 @@ contrib/dev/acpica/utilities/utxferror.c	optional acpi
 #
 # Hyper-V
 #
-#dev/hyperv/vmbus/Sources.c          optional hv_vmbus \
+#dev/hyperv/vmbus/Sources.c          optional hyperv \
 #	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
-#dev/hyperv/netvsc/NetVsc.c          optional hv_vmbus \
+#dev/hyperv/netvsc/NetVsc.c          optional hyperv \
 #	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
-#dev/hyperv/netvsc/RndisFilter.c     optional hv_vmbus \
+#dev/hyperv/netvsc/RndisFilter.c     optional hyperv \
 #	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
-dev/hyperv/vmbus/hv_vmbus.c                   optional hv_vmbus \
+dev/hyperv/vmbus/hv_vmbus.c                   optional hyperv \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
-dev/hyperv/vmbus/hv_osd_freebsd.c             optional hv_vmbus \
+dev/hyperv/vmbus/hv_osd_freebsd.c             optional hyperv \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
-dev/hyperv/vmbus/hv_vmbus_drv_freebsd.c       optional hv_vmbus \
+dev/hyperv/vmbus/hv_vmbus_drv_freebsd.c       optional hyperv \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
-dev/hyperv/vmbus/hv_channel.c                 optional hv_vmbus \
+dev/hyperv/vmbus/hv_channel.c                 optional hyperv \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
-dev/hyperv/vmbus/hv_channel_interface.c       optional hv_vmbus \
+dev/hyperv/vmbus/hv_channel_interface.c       optional hyperv \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
-dev/hyperv/vmbus/hv_channel_mgmt.c            optional hv_vmbus \
+dev/hyperv/vmbus/hv_channel_mgmt.c            optional hyperv \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
-dev/hyperv/vmbus/hv_connection.c              optional hv_vmbus \
+dev/hyperv/vmbus/hv_connection.c              optional hyperv \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
-dev/hyperv/vmbus/hv_ring_buffer.c             optional hv_vmbus \
+dev/hyperv/vmbus/hv_ring_buffer.c             optional hyperv \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
-dev/hyperv/vmbus/hv_hv.c                      optional hv_vmbus \
+dev/hyperv/vmbus/hv_hv.c                      optional hyperv \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} ${.IMPSRC}"
-dev/hyperv/vmbus/utilities/hv_timesync_ic.c optional hv_vmbus \
+dev/hyperv/vmbus/utilities/hv_timesync_ic.c optional hyperv \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"
-dev/hyperv/vmbus/utilities/hv_heartbeat_drv_freebsd.c optional hv_vmbus \
+dev/hyperv/vmbus/utilities/hv_heartbeat_drv_freebsd.c optional hyperv \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"
-dev/hyperv/vmbus/utilities/hv_timesync_drv_freebsd.c optional hv_vmbus \
+dev/hyperv/vmbus/utilities/hv_timesync_drv_freebsd.c optional hyperv \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"
-dev/hyperv/netvsc/hv_net_vsc.c			optional hv_vmbus \
+dev/hyperv/netvsc/hv_net_vsc.c			optional hyperv \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"
-dev/hyperv/netvsc/hv_netvsc_drv_freebsd.c	optional hv_vmbus \
+dev/hyperv/netvsc/hv_netvsc_drv_freebsd.c	optional hyperv \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"
-dev/hyperv/netvsc/hv_rndis_filter.c           optional hv_vmbus \
+dev/hyperv/netvsc/hv_rndis_filter.c           optional hyperv \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"
-dev/hyperv/storvsc/hv_stor_vsc.c             optional hv_vmbus \
+dev/hyperv/storvsc/hv_stor_vsc.c             optional hyperv \
  	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"
-dev/hyperv/storvsc/hv_storvsc_drv_freebsd.c	optional hv_vmbus \
+dev/hyperv/storvsc/hv_storvsc_drv_freebsd.c	optional hyperv \
 	compile-with    "${CC} -c ${CFLAGS:N-std=c99} -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus ${.IMPSRC}"	
 contrib/ipfilter/netinet/fil.c	optional ipfilter inet \
 	compile-with "${NORMAL_C} -I$S/contrib/ipfilter"

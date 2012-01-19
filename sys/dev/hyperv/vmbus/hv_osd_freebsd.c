@@ -106,28 +106,28 @@ static void WorkItemCallback(void *work, int pending);
 
 void BitSet(unsigned int *addr, int bit)
 {
-	asm("bts %1,%0" : "+m" (*addr) : "Ir" (bit));
+	__asm__("bts %1,%0" : "+m" (*addr) : "Ir" (bit));
 }
 
 int BitTest(unsigned int *addr, int bit)
 {
         unsigned char v;
 
-        asm("btl %2,%1; setc %0" : "=qm" (v) : "m" (*addr), "Ir" (bit));
+        __asm__("btl %2,%1; setc %0" : "=qm" (v) : "m" (*addr), "Ir" (bit));
 
         return ((int)v);
 }
 
 void BitClear(unsigned int *addr, int bit)
 {
-	asm("btr %1,%0" : "+m" (*addr) : "Ir" (bit));
+	__asm__("btr %1,%0" : "+m" (*addr) : "Ir" (bit));
 }
 
 int BitTestAndClear(unsigned int *addr, int bit)
 {
 	int oldbit;
 
-	asm volatile("lock; btr %2,%1; sbb %0,%0"
+	__asm__ __volatile__("lock; btr %2,%1; sbb %0,%0"
 		: "=r" (oldbit), "+m" (*addr) : "Ir" (bit) : "memory");
 
 	return (oldbit);
@@ -137,7 +137,7 @@ int BitTestAndSet(unsigned int *addr, int bit)
 {
 	int oldbit;
 
-	asm volatile("lock; bts %2,%1; sbb %0,%0"
+	__asm__ __volatile__("lock; bts %2,%1; sbb %0,%0"
 		: "=r" (oldbit), "+m" (*addr) : "Ir" (bit) : "memory");
 
 	return (oldbit);
@@ -146,7 +146,7 @@ int BitTestAndSet(unsigned int *addr, int bit)
 static inline int atomic_add_return(int i, int *addr)
 {
 	int __i = i;
-	asm volatile("lock; xadd %0, %1"
+	__asm__ __volatile__("lock; xadd %0, %1"
 			: "+r" (i), "+m" (*addr)
 			: : "memory");
 	return (i + __i);
@@ -166,7 +166,7 @@ int InterlockedCompareExchange(int *val, int new, int curr)
 {
 	int prev;
 
-	asm volatile("lock; cmpxchg %1,%2"
+	__asm__ __volatile__("lock; cmpxchg %1,%2"
 		: "=a"(prev)
 		: "r"(new), "m"(*val), "0"(curr)
 		: "memory");
@@ -261,7 +261,7 @@ void MemUnmapIO(void *virt)
 
 void MemoryFence()
 {
-	__asm volatile("mfence" ::: "memory");
+	__asm __volatile__("mfence" ::: "memory");
 }
 
 static void TimerCallback(void *data)

@@ -70,14 +70,14 @@ typedef struct _SG_BUFFER_LIST {
 } SG_BUFFER_LIST;
 
 typedef struct _RING_BUFFER {
-    volatile UINT32	WriteIndex;     // Offset in bytes from the start of ring data below
-    volatile UINT32	ReadIndex;      // Offset in bytes from the start of ring data below
+    __volatile__ UINT32	WriteIndex;     // Offset in bytes from the start of ring data below
+    __volatile__ UINT32	ReadIndex;      // Offset in bytes from the start of ring data below
 
-	volatile UINT32 InterruptMask;
+	__volatile__ UINT32 InterruptMask;
 	UINT8	Reserved[4084];			// Pad it to PAGE_SIZE so that data starts on page boundary
 	// NOTE: The InterruptMask field is used only for channels but since our vmbus connection
 	// also uses this data structure and its data starts here, we commented out this field.
-	// volatile UINT32 InterruptMask;
+	// __volatile__ UINT32 InterruptMask;
 	// Ring data starts here + RingDataStartOffset !!! DO NOT place any fields below this !!!
     UINT8		Buffer[0];
 } STRUCT_PACKED RING_BUFFER;

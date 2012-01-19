@@ -97,7 +97,8 @@
 
 static void adj_guesttime(winfiletime_t hosttime, UINT8 flags);
 
-extern void timesync_channel_cb(void *context) {
+void timesync_channel_cb(void *context) 
+{
 	VMBUS_CHANNEL *channel = context;
 	u8 *buf;
 	u32 buflen, recvlen;
@@ -165,7 +166,8 @@ extern void timesync_channel_cb(void *context) {
 #define ADJ_THRESHOLD 500*1000           /* in nanosecond */
 #define NANO_SEC  1000000000L            /* 10^ 9 nanosecs = 1 sec */
 
-static void adj_guesttime(winfiletime_t hosttime, UINT8 flags) {
+static void adj_guesttime(winfiletime_t hosttime, UINT8 flags) 
+{
 	struct timespec ts, host_ts;
 	INT64 tns, host_tns, terr, tmp, tsec;
 	INT32 err_sign;

@@ -431,7 +431,7 @@ RingBufferWrite(
 	UINT32 byteAvailToRead;
 	UINT32 totalBytesToWrite=0;
 
-	volatile UINT32 nextWriteLocation;
+	__volatile__ UINT32 nextWriteLocation;
 	UINT64 prevIndices=0;
 
 	DPRINT_ENTER(VMBUS);

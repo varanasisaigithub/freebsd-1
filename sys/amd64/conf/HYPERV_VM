@@ -1,7 +1,7 @@
 # $FreeBSD$
 #
 include		GENERIC
-ident		HV_VMBUS
+ident		HYPERV
 
 makeoptions	MODULES_OVERRIDE=""
 
@@ -16,4 +16,4 @@ options 	NO_ADAPTIVE_MUTEXES
 options 	NO_ADAPTIVE_RWLOCKS
 
 # Hyper-V VM support
-options 	HV_VMBUS
+options 	HYPERV
