@@ -104,6 +104,7 @@ struct netvsc_driver_context {
 	// !! These must be the first 2 fields !!
 	struct driver_context   drv_ctx;
 	NETVSC_DRIVER_OBJECT    drv_obj;
+	uint32_t		drv_inited;
 };
 
 #define SN_LOCK_INIT(_sc, _name) \
@@ -192,7 +193,10 @@ static void netvsc_init(void)
 	DPRINT_ENTER(NETVSC_DRV);
 	printf("Netvsc initializing....");
 
-	netvsc_drv_init(NetVscInitialize);
+	if (!g_netvsc_drv.drv_inited) {
+		netvsc_drv_init(NetVscInitialize);
+		atomic_set_int(&g_netvsc_drv.drv_inited,1);
+	}
 
 	DPRINT_EXIT(NETVSC_DRV);
 }
@@ -200,8 +204,19 @@ static void netvsc_init(void)
 static int
 netvsc_probe(device_t dev)
 {
-	const char *p = vmbus_get_type(dev);
+	const char *p;
 
+	/* 
+	 * If the system has already booted and thread
+	 * scheduling is possible indicated by the global
+	 * cold set to zero, we just call the driver
+	 * initialization directly.
+	 */
+	if (!cold && !g_netvsc_drv.drv_inited) {
+		netvsc_init();
+	}
+
+	p = vmbus_get_type(dev);
 	if (!memcmp(p, &g_netvsc_drv.drv_obj.Base.deviceType, sizeof(GUID))) {
 		device_set_desc(dev, "Synthetic Network Interface");
 		printf("Netvsc probe ....DONE \n");

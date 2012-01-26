@@ -42,6 +42,7 @@ struct storvsc_driver_context {
 	const char		*drv_name;
 	uint8_t			 drv_max_luns_per_target;
 	uint8_t			 drv_max_ios_per_target;
+	uint32_t		 drv_inited;
 };
 
 struct storvsc_softc {
@@ -162,6 +163,18 @@ static int
 storvsc_probe(device_t dev)
 {
 	int ret       = ENXIO;
+
+	/* 
+	 * If the system has already booted and thread
+	 * scheduling is possible indicated by the global
+	 * cold set to zero, we just call the driver
+	 * initialization directly.
+	 */
+	if (!cold && 
+	    (!g_storvsc_drv.drv_inited || !g_blkvsc_drv.drv_inited)) {
+		storvsc_init();
+	}
+
 	if (storvsc_get_storage_type(dev) != NULL) {
 		printf("Storvsc probe ...DONE\n");
 		ret = 0;;
@@ -176,18 +189,24 @@ static void storvsc_init(void)
 	/*
 	 * SCSI adapters.
 	 */
-	g_storvsc_drv.drv_name		      = "storvsc";
-	g_storvsc_drv.drv_max_luns_per_target = STORVSC_MAX_LUNS_PER_TARGET;
-	g_storvsc_drv.drv_max_ios_per_target  = STORVSC_MAX_IO_REQUESTS;
-	storvsc_drv_init(&g_storvsc_drv, StorVscInitialize);
+	if (g_storvsc_drv.drv_inited == 0) {
+		g_storvsc_drv.drv_name		      = "storvsc";
+		g_storvsc_drv.drv_max_luns_per_target = STORVSC_MAX_LUNS_PER_TARGET;
+		g_storvsc_drv.drv_max_ios_per_target  = STORVSC_MAX_IO_REQUESTS;
+		storvsc_drv_init(&g_storvsc_drv, StorVscInitialize);
+		atomic_set_int(&g_storvsc_drv.drv_inited,1);
+	}
 
 	/*
 	 * Hyper-v IDE devices are accessed as SCSI devices with a different GUID.
 	 */
-	g_blkvsc_drv.drv_name		      = "blkvsc";
-	g_blkvsc_drv.drv_max_luns_per_target = BLKVSC_MAX_IDE_DISKS_PER_TARGET;
-	g_blkvsc_drv.drv_max_ios_per_target  = BLKVSC_MAX_IO_REQUESTS;
-	storvsc_drv_init(&g_blkvsc_drv, BlkVscInitialize);
+	if (g_blkvsc_drv.drv_inited == 0) {
+		g_blkvsc_drv.drv_name		      = "blkvsc";
+		g_blkvsc_drv.drv_max_luns_per_target = BLKVSC_MAX_IDE_DISKS_PER_TARGET;
+		g_blkvsc_drv.drv_max_ios_per_target  = BLKVSC_MAX_IO_REQUESTS;
+		storvsc_drv_init(&g_blkvsc_drv, BlkVscInitialize);
+		atomic_set_int(&g_blkvsc_drv.drv_inited,1);
+	}
 
 	DPRINT_EXIT(STORVSC_DRV);
 }

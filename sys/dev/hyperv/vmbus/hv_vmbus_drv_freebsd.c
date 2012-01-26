@@ -79,6 +79,7 @@ struct vmbus_device_vars {
 struct vmbus_driver_context {
 	struct driver_context drv_ctx;
 	VMBUS_DRIVER_OBJECT drv_obj;
+	uint32_t drv_inited;
 	struct device_context device_ctx;
 	device_t vmb_dev;
 	struct resource *intr_res;
@@ -88,6 +89,7 @@ struct vmbus_driver_context {
 	struct intr_event *hv_event_intr_event;
 };
 
+static void vmbus_init(void);
 static void vmbus_exit(void);
 static void vmbus_bus_exit(void);
 static int vmbus_bus_init(PFN_DRIVERINITIALIZE pfn_drv_init);
@@ -334,7 +336,15 @@ static int vmbus_attach(device_t dev) {
 	sc->vmbus_dev = dev;
 	g_vmbus_drv.vmb_dev = dev;
 
-	/* Actual Attach is deferred to vmbus_init() */
+	/* 
+	 * If the system has already booted and thread
+	 * scheduling is possible indicated by the global
+	 * cold set to zero, we just call the driver
+	 * initialization directly.
+	 */
+	if (!cold && !g_vmbus_drv.drv_inited) {
+		vmbus_init();
+	}
 
 	return 0;
 }
@@ -491,7 +501,11 @@ static void vmbus_init(void) {
 			"Vmbus initializing.... current log level 0x%x (%x,%x)",
 			vmbus_loglevel, HIWORD(vmbus_loglevel), LOWORD(vmbus_loglevel));
 
-	(void) vmbus_bus_init(VmbusInitialize);
+	if (!g_vmbus_drv.drv_inited) {
+		(void) vmbus_bus_init(VmbusInitialize);
+		atomic_set_int(&g_vmbus_drv.drv_inited,1);
+	}
+
 
 	DPRINT_EXIT(VMBUS_DRV);
 }
