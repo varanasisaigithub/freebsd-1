@@ -655,7 +655,7 @@ StorVscOnDeviceRemove(
 	{
 		DPRINT_INFO(STORVSC, "waiting for %d requests to complete...", storDevice->NumOutstandingRequests);
 
-		Sleep(100);
+		DELAY(100);
 	}
 
 	DPRINT_INFO(STORVSC, "removing storage device (%p)...", Device->Extension);
@@ -720,8 +720,9 @@ StorVscOnHostReset(
 	/*
 	 * Wait for traffic in transit to complete
 	 */
-	while (storDevice->NumOutstandingRequests)
-		Sleep(1000);
+	while (storDevice->NumOutstandingRequests != 0) {
+		DELAY(1000);
+	}
 
 	request = &storDevice->ResetRequest;
 	vstorPacket = &request->VStorPacket;
