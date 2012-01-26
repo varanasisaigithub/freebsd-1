@@ -225,7 +225,7 @@ scan_for_luns(struct storvsc_softc *storvsc_softc)
 static int
 storvsc_probe(device_t dev)
 {
-	int ret       = ENXIO;
+	int ret	= ENXIO;
 
 	/* 
 	 * If the system has already booted and thread
@@ -239,10 +239,9 @@ storvsc_probe(device_t dev)
 	}
 
 	if (storvsc_get_storage_type(dev) != NULL) {
-		ret = 0;;
-	} else {
-		printf("Storvsc probe 0x%p ...FAILED\n", dev);
-	}
+		ret = 0;
+	} 
+
 	return (ret);
 }
 
