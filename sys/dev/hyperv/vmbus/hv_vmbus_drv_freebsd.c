@@ -44,6 +44,7 @@
 #include <sys/interrupt.h>
 #include <sys/sx.h>
 #include <sys/taskqueue.h>
+#include <sys/mutex.h>
 
 #include <machine/resource.h>
 #include <sys/rman.h>
@@ -94,7 +95,9 @@ static void vmbus_exit(void);
 static void vmbus_bus_exit(void);
 static int vmbus_bus_init(PFN_DRIVERINITIALIZE pfn_drv_init);
 static int vmbus_modevent(module_t mod, int what, void *arg);
-
+static void vmbus_registration_mutex_init(void);
+static void vmbus_registration_mutex_get(void);
+static void vmbus_registration_mutex_release(void);
 static int vmbus_irq = VMBUS_IRQ;
 static struct vmbus_driver_context g_vmbus_drv;
 static void *vmbus_cookiep;
@@ -261,13 +264,15 @@ static void vmbus_child_device_destroy(DEVICE_OBJECT* device_obj) {
 	DPRINT_INFO(VMBUS_DRV, "Destroy Device: obj: %p", device_obj);
 }
 
-static int vmbus_child_device_register(DEVICE_OBJECT* root_device_obj,
+static int
+vmbus_child_device_register(DEVICE_OBJECT* root_device_obj,
 		DEVICE_OBJECT* child_device_obj) {
 	struct device_context *root_device_ctx = to_device_context(root_device_obj);
 	struct device_context *child_device_ctx = to_device_context(
 			child_device_obj);
 	device_t child;
 	int ret = 0;
+	struct root_hold_token *root_mount_token;
 
 	DPRINT_INFO(VMBUS_DRV, "Register Device: thr: %p, obj: %p\n",
 			curthread, child_device_obj);
@@ -279,12 +284,24 @@ static int vmbus_child_device_register(DEVICE_OBJECT* root_device_obj,
 	//	memcpy(&ivars->vd_instance, &child_device_ctx->device_id, sizeof(GUID));
 	//	ivars->vd_dev_ctx = child_device_ctx;
 
+	/*
+	 * Grab a root hold to synchronize with mountroot.
+	 */
+	root_mount_token = root_mount_hold("vmbus_channel");
+
+	/*
+	 * Serialize device additions.
+	 */
+	vmbus_registration_mutex_get();
+
 	child = device_add_child(root_device_ctx->device, NULL, -1);
 	child_device_ctx->device = child;
 	device_set_ivars(child, child_device_ctx);
 
 	ret = device_probe_and_attach(child);
 
+	vmbus_registration_mutex_release();
+	root_mount_rel(root_mount_token);
 	return 0;
 }
 
@@ -303,6 +320,54 @@ static int vmbus_print_child(device_t dev, device_t child) {
 	retval += bus_print_child_footer(dev, child);
 
 	return (retval);
+}
+
+/*
+ * MUTEX for serializing device registration.
+ */
+static struct vmbus_register_mutex {
+	struct mtx	vmb_lock;
+	char		vmb_name[16];
+        struct thread	*vmb_owner;
+        int		vmb_waiters;
+} vmbus_reg_mutex;
+
+static void
+vmbus_registration_mutex_init(void)
+{
+	mtx_init(&vmbus_reg_mutex.vmb_lock, "vmb_lock", NULL, MTX_DEF);
+}
+static void
+vmbus_registration_mutex_get(void)
+{
+	int error;
+
+	mtx_lock(&vmbus_reg_mutex.vmb_lock);
+	if (vmbus_reg_mutex.vmb_owner != NULL) {
+		KASSERT((vmbus_reg_mutex.vmb_owner != curthread), 
+			("vmbus_registration_mutex already owned"));
+		vmbus_reg_mutex.vmb_waiters++;
+		error = mtx_sleep(&vmbus_reg_mutex, &vmbus_reg_mutex.vmb_lock, 0, "vmbus_reg", 0);
+		KASSERT( (error == 0), ("vmbus_registration_mutex unexpected error"));
+		if (--vmbus_reg_mutex.vmb_waiters == 0) {
+			printf("Woken up vmbus device add: %d thr: 0x%p\n",
+				vmbus_reg_mutex.vmb_waiters, curthread);
+		}
+	}
+	vmbus_reg_mutex.vmb_owner = curthread;
+	mtx_unlock(&vmbus_reg_mutex.vmb_lock);
+}
+static void
+vmbus_registration_mutex_release(void)
+{
+	mtx_lock(&vmbus_reg_mutex.vmb_lock);
+	KASSERT((vmbus_reg_mutex.vmb_owner == curthread),
+		("vmbus_registration_mutex_release not owner"));
+	vmbus_reg_mutex.vmb_owner = NULL;
+	if (vmbus_reg_mutex.vmb_waiters > 0) {
+		wakeup_one(&vmbus_reg_mutex);
+	}
+	mtx_unlock(&vmbus_reg_mutex.vmb_lock);
 }
 
 /* 
@@ -502,10 +567,10 @@ static void vmbus_init(void) {
 			vmbus_loglevel, HIWORD(vmbus_loglevel), LOWORD(vmbus_loglevel));
 
 	if (!g_vmbus_drv.drv_inited) {
+		vmbus_registration_mutex_init();
 		(void) vmbus_bus_init(VmbusInitialize);
 		atomic_set_int(&g_vmbus_drv.drv_inited,1);
 	}
-
 
 	DPRINT_EXIT(VMBUS_DRV);
 }
@@ -610,5 +675,7 @@ devclass_t vmbus_devclass;
 DRIVER_MODULE(vmbus, nexus, vmbus_driver, vmbus_devclass, vmbus_modevent, 0);
 MODULE_VERSION(vmbus,1);
 
-SYSINIT(vmb_init, SI_SUB_RUN_SCHEDULER, SI_ORDER_MIDDLE, vmbus_init, NULL);
+// TODO: We want to be earlier than SI_SUB_VFS
+SYSINIT(vmb_init, SI_SUB_VFS, SI_ORDER_MIDDLE, vmbus_init, NULL);
+
 

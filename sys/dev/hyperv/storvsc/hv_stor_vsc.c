@@ -257,7 +257,7 @@ StorVscInitialize( DRIVER_OBJECT *Driver)
 
 	DPRINT_ENTER(STORVSC);
 		
-	DPRINT_DBG(STORVSC, "sizeof(struct storvsc_request)=%d sizeof(STORVSC_REQUEST_EXTENSION)=%d sizeof(VSTOR_PACKET)=%d, sizeof(VMSCSI_REQUEST)=%d",
+	DPRINT_DBG(STORVSC, "sizeof(struct storvsc_request)=%ld sizeof(STORVSC_REQUEST_EXTENSION)=%ld sizeof(VSTOR_PACKET)=%ld, sizeof(VMSCSI_REQUEST)=%ld",
 		sizeof(struct storvsc_request), sizeof(STORVSC_REQUEST_EXTENSION), sizeof(VSTOR_PACKET), sizeof(VMSCSI_REQUEST));
 
 	// Make sure we are at least 2 pages since 1 page is used for control
@@ -1025,7 +1025,7 @@ StorVscOnChannelCallback(
 																&requestId);
 		if (ret == 0 && bytesRecvd > 0)
 		{
-			DPRINT_DBG(STORVSC, "receive %d bytes - tid %llx", bytesRecvd, requestId);
+			DPRINT_DBG(STORVSC, "receive %d bytes - tid %lx", bytesRecvd, requestId);
 
 			//ASSERT(bytesRecvd == sizeof(VSTOR_PACKET));
 	

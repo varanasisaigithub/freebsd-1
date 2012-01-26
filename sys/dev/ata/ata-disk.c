@@ -83,7 +83,7 @@ ad_probe(device_t dev)
 	(atadev->param.config == ATA_CFA_MAGIC1) ||
 	(atadev->param.config == ATA_CFA_MAGIC2) ||
 	(atadev->param.config == ATA_CFA_MAGIC3))
-	return 0;
+	return ENXIO; /* TODO: This should only happen for Hyper-v */
     else
 	return ENXIO;
 }

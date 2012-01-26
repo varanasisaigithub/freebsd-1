@@ -17,3 +17,6 @@ options 	NO_ADAPTIVE_RWLOCKS
 
 # Hyper-V VM support
 options 	HYPERV
+
+# Kernel Debugger
+options 	GDB
