@@ -1,4 +1,4 @@
-/*****************************************************************************
+/*-
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -18,68 +18,64 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * HyperV netvsc API header
  *
- *****************************************************************************/
+ */
 
 #ifndef __HV_NET_VSC_API_H__
 #define __HV_NET_VSC_API_H__
 
-#ifdef REMOVED
-/* Fixme -- removed */
-#include "vmbusvar.h"
-#endif
 
 typedef void (*PFN_ON_SENDRECVCOMPLETION)(void *);
 
-#define NETVSC_DEVICE_RING_BUFFER_SIZE 64*PAGE_SIZE //netvsc_drv_freebsd  -> 122
-#define NETVSC_PACKET_MAXPAGE 4
+#define NETVSC_DEVICE_RING_BUFFER_SIZE   (64 * PAGE_SIZE)
+#define NETVSC_PACKET_MAXPAGE            4
 
-typedef struct  {
+typedef struct netvsc_packet_ {
 	DLIST_ENTRY             ListEntry;
-	DEVICE_OBJECT *Device;
-	BOOL	IsDataPacket;  // One byte
-	XFERPAGE_PACKET		*XferPagePacket;
+	DEVICE_OBJECT           *Device;
+	bool                    IsDataPacket;  // One byte
+	XFERPAGE_PACKET         *XferPagePacket;
 	
 	union {
 		struct {
-			UINT64  ReceiveCompletionTid;
-			PVOID	ReceiveCompletionContext;
+			uint64_t ReceiveCompletionTid;
+			void	*ReceiveCompletionContext;
 			PFN_ON_SENDRECVCOMPLETION OnReceiveCompletion;
 		} Recv;	
 		struct {
-			UINT64 	SendCompletionTid; //RndisFilter.c: 383
-			PVOID	SendCompletionContext; //RndisFilter.c  : 381 -> 72 &  RNDIS_REQUEST*  
+			uint64_t SendCompletionTid;
+			void	*SendCompletionContext;
 			PFN_ON_SENDRECVCOMPLETION   OnSendCompletion;
 		} Send;	
 	} Completion;
 
-	PVOID  Extension;  //netvsc_drv.c : 1240
-	UINT32	TotalDataBufferLength; //long int  1242   ->1193
-	UINT32	PageBufferCount; //netvsc_drv.c : 1241 -> 1192
+	void		*Extension;
+	uint32_t	TotalDataBufferLength;
+	uint32_t	PageBufferCount;
 	PAGE_BUFFER PageBuffers[NETVSC_PACKET_MAXPAGE];
-} NETVSC_PACKET;
+} netvsc_packet;
 
 
-typedef struct {
+typedef struct netvsc_driver_object_ {
 	DRIVER_OBJECT	Base;
-	UINT32		RingBufferSize; //netvsc_drv_freebsd.c  : 197->122
-	UINT32		RequestExtSize;  //RndisFilter.c  : 768 -> 1120  size assumption
-	UINT32		AdditionalRequestPageBufferCount; //netvsc_drv_freebsd.c 		: 515
-	INT32		(*OnReceiveCallback)(DEVICE_OBJECT *, NETVSC_PACKET *);
-	VOID		(*OnLinkStatusChanged)(DEVICE_OBJECT *, UINT32) ;
-	INT32		(*OnOpen)(DEVICE_OBJECT *);
-	INT32		(*OnClose)(DEVICE_OBJECT *);
-	INT32		(*OnSend)(DEVICE_OBJECT *, NETVSC_PACKET *);
-	PVOID		context;
-} NETVSC_DRIVER_OBJECT;	
+	uint32_t	RingBufferSize;
+	uint32_t	RequestExtSize;
+	uint32_t	AdditionalRequestPageBufferCount;
+	int32_t		(*OnReceiveCallback)(DEVICE_OBJECT *, netvsc_packet *);
+	void		(*OnLinkStatusChanged)(DEVICE_OBJECT *, uint32_t) ;
+	int32_t		(*OnOpen)(DEVICE_OBJECT *);
+	int32_t		(*OnClose)(DEVICE_OBJECT *);
+	int32_t		(*OnSend)(DEVICE_OBJECT *, netvsc_packet *);
+	void		*context;
+} netvsc_driver_object;	
 
 typedef struct {
-	UCHAR	MacAddr[6];  //Assumption unsigned long 
-	BOOL	LinkState;  //RndisFilter.c:  1032->62
-} NETVSC_DEVICE_INFO;	
+	uint8_t         MacAddr[6];  //Assumption unsigned long 
+	bool            LinkState;
+} netvsc_device_info;
 
 
 /*
@@ -91,7 +87,7 @@ typedef struct hn_softc {
 	struct ifnet    *hn_ifp;
 	struct arpcom   arpcom;
 	device_t        hn_dev;
-	u_int8_t        hn_unit;
+	uint8_t         hn_unit;
 	int             hn_carrier;
 	int             hn_if_flags;
 	struct mtx      hn_lock;
@@ -111,8 +107,11 @@ typedef struct hn_softc {
  */
 extern int promisc_mode;
 
-extern void NetVscOnReceiveCompletion(PVOID Context);
+extern void
+hv_nv_on_receive_completion(void *Context);
 
+extern int
+hv_net_vsc_initialize(DRIVER_OBJECT *drv);
 
 #endif  /* __HV_NET_VSC_API_H__ */
 

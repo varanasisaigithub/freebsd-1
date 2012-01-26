@@ -104,7 +104,7 @@ static void *vmbus_cookiep;
 static int vmbus_rid = 0;
 
 static int vmbus_read_ivar(device_t dev, device_t child, int index,
-		uintptr_t *result) {
+	uintptr_t *result) {
 	struct device_context *child_dev_ctx = device_get_ivars(child);
 
 	switch (index) {
@@ -126,7 +126,7 @@ static int vmbus_read_ivar(device_t dev, device_t child, int index,
 }
 
 static int vmbus_write_ivar(device_t dev, device_t child, int index,
-		uintptr_t value) {
+	uintptr_t value) {
 	switch (index) {
 
 	case VMBUS_IVAR_TYPE:
@@ -216,31 +216,33 @@ hv_vmbus_isr(void *p) {
 	}
 }
 
-static DEVICE_OBJECT* vmbus_child_device_create(GUID type, GUID instance,
-		void* context) {
+static DEVICE_OBJECT* vmbus_child_device_create(GUID type,
+						GUID instance,
+						void* context) {
 	struct device_context *child_device_ctx;
 	DEVICE_OBJECT* child_device_obj;
 
 	DPRINT_ENTER(VMBUS_DRV);
 
 	// Allocate the new child device
-	child_device_ctx = malloc(sizeof(struct device_context), M_DEVBUF, M_ZERO);
+	child_device_ctx = malloc(sizeof(struct device_context), M_DEVBUF,
+		M_ZERO);
 	if (!child_device_ctx) {
 		DPRINT_ERR(VMBUS_DRV,
-				"unable to allocate device_context for child device");
+			"unable to allocate device_context for child device");
 		DPRINT_EXIT(VMBUS_DRV);
 
 		return NULL;
 	}
 
 	DPRINT_DBG(
-			VMBUS_DRV,
-			"child device (%p) allocated - "
-			"type {%02x%02x%02x%02x-%02x%02x-%02x%02x-"
-			"%02x%02x%02x%02x%02x%02x%02x%02x},"
-			"id {%02x%02x%02x%02x-%02x%02x-%02x%02x-"
-			"%02x%02x%02x%02x%02x%02x%02x%02x}",
-			&child_device_ctx->device, type.Data[3], type.Data[2], type.Data[1], type.Data[0], type.Data[5], type.Data[4], type.Data[7], type.Data[6], type.Data[8], type.Data[9], type.Data[10], type.Data[11], type.Data[12], type.Data[13], type.Data[14], type.Data[15], instance.Data[3], instance.Data[2], instance.Data[1], instance.Data[0], instance.Data[5], instance.Data[4], instance.Data[7], instance.Data[6], instance.Data[8], instance.Data[9], instance.Data[10], instance.Data[11], instance.Data[12], instance.Data[13], instance.Data[14], instance.Data[15]);
+		VMBUS_DRV,
+		"child device (%p) allocated - "
+		"type {%02x%02x%02x%02x-%02x%02x-%02x%02x-"
+		"%02x%02x%02x%02x%02x%02x%02x%02x},"
+		"id {%02x%02x%02x%02x-%02x%02x-%02x%02x-"
+		"%02x%02x%02x%02x%02x%02x%02x%02x}",
+		&child_device_ctx->device, type.Data[3], type.Data[2], type.Data[1], type.Data[0], type.Data[5], type.Data[4], type.Data[7], type.Data[6], type.Data[8], type.Data[9], type.Data[10], type.Data[11], type.Data[12], type.Data[13], type.Data[14], type.Data[15], instance.Data[3], instance.Data[2], instance.Data[1], instance.Data[0], instance.Data[5], instance.Data[4], instance.Data[7], instance.Data[6], instance.Data[8], instance.Data[9], instance.Data[10], instance.Data[11], instance.Data[12], instance.Data[13], instance.Data[14], instance.Data[15]);
 
 	child_device_obj = &child_device_ctx->device_obj;
 	child_device_obj->context = context;
@@ -251,7 +253,7 @@ static DEVICE_OBJECT* vmbus_child_device_create(GUID type, GUID instance,
 	memcpy(&child_device_ctx->device_id, &instance, sizeof(GUID));
 
 	DPRINT_INFO(VMBUS_DRV, "Create Device: thr: %p, ctx: %p, obj: %p",
-			curthread, child_device_ctx, child_device_obj);
+		curthread, child_device_ctx, child_device_obj);
 
 	DPRINT_EXIT(VMBUS_DRV);
 
@@ -267,15 +269,16 @@ static void vmbus_child_device_destroy(DEVICE_OBJECT* device_obj) {
 static int
 vmbus_child_device_register(DEVICE_OBJECT* root_device_obj,
 		DEVICE_OBJECT* child_device_obj) {
-	struct device_context *root_device_ctx = to_device_context(root_device_obj);
-	struct device_context *child_device_ctx = to_device_context(
-			child_device_obj);
+	struct device_context *root_device_ctx =
+		to_device_context(root_device_obj);
+	struct device_context *child_device_ctx =
+		to_device_context(child_device_obj);
 	device_t child;
 	int ret = 0;
 	struct root_hold_token *root_mount_token;
 
 	DPRINT_INFO(VMBUS_DRV, "Register Device: thr: %p, obj: %p\n",
-			curthread, child_device_obj);
+		curthread, child_device_obj);
 
 	//	ivars = malloc(sizeof(struct vmbus_device_ivars),
 	//				M_DEVBUS, M_ZERO|M_WAITOK);
@@ -307,7 +310,7 @@ vmbus_child_device_register(DEVICE_OBJECT* root_device_obj,
 
 static void vmbus_child_device_unregister(DEVICE_OBJECT* device_obj) {
 	DPRINT_INFO(VMBUS_DRV, "Unregister Device: thr: %p, obj: %p\n",
-			curthread, device_obj);
+		curthread, device_obj);
 }
 
 void vmbus_child_driver_register(struct driver_context* driver_ctx) {
@@ -463,7 +466,7 @@ static int vmbus_bus_init(PFN_DRIVERINITIALIZE pfn_drv_init) {
 	}
 
 	if (swi_add(&g_vmbus_drv.hv_message_intr_event, "hv_msg", vmbus_msg_dpc,
-			vmbus_drv_obj, SWI_CLOCK, 0, &vmbus_drv_ctx->msg_dpc)) {
+		vmbus_drv_obj, SWI_CLOCK, 0, &vmbus_drv_ctx->msg_dpc)) {
 		goto cleanup;
 	}
 
@@ -471,8 +474,9 @@ static int vmbus_bus_init(PFN_DRIVERINITIALIZE pfn_drv_init) {
 		goto cleanup1;
 	}
 
-	if (swi_add(&g_vmbus_drv.hv_event_intr_event, "hv_event", vmbus_event_dpc,
-			vmbus_drv_obj, SWI_CLOCK, 0, &vmbus_drv_ctx->event_dpc)) {
+	if (swi_add(&g_vmbus_drv.hv_event_intr_event, "hv_event",
+		vmbus_event_dpc, vmbus_drv_obj, SWI_CLOCK, 0,
+		&vmbus_drv_ctx->event_dpc)) {
 		goto cleanup1;
 	}
 
@@ -480,11 +484,12 @@ static int vmbus_bus_init(PFN_DRIVERINITIALIZE pfn_drv_init) {
 		goto cleanup2;
 	}
 
-	g_vmbus_drv.intr_res = bus_alloc_resource(g_vmbus_drv.vmb_dev, SYS_RES_IRQ,
-			&vmbus_rid, vmbus_irq, vmbus_irq, 1, RF_ACTIVE);
+	g_vmbus_drv.intr_res = bus_alloc_resource(g_vmbus_drv.vmb_dev,
+		SYS_RES_IRQ, &vmbus_rid, vmbus_irq, vmbus_irq, 1, RF_ACTIVE);
 
 	if (g_vmbus_drv.intr_res == NULL) {
-		DPRINT_ERR(VMBUS_DRV, "ERROR - Unable to request IRQ %d", vmbus_irq);
+		DPRINT_ERR(VMBUS_DRV, "ERROR - Unable to request IRQ %d",
+			vmbus_irq);
 		goto cleanup2;
 	}
 
@@ -492,11 +497,11 @@ static int vmbus_bus_init(PFN_DRIVERINITIALIZE pfn_drv_init) {
 	 * Fixme:  Changed for port to FreeBSD 8.2.  Make sure this works.
 	 */
 	ret = bus_setup_intr(g_vmbus_drv.vmb_dev, g_vmbus_drv.intr_res,
-			INTR_TYPE_NET | INTR_FAST, hv_vmbus_isr,
+		INTR_TYPE_NET | INTR_FAST, hv_vmbus_isr,
 #if __FreeBSD_version >= 700000
-			NULL,
+		NULL,
 #endif
-			NULL, &vmbus_cookiep);
+		NULL, &vmbus_cookiep);
 
 	if (ret != 0) {
 		/* Fixme:  Probably not appropriate */
@@ -513,9 +518,11 @@ static int vmbus_bus_init(PFN_DRIVERINITIALIZE pfn_drv_init) {
 	isrc = intr_lookup_source(vmbus_irq);
 	if ((isrc == NULL) || (isrc->is_event == NULL)) {
 		if (isrc) {
-			DPRINT_ERR(VMBUS_DRV, "ERROR - Unable to find intr event");
+			DPRINT_ERR(VMBUS_DRV,
+				"ERROR - Unable to find intr event");
 		} else {
-			DPRINT_ERR(VMBUS_DRV, "ERROR - Unable to find intr src");
+			DPRINT_ERR(VMBUS_DRV,
+				"ERROR - Unable to find intr src");
 		}
 		goto cleanup4;
 	}
@@ -534,9 +541,10 @@ static int vmbus_bus_init(PFN_DRIVERINITIALIZE pfn_drv_init) {
 	}
 
 	//	sprintf(dev_ctx->device.bus_id, "vmbus_0_0");
-	memcpy(&dev_ctx->class_id, &dev_ctx->device_obj.deviceType, sizeof(GUID));
+	memcpy(&dev_ctx->class_id, &dev_ctx->device_obj.deviceType,
+		sizeof(GUID));
 	memcpy(&dev_ctx->device_id, &dev_ctx->device_obj.deviceInstance,
-			sizeof(GUID));
+		sizeof(GUID));
 
 	vmbus_drv_obj->GetChannelOffers();
 
@@ -545,10 +553,11 @@ static int vmbus_bus_init(PFN_DRIVERINITIALIZE pfn_drv_init) {
 
 	cleanup4:
 	/* remove swi, bus and intr resource */
-	bus_teardown_intr(g_vmbus_drv.vmb_dev, g_vmbus_drv.intr_res, vmbus_cookiep);
+	bus_teardown_intr(g_vmbus_drv.vmb_dev, g_vmbus_drv.intr_res,
+		vmbus_cookiep);
 
-	cleanup3: bus_release_resource(g_vmbus_drv.vmb_dev, SYS_RES_IRQ, vmbus_rid,
-			g_vmbus_drv.intr_res);
+	cleanup3: bus_release_resource(g_vmbus_drv.vmb_dev, SYS_RES_IRQ,
+		vmbus_rid, g_vmbus_drv.intr_res);
 
 	cleanup2: swi_remove(vmbus_drv_ctx->event_dpc);
 
@@ -563,8 +572,8 @@ static void vmbus_init(void) {
 	DPRINT_ENTER(VMBUS_DRV);
 
 	DPRINT_INFO(VMBUS_DRV,
-			"Vmbus initializing.... current log level 0x%x (%x,%x)",
-			vmbus_loglevel, HIWORD(vmbus_loglevel), LOWORD(vmbus_loglevel));
+		"Vmbus initializing.... current log level 0x%x (%x,%x)",
+		vmbus_loglevel, HIWORD(vmbus_loglevel), LOWORD(vmbus_loglevel));
 
 	if (!g_vmbus_drv.drv_inited) {
 		vmbus_registration_mutex_init();
@@ -600,10 +609,11 @@ static void vmbus_bus_exit(void) {
 	// bus_unregister(&vmbus_drv_ctx->bus);
 
 	/* remove swi, bus and intr resource */
-	bus_teardown_intr(g_vmbus_drv.vmb_dev, g_vmbus_drv.intr_res, vmbus_cookiep);
+	bus_teardown_intr(g_vmbus_drv.vmb_dev, g_vmbus_drv.intr_res,
+		vmbus_cookiep);
 
 	bus_release_resource(g_vmbus_drv.vmb_dev, SYS_RES_IRQ, vmbus_rid,
-			g_vmbus_drv.intr_res);
+		g_vmbus_drv.intr_res);
 
 	swi_remove(vmbus_drv_ctx->msg_dpc);
 	swi_remove(vmbus_drv_ctx->event_dpc);
@@ -648,24 +658,24 @@ static int vmbus_modevent(module_t mod, int what, void *arg) {
 }
 
 static device_method_t vmbus_methods[] = {
-		/* Device interface */DEVMETHOD(device_identify, vmbus_identify),
-		DEVMETHOD(device_probe, vmbus_probe),
-		DEVMETHOD(device_attach, vmbus_attach),
-		DEVMETHOD(device_detach, vmbus_detach),
-		DEVMETHOD(device_shutdown, bus_generic_shutdown),
-		DEVMETHOD(device_suspend, bus_generic_suspend),
-		DEVMETHOD(device_resume, bus_generic_resume),
+	/* Device interface */DEVMETHOD(device_identify, vmbus_identify),
+	DEVMETHOD(device_probe, vmbus_probe),
+	DEVMETHOD(device_attach, vmbus_attach),
+	DEVMETHOD(device_detach, vmbus_detach),
+	DEVMETHOD(device_shutdown, bus_generic_shutdown),
+	DEVMETHOD(device_suspend, bus_generic_suspend),
+	DEVMETHOD(device_resume, bus_generic_resume),
 
-		/* Bus interface */DEVMETHOD(bus_add_child, bus_generic_add_child),
-		DEVMETHOD(bus_print_child, vmbus_print_child),
-		DEVMETHOD(bus_read_ivar, vmbus_read_ivar),
-		DEVMETHOD(bus_write_ivar, vmbus_write_ivar),
+	/* Bus interface */DEVMETHOD(bus_add_child, bus_generic_add_child),
+	DEVMETHOD(bus_print_child, vmbus_print_child),
+	DEVMETHOD(bus_read_ivar, vmbus_read_ivar),
+	DEVMETHOD(bus_write_ivar, vmbus_write_ivar),
 
-		{ 0, 0 } };
+	{ 0, 0 } };
 
 static char driver_name[] = "vmbus";
 static driver_t vmbus_driver = { driver_name, vmbus_methods,
-		sizeof(struct vmbus_softc), };
+	sizeof(struct vmbus_softc), };
 
 unsigned int vmbus_loglevel = (ALL_MODULES << 16 | INFO_LVL);
 //unsigned int vmbus_loglevel = (ALL_MODULES << 16 | DEBUG_LVL);

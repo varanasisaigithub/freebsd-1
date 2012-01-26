@@ -58,16 +58,14 @@
 #ifndef __HV_TIMESYNC_IC_H__
 #define __HV_TIMESYNC_IC_H__
 
-#include <dev/hyperv/include/hv_osd.h>
 #include <dev/hyperv/vmbus/hv_ic.h>
 
 struct ictimesync_data {
-    winfiletime_t parenttime;
-    winfiletime_t childtime;
-    winfiletime_t roundtriptime;
-    u8 flags;
-} __attribute__((packed));
-
+	winfiletime_t	parenttime;
+	winfiletime_t	childtime;
+	winfiletime_t	roundtriptime;
+	u8		flags;
+}__attribute__((packed));
 
 extern void timesync_channel_cb(void *context);
 

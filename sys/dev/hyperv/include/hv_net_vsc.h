@@ -1,4 +1,4 @@
-/*****************************************************************************
+/*-
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -18,15 +18,15 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * Ported from lis21 code drop
  *
  * HyperV vmbus network vsc header file
  *
- *****************************************************************************/
+ */
 
-/*
+/*-
  * Copyright (c) 2009, Microsoft Corporation - All rights reserved.
  *
  *     Redistribution and use in source and binary forms, with or
@@ -60,73 +60,64 @@
 #define __HV_NET_VSC_H__
 
 
-#ifdef REMOVED
-/* Fixme:  Removed */
-#include "VmbusPacketFormat.h"
-#include "nvspprotocol.h"
+/*
+ * #defines
+ */
 
-#include "List.h"
+//#define NVSC_MIN_PROTOCOL_VERSION		1
+//#define NVSC_MAX_PROTOCOL_VERSION		1
 
-#include "NetVscApi.h"
-#endif
-
-//
-// #defines
-//
-//#define NVSC_MIN_PROTOCOL_VERSION                       1
-//#define NVSC_MAX_PROTOCOL_VERSION                       1
-
-#define NETVSC_SEND_BUFFER_SIZE				64*1024 // 64K
-#define NETVSC_SEND_BUFFER_ID				0xface
+#define NETVSC_SEND_BUFFER_SIZE			(64*1024) // 64K
+#define NETVSC_SEND_BUFFER_ID			0xface
 
 
-#define NETVSC_RECEIVE_BUFFER_SIZE			1024*1024 // 1MB
+#define NETVSC_RECEIVE_BUFFER_SIZE		(1024*1024) // 1MB
 
-#define NETVSC_RECEIVE_BUFFER_ID			0xcafe
+#define NETVSC_RECEIVE_BUFFER_ID		0xcafe
 
-#define NETVSC_RECEIVE_SG_COUNT				1
+#define NETVSC_RECEIVE_SG_COUNT			1
 
 // Preallocated receive packets
 #define NETVSC_RECEIVE_PACKETLIST_COUNT		256
 
-//
-// Data types
-//
+/*
+ * Data types
+ */
 
-// Per netvsc channel-specific
-typedef struct _NETVSC_DEVICE {
-	DEVICE_OBJECT					*Device;
+/* Per netvsc channel-specific */
+typedef struct netvsc_dev_ {
+	DEVICE_OBJECT				*Device;
 
-	int								RefCount;
+	int					RefCount;
 
-	int								NumOutstandingSends;
-	// List of free preallocated NETVSC_PACKET to represent receive packet
-	LIST_ENTRY						ReceivePacketList;
-	HANDLE							ReceivePacketListLock;
+	int					NumOutstandingSends;
+	/* List of free preallocated NETVSC_PACKET to represent RX packet */
+	LIST_ENTRY				ReceivePacketList;
+	HANDLE					ReceivePacketListLock;
 
-	// Send buffer allocated by us but manages by NetVSP
-	PVOID							SendBuffer;
-	UINT32							SendBufferSize;
-	UINT32							SendBufferGpadlHandle;
-	UINT32							SendSectionSize;
+	/* Send buffer allocated by us but manages by NetVSP */
+	void					*SendBuffer;
+	uint32_t				SendBufferSize;
+	uint32_t				SendBufferGpadlHandle;
+	uint32_t				SendSectionSize;
 
-	// Receive buffer allocated by us but manages by NetVSP
-	PVOID							ReceiveBuffer;
-	UINT32							ReceiveBufferSize;
-	UINT32							ReceiveBufferGpadlHandle;
-	UINT32							ReceiveSectionCount;
-	PNVSP_1_RECEIVE_BUFFER_SECTION	ReceiveSections;
+	/* Receive buffer allocated by us but managed by NetVSP */
+	void					*ReceiveBuffer;
+	uint32_t				ReceiveBufferSize;
+	uint32_t				ReceiveBufferGpadlHandle;
+	uint32_t				ReceiveSectionCount;
+	PNVSP_1_RECEIVE_BUFFER_SECTION		ReceiveSections;
 
-	// Used for NetVSP initialization protocol
-	HANDLE							ChannelInitEvent;
-	NVSP_MESSAGE					ChannelInitPacket;
+	/* Used for NetVSP initialization protocol */
+	HANDLE					ChannelInitEvent;
+	NVSP_MESSAGE				ChannelInitPacket;
 
-	NVSP_MESSAGE					RevokePacket;
-	//UCHAR							HwMacAddr[HW_MACADDR_LEN];
+	NVSP_MESSAGE				RevokePacket;
+	//uint8_t				HwMacAddr[HW_MACADDR_LEN];
 
 	// Holds rndis device info
-	void							*Extension;
-} NETVSC_DEVICE;
+	void					*Extension;
+} netvsc_dev;
 
 #endif  /* __HV_NET_VSC_H__ */
 

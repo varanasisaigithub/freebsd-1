@@ -102,6 +102,7 @@ storvsc_xptdone(struct cam_periph *periph, union ccb *done_ccb)
 {
 	wakeup(&done_ccb->ccb_h.cbfcnp);
 }
+
 static void
 storvsc_xptscandone(struct cam_periph *periph, union ccb *request_ccb)
 {
@@ -153,7 +154,6 @@ storvsc_xptscandone(struct cam_periph *periph, union ccb *request_ccb)
 		free(new_path, M_CAMXPT);
 		free(request_ccb, M_CAMXPT);
 	}
-
 }
 
 /**
@@ -464,7 +464,7 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 	STORVSC_DRIVER_OBJECT *stor_drv_obj = &sto_drv->drv_obj;
 	int res;
 
-    switch (ccb->ccb_h.func_code) {
+	switch (ccb->ccb_h.func_code) {
 	case XPT_PATH_INQ: {
 		struct ccb_pathinq *cpi = &ccb->cpi;
 		DPRINT_INFO(STORVSC, "XPT_PATH_INQ %d:%d:%d %s\n", cam_sim_bus(sim),

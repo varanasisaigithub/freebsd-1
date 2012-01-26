@@ -121,16 +121,19 @@ void timesync_channel_cb(void *context)
 //		if(debug_counter++ < 10)
 //		   DPRINT_INFO(VMBUS, "timesync packet: recvlen=%d, requestid=%ld", recvlen, requestid);
 
-		DPRINT_DBG(VMBUS, "timesync packet: recvlen=%d, requestid=%ld", recvlen, requestid);
+		DPRINT_DBG(VMBUS, "timesync packet: recvlen=%d, requestid=%ld",
+			recvlen, requestid);
 
-		icmsghdrp = (struct icmsg_hdr *) &buf[sizeof(struct vmbuspipe_hdr)];
+		icmsghdrp =
+			(struct icmsg_hdr *) &buf[sizeof(struct vmbuspipe_hdr)];
 
 		if (icmsghdrp->icmsgtype == ICMSGTYPE_NEGOTIATE) {
 			icmsghdrp->icmsgsize = 0x10;
-			negop = (struct icmsg_negotiate *) &buf[sizeof(struct vmbuspipe_hdr)
+			negop =
+				(struct icmsg_negotiate *) &buf[sizeof(struct vmbuspipe_hdr)
 					+ sizeof(struct icmsg_hdr)];
 			if (negop->icframe_vercnt == 2
-					&& negop->icversion_data[1].major == 3) {
+				&& negop->icversion_data[1].major == 3) {
 				negop->icversion_data[0].major = 3;
 				negop->icversion_data[0].minor = 0;
 				negop->icversion_data[1].major = 3;
@@ -145,15 +148,16 @@ void timesync_channel_cb(void *context)
 			negop->icmsg_vercnt = 1;
 		} else {
 			timedatap =
-					(struct ictimesync_data *) &buf[sizeof(struct vmbuspipe_hdr)
-							+ sizeof(struct icmsg_hdr)];
+				(struct ictimesync_data *) &buf[sizeof(struct vmbuspipe_hdr)
+					+ sizeof(struct icmsg_hdr)];
 			adj_guesttime(timedatap->parenttime, timedatap->flags);
 		}
 
-		icmsghdrp->icflags = ICMSGHDRFLAG_TRANSACTION | ICMSGHDRFLAG_RESPONSE;
+		icmsghdrp->icflags = ICMSGHDRFLAG_TRANSACTION
+			| ICMSGHDRFLAG_RESPONSE;
 
 		VmbusChannelSendPacket(channel, buf, recvlen, requestid,
-				VmbusPacketTypeDataInBand, 0);
+			VmbusPacketTypeDataInBand, 0);
 	}
 
 	MemFree(buf);
