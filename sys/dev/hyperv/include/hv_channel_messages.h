@@ -18,7 +18,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * Ported from lis21 code drop
  *
@@ -60,8 +60,6 @@
 
 #ifndef __HV_CHANNEL_MESSAGES_H__
 #define __HV_CHANNEL_MESSAGES_H__
-
-#pragma once
 
 #include "hv_vmbus_channel_interface.h"
 #include "hv_vmbus_packet_format.h"

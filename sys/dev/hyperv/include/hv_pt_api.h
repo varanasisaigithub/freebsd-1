@@ -18,7 +18,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * Ported from lis21 code drop
  *
@@ -60,7 +60,6 @@
 #ifndef __HV_PT_API_H__
 #define __HV_PT_API_H__
 
-#pragma once
 
 //
 // Versioning definitions used for guests reporting themselves to the
@@ -71,21 +70,17 @@
 //
 // Version info reported by guest OS's
 //
-typedef enum _HV_GUEST_OS_VENDOR
-{
+typedef enum _HV_GUEST_OS_VENDOR {
     HvGuestOsVendorMicrosoft        = 0x0001
-
 } HV_GUEST_OS_VENDOR, *PHV_GUEST_OS_VENDOR;
 
-typedef enum _HV_GUEST_OS_MICROSOFT_IDS
-{
+typedef enum _HV_GUEST_OS_MICROSOFT_IDS {
     HvGuestOsMicrosoftUndefined     = 0x00,
     HvGuestOsMicrosoftMSDOS         = 0x01,
     HvGuestOsMicrosoftWindows3x     = 0x02,
     HvGuestOsMicrosoftWindows9x     = 0x03,
     HvGuestOsMicrosoftWindowsNT     = 0x04,
     HvGuestOsMicrosoftWindowsCE     = 0x05
-
 } HV_GUEST_OS_MICROSOFT_IDS, *PHV_GUEST_OS_MICROSOFT_IDS;
 
 //
@@ -93,11 +88,9 @@ typedef enum _HV_GUEST_OS_MICROSOFT_IDS
 //
 #define HV_X64_MSR_GUEST_OS_ID 0x40000000
 
-typedef union _HV_X64_MSR_GUEST_OS_ID_CONTENTS
-{
+typedef union _HV_X64_MSR_GUEST_OS_ID_CONTENTS {
     UINT64 AsUINT64;
-    struct
-    {
+    struct {
         UINT64 BuildNumber    : 16;
         UINT64 ServiceVersion : 8; // Service Pack, etc.
         UINT64 MinorVersion   : 8;
@@ -112,11 +105,9 @@ typedef union _HV_X64_MSR_GUEST_OS_ID_CONTENTS
 //
 #define HV_X64_MSR_HYPERCALL 0x40000001
 
-typedef union _HV_X64_MSR_HYPERCALL_CONTENTS
-{
+typedef union _HV_X64_MSR_HYPERCALL_CONTENTS {
     UINT64 AsUINT64;
-    struct
-    {
+    struct {
         UINT64 Enable               : 1;
         UINT64 Reserved             : 11;
         UINT64 GuestPhysicalAddress : 52;

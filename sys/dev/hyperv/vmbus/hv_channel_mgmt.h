@@ -72,7 +72,9 @@
 typedef void (*PFN_CHANNEL_CALLBACK)(PVOID context);
 
 typedef enum {
-	CHANNEL_OFFER_STATE, CHANNEL_OPENING_STATE, CHANNEL_OPEN_STATE,
+	CHANNEL_OFFER_STATE,
+	CHANNEL_OPENING_STATE,
+	CHANNEL_OPEN_STATE,
 } VMBUS_CHANNEL_STATE;
 
 typedef struct _VMBUS_CHANNEL {
@@ -100,7 +102,7 @@ typedef struct _VMBUS_CHANNEL {
 	HANDLE ControlWQ;
 
 	// Channel callback are invoked in this workqueue context
-	//HANDLE						dataWorkQueue;
+	//HANDLE				dataWorkQueue;
 
 	PFN_CHANNEL_CALLBACK OnChannelCallback;
 	PVOID ChannelCallbackContext;

@@ -141,4 +141,3 @@ extern void
 VmbusChannelOnTimer(void *Context);
 
 #endif  /* __HV_CHANNEL_H__ */
-

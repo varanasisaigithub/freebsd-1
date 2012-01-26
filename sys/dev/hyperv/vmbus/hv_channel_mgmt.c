@@ -1,4 +1,4 @@
-/*****************************************************************************
+/*-
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -24,9 +24,9 @@
  *
  * HyperV channel code
  *
- *****************************************************************************/
+ */
 
-/*
+/*-
  * Copyright (c) 2009, Microsoft Corporation - All rights reserved.
  *
  *     Redistribution and use in source and binary forms, with or
@@ -593,7 +593,17 @@ VmbusChannelOnOffer(PVMBUS_CHANNEL_MESSAGE_HEADER hdr) {
 		"Channel offer notification - child relid %d monitor id %d allocated %d, "
 		"type {%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x%02x%02x} "
 		"instance {%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x%02x%02x}",
-		offer->ChildRelId, offer->MonitorId, offer->MonitorAllocated, guidType->Data[3], guidType->Data[2], guidType->Data[1], guidType->Data[0], guidType->Data[5], guidType->Data[4], guidType->Data[7], guidType->Data[6], guidType->Data[8], guidType->Data[9], guidType->Data[10], guidType->Data[11], guidType->Data[12], guidType->Data[13], guidType->Data[14], guidType->Data[15], guidInstance->Data[3], guidInstance->Data[2], guidInstance->Data[1], guidInstance->Data[0], guidInstance->Data[5], guidInstance->Data[4], guidInstance->Data[7], guidInstance->Data[6], guidInstance->Data[8], guidInstance->Data[9], guidInstance->Data[10], guidInstance->Data[11], guidInstance->Data[12], guidInstance->Data[13], guidInstance->Data[14], guidInstance->Data[15]);
+		offer->ChildRelId, offer->MonitorId, offer->MonitorAllocated,
+		guidType->Data[3], guidType->Data[2], guidType->Data[1], guidType->Data[0],
+		guidType->Data[5], guidType->Data[4], guidType->Data[7], guidType->Data[6],
+		guidType->Data[8], guidType->Data[9], guidType->Data[10], guidType->Data[11],
+		guidType->Data[12], guidType->Data[13], guidType->Data[14], guidType->Data[15],
+		guidInstance->Data[3], guidInstance->Data[2], guidInstance->Data[1],
+		guidInstance->Data[0], guidInstance->Data[5], guidInstance->Data[4],
+		guidInstance->Data[7], guidInstance->Data[6], guidInstance->Data[8],
+		guidInstance->Data[9], guidInstance->Data[10], guidInstance->Data[11],
+		guidInstance->Data[12], guidInstance->Data[13], guidInstance->Data[14],
+		guidInstance->Data[15]);
 
 	// Allocate the channel object and save this offer.
 	newChannel = AllocVmbusChannel();

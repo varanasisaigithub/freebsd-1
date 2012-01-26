@@ -93,7 +93,10 @@
 //
 
 typedef enum {
-	Disconnected, Connecting, Connected, Disconnecting
+	Disconnected,
+	Connecting,
+	Connected,
+	Disconnecting
 } VMBUS_CONNECT_STATE;
 
 #define MAX_SIZE_CHANNEL_MESSAGE			HV_MESSAGE_PAYLOAD_BYTE_COUNT

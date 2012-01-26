@@ -1,4 +1,4 @@
-/*****************************************************************************
+/*-
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -18,15 +18,15 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * Ported from lis21 code drop
  *
  * Implements low-level interactions with windows hypervisor
  *
- *****************************************************************************/
+ */
 
-/*
+/*-
  * Copyright (c) 2009, Microsoft Corporation - All rights reserved.
  *
  *     Redistribution and use in source and binary forms, with or
@@ -90,7 +90,8 @@
 
 static inline void do_cpuid_inline(unsigned int op, unsigned int *eax,
 	unsigned int *ebx, unsigned int *ecx, unsigned int *edx) {
-	__asm__ __volatile__("cpuid" : "=a" (*eax), "=b" (*ebx), "=c" (*ecx), "=d" (*edx) : "0" (op), "c" (ecx));
+	__asm__ __volatile__("cpuid" : "=a" (*eax), "=b" (*ebx), "=c" (*ecx),
+			     "=d" (*edx) : "0" (op), "c" (ecx));
 }
 
 //

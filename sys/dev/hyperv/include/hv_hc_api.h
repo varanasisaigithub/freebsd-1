@@ -18,7 +18,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * Ported from lis21 code drop
  *
@@ -59,24 +59,19 @@
 #ifndef __HV_HC_API_H__
 #define __HV_HC_API_H__
 
-#pragma once
 
 //
 // Declare the various hypercall operations.
 //
-typedef enum _HV_CALL_CODE
-{
-
+typedef enum _HV_CALL_CODE {
     HvCallPostMessage                   = 0x005c,
     HvCallSignalEvent                   = 0x005d,
-
 } HV_CALL_CODE, *PHV_CALL_CODE;
+
 //
 // Definition of the HvPostMessage hypercall input structure.
 //
-
-typedef struct _HV_INPUT_POST_MESSAGE
-{
+typedef struct _HV_INPUT_POST_MESSAGE {
     HV_CONNECTION_ID    ConnectionId;
     UINT32              Reserved;
     HV_MESSAGE_TYPE     MessageType;
@@ -88,9 +83,7 @@ typedef struct _HV_INPUT_POST_MESSAGE
 //
 // Definition of the HvSignalEvent hypercall input structure.
 //
-
-typedef struct _HV_INPUT_SIGNAL_EVENT
-{
+typedef struct _HV_INPUT_SIGNAL_EVENT {
     HV_CONNECTION_ID ConnectionId;
     UINT16           FlagNumber;
     UINT16           RsvdZ;

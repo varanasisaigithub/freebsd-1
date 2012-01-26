@@ -1,4 +1,4 @@
-/*****************************************************************************
+/*-
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -18,11 +18,11 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * HyperV operating system dependent header file
  *
- *****************************************************************************/
+ */
 
 #ifndef __HV_OSD_H__
 #define __HV_OSD_H__
@@ -35,9 +35,9 @@
 #define __x86_64__  
 #endif
 
-//
-// Defines
-//
+/*
+ * Defines
+ */
 
 //#ifndef PAGE_SIZE
 //#define PAGE_SIZE		0x1000
@@ -55,14 +55,23 @@
 
 #define UNUSED_VAR(v)		v  __attribute__((__unused__))
 
-#define ALIGN_UP(value, align)			( ((value) & (align-1))? ( ((value) + (align-1)) & ~(align-1) ): (value) )
-#define ALIGN_DOWN(value, align)		( (value) & ~(align-1) )
+#define ALIGN_UP(value, align)	 ( ((value) & (align-1)) ? ( ((value) + (align-1)) & ~(align-1) ) : (value) )
+#define ALIGN_DOWN(value, align) ( (value) & ~(align-1) )
 #define NUM_PAGES_SPANNED(addr, len)	( (ALIGN_UP(addr+len, PAGE_SIZE) - ALIGN_DOWN(addr, PAGE_SIZE)) >> PAGE_SHIFT )
 
 #define LOWORD(dw)	((unsigned short) (dw))
 #define HIWORD(dw)	((unsigned short) (((unsigned int) (dw) >> 16) & 0xFFFF))
 
 #define FIELD_OFFSET(t, f)    ((unsigned int)(unsigned long)&(((t *)0)->f))
+
+/*
+ * Fixme:  Added to quiet "typeof" errors involving hv_vmbus.h when
+ * the including C file was compiled with "-std=c99".
+ */
+#ifndef typeof
+#define typeof __typeof
+#endif
+
 
 #ifdef FALSE
 #undef FALSE
@@ -79,7 +88,7 @@
 #endif
 
 #ifndef INTERNAL
-// Fixme
+// Fixme:  This is a real kludge.
 //#define INTERNAL static
 #define INTERNAL extern
 #endif
@@ -89,9 +98,9 @@ typedef struct _DLIST_ENTRY {
 	struct _DLIST_ENTRY *Blink;
 } DLIST_ENTRY;
 
-//
-// unsigned types
-//
+/*
+ * Unsigned types
+ */
 typedef unsigned char		UINT8;
 typedef unsigned short		UINT16;
 typedef unsigned int		UINT32;
@@ -106,9 +115,9 @@ typedef unsigned int		ULONG;
 typedef unsigned short		USHORT;
 typedef unsigned char		UCHAR;
 
-//
-// signed types
-//
+/*
+ * Signed types
+ */
 typedef char			INT8;
 typedef short			INT16;
 typedef int			INT32;
@@ -122,14 +131,16 @@ typedef int			LONG;
 typedef char			CHAR;
 typedef long long		LONGLONG;
 
-//
-// Other types
-//
+/*
+ * Other types
+ */
 typedef unsigned long		SIZE_T;
 typedef void			VOID;
 //typedef unsigned char		GUID[16];
 typedef void*			PVOID;
 typedef unsigned char		BOOL;
+// Fixme:  customarily unsigned int
+typedef unsigned char		bool;
 typedef unsigned char		BOOLEAN;
 typedef void*			HANDLE;
 typedef UINT32			DWORD;
@@ -139,13 +150,14 @@ typedef unsigned char		BYTE;
 typedef unsigned long		ULONG_PTR;
 
 typedef struct {
-	unsigned char	Data[16];
+	unsigned char		Data[16];
 } GUID;
 
 typedef void (*PFN_WORKITEM_CALLBACK)(void* context);
 typedef void (*PFN_TIMER_CALLBACK)(void* context);
 
 typedef UINT64 winfiletime_t; /* Windows FILETIME type */
+
 
 #ifdef __x86_64__
 
@@ -192,9 +204,9 @@ static inline void do_cpuid(unsigned int op, unsigned int *eax, unsigned int *eb
 }
 #endif
 
-//
-// operating system dependent routines
-//
+/*
+ * Operating system dependent externs
+ */
 
 extern void BitSet(unsigned int* addr, int value);
 extern void BitClear(unsigned int* addr, int value);

@@ -1,4 +1,4 @@
-/*****************************************************************************
+/*-
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -18,15 +18,15 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * Ported from lis21 code drop
  *
  * HyperV low-level hypervisor interface definition file 
  *
- *****************************************************************************/
+ */
 
-/*
+/*-
  * Copyright (c) 2009, Microsoft Corporation - All rights reserved.
  *
  *     Redistribution and use in source and binary forms, with or
@@ -82,9 +82,10 @@ enum {
 	VMBUS_MONITOR_PORT_ID = 3,
 	VMBUS_MESSAGE_SINT = 2
 };
-// 
-// #defines
-//
+
+/* 
+ * #defines
+ */
 #define HV_PRESENT_BIT		0x80000000
 
 #define HV_XENLINUX_GUEST_ID_LO	0x00000000
@@ -151,9 +152,10 @@ typedef struct {
 	HANDLE synICEventPage[MAX_NUM_CPUS];
 } HV_CONTEXT;
 
-//
-// Inline routines
-//
+/*
+ * Inline functions
+ */
+
 static inline unsigned long long ReadMsr(int msr) {
 	unsigned long long val;
 	RDMSR(msr, val);
@@ -188,4 +190,3 @@ extern HV_CONTEXT gHvContext;
 extern int HvQueryHypervisorPresence(void);
 
 #endif  /* __HV_HV_H__ */
-

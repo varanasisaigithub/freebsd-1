@@ -1206,7 +1206,7 @@ void VmbusChannelOnTimer(void *Context) {
 	/* We have to reenable the timer on exit from poll mode */
 
 	if (VmbusGetChannelMode(channel->OfferMsg.ChildRelId))
-		return;
+		return; 
 
 	if (channel->OnChannelCallback) {
 		channel->OnChannelCallback(channel->ChannelCallbackContext);

@@ -18,7 +18,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * Copyright (c) 2010-2011, Citrix, Inc.
+ * Copyright (c) 2010-2012, Citrix, Inc.
  *
  * Ported from lis21 code drop
  *
@@ -63,12 +63,6 @@
 #ifndef __HV_NVSP_PROTOCOL_H__
 #define __HV_NVSP_PROTOCOL_H__
 
-#pragma once
-
-#ifdef REMOVED
-/* Fixme:  Removed */
-#include <VmbusChannelInterface.h>
-#endif
 
 #define NVSP_INVALID_PROTOCOL_VERSION           ((UINT32)0xFFFFFFFF)
 
@@ -76,8 +70,7 @@
 #define NVSP_MIN_PROTOCOL_VERSION               NVSP_PROTOCOL_VERSION_1
 #define NVSP_MAX_PROTOCOL_VERSION               NVSP_PROTOCOL_VERSION_1
 
-typedef enum _NVSP_MESSAGE_TYPE
-{
+typedef enum _NVSP_MESSAGE_TYPE {
     NvspMessageTypeNone = 0,
 
     //
@@ -109,11 +102,9 @@ typedef enum _NVSP_MESSAGE_TYPE
     // with the maximum number of messages.
     //
     NvspNumMessagePerVersion                    = 9,
-
 } NVSP_MESSAGE_TYPE, *PNVSP_MESSAGE_TYPE;
 
-typedef enum _NVSP_STATUS
-{
+typedef enum _NVSP_STATUS {
     NvspStatusNone = 0,
     NvspStatusSuccess,
     NvspStatusFailure,
@@ -126,8 +117,7 @@ typedef enum _NVSP_STATUS
 
 #pragma pack(push, 1)
 
-typedef struct _NVSP_MESSAGE_HEADER
-{
+typedef struct _NVSP_MESSAGE_HEADER {
     UINT32                                  MessageType;
 } NVSP_MESSAGE_HEADER, *PNVSP_MESSAGE_HEADER;
 
@@ -141,8 +131,7 @@ typedef struct _NVSP_MESSAGE_HEADER
 // never include anything other then versioning (i.e. this
 // message will be the same for ever).
 //
-typedef struct _NVSP_MESSAGE_INIT
-{
+typedef struct _NVSP_MESSAGE_INIT {
     UINT32                                  MinProtocolVersion;
     UINT32                                  MaxProtocolVersion;
 } NVSP_MESSAGE_INIT, *PNVSP_MESSAGE_INIT;
@@ -152,15 +141,13 @@ typedef struct _NVSP_MESSAGE_INIT
 // of the channel. This message should never include anything other 
 // then versioning (i.e. this message will be the same for ever).
 //
-typedef struct _NVSP_MESSAGE_INIT_COMPLETE
-{
+typedef struct _NVSP_MESSAGE_INIT_COMPLETE {
     UINT32                                  NegotiatedProtocolVersion;
     UINT32                                  MaximumMdlChainLength;
     UINT32                                  Status;
 } NVSP_MESSAGE_INIT_COMPLETE, *PNVSP_MESSAGE_INIT_COMPLETE;
 
-typedef union _NVSP_MESSAGE_INIT_UBER
-{
+typedef union _NVSP_MESSAGE_INIT_UBER {
     NVSP_MESSAGE_INIT                       Init;
     NVSP_MESSAGE_INIT_COMPLETE              InitComplete;
 } NVSP_MESSAGE_INIT_UBER;
@@ -174,8 +161,7 @@ typedef union _NVSP_MESSAGE_INIT_UBER
 // to the VSP. The VSP can use this information when handling
 // OIDs sent by the VSC.
 //
-typedef struct _NVSP_1_MESSAGE_SEND_NDIS_VERSION
-{
+typedef struct _NVSP_1_MESSAGE_SEND_NDIS_VERSION {
     UINT32                                  NdisMajorVersion;
     UINT32                                  NdisMinorVersion;
 } NVSP_1_MESSAGE_SEND_NDIS_VERSION, *PNVSP_1_MESSAGE_SEND_NDIS_VERSION;
@@ -185,14 +171,12 @@ typedef struct _NVSP_1_MESSAGE_SEND_NDIS_VERSION
 // to the VSP. The VSP can then use the receive buffer to
 // send data to the VSC.
 //
-typedef struct _NVSP_1_MESSAGE_SEND_RECEIVE_BUFFER
-{
+typedef struct _NVSP_1_MESSAGE_SEND_RECEIVE_BUFFER {
     GPADL_HANDLE                            GpadlHandle;
     UINT16                                  Id;
 } NVSP_1_MESSAGE_SEND_RECEIVE_BUFFER, *PNVSP_1_MESSAGE_SEND_RECEIVE_BUFFER;
 
-typedef struct _NVSP_1_RECEIVE_BUFFER_SECTION
-{
+typedef struct _NVSP_1_RECEIVE_BUFFER_SECTION {
     UINT32                                  Offset;
     UINT32                                  SubAllocationSize;
     UINT32                                  NumSubAllocations;
@@ -204,8 +188,7 @@ typedef struct _NVSP_1_RECEIVE_BUFFER_SECTION
 // buffer send by the VSC. This message must be sent by the 
 // VSP before the VSP uses the receive buffer.
 //
-typedef struct _NVSP_1_MESSAGE_SEND_RECEIVE_BUFFER_COMPLETE
-{
+typedef struct _NVSP_1_MESSAGE_SEND_RECEIVE_BUFFER_COMPLETE {
     UINT32                                  Status;
     UINT32                                  NumSections;
 
@@ -234,8 +217,7 @@ typedef struct _NVSP_1_MESSAGE_SEND_RECEIVE_BUFFER_COMPLETE
 // After the VSP completes this transaction, the vsp should never
 // use the receive buffer again.
 //
-typedef struct _NVSP_1_MESSAGE_REVOKE_RECEIVE_BUFFER
-{
+typedef struct _NVSP_1_MESSAGE_REVOKE_RECEIVE_BUFFER {
     UINT16                                  Id;
 } NVSP_1_MESSAGE_REVOKE_RECEIVE_BUFFER, *PNVSP_1_MESSAGE_REVOKE_RECEIVE_BUFFER;
 
@@ -244,8 +226,7 @@ typedef struct _NVSP_1_MESSAGE_REVOKE_RECEIVE_BUFFER
 // to the VSP. The VSC can then use the send buffer to
 // send data to the VSP.
 //
-typedef struct _NVSP_1_MESSAGE_SEND_SEND_BUFFER
-{
+typedef struct _NVSP_1_MESSAGE_SEND_SEND_BUFFER {
     GPADL_HANDLE                            GpadlHandle;
     UINT16                                  Id;
 } NVSP_1_MESSAGE_SEND_SEND_BUFFER, *PNVSP_1_MESSAGE_SEND_SEND_BUFFER;
@@ -255,8 +236,7 @@ typedef struct _NVSP_1_MESSAGE_SEND_SEND_BUFFER
 // buffer sent by the VSC. This message must be sent by the 
 // VSP before the VSP uses the sent buffer.
 //
-typedef struct _NVSP_1_MESSAGE_SEND_SEND_BUFFER_COMPLETE
-{
+typedef struct _NVSP_1_MESSAGE_SEND_SEND_BUFFER_COMPLETE {
     UINT32                                  Status;
 
     //
@@ -273,8 +253,7 @@ typedef struct _NVSP_1_MESSAGE_SEND_SEND_BUFFER_COMPLETE
 // After the VSP completes this transaction, the vsp should never
 // use the send buffer again.
 //
-typedef struct _NVSP_1_MESSAGE_REVOKE_SEND_BUFFER
-{
+typedef struct _NVSP_1_MESSAGE_REVOKE_SEND_BUFFER {
     UINT16                                  Id;
 } NVSP_1_MESSAGE_REVOKE_SEND_BUFFER, *PNVSP_1_MESSAGE_REVOKE_SEND_BUFFER;
 
@@ -282,8 +261,7 @@ typedef struct _NVSP_1_MESSAGE_REVOKE_SEND_BUFFER
 // This message is used by both the VSP and the VSC to send
 // a RNDIS message to the opposite channel endpoint.
 //
-typedef struct _NVSP_1_MESSAGE_SEND_RNDIS_PACKET
-{
+typedef struct _NVSP_1_MESSAGE_SEND_RNDIS_PACKET {
     //
     // This field is specified by RNIDS. They assume there's
     // two different channels of communication. However, 
@@ -310,13 +288,11 @@ typedef struct _NVSP_1_MESSAGE_SEND_RNDIS_PACKET
 // point, the initiator of this message cannot use any resources
 // associated with the original RNDIS packet.
 //
-typedef struct _NVSP_1_MESSAGE_SEND_RNDIS_PACKET_COMPLETE
-{
+typedef struct _NVSP_1_MESSAGE_SEND_RNDIS_PACKET_COMPLETE {
     UINT32                                  Status;
 } NVSP_1_MESSAGE_SEND_RNDIS_PACKET_COMPLETE, *PNVSP_1_MESSAGE_SEND_RNDIS_PACKET_COMPLETE;
 
-typedef union _NVSP_MESSAGE_1_UBER
-{
+typedef union _NVSP_MESSAGE_1_UBER {
     NVSP_1_MESSAGE_SEND_NDIS_VERSION            SendNdisVersion;
 
     NVSP_1_MESSAGE_SEND_RECEIVE_BUFFER          SendReceiveBuffer;
@@ -331,8 +307,7 @@ typedef union _NVSP_MESSAGE_1_UBER
     NVSP_1_MESSAGE_SEND_RNDIS_PACKET_COMPLETE   SendRNDISPacketComplete;
 } NVSP_1_MESSAGE_UBER;
 
-typedef union _NVSP_ALL_MESSAGES
-{
+typedef union _NVSP_ALL_MESSAGES {
     NVSP_MESSAGE_INIT_UBER                  InitMessages;
     NVSP_1_MESSAGE_UBER                     Version1Messages;
 
@@ -341,8 +316,7 @@ typedef union _NVSP_ALL_MESSAGES
 //
 // ALL Messages
 //
-typedef struct _NVSP_MESSAGE
-{
+typedef struct _NVSP_MESSAGE {
     NVSP_MESSAGE_HEADER                     Header; 
     NVSP_ALL_MESSAGES                       Messages;
 } NVSP_MESSAGE, *PNVSP_MESSAGE;
