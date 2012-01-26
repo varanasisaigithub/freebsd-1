@@ -93,14 +93,66 @@ static devclass_t storvsc_devclass;
 DRIVER_MODULE(storvsc, vmbus, storvsc_driver, storvsc_devclass, 0, 0);
 MODULE_VERSION(storvsc,1);
 MODULE_DEPEND(storvsc, vmbus, 1, 1, 1);
-SYSINIT(storvsc_initx, SI_SUB_RUN_SCHEDULER, SI_ORDER_MIDDLE + 1, storvsc_init, NULL);
+// TODO: We want to be earlier than SI_SUB_VFS
+SYSINIT(storvsc_initx, SI_SUB_VFS, SI_ORDER_MIDDLE + 1, storvsc_init, NULL);
 
 static void
-xptscandone(struct cam_periph *periph, union ccb *done_ccb)
+storvsc_xptdone(struct cam_periph *periph, union ccb *done_ccb)
 {
-	xpt_release_path(done_ccb->ccb_h.path);
-	free(done_ccb->ccb_h.path, M_CAMXPT);
-	free(done_ccb, M_CAMXPT);
+	wakeup(&done_ccb->ccb_h.cbfcnp);
+}
+static void
+storvsc_xptscandone(struct cam_periph *periph, union ccb *request_ccb)
+{
+	struct storvsc_softc *storvsc_softc;
+	struct cam_path	     *new_path;
+	int		      lun_nb;
+	int		      status;
+
+	storvsc_softc = request_ccb->ccb_h.sim_priv.entries[0].ptr;
+
+	new_path      = request_ccb->ccb_h.path;
+	lun_nb	      = request_ccb->ccb_h.sim_priv.entries[1].field;
+
+	//xpt_print(new_path, "LUN %d scan 0x%p On this controller\n", lun_nb, new_path);
+	xpt_release_path(new_path);
+	if (++lun_nb < storvsc_softc->sto_drv->drv_max_luns_per_target) {
+	
+		/*
+		 * Scan the next LUN. Reuse path and ccb structs.
+		 */
+		bzero(new_path, sizeof(*new_path));
+		bzero(request_ccb, sizeof(*request_ccb));
+		status = xpt_compile_path(new_path,
+                                          xpt_periph,
+                                          storvsc_softc->path->bus->path_id,
+                                          0,
+                                          lun_nb);
+
+                if (status != CAM_REQ_CMP) {
+                        xpt_print(storvsc_softc->path, "scan_for_luns: can't compile path, 0x%p "
+                                          "can't continue\n", storvsc_softc->path);
+                        free(request_ccb, M_CAMXPT);
+                        free(new_path, M_CAMXPT);
+                        return;
+                }
+		xpt_setup_ccb(&request_ccb->ccb_h, new_path, 5);
+		request_ccb->ccb_h.func_code		     = XPT_SCAN_LUN;
+		request_ccb->ccb_h.cbfcnp		     = storvsc_xptscandone;
+		request_ccb->crcn.flags			     = CAM_FLAG_NONE;
+		request_ccb->ccb_h.sim_priv.entries[0].ptr   = storvsc_softc;
+		request_ccb->ccb_h.sim_priv.entries[1].field = lun_nb;
+
+		xpt_action(request_ccb);
+		
+	} else {
+		/*
+		 * Done scanning for LUNs
+		 */	
+		free(new_path, M_CAMXPT);
+		free(request_ccb, M_CAMXPT);
+	}
+
 }
 
 /**
@@ -113,49 +165,60 @@ xptscandone(struct cam_periph *periph, union ccb *done_ccb)
  * number of luns.
  */
 static void
-scan_for_luns(struct storvsc_softc * storvsc_softc)
+scan_for_luns(struct storvsc_softc *storvsc_softc)
 {
 	union ccb *request_ccb;
 	struct cam_path *path = storvsc_softc->path;
 	struct cam_path *new_path = NULL;
 	cam_status status;
-	int i;
-	
-	for (i = 0; i < storvsc_softc->sto_drv->drv_max_luns_per_target; i++) {
+	int lun_nb = 0;
 
-		request_ccb = malloc(sizeof(union ccb), M_CAMXPT, M_NOWAIT);
-		if (request_ccb == NULL) {
-			xpt_print(path, "scan_for_luns: can't allocate CCB, "
-					  "can't continue\n");
-			return;
-		}
-		new_path = malloc(sizeof(*new_path), M_CAMXPT, M_NOWAIT);
-		if (new_path == NULL) {
-			xpt_print(path, "scan_for_luns: can't allocate path, "
-					  "can't continue\n");
-			free(request_ccb, M_CAMXPT);
-			return;
-		}
-		status = xpt_compile_path(new_path,
-					  xpt_periph,
-					  path->bus->path_id,
-					  0,
-					  i);
-
-		if (status != CAM_REQ_CMP) {
-			xpt_print(path, "scan_for_luns: can't compile path, "
-					  "can't continue\n");
-			free(request_ccb, M_CAMXPT);
-			free(new_path, M_CAMXPT);
-			return;
-		}
-
-		xpt_setup_ccb(&request_ccb->ccb_h, new_path, 5);
-		request_ccb->ccb_h.func_code = XPT_SCAN_LUN;
-		request_ccb->ccb_h.cbfcnp = xptscandone;
-		request_ccb->crcn.flags = CAM_FLAG_NONE;
-		xpt_action(request_ccb);
+	request_ccb = malloc(sizeof(union ccb), M_CAMXPT, M_NOWAIT | M_ZERO);
+	if (request_ccb == NULL) {
+                xpt_print(path, "scan_for_lunsX: can't compile path, 0x%p "
+                                         "can't continue\n", storvsc_softc->path);
+		return;
 	}
+	new_path = malloc(sizeof(*new_path), M_CAMXPT, M_NOWAIT | M_ZERO);
+	if (new_path == NULL) {
+		xpt_print(path, "scan_for_luns: can't allocate path, "
+				  "can't continue\n");
+		free(request_ccb, M_CAMXPT);
+		return;
+	}
+	status = xpt_compile_path(new_path,
+				  xpt_periph,
+				  path->bus->path_id,
+				  0,
+				  lun_nb);
+
+	if (status != CAM_REQ_CMP) {
+                xpt_print(path, "scan_for_lunYYY: can't compile path, 0x%p "
+                                         "can't continue\n", storvsc_softc->path);
+		free(request_ccb, M_CAMXPT);
+		free(new_path, M_CAMXPT);
+		return;
+	}
+
+	//xpt_print(new_path, "New %d scan 0x%p \n", lun_nb, new_path);
+	xpt_setup_ccb(&request_ccb->ccb_h, new_path, 5);
+	request_ccb->ccb_h.func_code		     = XPT_SCAN_LUN;
+	request_ccb->ccb_h.cbfcnp		     = storvsc_xptdone;
+	request_ccb->crcn.flags			     = CAM_FLAG_NONE;
+	request_ccb->ccb_h.sim_priv.entries[0].ptr   = storvsc_softc;
+	request_ccb->ccb_h.sim_priv.entries[1].field = lun_nb;
+
+	xpt_action(request_ccb);
+	/*
+	 * Wait for LUN 0 to configure. This is to synchronize mountroot on IDE controllers.
+         * They only have LUN 0
+	 */
+	cam_periph_ccbwait(request_ccb);
+
+	/*
+	 * Kick of next LUN
+	 */
+	storvsc_xptscandone(request_ccb->ccb_h.path->periph, request_ccb);
 }
 
 static int
@@ -163,13 +226,15 @@ storvsc_probe(device_t dev)
 {
 	int ret       = ENXIO;
 	if (storvsc_get_storage_type(dev) != NULL) {
-		printf("Storvsc probe ...DONE\n");
 		ret = 0;;
+	} else {
+		printf("Storvsc probe 0x%p ...FAILED\n", dev);
 	}
 	return (ret);
 }
 
-static void storvsc_init(void)
+static void
+storvsc_init(void)
 {
 	DPRINT_ENTER(STORVSC_DRV);
 
@@ -238,6 +303,8 @@ storvsc_attach(device_t dev)
 	struct cam_devq *devq;
 	int ret, i;
 	struct storvsc_request *reqp;
+
+	DPRINT_ENTER(STORVSC_DRV);
 
 	sc = device_get_softc(dev);
 	if (sc == NULL) {
@@ -333,7 +400,7 @@ storvsc_attach(device_t dev)
 	}
 
 	scan_for_luns(sc);
-	
+	DPRINT_EXIT(STORVSC_DRV);
 	return 0;
 
  cleanup:
@@ -610,7 +677,4 @@ storvsc_get_storage_type(device_t dev)
 	}
 	return (storvsc_ptr);
 }
-
-	
-
 

@@ -46,17 +46,17 @@
 #define BLKVSC_DRV			0x1000
 #define VMBUS_UTILITY		0x2000
 
-#define ALL_MODULES			(VMBUS		|\
-							STORVSC		|\
-							NETVSC		|\
-							INPUTVSC	|\
-							BLKVSC		|\
-							VMBUS_DRV	|\
-							STORVSC_DRV	|\
-							NETVSC_DRV	|\
-							INPUTVSC_DRV|\
-							BLKVSC_DRV  |\
-							VMBUS_UTILITY)
+#define ALL_MODULES	(VMBUS		|\
+			STORVSC		|\
+			NETVSC		|\
+			INPUTVSC	|\
+			BLKVSC		|\
+			VMBUS_DRV	|\
+			STORVSC_DRV	|\
+			NETVSC_DRV	|\
+			INPUTVSC_DRV|\
+			BLKVSC_DRV  |\
+			VMBUS_UTILITY)
 
 // Logging Level
 #define CRITICAL_LVL				2
