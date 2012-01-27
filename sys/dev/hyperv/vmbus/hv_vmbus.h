@@ -46,12 +46,6 @@ struct device_context {
 };
 
 
-/*
- * This function defined in vmbus_drv_freebsd.c and used in
- * Netvsc_drv_freebsd.c, Blkvsc_drv.c. 
- */
-void vmbus_get_interface(VMBUS_CHANNEL_INTERFACE *);
-
 #define container_of(ptr, type, member) ({                      \
         __typeof__( ((type *)0)->member ) *__mptr = (ptr);  \
         (type *)( (char *)__mptr - offsetof(type,member) );})
