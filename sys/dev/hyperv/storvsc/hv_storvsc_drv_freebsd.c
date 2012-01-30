@@ -75,7 +75,6 @@ static void scan_for_luns(struct storvsc_softc * storvsc_softc);
 static void create_storvsc_request(union ccb *ccb, struct storvsc_request *reqp);
 static void storvsc_free_request(struct storvsc_softc *sc, struct storvsc_request *reqp);
 static struct storvsc_driver_context *storvsc_get_storage_type(device_t dev);
-static void storvsc_io_completion(struct storvsc_request *reqp);
 
 static device_method_t storvsc_methods[] = {
 	/* Device interface */
@@ -461,7 +460,6 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 {
 	struct storvsc_softc *sc = cam_sim_softc(sim);
 	struct storvsc_driver_context *sto_drv = sc->sto_drv;
-	STORVSC_DRIVER_OBJECT *stor_drv_obj = &sto_drv->drv_obj;
 	int res;
 
 	switch (ccb->ccb_h.func_code) {
@@ -525,7 +523,7 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 	case  XPT_RESET_BUS:
 	case  XPT_RESET_DEV:{
 #ifdef notyet
-		if ((res = stor_drv_obj->OnHostReset(sc->storvsc_dev)) != 0) {
+		if ((res = hv_storvsc_host_reset(sc->storvsc_dev)) != 0) {
 			printf("OnHostReset failed with %d\n", res);
 			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
 			xpt_done(ccb);
@@ -561,8 +559,8 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		ccb->ccb_h.status = CAM_SIM_QUEUED;	    
 
 		create_storvsc_request(ccb, reqp);
-		if ((res = stor_drv_obj->OnIORequest(sc->storvsc_dev, reqp)) == -1) {
-			printf("OnIORequest failed with %d\n", res);
+		if ((res = hv_storvsc_io_request(sc->storvsc_dev, reqp)) == -1) {
+			printf("hv_storvsc_io_request failed with %d\n", res);
 			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
 			storvsc_free_request(sc, reqp);
 			xpt_done(ccb);
@@ -614,7 +612,6 @@ create_storvsc_request(union ccb *ccb, struct storvsc_request *reqp)
     		break;
 	}
 
-	reqp->OnIOCompletion = storvsc_io_completion;
 	reqp->SenseBuffer = (unsigned char *)  &csio->sense_data;
 	reqp->SenseBufferSize = SSD_FULL_SIZE;
 	reqp->Ccb = ccb;
@@ -646,8 +643,8 @@ create_storvsc_request(union ccb *ccb, struct storvsc_request *reqp)
 	
 }
 
-static void
-storvsc_io_completion(struct storvsc_request *reqp)
+void
+hv_storvsc_io_completion(struct storvsc_request *reqp)
 {
 	union ccb *ccb = reqp->Ccb;
 	struct storvsc_softc *sc = reqp->Softc;

@@ -117,8 +117,6 @@ static const GUID gBlkVscDeviceType={
 static int BlkVscOnDeviceAdd( DEVICE_OBJECT *Device, void *AdditionalInfo);
 static int StorVscOnDeviceAdd( DEVICE_OBJECT *Device, void *AdditionalInfo);
 static int StorVscOnDeviceRemove( DEVICE_OBJECT	*Device);
-static int StorVscOnIORequest( DEVICE_OBJECT *Device, struct storvsc_request *Request);
-static int StorVscOnHostReset( DEVICE_OBJECT *Device);
 static void StorVscOnCleanup( DRIVER_OBJECT *Device);
 static void StorVscOnChannelCallback( PVOID Context);
 static void StorVscOnIOCompletion( DEVICE_OBJECT *Device, VSTOR_PACKET *VStorPacket, STORVSC_REQUEST_EXTENSION *RequestExt);
@@ -279,9 +277,6 @@ StorVscInitialize( DRIVER_OBJECT *Driver)
 	storDriver->Base.OnDeviceRemove	= StorVscOnDeviceRemove;
 	storDriver->Base.OnCleanup	= StorVscOnCleanup;
 
-	storDriver->OnIORequest		= StorVscOnIORequest;
-	storDriver->OnHostReset		= StorVscOnHostReset;
-
 	DPRINT_EXIT(STORVSC);
 
 	return ret;
@@ -324,8 +319,6 @@ BlkVscInitialize(DRIVER_OBJECT *Driver)
 	storDriver->Base.OnDeviceAdd	= BlkVscOnDeviceAdd;
 	storDriver->Base.OnDeviceRemove	= StorVscOnDeviceRemove;
 	storDriver->Base.OnCleanup	= StorVscOnCleanup;
-
-	storDriver->OnIORequest		= StorVscOnIORequest;
 
 	DPRINT_EXIT(BLKVSC);
 
@@ -691,7 +684,7 @@ StorVscOnDeviceRemove(
 //}
 
 int
-StorVscOnHostReset(
+hv_storvsc_host_reset(
 	DEVICE_OBJECT *Device
 	)
 {
@@ -769,29 +762,29 @@ Cleanup:
 /*++
 
 Name: 
-	StorVscOnIORequest()
+	hv_storvsc_io_request()
 
 Description:
-	Callback to initiate an I/O request
+	Function to initiate an I/O request
 
 --*/
 int
-StorVscOnIORequest( DEVICE_OBJECT *Device, struct storvsc_request *Request)
+hv_storvsc_io_request(DEVICE_OBJECT *device, struct storvsc_request *request)
 {
 	STORVSC_DEVICE *storDevice;
-	STORVSC_REQUEST_EXTENSION* requestExtension = (STORVSC_REQUEST_EXTENSION*) Request->Extension;
+	STORVSC_REQUEST_EXTENSION* requestExtension = (STORVSC_REQUEST_EXTENSION*) request->Extension;
 	VSTOR_PACKET* vstorPacket =&requestExtension->VStorPacket;
 	int ret=0;
 
 	DPRINT_ENTER(STORVSC);
 
-	storDevice = GetStorDevice(Device);
+	storDevice = GetStorDevice(device);
 
-	DPRINT_INFO(STORVSC, "enter - Device %p, DeviceExt %p, Request %p, Extension %p",
-		Device, storDevice, Request, requestExtension);
+	DPRINT_INFO(STORVSC, "enter - device %p, DeviceExt %p, request %p, Extension %p",
+		device, storDevice, request, requestExtension);
 
 	DPRINT_INFO(STORVSC, "req %p len %d bus %d, target %d, lun %d cdblen %d", 
-		Request, Request->DataBuffer.Length, Request->Bus, Request->TargetId, Request->LunId, Request->CdbLen);
+		request, request->DataBuffer.Length, request->Bus, request->TargetId, request->LunId, request->CdbLen);
 
 	if (!storDevice)
 	{
@@ -800,10 +793,10 @@ StorVscOnIORequest( DEVICE_OBJECT *Device, struct storvsc_request *Request)
 		return -2;
 	}
 
-	//PrintBytes(Request->Cdb, Request->CdbLen);
+	//PrintBytes(request->Cdb, request->CdbLen);
 
-	requestExtension->Request = Request;
-	requestExtension->Device  = Device;
+	requestExtension->Request = request;
+	requestExtension->Device  = device;
 	
 	memset(vstorPacket, 0 , sizeof(VSTOR_PACKET));
 
@@ -811,19 +804,19 @@ StorVscOnIORequest( DEVICE_OBJECT *Device, struct storvsc_request *Request)
 
     vstorPacket->VmSrb.Length = sizeof(VMSCSI_REQUEST);
 
-	vstorPacket->VmSrb.PortNumber = Request->Host;
-    vstorPacket->VmSrb.PathId = Request->Bus;
-    vstorPacket->VmSrb.TargetId = Request->TargetId;
-    vstorPacket->VmSrb.Lun = Request->LunId;
+	vstorPacket->VmSrb.PortNumber = request->Host;
+    vstorPacket->VmSrb.PathId = request->Bus;
+    vstorPacket->VmSrb.TargetId = request->TargetId;
+    vstorPacket->VmSrb.Lun = request->LunId;
 
 	vstorPacket->VmSrb.SenseInfoLength = SENSE_BUFFER_SIZE;
 
 	// Copy over the scsi command descriptor block
-    vstorPacket->VmSrb.CdbLength = Request->CdbLen;   
-	memcpy(&vstorPacket->VmSrb.Cdb, Request->Cdb, Request->CdbLen);
+    vstorPacket->VmSrb.CdbLength = request->CdbLen;   
+	memcpy(&vstorPacket->VmSrb.Cdb, request->Cdb, request->CdbLen);
 
-	vstorPacket->VmSrb.DataIn = Request->Type;
-	vstorPacket->VmSrb.DataTransferLength = Request->DataBuffer.Length;
+	vstorPacket->VmSrb.DataIn = request->Type;
+	vstorPacket->VmSrb.DataTransferLength = request->DataBuffer.Length;
 
 	vstorPacket->Operation = VStorOperationExecuteSRB;
 
@@ -838,7 +831,7 @@ StorVscOnIORequest( DEVICE_OBJECT *Device, struct storvsc_request *Request)
 
 	if (requestExtension->Request->DataBuffer.Length)
 	{
-		ret = Device->Driver->VmbusChannelInterface.SendPacketMultiPageBuffer(Device,
+		ret = device->Driver->VmbusChannelInterface.SendPacketMultiPageBuffer(device,
 				&requestExtension->Request->DataBuffer,
 				vstorPacket, 
 				sizeof(VSTOR_PACKET), 
@@ -846,7 +839,7 @@ StorVscOnIORequest( DEVICE_OBJECT *Device, struct storvsc_request *Request)
 	}
 	else
 	{
-		ret = Device->Driver->VmbusChannelInterface.SendPacket(Device,
+		ret = device->Driver->VmbusChannelInterface.SendPacket(device,
 															vstorPacket, 
 															sizeof(VSTOR_PACKET),
 															(uint64_t)requestExtension,
@@ -861,7 +854,7 @@ StorVscOnIORequest( DEVICE_OBJECT *Device, struct storvsc_request *Request)
 
 	atomic_add_int(&storDevice->NumOutstandingRequests, 1);
 
-	PutStorDevice(Device);
+	PutStorDevice(device);
 
 	DPRINT_EXIT(STORVSC);
 	return ret;
@@ -914,8 +907,6 @@ StorVscOnIOCompletion(
 
 	request = RequestExt->Request;
 
-	KASSERT(request->OnIOCompletion != NULL, ("request->OnIOCompletion != NULL"));
-
 	// Copy over the status...etc
 	request->Status = VStorPacket->VmSrb.ScsiStatus;
 
@@ -948,7 +939,7 @@ StorVscOnIOCompletion(
 	// TODO:  
 	request->BytesXfer = VStorPacket->VmSrb.DataTransferLength;
 
-	request->OnIOCompletion(request);
+	hv_storvsc_io_completion(request);
 
 	atomic_subtract_int(&storDevice->NumOutstandingRequests, 1);
 
