@@ -98,7 +98,7 @@
  --*/
 static inline void
 GetRingBufferAvailBytes(RING_BUFFER_INFO *rbi, UINT32 *read,
-	UINT32 *write) {
+			UINT32 *write) {
 	UINT32 read_loc, write_loc;
 
 	// Capture the read/write indices before they changed

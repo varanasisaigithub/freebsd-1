@@ -288,10 +288,10 @@ FreeVmbusChannel(VMBUS_CHANNEL* Channel) {
 void
 shutdown_onchannelcallback(void *context) {
 	VMBUS_CHANNEL *channel = context;
-	u8 *buf;
-	u32 buflen, recvlen;
-	u64 requestid;
-	u8 execute_shutdown = false;
+	uint8_t *buf;
+	uint32_t buflen, recvlen;
+	uint64_t  requestid;
+	uint8_t execute_shutdown = false;
 
 	struct shutdown_msg_data *shutdown_msg;
 

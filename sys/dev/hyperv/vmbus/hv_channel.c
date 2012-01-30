@@ -136,7 +136,8 @@ DumpMonitorPage(
  Trigger an event notification on the specified channel.
 
  --*/
-static void VmbusChannelSetEvent(VMBUS_CHANNEL *Channel) {
+static void
+VmbusChannelSetEvent(VMBUS_CHANNEL *Channel) {
 	HV_MONITOR_PAGE *monitorPage;
 
 	DPRINT_ENTER(VMBUS);
@@ -195,8 +196,9 @@ VmbusChannelClearEvent(
  Retrieve various channel debug info
 
  --*/
-void VmbusChannelGetDebugInfo(VMBUS_CHANNEL		*Channel,
-			      VMBUS_CHANNEL_DEBUG_INFO	*DebugInfo) {
+void
+VmbusChannelGetDebugInfo(VMBUS_CHANNEL		*Channel,
+			 VMBUS_CHANNEL_DEBUG_INFO	*DebugInfo) {
 	HV_MONITOR_PAGE *monitorPage;
 	UINT8 monitorGroup = (UINT8) Channel->OfferMsg.MonitorId / 32;
 	UINT8 monitorOffset = (UINT8) Channel->OfferMsg.MonitorId % 32;
@@ -242,12 +244,13 @@ void VmbusChannelGetDebugInfo(VMBUS_CHANNEL		*Channel,
  Open the specified channel.
 
  --*/
-extern int VmbusChannelOpen(VMBUS_CHANNEL	*NewChannel,
-			    UINT32		SendRingBufferSize,
-			    UINT32		RecvRingBufferSize,
-			    PVOID		UserData,
-			    UINT32		UserDataLen,
-			    PFN_CHANNEL_CALLBACK pfnOnChannelCallback,
+extern int
+VmbusChannelOpen(VMBUS_CHANNEL	*NewChannel,
+		 UINT32		SendRingBufferSize,
+		 UINT32		RecvRingBufferSize,
+		 PVOID		UserData,
+		 UINT32		UserDataLen,
+		 PFN_CHANNEL_CALLBACK pfnOnChannelCallback,
 	PVOID Context) {
 	int ret = 0;
 	VMBUS_CHANNEL_OPEN_CHANNEL* openMsg;
@@ -362,7 +365,8 @@ extern int VmbusChannelOpen(VMBUS_CHANNEL	*NewChannel,
  Dump the gpadl body message to the console for debugging purposes.
 
  --*/
-static void DumpGpadlBody(VMBUS_CHANNEL_GPADL_BODY *Gpadl, UINT32 Len) {
+static void
+DumpGpadlBody(VMBUS_CHANNEL_GPADL_BODY *Gpadl, UINT32 Len) {
 	int i = 0;
 	int pfnCount = 0;
 
@@ -376,9 +380,11 @@ static void DumpGpadlBody(VMBUS_CHANNEL_GPADL_BODY *Gpadl, UINT32 Len) {
 }
 
 /* Fixme:  NetScaler debugging code */
-static void DumpGpadlBody2(VMBUS_CHANNEL_GPADL_BODY *, UINT32);
+static void
+DumpGpadlBody2(VMBUS_CHANNEL_GPADL_BODY *, UINT32);
 
-static void DumpGpadlBody2(VMBUS_CHANNEL_GPADL_BODY *Gpadl, UINT32 Len) {
+static void
+DumpGpadlBody2(VMBUS_CHANNEL_GPADL_BODY *Gpadl, UINT32 Len) {
 	int i = 0;
 	int pfnCount = 0;
 
@@ -400,7 +406,8 @@ static void DumpGpadlBody2(VMBUS_CHANNEL_GPADL_BODY *Gpadl, UINT32 Len) {
  Dump the gpadl header message to the console for debugging purposes.
 
  --*/
-static void DumpGpadlHeader(VMBUS_CHANNEL_GPADL_HEADER *Gpadl) {
+static void
+DumpGpadlHeader(VMBUS_CHANNEL_GPADL_HEADER *Gpadl) {
 	int i = 0, j = 0;
 	int pageCount = 0;
 
@@ -427,7 +434,8 @@ static void DumpGpadlHeader(VMBUS_CHANNEL_GPADL_HEADER *Gpadl) {
 /* Fixme:  NetScaler debugging code */
 static void DumpGpadlHeader2(VMBUS_CHANNEL_GPADL_HEADER *Gpadl);
 
-static void DumpGpadlHeader2(VMBUS_CHANNEL_GPADL_HEADER *Gpadl) {
+static void
+DumpGpadlHeader2(VMBUS_CHANNEL_GPADL_HEADER *Gpadl) {
 	int i = 0, j = 0;
 	int pageCount = 0;
 
@@ -456,10 +464,11 @@ static void DumpGpadlHeader2(VMBUS_CHANNEL_GPADL_HEADER *Gpadl) {
  Creates a gpadl for the specified buffer
 
  --*/
-static int VmbusChannelCreateGpadlHeader(PVOID	Kbuffer,// from kmalloc()
-					 UINT32	Size,	// page-size multiple
-					 VMBUS_CHANNEL_MSGINFO **MsgInfo,
-					 UINT32	*MessageCount) {
+static int
+VmbusChannelCreateGpadlHeader(PVOID	Kbuffer,// from kmalloc()
+			      UINT32	Size,	// page-size multiple
+			      VMBUS_CHANNEL_MSGINFO **MsgInfo,
+			      UINT32	*MessageCount) {
 	int i;
 	int pageCount;
 	unsigned long long pfn;
@@ -575,10 +584,11 @@ static int VmbusChannelCreateGpadlHeader(PVOID	Kbuffer,// from kmalloc()
  Estabish a GPADL for the specified buffer
 
  --*/
-int VmbusChannelEstablishGpadl(VMBUS_CHANNEL	*Channel,
-			       PVOID		Kbuffer, // from kmalloc()
-			       UINT32		Size,	 // page-size multiple
-			       UINT32		*GpadlHandle) {
+int
+VmbusChannelEstablishGpadl(VMBUS_CHANNEL	*Channel,
+			   PVOID		Kbuffer, // from kmalloc()
+			   UINT32		Size,	 // page-size multiple
+			   UINT32		*GpadlHandle) {
 	int ret = 0;
 	VMBUS_CHANNEL_GPADL_HEADER* gpadlMsg;
 	VMBUS_CHANNEL_GPADL_BODY* gpadlBody;
@@ -709,7 +719,8 @@ int VmbusChannelEstablishGpadl(VMBUS_CHANNEL	*Channel,
  Teardown the specified GPADL handle
 
  --*/
-int VmbusChannelTeardownGpadl(VMBUS_CHANNEL *Channel, UINT32 GpadlHandle) {
+int
+VmbusChannelTeardownGpadl(VMBUS_CHANNEL *Channel, UINT32 GpadlHandle) {
 	int ret = 0;
 	VMBUS_CHANNEL_GPADL_TEARDOWN *msg;
 	VMBUS_CHANNEL_MSGINFO* info;
@@ -764,7 +775,8 @@ int VmbusChannelTeardownGpadl(VMBUS_CHANNEL *Channel, UINT32 GpadlHandle) {
  Close the specified channel
 
  --*/
-VOID VmbusChannelClose(VMBUS_CHANNEL *Channel) {
+void
+VmbusChannelClose(VMBUS_CHANNEL *Channel) {
 	int ret = 0;
 	VMBUS_CHANNEL_CLOSE_CHANNEL* msg;
 	VMBUS_CHANNEL_MSGINFO* info;
@@ -830,7 +842,8 @@ VOID VmbusChannelClose(VMBUS_CHANNEL *Channel) {
  Send the specified buffer on the given channel
 
  --*/
-int VmbusChannelSendPacket(VMBUS_CHANNEL	*Channel,
+int
+VmbusChannelSendPacket(VMBUS_CHANNEL	*Channel,
 			   const PVOID		Buffer,
 			   UINT32		BufferLen,
 			   UINT64		RequestId,
@@ -887,7 +900,8 @@ int VmbusChannelSendPacket(VMBUS_CHANNEL	*Channel,
  Send a range of single-page buffer packets using a GPADL Direct packet type.
 
  --*/
-int VmbusChannelSendPacketPageBuffer(VMBUS_CHANNEL	*Channel,
+int
+VmbusChannelSendPacketPageBuffer(VMBUS_CHANNEL	*Channel,
 				     PAGE_BUFFER	PageBuffers[],
 				     UINT32		PageCount,
 				     PVOID		Buffer,
@@ -960,7 +974,8 @@ int VmbusChannelSendPacketPageBuffer(VMBUS_CHANNEL	*Channel,
  Send a multi-page buffer packet using a GPADL Direct packet type.
 
  --*/
-int VmbusChannelSendPacketMultiPageBuffer(VMBUS_CHANNEL		*Channel,
+int
+VmbusChannelSendPacketMultiPageBuffer(VMBUS_CHANNEL		*Channel,
 					  MULTIPAGE_BUFFER	*MultiPageBuffer,
 					  PVOID			Buffer,
 					  UINT32		BufferLen,
@@ -1038,11 +1053,13 @@ int VmbusChannelSendPacketMultiPageBuffer(VMBUS_CHANNEL		*Channel,
 
  --*/
 // TODO: Do we ever receive a gpa direct packet other than the ones we send ?
-int VmbusChannelRecvPacket(VMBUS_CHANNEL *Channel,
-			   PVOID	Buffer,
-			   UINT32	BufferLen,
-			   UINT32 	*BufferActualLen,
-			   UINT64 	*RequestId) {
+int
+VmbusChannelRecvPacket(	VMBUS_CHANNEL *Channel,
+			PVOID	Buffer,
+			UINT32	BufferLen,
+			UINT32 	*BufferActualLen,
+			UINT64 	*RequestId) {
+
 	VMPACKET_DESCRIPTOR desc;
 	UINT32 packetLen;
 	UINT32 userLen;
@@ -1059,7 +1076,6 @@ int VmbusChannelRecvPacket(VMBUS_CHANNEL *Channel,
 		sizeof(VMPACKET_DESCRIPTOR));
 	if (ret != 0) {
 		mtx_unlock(Channel->InboundLock);
-
 		//DPRINT_DBG(VMBUS, "nothing to read!!");
 		DPRINT_EXIT(VMBUS);
 		return 0;
@@ -1111,11 +1127,12 @@ int VmbusChannelRecvPacket(VMBUS_CHANNEL *Channel,
  Retrieve the raw packet on the specified channel
 
  --*/
-int VmbusChannelRecvPacketRaw(VMBUS_CHANNEL *Channel,
-			      PVOID	Buffer,
-			      UINT32	BufferLen,
-			      UINT32	*BufferActualLen,
-			      UINT64	*RequestId) {
+int
+VmbusChannelRecvPacketRaw( VMBUS_CHANNEL *Channel,
+			   PVOID	Buffer,
+			   UINT32	BufferLen,
+			   UINT32	*BufferActualLen,
+			   UINT64	*RequestId) {
 	VMPACKET_DESCRIPTOR desc;
 	UINT32 packetLen;
 	UINT32 userLen;
@@ -1146,7 +1163,8 @@ int VmbusChannelRecvPacketRaw(VMBUS_CHANNEL *Channel,
 	DPRINT_DBG(
 		VMBUS,
 		"packet received on channel %p relid %d <type %d flag %d tid %lx pktlen %d datalen %d> ",
-		Channel, Channel->OfferMsg.ChildRelId, desc.Type, desc.Flags, desc.TransactionId, packetLen, userLen);
+		Channel, Channel->OfferMsg.ChildRelId, desc.Type, desc.Flags,
+		desc.TransactionId, packetLen, userLen);
 
 	*BufferActualLen = packetLen;
 
@@ -1181,7 +1199,8 @@ int VmbusChannelRecvPacketRaw(VMBUS_CHANNEL *Channel,
 
  --*/
 
-void VmbusChannelOnChannelEvent(VMBUS_CHANNEL *Channel) {
+void
+VmbusChannelOnChannelEvent(VMBUS_CHANNEL *Channel) {
 	DumpVmbusChannel(Channel);
 	ASSERT(Channel->OnChannelCallback);
 	TimerStop(Channel->PollTimer);
@@ -1198,7 +1217,8 @@ void VmbusChannelOnChannelEvent(VMBUS_CHANNEL *Channel) {
  Timer event callback
 
  --*/
-void VmbusChannelOnTimer(void *Context) {
+void
+VmbusChannelOnTimer(void *Context) {
 	VMBUS_CHANNEL *channel = (VMBUS_CHANNEL*) Context;
 
 	/* Fixme:  NetScaler */
@@ -1223,7 +1243,8 @@ void VmbusChannelOnTimer(void *Context) {
  Dump vmbus channel info to the console
 
  --*/
-static void DumpVmbusChannel(VMBUS_CHANNEL *Channel) {
+static void
+DumpVmbusChannel(VMBUS_CHANNEL *Channel) {
 	DPRINT_DBG(VMBUS, "Channel (%d)", Channel->OfferMsg.ChildRelId);
 	DumpRingInfo(&Channel->Outbound, "Outbound ");
 	DumpRingInfo(&Channel->Inbound, "Inbound ");
