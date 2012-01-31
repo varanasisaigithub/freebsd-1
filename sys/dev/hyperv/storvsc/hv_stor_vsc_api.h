@@ -27,8 +27,8 @@ enum storvsc_request_type {
 	UNKNOWN_TYPE
 };
 
-struct storvsc_request {
-	LIST_ENTRY(storvsc_request) link;
+struct hv_storvsc_request {
+	LIST_ENTRY(hv_storvsc_request) link;
 	void *Extension;
 	uint32_t Host;
 	uint8_t TargetId;
@@ -53,15 +53,15 @@ typedef struct storvsc_driver_object_s {
 	uint32_t MaxOutstandingRequestsPerChannel;
 } STORVSC_DRIVER_OBJECT;
 
-typedef struct storvsc_device_info STORVSC_DEVICE_INFO;
-struct storvsc_device_info {
+struct hv_storvsc_device_info {
 	uint32_t PortNumber;
 	uint8_t PathId;
 	uint8_t TargetId;
 };
 
-extern void hv_storvsc_io_completion(struct storvsc_request *reqp);
-extern int hv_storvsc_host_reset(DEVICE_OBJECT *Device);
-extern int hv_storvsc_io_request(DEVICE_OBJECT *Device, struct storvsc_request *request);
+extern void storvsc_io_done(struct hv_storvsc_request *reqp);
+
+extern int hv_storvsc_host_reset(DEVICE_OBJECT *device);
+extern int hv_storvsc_io_request(DEVICE_OBJECT *device, struct hv_storvsc_request *request);
 
 #endif /* __HV_STORVSC_API_H__ */
