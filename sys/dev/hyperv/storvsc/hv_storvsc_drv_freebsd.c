@@ -84,7 +84,6 @@ struct storvsc_softc {
 /* static functions */
 static int storvsc_probe(device_t dev);
 static int storvsc_attach(device_t dev);
-static void storvsc_init(void);
 static int storvsc_detach(device_t dev);
 static void storvsc_poll(struct cam_sim * sim);
 static void storvsc_action(struct cam_sim * sim, union ccb * ccb);
@@ -110,10 +109,6 @@ static devclass_t storvsc_devclass;
 DRIVER_MODULE(storvsc, vmbus, storvsc_driver, storvsc_devclass, 0, 0);
 MODULE_VERSION(storvsc,1);
 MODULE_DEPEND(storvsc, vmbus, 1, 1, 1);
-// TODO: We want to be earlier than SI_SUB_VFS
-SYSINIT(storvsc_initx, SI_SUB_VFS, SI_ORDER_MIDDLE + 1, storvsc_init, NULL);
-
-static void storvsc_init() {}
 
 static void
 storvsc_xptdone(struct cam_periph *periph, union ccb *done_ccb)
