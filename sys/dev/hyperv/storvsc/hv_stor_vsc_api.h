@@ -27,9 +27,23 @@ enum storvsc_request_type {
 	UNKNOWN_TYPE
 };
 
+struct hv_storvsc_request;
+
+struct hv_storvsc_req_ext {
+	struct hv_storvsc_request			*Request;
+	DEVICE_OBJECT					*Device;
+
+	// Synchronize the request/response if needed
+	struct {
+		struct mtx mtx;
+	} event;
+
+	VSTOR_PACKET					VStorPacket;
+};
+
 struct hv_storvsc_request {
 	LIST_ENTRY(hv_storvsc_request) link;
-	void *Extension;
+	struct hv_storvsc_req_ext Extension;
 	uint32_t Host;
 	uint8_t TargetId;
 	uint8_t PathId;
@@ -49,8 +63,6 @@ struct hv_storvsc_request {
 typedef struct storvsc_driver_object_s {
 	DRIVER_OBJECT Base;
 	uint32_t RingBufferSize;
-	uint32_t RequestExtSize;
-	uint32_t MaxOutstandingRequestsPerChannel;
 } STORVSC_DRIVER_OBJECT;
 
 struct hv_storvsc_device_info {
@@ -61,6 +73,10 @@ struct hv_storvsc_device_info {
 
 extern void storvsc_io_done(struct hv_storvsc_request *reqp);
 
+extern int hv_blkvsc_on_deviceadd(DEVICE_OBJECT *Device, void *AdditionalInfo);
+extern int hv_storvsc_on_deviceadd(DEVICE_OBJECT *Device, void *AdditionalInfo);
+extern int hv_storvsc_on_deviceremove(DEVICE_OBJECT *Driver);
+extern void hv_storvsc_on_cleanup(DRIVER_OBJECT *Driver);
 extern int hv_storvsc_host_reset(DEVICE_OBJECT *device);
 extern int hv_storvsc_io_request(DEVICE_OBJECT *device, struct hv_storvsc_request *request);
 

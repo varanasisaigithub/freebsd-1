@@ -32,6 +32,35 @@
 
 #include "hv_stor_vsc_api.h"
 
+struct storvsc_driver_props {
+	char		*drv_name;
+	char *drv_desc;
+	uint8_t			 drv_max_luns_per_target;
+	uint8_t			 drv_max_ios_per_target;
+	uint32_t drv_ringbuffer_size;
+};
+
+enum hv_storage_type {
+	DRIVER_BLKVSC,
+	DRIVER_STORVSC,
+	DRIVER_UNKNOWN
+};
+
+//{ba6163d9-04a1-4d29-b605-72e2ffb1dc7f}
+static const GUID gStorVscDeviceType={
+	.Data = {0xd9, 0x63, 0x61, 0xba, 0xa1, 0x04, 0x29, 0x4d, 0xb6, 0x05, 0x72, 0xe2, 0xff, 0xb1, 0xdc, 0x7f}
+};
+//{32412632-86cb-44a2-9b5c-50d1417354f5}
+static const GUID gBlkVscDeviceType={
+	.Data = {0x32, 0x26, 0x41, 0x32, 0xcb, 0x86, 0xa2, 0x44, 0x9b, 0x5c, 0x50, 0xd1, 0x41, 0x73, 0x54, 0xf5}
+};
+
+static struct storvsc_driver_props g_drv_props_table[] = {
+	{"blkvsc", "Hyper-V IDE Storage Interface",
+	 BLKVSC_MAX_IDE_DISKS_PER_TARGET, BLKVSC_MAX_IO_REQUESTS, STORVSC_RINGBUFFER_SIZE},
+	{"storvsc", "Hyper-V SCSI Storage Interface",
+	 STORVSC_MAX_LUNS_PER_TARGET, STORVSC_MAX_IO_REQUESTS, STORVSC_RINGBUFFER_SIZE}
+};
 
 struct storvsc_driver_context {
 	/*
@@ -39,15 +68,12 @@ struct storvsc_driver_context {
 	 */
 	struct driver_context    drv_ctx;
 	STORVSC_DRIVER_OBJECT    drv_obj;
-	const char		*drv_name;
-	uint8_t			 drv_max_luns_per_target;
-	uint8_t			 drv_max_ios_per_target;
-	uint32_t		 drv_inited;
+	struct storvsc_driver_props	 *drv_props;
 };
 
 struct storvsc_softc {
 	DEVICE_OBJECT *storvsc_dev;
-	struct storvsc_driver_context *sto_drv;
+	struct storvsc_driver_context sto_drv;
 	int unit;
 	struct cam_sim *sim;
 	struct cam_path *path;
@@ -55,26 +81,17 @@ struct storvsc_softc {
 	struct mtx free_list_lock;
 };
 
-
-// The one and only one
-/* SCSI HBA */
-static struct storvsc_driver_context g_storvsc_drv;
-/* IDE HBA  */
-static struct storvsc_driver_context g_blkvsc_drv;
-
 /* static functions */
 static int storvsc_probe(device_t dev);
 static int storvsc_attach(device_t dev);
 static void storvsc_init(void);
 static int storvsc_detach(device_t dev);
-static int storvsc_drv_init(struct storvsc_driver_context *vsc_drv,
-			    PFN_DRIVERINITIALIZE pfn_drv_init);
 static void storvsc_poll(struct cam_sim * sim);
 static void storvsc_action(struct cam_sim * sim, union ccb * ccb);
 static void scan_for_luns(struct storvsc_softc * storvsc_softc);
 static void create_storvsc_request(union ccb *ccb, struct hv_storvsc_request *reqp);
 static void storvsc_free_request(struct storvsc_softc *sc, struct hv_storvsc_request *reqp);
-static struct storvsc_driver_context *storvsc_get_storage_type(device_t dev);
+static enum hv_storage_type storvsc_get_storage_type(device_t dev);
 
 static device_method_t storvsc_methods[] = {
 	/* Device interface */
@@ -95,6 +112,8 @@ MODULE_VERSION(storvsc,1);
 MODULE_DEPEND(storvsc, vmbus, 1, 1, 1);
 // TODO: We want to be earlier than SI_SUB_VFS
 SYSINIT(storvsc_initx, SI_SUB_VFS, SI_ORDER_MIDDLE + 1, storvsc_init, NULL);
+
+static void storvsc_init() {}
 
 static void
 storvsc_xptdone(struct cam_periph *periph, union ccb *done_ccb)
@@ -117,7 +136,7 @@ storvsc_xptscandone(struct cam_periph *periph, union ccb *request_ccb)
 
 	//xpt_print(new_path, "LUN %d scan 0x%p On this controller\n", lun_nb, new_path);
 	xpt_release_path(new_path);
-	if (++lun_nb < storvsc_softc->sto_drv->drv_max_luns_per_target) {
+	if (++lun_nb < storvsc_softc->sto_drv.drv_props->drv_max_luns_per_target) {
 	
 		/*
 		 * Scan the next LUN. Reuse path and ccb structs.
@@ -225,101 +244,28 @@ static int
 storvsc_probe(device_t dev)
 {
 	int ret	= ENXIO;
+	enum hv_storage_type stor_type;
 
-	/* 
-	 * If the system has already booted and thread
-	 * scheduling is possible indicated by the global
-	 * cold set to zero, we just call the driver
-	 * initialization directly.
-	 */
-	if (!cold && 
-	    (!g_storvsc_drv.drv_inited || !g_blkvsc_drv.drv_inited)) {
-		storvsc_init();
-	}
+	stor_type = storvsc_get_storage_type(dev);
 
-	if (storvsc_get_storage_type(dev) != NULL) {
+	if ((stor_type == DRIVER_BLKVSC) || (stor_type == DRIVER_STORVSC)) {
 		ret = 0;
-	} 
+	}
 
 	return (ret);
-}
-
-static void
-storvsc_init(void)
-{
-	DPRINT_ENTER(STORVSC_DRV);
-
-	/*
-	 * SCSI adapters.
-	 */
-	if (g_storvsc_drv.drv_inited == 0) {
-		g_storvsc_drv.drv_name		      = "storvsc";
-		g_storvsc_drv.drv_max_luns_per_target = STORVSC_MAX_LUNS_PER_TARGET;
-		g_storvsc_drv.drv_max_ios_per_target  = STORVSC_MAX_IO_REQUESTS;
-		storvsc_drv_init(&g_storvsc_drv, hv_storvsc_init);
-		atomic_set_int(&g_storvsc_drv.drv_inited,1);
-	}
-
-	/*
-	 * Hyper-v IDE devices are accessed as SCSI devices with a different GUID.
-	 */
-	if (g_blkvsc_drv.drv_inited == 0) {
-		g_blkvsc_drv.drv_name		      = "blkvsc";
-		g_blkvsc_drv.drv_max_luns_per_target = BLKVSC_MAX_IDE_DISKS_PER_TARGET;
-		g_blkvsc_drv.drv_max_ios_per_target  = BLKVSC_MAX_IO_REQUESTS;
-		storvsc_drv_init(&g_blkvsc_drv, hv_blkvsc_init);
-		atomic_set_int(&g_blkvsc_drv.drv_inited,1);
-	}
-
-	DPRINT_EXIT(STORVSC_DRV);
-}
-
-/*++
-
-Name:   storvsc_drv_init()
-
-Desc:   StorVsc driver initialization
-
---*/
-static int
-storvsc_drv_init(struct storvsc_driver_context *vsc_drv,
-		 PFN_DRIVERINITIALIZE pfn_drv_init)
-{
-	int ret=0;
-	STORVSC_DRIVER_OBJECT *stor_drv_obj=&vsc_drv->drv_obj;
-	struct driver_context *drv_ctx=&vsc_drv->drv_ctx;
-
-	DPRINT_ENTER(STORVSC_DRV);
-
-	vmbus_get_interface(&stor_drv_obj->Base.VmbusChannelInterface);
-
-	stor_drv_obj->RingBufferSize = STORVSC_RINGBUFFER_SIZE;
-
-	// Callback to client driver to complete the initialization
-	pfn_drv_init(&stor_drv_obj->Base);
-
-	memcpy(&drv_ctx->class_id, &stor_drv_obj->Base.deviceType, sizeof(GUID));
-
-	// The driver belongs to vmbus
-	vmbus_child_driver_register(drv_ctx);
-
-	DPRINT_EXIT(STORVSC_DRV);
-
-	return ret;
 }
 
 static int
 storvsc_attach(device_t dev)
 {
-	struct storvsc_driver_context *storvsc_drv;
-	STORVSC_DRIVER_OBJECT *storvsc_drv_obj;
 	struct device_context *device_ctx = vmbus_get_devctx(dev);
-
+	enum hv_storage_type stor_type;
 	struct hv_storvsc_device_info device_info;
 	struct storvsc_softc *sc;
 	struct cam_devq *devq;
 	int ret, i;
 	struct hv_storvsc_request *reqp;
+	GUID drv_guid;
 
 	DPRINT_ENTER(STORVSC_DRV);
 
@@ -330,30 +276,37 @@ storvsc_attach(device_t dev)
 		return ret;
 	}
 
-	storvsc_drv = storvsc_get_storage_type(dev);
-	if (storvsc_drv == NULL) {
-		DPRINT_ERR(STORVSC_DRV, "Not a storvsc_device");
+	stor_type = storvsc_get_storage_type(dev);
+	if (stor_type == DRIVER_UNKNOWN) {
+		DPRINT_ERR(STORVSC_DRV, "Not a storage device");
 		return (-1);
 	}
 
-	storvsc_drv_obj = &storvsc_drv->drv_obj;
-
-	if (!storvsc_drv_obj->Base.OnDeviceAdd) {
-		DPRINT_ERR(STORVSC_DRV, "OnDeviceAdd is not initialized");
-		return -1;
-	}
-
 	bzero(sc, sizeof(struct storvsc_softc));
-	device_ctx->device_obj.Driver = &storvsc_drv_obj->Base;
 
-	sc->sto_drv	= storvsc_drv;
+	drv_guid = (stor_type == DRIVER_STORVSC) ? gStorVscDeviceType : gBlkVscDeviceType;
+
+	/* XXX set device description */
+
+	/* fill in driver specific properties */
+	sc->sto_drv.drv_obj.Base.name = g_drv_props_table[stor_type].drv_name;
+	memcpy(&sc->sto_drv.drv_obj.Base.deviceType, &drv_guid, sizeof(GUID));
+	memcpy(&sc->sto_drv.drv_ctx.class_id, &drv_guid, sizeof(GUID));
+	sc->sto_drv.drv_props = &g_drv_props_table[stor_type];
+	sc->sto_drv.drv_obj.RingBufferSize = g_drv_props_table[stor_type].drv_ringbuffer_size;
+
+	/* XXX THIS IS STUPID */
+	vmbus_get_interface(&sc->sto_drv.drv_obj.Base.VmbusChannelInterface);
+
+	device_ctx->device_obj.Driver = &sc->sto_drv.drv_obj.Base;
+
 	sc->unit	= device_get_unit(dev);
 	sc->storvsc_dev = &device_ctx->device_obj;
 
 	LIST_INIT(&sc->free_list);
 	mtx_init(&sc->free_list_lock, "storvsc free list lock", NULL, MTX_SPIN | MTX_RECURSE);
 
-	for (i = 0; i < sc->sto_drv->drv_max_ios_per_target; ++i) {
+	for (i = 0; i < sc->sto_drv.drv_props->drv_max_ios_per_target; ++i) {
 		reqp = malloc(sizeof(struct hv_storvsc_request), M_DEVBUF, M_NOWAIT | M_ZERO);
 		if (reqp == NULL) {
 			printf("cannot alloc struct hv_storvsc_request\n");
@@ -361,16 +314,15 @@ storvsc_attach(device_t dev)
 		}
 
 		reqp->Softc = sc;
-		reqp->Extension = malloc(storvsc_drv_obj->RequestExtSize, M_DEVBUF, M_NOWAIT | M_ZERO);
-		if (reqp->Extension == NULL) {
-			printf("cannot alloc request extension\n");
-			goto cleanup;
-		}
 
 		LIST_INSERT_HEAD(&sc->free_list, reqp, link);
 	}
 
-	ret = storvsc_drv_obj->Base.OnDeviceAdd(&device_ctx->device_obj, (void*)&device_info);
+	if (stor_type == STORVSC) {
+		ret = hv_storvsc_on_deviceadd(&device_ctx->device_obj, (void*)&device_info);
+	} else {
+		ret = hv_blkvsc_on_deviceadd(&device_ctx->device_obj, (void*)&device_info);
+	}
 
 	if (ret != 0) {
 		DPRINT_ERR(STORVSC_DRV, "unable to add storvsc device (ret %d)", ret);
@@ -380,7 +332,7 @@ storvsc_attach(device_t dev)
 
 	// Create the device queue.
 	// Hyper-V maps each target to one SCSI HBA
-	devq = cam_simq_alloc(sc->sto_drv->drv_max_ios_per_target);
+	devq = cam_simq_alloc(sc->sto_drv.drv_props->drv_max_ios_per_target);
 	if (devq == NULL) {
 		printf("Failed to alloc device queue\n");
 		return (ENOMEM);
@@ -389,11 +341,11 @@ storvsc_attach(device_t dev)
 	// XXX avoid Giant?
 	sc->sim = cam_sim_alloc(storvsc_action,
 				storvsc_poll,
-				sc->sto_drv->drv_name,
+				sc->sto_drv.drv_props->drv_name,
 				sc,
 				sc->unit,
 				&Giant, 1,
-				sc->sto_drv->drv_max_ios_per_target,
+				sc->sto_drv.drv_props->drv_max_ios_per_target,
 				devq);
 
 	if (sc->sim == NULL) {
@@ -426,9 +378,6 @@ storvsc_attach(device_t dev)
 		reqp = LIST_FIRST(&sc->free_list);
 		LIST_REMOVE(reqp, link);
 
-		if (reqp->Extension) {
-			free(reqp->Extension, M_DEVBUF);
-		}
 		free(reqp, M_DEVBUF);
 	}
 	return -1;
@@ -438,14 +387,13 @@ static int storvsc_detach(device_t dev)
 	struct storvsc_softc *sc = device_get_softc(dev);
 	struct hv_storvsc_request *reqp = NULL;
 
+	/* XXX call hv_storvsc_on_deviceremove? */
+
 	mtx_lock(&sc->free_list_lock);
 	while (!LIST_EMPTY(&sc->free_list)) {
 		reqp = LIST_FIRST(&sc->free_list);
 		LIST_REMOVE(reqp, link);
 
-		if (reqp->Extension) {
-			free(reqp->Extension, M_DEVBUF);
-		}
 		free(reqp, M_DEVBUF);
 	}
 	mtx_unlock(&sc->free_list_lock);
@@ -459,7 +407,7 @@ static void storvsc_poll(struct cam_sim *sim)
 static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 {
 	struct storvsc_softc *sc = cam_sim_softc(sim);
-	struct storvsc_driver_context *sto_drv = sc->sto_drv;
+	struct storvsc_driver_context *sto_drv = &sc->sto_drv;
 	int res;
 
 	switch (ccb->ccb_h.func_code) {
@@ -474,7 +422,7 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		cpi->hba_misc = PIM_NOBUSRESET;
 		cpi->hba_eng_cnt = 0;
 		cpi->max_target = STORVSC_MAX_TARGETS;
-		cpi->max_lun = sto_drv->drv_max_luns_per_target;
+		cpi->max_lun = sto_drv->drv_props->drv_max_luns_per_target;
 		cpi->initiator_id = 0;
 		cpi->bus_id = cam_sim_bus(sim);
 		cpi->base_transfer_speed = 300000;
@@ -483,7 +431,7 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		cpi->protocol = PROTO_SCSI;
 		cpi->protocol_version = SCSI_REV_SPC2;
 		strncpy(cpi->sim_vid, "FreeBSD", SIM_IDLEN);
-		strncpy(cpi->hba_vid, sto_drv->drv_name, HBA_IDLEN);
+		strncpy(cpi->hba_vid, sto_drv->drv_props->drv_name, HBA_IDLEN);
 		strncpy(cpi->dev_name, cam_sim_name(sim), DEV_IDLEN);
 		cpi->unit_number = cam_sim_unit(sim);
 
@@ -664,15 +612,10 @@ storvsc_io_done(struct hv_storvsc_request *reqp)
 static void
 storvsc_free_request(struct storvsc_softc *sc, struct hv_storvsc_request *reqp)
 {
-	struct storvsc_driver_context *sto_drv = sc->sto_drv;
-	void *extp;
+	struct storvsc_driver_context *sto_drv = &sc->sto_drv;
 
 	ASSERT(reqp->Softc == sc);
-	bzero(reqp->Extension, sto_drv->drv_obj.RequestExtSize);
-	extp = reqp->Extension;
-	reqp->Extension = NULL;
 	bzero(reqp, sizeof(struct hv_storvsc_request));
-	reqp->Extension = extp;
 	reqp->Softc = sc;
 
 	mtx_lock(&sc->free_list_lock);
@@ -680,21 +623,16 @@ storvsc_free_request(struct storvsc_softc *sc, struct hv_storvsc_request *reqp)
 	mtx_unlock(&sc->free_list_lock);
 }
 
-static struct storvsc_driver_context *
+static enum hv_storage_type
 storvsc_get_storage_type(device_t dev)
 {
 	const char *p = vmbus_get_type(dev);
-	struct storvsc_driver_context *storvsc_ptr;
 
-	if (!memcmp(p, &g_blkvsc_drv.drv_obj.Base.deviceType, sizeof(GUID))) {
-		device_set_desc(dev, "Hyper-v IDE Storage Interface");
-		storvsc_ptr = &g_blkvsc_drv;
-	} else if (!memcmp(p, &g_storvsc_drv.drv_obj.Base.deviceType, sizeof(GUID))) {
-		device_set_desc(dev, "Hyper-v SCSI Storage Interface");
-		storvsc_ptr = &g_storvsc_drv;
-	} else {
-		storvsc_ptr = NULL;
+	if (!memcmp(p, &gBlkVscDeviceType, sizeof(GUID))) {
+		return DRIVER_BLKVSC;
+	} else if (!memcmp(p, &gStorVscDeviceType, sizeof(GUID))) {
+		return DRIVER_STORVSC;
 	}
-	return (storvsc_ptr);
+	return (DRIVER_UNKNOWN);
 }
 

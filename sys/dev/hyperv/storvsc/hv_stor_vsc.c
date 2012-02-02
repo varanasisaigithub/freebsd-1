@@ -54,22 +54,6 @@
 // #defines
 //
 
-//
-// Data types
-//
-struct hv_storvsc_req_ext {
-	struct hv_storvsc_request			*Request;
-	DEVICE_OBJECT					*Device;
-
-	// Synchronize the request/response if needed
-	struct {
-		struct mtx mtx;
-	} event;
-
-	VSTOR_PACKET					VStorPacket;
-};
-
-
 struct hv_storvsc_dev{
 	DEVICE_OBJECT		*Device;
 
@@ -93,30 +77,9 @@ struct hv_storvsc_dev{
 
 };
 
-
-//
-// Globals
-//
-static const char* gStorDriverName="storvsc";
-static const char* gBlkDriverName="blkvsc";
-
-//{ba6163d9-04a1-4d29-b605-72e2ffb1dc7f}
-static const GUID gStorVscDeviceType={
-	.Data = {0xd9, 0x63, 0x61, 0xba, 0xa1, 0x04, 0x29, 0x4d, 0xb6, 0x05, 0x72, 0xe2, 0xff, 0xb1, 0xdc, 0x7f}
-};
-//{32412632-86cb-44a2-9b5c-50d1417354f5}
-static const GUID gBlkVscDeviceType={
-	.Data = {0x32, 0x26, 0x41, 0x32, 0xcb, 0x86, 0xa2, 0x44, 0x9b, 0x5c, 0x50, 0xd1, 0x41, 0x73, 0x54, 0xf5}
-};
-
 //
 // Internal routines
 //
-
-static int hv_blkvsc_on_deviceadd(DEVICE_OBJECT *Device, void *AdditionalInfo);
-static int hv_storvsc_on_deviceadd(DEVICE_OBJECT *Device, void *AdditionalInfo);
-static int hv_storvsc_on_deviceremove(DEVICE_OBJECT	*Device);
-static void hv_storvsc_on_cleanup(DRIVER_OBJECT *Device);
 static void hv_storvsc_on_channel_callback(void *context);
 static void hv_storvsc_on_iocompletion(DEVICE_OBJECT *Device, VSTOR_PACKET *VStorPacket,
 									   struct hv_storvsc_req_ext *RequestExt);
@@ -237,94 +200,6 @@ static inline struct hv_storvsc_dev* hv_final_release_storvsc_dev(DEVICE_OBJECT 
 	return stordev;
 }
 
-/*++;
-
-
-Name: 
-	hv_storvsc_init()
-
-Description:
-	Main entry point
-
---*/
-int 
-hv_storvsc_init( DRIVER_OBJECT *Driver)
-{
-	STORVSC_DRIVER_OBJECT* storDriver = (STORVSC_DRIVER_OBJECT*)Driver;
-	int ret=0;
-
-	DPRINT_ENTER(STORVSC);
-		
-	DPRINT_DBG(STORVSC, "sizeof(struct hv_storvsc_request)=%ld sizeof(struct hv_storvsc_req_ext)=%ld sizeof(VSTOR_PACKET)=%ld, sizeof(VMSCSI_REQUEST)=%ld",
-		sizeof(struct hv_storvsc_request), sizeof(struct hv_storvsc_req_ext), sizeof(VSTOR_PACKET), sizeof(VMSCSI_REQUEST));
-
-	// Make sure we are at least 2 pages since 1 page is used for control
-	KASSERT(storDriver->RingBufferSize >= (PAGE_SIZE << 1), ("RingBufferSize is too big (%u)"));
-
-	memcpy(&Driver->deviceType, &gStorVscDeviceType, sizeof(GUID));
-	Driver->name			= gStorDriverName;
-	storDriver->RequestExtSize	= sizeof(struct hv_storvsc_req_ext);
-
-	// Divide the ring buffer data size (which is 1 page less than the ring buffer size since that page is reserved for the ring buffer indices)
-	// by the max request size (which is VMBUS_CHANNEL_PACKET_MULITPAGE_BUFFER + VSTOR_PACKET + UINT64) 
-	storDriver->MaxOutstandingRequestsPerChannel = 
-		((storDriver->RingBufferSize - PAGE_SIZE) / ALIGN_UP(MAX_MULTIPAGE_BUFFER_PACKET + sizeof(VSTOR_PACKET) + sizeof(uint64_t),sizeof(uint64_t)));
-
-	DPRINT_INFO(STORVSC, "max io %u, currently %u\n", storDriver->MaxOutstandingRequestsPerChannel, STORVSC_MAX_IO_REQUESTS);
-
-	// Setup the dispatch table
-	storDriver->Base.OnDeviceAdd	= hv_storvsc_on_deviceadd;
-	storDriver->Base.OnDeviceRemove	= hv_storvsc_on_deviceremove;
-	storDriver->Base.OnCleanup	= hv_storvsc_on_cleanup;
-
-	DPRINT_EXIT(STORVSC);
-
-	return ret;
-}
-
-/*++;
-
-
-Name: 
-	hv_blkvsc_init()
-
-Description:
-	Main entry point
-
---*/
-
-int 
-hv_blkvsc_init(DRIVER_OBJECT *Driver)
-{
-	STORVSC_DRIVER_OBJECT* storDriver = (STORVSC_DRIVER_OBJECT*)Driver;
-	int ret=0;
-
-	DPRINT_ENTER(BLKVSC);
-		
-	// Make sure we are at least 2 pages since 1 page is used for control
-	ASSERT(storDriver->RingBufferSize >= (PAGE_SIZE << 1));
-
-	Driver->name = gBlkDriverName;
-	memcpy(&Driver->deviceType, &gBlkVscDeviceType, sizeof(GUID));
-
-	storDriver->RequestExtSize			= sizeof(struct hv_storvsc_req_ext);
-	// Divide the ring buffer data size (which is 1 page less than the ring buffer size since that page is reserved for the ring buffer indices)
-	// by the max request size (which is VMBUS_CHANNEL_PACKET_MULITPAGE_BUFFER + VSTOR_PACKET + uint64_t) 
-	storDriver->MaxOutstandingRequestsPerChannel = 
-		((storDriver->RingBufferSize - PAGE_SIZE) / ALIGN_UP(MAX_MULTIPAGE_BUFFER_PACKET + sizeof(VSTOR_PACKET) + sizeof(uint64_t),sizeof(uint64_t)));
-
-	DPRINT_INFO(BLKVSC, "max io outstd %u", storDriver->MaxOutstandingRequestsPerChannel);
-
-	// Setup the dispatch table
-	storDriver->Base.OnDeviceAdd	= hv_blkvsc_on_deviceadd;
-	storDriver->Base.OnDeviceRemove	= hv_storvsc_on_deviceremove;
-	storDriver->Base.OnCleanup	= hv_storvsc_on_cleanup;
-
-	DPRINT_EXIT(BLKVSC);
-
-	return ret;
-}
-
 /*++
 
 Name: 
@@ -419,7 +294,7 @@ hv_blkvsc_on_deviceadd(DEVICE_OBJECT	*Device, void *AdditionalInfo)
 }
 
 
-static int StorVscChannelInit(DEVICE_OBJECT *Device)
+static int hv_storvsc_channel_init(DEVICE_OBJECT *Device)
 {
 	int ret=0;
 	struct hv_storvsc_dev *storDevice;
@@ -613,7 +488,7 @@ hv_storvsc_connect_vsp(
 		return -1;
 	}
 
-	ret = StorVscChannelInit(Device);
+	ret = hv_storvsc_channel_init(Device);
 
 	return ret;
 }
@@ -629,9 +504,7 @@ Description:
 
 --*/
 int
-hv_storvsc_on_deviceremove(
-	DEVICE_OBJECT *Device
-	)
+hv_storvsc_on_deviceremove(DEVICE_OBJECT *Device)
 {
 	struct hv_storvsc_dev *storDevice;
 	int ret=0;
@@ -755,7 +628,7 @@ int
 hv_storvsc_io_request(DEVICE_OBJECT *device, struct hv_storvsc_request *request)
 {
 	struct hv_storvsc_dev *storDevice;
-	struct hv_storvsc_req_ext* requestExtension = (struct hv_storvsc_req_ext*) request->Extension;
+	struct hv_storvsc_req_ext* requestExtension = (struct hv_storvsc_req_ext*) &request->Extension;
 	VSTOR_PACKET* vstorPacket =&requestExtension->VStorPacket;
 	int ret=0;
 
@@ -853,9 +726,7 @@ Description:
 
 --*/
 void
-hv_storvsc_on_cleanup(
-	DRIVER_OBJECT *Driver
-	)
+hv_storvsc_on_cleanup(DRIVER_OBJECT *Driver)
 {
 	DPRINT_ENTER(STORVSC);
 	DPRINT_EXIT(STORVSC);
