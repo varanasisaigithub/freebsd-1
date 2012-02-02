@@ -51,7 +51,7 @@ struct storvsc_softc {
 	int unit;
 	struct cam_sim *sim;
 	struct cam_path *path;
-	LIST_HEAD(, storvsc_request) free_list;
+	LIST_HEAD(, hv_storvsc_request) free_list;
 	struct mtx free_list_lock;
 };
 
@@ -72,10 +72,9 @@ static int storvsc_drv_init(struct storvsc_driver_context *vsc_drv,
 static void storvsc_poll(struct cam_sim * sim);
 static void storvsc_action(struct cam_sim * sim, union ccb * ccb);
 static void scan_for_luns(struct storvsc_softc * storvsc_softc);
-static void create_storvsc_request(union ccb *ccb, struct storvsc_request *reqp);
-static void storvsc_free_request(struct storvsc_softc *sc, struct storvsc_request *reqp);
+static void create_storvsc_request(union ccb *ccb, struct hv_storvsc_request *reqp);
+static void storvsc_free_request(struct storvsc_softc *sc, struct hv_storvsc_request *reqp);
 static struct storvsc_driver_context *storvsc_get_storage_type(device_t dev);
-static void storvsc_io_completion(struct storvsc_request *reqp);
 
 static device_method_t storvsc_methods[] = {
 	/* Device interface */
@@ -257,7 +256,7 @@ storvsc_init(void)
 		g_storvsc_drv.drv_name		      = "storvsc";
 		g_storvsc_drv.drv_max_luns_per_target = STORVSC_MAX_LUNS_PER_TARGET;
 		g_storvsc_drv.drv_max_ios_per_target  = STORVSC_MAX_IO_REQUESTS;
-		storvsc_drv_init(&g_storvsc_drv, StorVscInitialize);
+		storvsc_drv_init(&g_storvsc_drv, hv_storvsc_init);
 		atomic_set_int(&g_storvsc_drv.drv_inited,1);
 	}
 
@@ -268,7 +267,7 @@ storvsc_init(void)
 		g_blkvsc_drv.drv_name		      = "blkvsc";
 		g_blkvsc_drv.drv_max_luns_per_target = BLKVSC_MAX_IDE_DISKS_PER_TARGET;
 		g_blkvsc_drv.drv_max_ios_per_target  = BLKVSC_MAX_IO_REQUESTS;
-		storvsc_drv_init(&g_blkvsc_drv, BlkVscInitialize);
+		storvsc_drv_init(&g_blkvsc_drv, hv_blkvsc_init);
 		atomic_set_int(&g_blkvsc_drv.drv_inited,1);
 	}
 
@@ -316,11 +315,11 @@ storvsc_attach(device_t dev)
 	STORVSC_DRIVER_OBJECT *storvsc_drv_obj;
 	struct device_context *device_ctx = vmbus_get_devctx(dev);
 
-	STORVSC_DEVICE_INFO device_info;
+	struct hv_storvsc_device_info device_info;
 	struct storvsc_softc *sc;
 	struct cam_devq *devq;
 	int ret, i;
-	struct storvsc_request *reqp;
+	struct hv_storvsc_request *reqp;
 
 	DPRINT_ENTER(STORVSC_DRV);
 
@@ -355,9 +354,9 @@ storvsc_attach(device_t dev)
 	mtx_init(&sc->free_list_lock, "storvsc free list lock", NULL, MTX_SPIN | MTX_RECURSE);
 
 	for (i = 0; i < sc->sto_drv->drv_max_ios_per_target; ++i) {
-		reqp = malloc(sizeof(struct storvsc_request), M_DEVBUF, M_NOWAIT | M_ZERO);
+		reqp = malloc(sizeof(struct hv_storvsc_request), M_DEVBUF, M_NOWAIT | M_ZERO);
 		if (reqp == NULL) {
-			printf("cannot alloc struct storvsc_request\n");
+			printf("cannot alloc struct hv_storvsc_request\n");
 			goto cleanup;
 		}
 
@@ -437,7 +436,7 @@ storvsc_attach(device_t dev)
 static int storvsc_detach(device_t dev)
 {
 	struct storvsc_softc *sc = device_get_softc(dev);
-	struct storvsc_request *reqp = NULL;
+	struct hv_storvsc_request *reqp = NULL;
 
 	mtx_lock(&sc->free_list_lock);
 	while (!LIST_EMPTY(&sc->free_list)) {
@@ -461,7 +460,6 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 {
 	struct storvsc_softc *sc = cam_sim_softc(sim);
 	struct storvsc_driver_context *sto_drv = sc->sto_drv;
-	STORVSC_DRIVER_OBJECT *stor_drv_obj = &sto_drv->drv_obj;
 	int res;
 
 	switch (ccb->ccb_h.func_code) {
@@ -525,7 +523,7 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 	case  XPT_RESET_BUS:
 	case  XPT_RESET_DEV:{
 #ifdef notyet
-		if ((res = stor_drv_obj->OnHostReset(sc->storvsc_dev)) != 0) {
+		if ((res = hv_storvsc_host_reset(sc->storvsc_dev)) != 0) {
 			printf("OnHostReset failed with %d\n", res);
 			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
 			xpt_done(ccb);
@@ -538,7 +536,7 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 	}
 	case XPT_SCSI_IO:
 	case XPT_IMMED_NOTIFY: {
-		struct storvsc_request *reqp = NULL;
+		struct hv_storvsc_request *reqp = NULL;
 
 		if (ccb->csio.cdb_len == 0) {
 			panic("cdl_len is 0\n");
@@ -561,8 +559,8 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		ccb->ccb_h.status = CAM_SIM_QUEUED;	    
 
 		create_storvsc_request(ccb, reqp);
-		if ((res = stor_drv_obj->OnIORequest(sc->storvsc_dev, reqp)) == -1) {
-			printf("OnIORequest failed with %d\n", res);
+		if ((res = hv_storvsc_io_request(sc->storvsc_dev, reqp)) == -1) {
+			printf("hv_storvsc_io_request failed with %d\n", res);
 			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
 			storvsc_free_request(sc, reqp);
 			xpt_done(ccb);
@@ -579,7 +577,7 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 }
 
 static void
-create_storvsc_request(union ccb *ccb, struct storvsc_request *reqp)
+create_storvsc_request(union ccb *ccb, struct hv_storvsc_request *reqp)
 {
 	struct ccb_scsiio *csio = &ccb->csio;
 	uint64_t phys_addr;
@@ -614,7 +612,6 @@ create_storvsc_request(union ccb *ccb, struct storvsc_request *reqp)
     		break;
 	}
 
-	reqp->OnIOCompletion = storvsc_io_completion;
 	reqp->SenseBuffer = (unsigned char *)  &csio->sense_data;
 	reqp->SenseBufferSize = SSD_FULL_SIZE;
 	reqp->Ccb = ccb;
@@ -642,12 +639,17 @@ create_storvsc_request(union ccb *ccb, struct storvsc_request *reqp)
 		pfn_num++;
 	}
 		
-
-	
 }
 
-static void
-storvsc_io_completion(struct storvsc_request *reqp)
+/*
+ * storvsc_io_done
+ *
+ * I/O process has been completed and the result needs
+ * to be passed to the CAM layer.
+ * Free resources related to this request.
+ */
+void
+storvsc_io_done(struct hv_storvsc_request *reqp)
 {
 	union ccb *ccb = reqp->Ccb;
 	struct storvsc_softc *sc = reqp->Softc;
@@ -660,7 +662,7 @@ storvsc_io_completion(struct storvsc_request *reqp)
 }
 	
 static void
-storvsc_free_request(struct storvsc_softc *sc, struct storvsc_request *reqp)
+storvsc_free_request(struct storvsc_softc *sc, struct hv_storvsc_request *reqp)
 {
 	struct storvsc_driver_context *sto_drv = sc->sto_drv;
 	void *extp;
@@ -669,7 +671,7 @@ storvsc_free_request(struct storvsc_softc *sc, struct storvsc_request *reqp)
 	bzero(reqp->Extension, sto_drv->drv_obj.RequestExtSize);
 	extp = reqp->Extension;
 	reqp->Extension = NULL;
-	bzero(reqp, sizeof(struct storvsc_request));
+	bzero(reqp, sizeof(struct hv_storvsc_request));
 	reqp->Extension = extp;
 	reqp->Softc = sc;
 

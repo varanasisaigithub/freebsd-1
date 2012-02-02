@@ -112,8 +112,8 @@ typedef struct _DRIVER_OBJECT {        //BlkVsc.c : 56
 #define PDEVICE_OBJECT DEVICE_OBJECT*
 #define PDRIVER_OBJECT DRIVER_OBJECT*
 
-extern  int StorVscInitialize(PDRIVER_OBJECT);
-extern  int BlkVscInitialize(PDRIVER_OBJECT);
+extern int hv_storvsc_init(PDRIVER_OBJECT);
+extern int hv_blkvsc_init(PDRIVER_OBJECT);
 
 extern VOID shutdown_onchannelcallback(PVOID); // drivers/closed/vmbus/ChannelMgmt.c
 

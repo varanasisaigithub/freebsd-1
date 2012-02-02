@@ -27,8 +27,8 @@ enum storvsc_request_type {
 	UNKNOWN_TYPE
 };
 
-struct storvsc_request {
-	LIST_ENTRY(storvsc_request) link;
+struct hv_storvsc_request {
+	LIST_ENTRY(hv_storvsc_request) link;
 	void *Extension;
 	uint32_t Host;
 	uint8_t TargetId;
@@ -39,7 +39,6 @@ struct storvsc_request {
 	uint8_t Cdb[CDB16GENERIC_LENGTH];
 	enum storvsc_request_type Type;
 	MULTIPAGE_BUFFER DataBuffer;
-	void (*OnIOCompletion)(struct storvsc_request *request);
 	uint8_t Status;
 	uint8_t SenseBufferSize;
 	void *SenseBuffer;
@@ -52,15 +51,17 @@ typedef struct storvsc_driver_object_s {
 	uint32_t RingBufferSize;
 	uint32_t RequestExtSize;
 	uint32_t MaxOutstandingRequestsPerChannel;
-	int (*OnHostReset)(DEVICE_OBJECT *Device);
-	int (*OnIORequest)(DEVICE_OBJECT *Device, struct storvsc_request *Request);
 } STORVSC_DRIVER_OBJECT;
 
-typedef struct storvsc_device_info STORVSC_DEVICE_INFO;
-struct storvsc_device_info {
+struct hv_storvsc_device_info {
 	uint32_t PortNumber;
 	uint8_t PathId;
 	uint8_t TargetId;
 };
+
+extern void storvsc_io_done(struct hv_storvsc_request *reqp);
+
+extern int hv_storvsc_host_reset(DEVICE_OBJECT *device);
+extern int hv_storvsc_io_request(DEVICE_OBJECT *device, struct hv_storvsc_request *request);
 
 #endif /* __HV_STORVSC_API_H__ */
