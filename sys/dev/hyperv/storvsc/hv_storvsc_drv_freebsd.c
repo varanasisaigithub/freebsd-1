@@ -34,10 +34,10 @@
 
 struct storvsc_driver_props {
 	char		*drv_name;
-	char *drv_desc;
-	uint8_t			 drv_max_luns_per_target;
-	uint8_t			 drv_max_ios_per_target;
-	uint32_t drv_ringbuffer_size;
+	char		*drv_desc;
+	uint8_t		drv_max_luns_per_target;
+	uint8_t		drv_max_ios_per_target;
+	uint32_t	drv_ringbuffer_size;
 };
 
 enum hv_storage_type {
@@ -57,9 +57,11 @@ static const GUID gBlkVscDeviceType={
 
 static struct storvsc_driver_props g_drv_props_table[] = {
 	{"blkvsc", "Hyper-V IDE Storage Interface",
-	 BLKVSC_MAX_IDE_DISKS_PER_TARGET, BLKVSC_MAX_IO_REQUESTS, STORVSC_RINGBUFFER_SIZE},
+	 BLKVSC_MAX_IDE_DISKS_PER_TARGET, BLKVSC_MAX_IO_REQUESTS,
+	 STORVSC_RINGBUFFER_SIZE},
 	{"storvsc", "Hyper-V SCSI Storage Interface",
-	 STORVSC_MAX_LUNS_PER_TARGET, STORVSC_MAX_IO_REQUESTS, STORVSC_RINGBUFFER_SIZE}
+	 STORVSC_MAX_LUNS_PER_TARGET, STORVSC_MAX_IO_REQUESTS,
+	 STORVSC_RINGBUFFER_SIZE}
 };
 
 struct storvsc_driver_context {
@@ -255,7 +257,6 @@ storvsc_attach(device_t dev)
 {
 	struct device_context *device_ctx = vmbus_get_devctx(dev);
 	enum hv_storage_type stor_type;
-	struct hv_storvsc_device_info device_info;
 	struct storvsc_softc *sc;
 	struct cam_devq *devq;
 	int ret, i;
@@ -279,30 +280,34 @@ storvsc_attach(device_t dev)
 
 	bzero(sc, sizeof(struct storvsc_softc));
 
-	drv_guid = (stor_type == DRIVER_STORVSC) ? gStorVscDeviceType : gBlkVscDeviceType;
-
-	/* XXX set device description */
+	drv_guid = (stor_type == DRIVER_STORVSC) ? gStorVscDeviceType :
+		gBlkVscDeviceType;
 
 	/* fill in driver specific properties */
 	sc->sto_drv.drv_obj.Base.name = g_drv_props_table[stor_type].drv_name;
 	memcpy(&sc->sto_drv.drv_obj.Base.deviceType, &drv_guid, sizeof(GUID));
 	memcpy(&sc->sto_drv.drv_ctx.class_id, &drv_guid, sizeof(GUID));
 	sc->sto_drv.drv_props = &g_drv_props_table[stor_type];
-	sc->sto_drv.drv_obj.RingBufferSize = g_drv_props_table[stor_type].drv_ringbuffer_size;
+	sc->sto_drv.drv_obj.RingBufferSize =
+		g_drv_props_table[stor_type].drv_ringbuffer_size;
 
 	/* XXX THIS IS STUPID */
 	vmbus_get_interface(&sc->sto_drv.drv_obj.Base.VmbusChannelInterface);
 
 	device_ctx->device_obj.Driver = &sc->sto_drv.drv_obj.Base;
 
+	/* fill in device specific properties */
 	sc->unit	= device_get_unit(dev);
 	sc->storvsc_dev = &device_ctx->device_obj;
+	device_set_desc(dev, g_drv_props_table[stor_type].drv_desc);
 
 	LIST_INIT(&sc->free_list);
-	mtx_init(&sc->free_list_lock, "storvsc free list lock", NULL, MTX_SPIN | MTX_RECURSE);
+	mtx_init(&sc->free_list_lock, "storvsc free list lock", NULL,
+			 MTX_SPIN | MTX_RECURSE);
 
 	for (i = 0; i < sc->sto_drv.drv_props->drv_max_ios_per_target; ++i) {
-		reqp = malloc(sizeof(struct hv_storvsc_request), M_DEVBUF, M_NOWAIT | M_ZERO);
+		reqp = malloc(sizeof(struct hv_storvsc_request), M_DEVBUF,
+					  M_NOWAIT | M_ZERO);
 		if (reqp == NULL) {
 			printf("cannot alloc struct hv_storvsc_request\n");
 			goto cleanup;
@@ -313,11 +318,7 @@ storvsc_attach(device_t dev)
 		LIST_INSERT_HEAD(&sc->free_list, reqp, link);
 	}
 
-	if (stor_type == STORVSC) {
-		ret = hv_storvsc_on_deviceadd(&device_ctx->device_obj, (void*)&device_info);
-	} else {
-		ret = hv_blkvsc_on_deviceadd(&device_ctx->device_obj, (void*)&device_info);
-	}
+	ret = hv_storvsc_on_deviceadd(&device_ctx->device_obj);
 
 	if (ret != 0) {
 		DPRINT_ERR(STORVSC_DRV, "unable to add storvsc device (ret %d)", ret);
@@ -409,7 +410,8 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 	case XPT_PATH_INQ: {
 		struct ccb_pathinq *cpi = &ccb->cpi;
 		DPRINT_INFO(STORVSC, "XPT_PATH_INQ %d:%d:%d %s\n", cam_sim_bus(sim),
-					ccb->ccb_h.target_id, ccb->ccb_h.target_lun, cam_sim_name(sim));
+					ccb->ccb_h.target_id, ccb->ccb_h.target_lun,
+					cam_sim_name(sim));
 
 		cpi->version_num = 1;
 		cpi->hba_inquiry = PI_TAG_ABLE|PI_SDTR_ABLE;
@@ -467,7 +469,7 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 	case  XPT_RESET_DEV:{
 #ifdef notyet
 		if ((res = hv_storvsc_host_reset(sc->storvsc_dev)) != 0) {
-			printf("OnHostReset failed with %d\n", res);
+			printf("hv_storvsc_host_reset failed with %d\n", res);
 			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
 			xpt_done(ccb);
 			return;
@@ -607,8 +609,6 @@ storvsc_io_done(struct hv_storvsc_request *reqp)
 static void
 storvsc_free_request(struct storvsc_softc *sc, struct hv_storvsc_request *reqp)
 {
-	struct storvsc_driver_context *sto_drv = &sc->sto_drv;
-
 	ASSERT(reqp->Softc == sc);
 	bzero(reqp, sizeof(struct hv_storvsc_request));
 	reqp->Softc = sc;
