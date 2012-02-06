@@ -61,30 +61,32 @@
 
 
 /*
- * #defines
+ * Defines
  */
 
 //#define NVSC_MIN_PROTOCOL_VERSION		1
 //#define NVSC_MAX_PROTOCOL_VERSION		1
 
-#define NETVSC_SEND_BUFFER_SIZE			(64*1024) // 64K
+#define NETVSC_SEND_BUFFER_SIZE			(64*1024)   /* 64K */
 #define NETVSC_SEND_BUFFER_ID			0xface
 
 
-#define NETVSC_RECEIVE_BUFFER_SIZE		(1024*1024) // 1MB
+#define NETVSC_RECEIVE_BUFFER_SIZE		(1024*1024) /* 1MB */
 
 #define NETVSC_RECEIVE_BUFFER_ID		0xcafe
 
 #define NETVSC_RECEIVE_SG_COUNT			1
 
-// Preallocated receive packets
+/* Preallocated receive packets */
 #define NETVSC_RECEIVE_PACKETLIST_COUNT		256
 
 /*
  * Data types
  */
 
-/* Per netvsc channel-specific */
+/*
+ * Per netvsc channel-specific
+ */
 typedef struct netvsc_dev_ {
 	DEVICE_OBJECT				*Device;
 
@@ -93,7 +95,7 @@ typedef struct netvsc_dev_ {
 	int					NumOutstandingSends;
 	/* List of free preallocated NETVSC_PACKET to represent RX packet */
 	LIST_ENTRY				ReceivePacketList;
-	HANDLE					ReceivePacketListLock;
+	void					*ReceivePacketListLock;
 
 	/* Send buffer allocated by us but manages by NetVSP */
 	void					*SendBuffer;
@@ -106,16 +108,16 @@ typedef struct netvsc_dev_ {
 	uint32_t				ReceiveBufferSize;
 	uint32_t				ReceiveBufferGpadlHandle;
 	uint32_t				ReceiveSectionCount;
-	PNVSP_1_RECEIVE_BUFFER_SECTION		ReceiveSections;
+	nvsp_1_rx_buf_section			*ReceiveSections;
 
 	/* Used for NetVSP initialization protocol */
-	HANDLE					ChannelInitEvent;
-	NVSP_MESSAGE				ChannelInitPacket;
+	void					*ChannelInitEvent;
+	nvsp_msg				ChannelInitPacket;
 
-	NVSP_MESSAGE				RevokePacket;
+	nvsp_msg				RevokePacket;
 	//uint8_t				HwMacAddr[HW_MACADDR_LEN];
 
-	// Holds rndis device info
+	/* Holds rndis device info */
 	void					*Extension;
 } netvsc_dev;
 
