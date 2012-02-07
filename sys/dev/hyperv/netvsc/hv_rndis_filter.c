@@ -126,7 +126,7 @@ typedef struct rndis_request_ {
 /* Fixme:  not used */
 typedef struct rndis_filter_packet_ {
 	void				*CompletionContext;
-	PFN_ON_SENDRECVCOMPLETION	OnCompletion;
+	pfn_on_send_rx_completion	OnCompletion;
 
 	rndis_msg			Message;
 } rndis_filter_packet;
@@ -348,22 +348,22 @@ hv_rf_send_request(rndis_device *Device, rndis_request *Request)
 	/* Set up the packet to send it */
 	packet = &Request->Packet;
 	
-	packet->IsDataPacket = FALSE;
-	packet->TotalDataBufferLength = Request->RequestMessage.msg_len;
-	packet->PageBufferCount = 1;
+	packet->is_data_pkt = FALSE;
+	packet->tot_data_buf_len = Request->RequestMessage.msg_len;
+	packet->page_buf_count = 1;
 
-	packet->PageBuffers[0].Pfn =
+	packet->page_buffers[0].Pfn =
 	    GetPhysicalAddress(&Request->RequestMessage) >> PAGE_SHIFT;
-	packet->PageBuffers[0].Length = Request->RequestMessage.msg_len;
-	packet->PageBuffers[0].Offset =
+	packet->page_buffers[0].Length = Request->RequestMessage.msg_len;
+	packet->page_buffers[0].Offset =
 	    (ULONG_PTR)&Request->RequestMessage & (PAGE_SIZE - 1);
 
-	packet->Completion.Send.SendCompletionContext = Request; //packet;
-	packet->Completion.Send.OnSendCompletion =
+	packet->compl.send.send_completion_context = Request; //packet;
+	packet->compl.send.on_send_completion =
 	    hv_rf_on_send_request_completion;
-	packet->Completion.Send.SendCompletionTid = (ULONG_PTR)Device;
+	packet->compl.send.send_completion_tid = (ULONG_PTR)Device;
 
-	ret = gRndisFilter.InnerDriver.OnSend(Device->NetDevice->dev,
+	ret = gRndisFilter.InnerDriver.on_send(Device->NetDevice->dev,
 	    packet);
 	DPRINT_EXIT(NETVSC);
 
@@ -445,11 +445,11 @@ hv_rf_receive_indicate_status(rndis_device *Device, rndis_msg *Response)
 	rndis_indicate_status *indicate = &Response->msg.IndicateStatus;
 		
 	if (indicate->Status == RNDIS_STATUS_MEDIA_CONNECT) {
-		gRndisFilter.InnerDriver.OnLinkStatusChanged(
+		gRndisFilter.InnerDriver.on_link_stat_changed(
 		    Device->NetDevice->dev, 1);
 	}
 	else if (indicate->Status == RNDIS_STATUS_MEDIA_DISCONNECT) {
-		gRndisFilter.InnerDriver.OnLinkStatusChanged(
+		gRndisFilter.InnerDriver.on_link_stat_changed(
 		    Device->NetDevice->dev, 0);
 	} else {
 		// TODO:
@@ -472,25 +472,25 @@ hv_rf_receive_data(rndis_device *Device, rndis_msg *Message,
 
 	/* Empty Ethernet frame ?? */
 	ASSERT(
-	    Packet->PageBuffers[0].Length > RNDIS_MESSAGE_SIZE(rndis_packet));
+	    Packet->page_buffers[0].Length > RNDIS_MESSAGE_SIZE(rndis_packet));
 
 	rndisPacket = &Message->msg.Packet;
 
 	/*
 	 * Fixme:  Handle multiple rndis pkt msgs that may be enclosed in this
-	 * netvsc packet (ie TotalDataBufferLength != MessageLength)
+	 * netvsc packet (ie tot_data_buf_len != MessageLength)
 	 */
 
 	/* Remove the rndis header and pass it back up the stack */
 	dataOffset = RNDIS_HEADER_SIZE + rndisPacket->DataOffset;
 		
-	Packet->TotalDataBufferLength -= dataOffset;
-	Packet->PageBuffers[0].Offset += dataOffset;
-	Packet->PageBuffers[0].Length -= dataOffset;
+	Packet->tot_data_buf_len -= dataOffset;
+	Packet->page_buffers[0].Offset += dataOffset;
+	Packet->page_buffers[0].Length -= dataOffset;
 
-	Packet->IsDataPacket = TRUE;
+	Packet->is_data_pkt = TRUE;
 		
-	gRndisFilter.InnerDriver.OnReceiveCallback(Device->NetDevice->dev,
+	gRndisFilter.InnerDriver.on_rx_callback(Device->NetDevice->dev,
 	    Packet);
 
 	DPRINT_EXIT(NETVSC);
@@ -530,10 +530,10 @@ hv_rf_on_receive(DEVICE_OBJECT *Device, netvsc_packet *Packet)
 	}
 
 	rndisHeader = (rndis_msg *)PageMapVirtualAddress(
-	    Packet->PageBuffers[0].Pfn);
+	    Packet->page_buffers[0].Pfn);
 
 	rndisHeader = (void *)((ULONG_PTR)rndisHeader +
-	    Packet->PageBuffers[0].Offset);
+	    Packet->page_buffers[0].Offset);
 	
 	/*
 	 * Make sure we got a valid rndis message
@@ -542,13 +542,13 @@ hv_rf_on_receive(DEVICE_OBJECT *Device, netvsc_packet *Packet)
 	 * xfer page range shows 52 bytes
 	 */
 #if 0
-	if (Packet->TotalDataBufferLength != rndisHeader->msg_len) {
+	if (Packet->tot_data_buf_len != rndisHeader->msg_len) {
 		PageUnmapVirtualAddress((void *)(ULONG_PTR)rndisHeader -
-		    Packet->PageBuffers[0].Offset);
+		    Packet->page_buffers[0].Offset);
 
 		DPRINT_ERR(NETVSC, "invalid rndis message? (expected %u "
 		    "bytes got %u)... dropping this message!",
-		    rndisHeader->msg_len, Packet->TotalDataBufferLength);
+		    rndisHeader->msg_len, Packet->tot_data_buf_len);
 		DPRINT_EXIT(NETVSC);
 
 		return (-1);
@@ -567,7 +567,7 @@ hv_rf_on_receive(DEVICE_OBJECT *Device, netvsc_packet *Packet)
 	    sizeof(rndis_msg) : rndisHeader->msg_len);
 
 	PageUnmapVirtualAddress((void *)((ULONG_PTR)rndisHeader -
-	    Packet->PageBuffers[0].Offset));
+	    Packet->page_buffers[0].Offset));
 
 	hv_dump_rndis_message(&rndisMessage);
 
@@ -771,8 +771,8 @@ hv_rndis_filter_init(netvsc_driver_object *Driver)
 	DPRINT_DBG(NETVSC, "sizeof(rndis_filter_packet) == %d",
 	    sizeof(rndis_filter_packet));
 
-	Driver->RequestExtSize = sizeof(rndis_filter_packet);
-	Driver->AdditionalRequestPageBufferCount = 1; // For rndis header
+	Driver->request_ext_size = sizeof(rndis_filter_packet);
+	Driver->additional_request_page_buf_cnt = 1; /* For rndis header */
 
 	//Driver->Context = rndisDriver;
 
@@ -782,33 +782,33 @@ hv_rndis_filter_init(netvsc_driver_object *Driver)
 	/* Fixme:  Don't know why this code was commented out */
 	rndisDriver->Driver = Driver;
 
-	ASSERT(Driver->OnLinkStatusChanged);
-	rndisDriver->OnLinkStatusChanged = Driver->OnLinkStatusChanged;
+	ASSERT(Driver->on_link_stat_changed);
+	rndisDriver->on_link_stat_changed = Driver->on_link_stat_changed;
 #endif
 
 	/* Save the original dispatch handlers before we override it */
-	gRndisFilter.InnerDriver.Base.OnDeviceAdd = Driver->Base.OnDeviceAdd;
-	gRndisFilter.InnerDriver.Base.OnDeviceRemove =
-	    Driver->Base.OnDeviceRemove;
-	gRndisFilter.InnerDriver.Base.OnCleanup = Driver->Base.OnCleanup;
+	gRndisFilter.InnerDriver.base.OnDeviceAdd = Driver->base.OnDeviceAdd;
+	gRndisFilter.InnerDriver.base.OnDeviceRemove =
+	    Driver->base.OnDeviceRemove;
+	gRndisFilter.InnerDriver.base.OnCleanup = Driver->base.OnCleanup;
 
-	ASSERT(Driver->OnSend);
-	ASSERT(Driver->OnReceiveCallback);
-	gRndisFilter.InnerDriver.OnSend = Driver->OnSend;
-	gRndisFilter.InnerDriver.OnReceiveCallback = Driver->OnReceiveCallback;
-	gRndisFilter.InnerDriver.OnLinkStatusChanged =
-	    Driver->OnLinkStatusChanged;
+	ASSERT(Driver->on_send);
+	ASSERT(Driver->on_rx_callback);
+	gRndisFilter.InnerDriver.on_send = Driver->on_send;
+	gRndisFilter.InnerDriver.on_rx_callback = Driver->on_rx_callback;
+	gRndisFilter.InnerDriver.on_link_stat_changed =
+	    Driver->on_link_stat_changed;
 
 	/* Override */
-	Driver->Base.OnDeviceAdd = hv_rf_on_device_add;
-	Driver->Base.OnDeviceRemove = hv_rf_on_device_remove;
-	Driver->Base.OnCleanup = hv_rf_on_cleanup;
+	Driver->base.OnDeviceAdd = hv_rf_on_device_add;
+	Driver->base.OnDeviceRemove = hv_rf_on_device_remove;
+	Driver->base.OnCleanup = hv_rf_on_cleanup;
 
-	Driver->OnSend = hv_rf_on_send;
-	Driver->OnOpen = hv_rf_on_open;
-	Driver->OnClose = hv_rf_on_close;
+	Driver->on_send = hv_rf_on_send;
+	Driver->on_open = hv_rf_on_open;
+	Driver->on_close = hv_rf_on_close;
 	//Driver->QueryLinkStatus = hv_rf_query_device_link_status;
-	Driver->OnReceiveCallback = hv_rf_on_receive;
+	Driver->on_rx_callback = hv_rf_on_receive;
 
 	DPRINT_EXIT(NETVSC);
 
@@ -991,7 +991,7 @@ hv_rf_on_device_add(DEVICE_OBJECT *Device, void *AdditionalInfo)
 	 * NOTE! Once the channel is created, we may get a receive callback 
 	 * (hv_rf_on_receive()) before this call is completed
 	 */
-	ret = gRndisFilter.InnerDriver.Base.OnDeviceAdd(Device, AdditionalInfo);
+	ret = gRndisFilter.InnerDriver.base.OnDeviceAdd(Device, AdditionalInfo);
 	if (ret != 0) {
 		hv_put_rndis_device(rndisDevice);
 		DPRINT_EXIT(NETVSC);
@@ -1028,13 +1028,13 @@ hv_rf_on_device_add(DEVICE_OBJECT *Device, void *AdditionalInfo)
 	    rndisDevice->HwMacAddr[2], rndisDevice->HwMacAddr[3],
 	    rndisDevice->HwMacAddr[4], rndisDevice->HwMacAddr[5]);
 
-	memcpy(deviceInfo->MacAddr, rndisDevice->HwMacAddr, HW_MACADDR_LEN);
+	memcpy(deviceInfo->mac_addr, rndisDevice->HwMacAddr, HW_MACADDR_LEN);
 
 	hv_rf_query_device_link_status(rndisDevice);
 	
-	deviceInfo->LinkState = rndisDevice->LinkStatus;
+	deviceInfo->link_state = rndisDevice->LinkStatus;
 	DPRINT_INFO(NETVSC, "Device 0x%p link state %s", rndisDevice,
-	    ((deviceInfo->LinkState) ? ("down") : ("up")));
+	    ((deviceInfo->link_state) ? ("down") : ("up")));
 
 	DPRINT_EXIT(NETVSC);
 
@@ -1059,7 +1059,7 @@ hv_rf_on_device_remove(DEVICE_OBJECT *Device)
 	netDevice->extension = NULL;
 
 	/* Pass control to inner driver to remove the device */
-	gRndisFilter.InnerDriver.Base.OnDeviceRemove(Device);
+	gRndisFilter.InnerDriver.base.OnDeviceRemove(Device);
 
 	DPRINT_EXIT(NETVSC);
 
@@ -1130,7 +1130,7 @@ hv_rf_on_send(DEVICE_OBJECT *Device, netvsc_packet *Packet)
 	DPRINT_ENTER(NETVSC);
 
 	/* Add the rndis header */
-	filterPacket = (rndis_filter_packet *)Packet->Extension;
+	filterPacket = (rndis_filter_packet *)Packet->extension;
 	ASSERT(filterPacket);
 
 	memset(filterPacket, 0, sizeof(rndis_filter_packet));
@@ -1139,37 +1139,37 @@ hv_rf_on_send(DEVICE_OBJECT *Device, netvsc_packet *Packet)
 	rndisMessageSize = RNDIS_MESSAGE_SIZE(rndis_packet);
 
 	rndisMessage->ndis_msg_type = REMOTE_NDIS_PACKET_MSG;
-	rndisMessage->msg_len = Packet->TotalDataBufferLength +
+	rndisMessage->msg_len = Packet->tot_data_buf_len +
 	    rndisMessageSize;
 	
 	rndisPacket = &rndisMessage->msg.Packet;
 	rndisPacket->DataOffset = sizeof(rndis_packet);
-	rndisPacket->DataLength = Packet->TotalDataBufferLength;
+	rndisPacket->DataLength = Packet->tot_data_buf_len;
 
-	Packet->IsDataPacket = TRUE;
-	Packet->PageBuffers[0].Pfn =
+	Packet->is_data_pkt = TRUE;
+	Packet->page_buffers[0].Pfn =
 	    GetPhysicalAddress(rndisMessage) >> PAGE_SHIFT;
-	Packet->PageBuffers[0].Offset =
+	Packet->page_buffers[0].Offset =
 	    (ULONG_PTR)rndisMessage & (PAGE_SIZE-1);
-	Packet->PageBuffers[0].Length = rndisMessageSize;
+	Packet->page_buffers[0].Length = rndisMessageSize;
 
 	/* Save the packet send completion and context */
-	filterPacket->OnCompletion = Packet->Completion.Send.OnSendCompletion;
+	filterPacket->OnCompletion = Packet->compl.send.on_send_completion;
 	filterPacket->CompletionContext =
-	    Packet->Completion.Send.SendCompletionContext;
+	    Packet->compl.send.send_completion_context;
 
 	/* Use ours */
-	Packet->Completion.Send.OnSendCompletion = hv_rf_on_send_completion;
-	Packet->Completion.Send.SendCompletionContext = filterPacket;
+	Packet->compl.send.on_send_completion = hv_rf_on_send_completion;
+	Packet->compl.send.send_completion_context = filterPacket;
 
-	ret = gRndisFilter.InnerDriver.OnSend(Device, Packet);
+	ret = gRndisFilter.InnerDriver.on_send(Device, Packet);
 	if (ret != 0) {
 		/*
 		 * Reset the completion to originals to allow retries from above
 		 */
-		Packet->Completion.Send.OnSendCompletion =
+		Packet->compl.send.on_send_completion =
 		    filterPacket->OnCompletion;
-		Packet->Completion.Send.SendCompletionContext =
+		Packet->compl.send.send_completion_context =
 		    filterPacket->CompletionContext;
 	}
 

@@ -256,21 +256,21 @@ hv_net_vsc_initialize(DRIVER_OBJECT *drv)
 	    sizeof(VMTRANSFER_PAGE_PACKET_HEADER));
 
 	/* Make sure we are at least 2 pages since 1 page is used for control */
-	ASSERT(driver->RingBufferSize >= (PAGE_SIZE << 1));
+	ASSERT(driver->ring_buf_size >= (PAGE_SIZE << 1));
 
 	drv->name = gDriverName;
 	memcpy(&drv->deviceType, &gNetVscDeviceType, sizeof(GUID));
 
 	/* Make sure it is set by the caller */
-	ASSERT(driver->OnReceiveCallback);
-	ASSERT(driver->OnLinkStatusChanged);
+	ASSERT(driver->on_rx_callback);
+	ASSERT(driver->on_link_stat_changed);
 
 	/* Setup the dispatch table */
-	driver->Base.OnDeviceAdd		= hv_nv_on_device_add;
-	driver->Base.OnDeviceRemove		= hv_nv_on_device_remove;
-	driver->Base.OnCleanup			= hv_nv_on_cleanup;
+	driver->base.OnDeviceAdd		= hv_nv_on_device_add;
+	driver->base.OnDeviceRemove		= hv_nv_on_device_remove;
+	driver->base.OnCleanup			= hv_nv_on_cleanup;
 
-	driver->OnSend				= hv_nv_on_send;
+	driver->on_send				= hv_nv_on_send;
 
 	hv_rndis_filter_init(driver);
 
@@ -862,13 +862,13 @@ hv_nv_on_device_add(DEVICE_OBJECT *Device, void *AdditionalInfo)
 		}
 
 		INSERT_TAIL_LIST(&netDevice->rx_packet_list,
-		    &packet->ListEntry);
+		    &packet->list_entry);
 	}
 	netDevice->channel_init_event = WaitEventCreate();
 
 	/* Open the channel */
 	ret = Device->Driver->VmbusChannelInterface.Open(Device,
-	    netDriver->RingBufferSize, netDriver->RingBufferSize,
+	    netDriver->ring_buf_size, netDriver->ring_buf_size,
 	    NULL, 0, hv_nv_on_channel_callback, Device);
 
 	if (ret != 0) {
@@ -907,7 +907,7 @@ Cleanup:
 		while (!IsListEmpty(&netDevice->rx_packet_list)) {	
 			entry = REMOVE_HEAD_LIST(&netDevice->rx_packet_list);
 			packet = CONTAINING_RECORD(entry, netvsc_packet,
-			    ListEntry);
+			    list_entry);
 			free(packet, M_DEVBUF);
 		}
 
@@ -978,7 +978,7 @@ hv_nv_on_device_remove(DEVICE_OBJECT *Device)
 	while (!IsListEmpty(&netDevice->rx_packet_list)) {	
 		entry = REMOVE_HEAD_LIST(&netDevice->rx_packet_list);
 		netvscPacket =
-		    CONTAINING_RECORD(entry, netvsc_packet, ListEntry);
+		    CONTAINING_RECORD(entry, netvsc_packet, list_entry);
 
 		free(netvscPacket, M_DEVBUF);
 	}
@@ -1048,8 +1048,8 @@ hv_nv_on_send_completion(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 		ASSERT(nvscPacket);
 
 		/* Notify the layer above us */
-		nvscPacket->Completion.Send.OnSendCompletion(
-		    nvscPacket->Completion.Send.SendCompletionContext);
+		nvscPacket->compl.send.on_send_completion(
+		    nvscPacket->compl.send.send_completion_context);
 
 		InterlockedDecrement(&netDevice->num_outstanding_sends);
 	} else {
@@ -1084,7 +1084,7 @@ hv_nv_on_send(DEVICE_OBJECT *Device, netvsc_packet *Packet)
 	}
 
 	send_msg.hdr.msg_type = nvsp_msg_1_type_send_rndis_pkt;
-	if (Packet->IsDataPacket) {
+	if (Packet->is_data_pkt) {
 		/* 0 is RMC_DATA */
 		send_msg.msgs.vers_1_msgs.send_rndis_pkt.chan_type =
 		    0;
@@ -1100,10 +1100,10 @@ hv_nv_on_send(DEVICE_OBJECT *Device, netvsc_packet *Packet)
 	send_msg.msgs.vers_1_msgs.send_rndis_pkt.send_buf_section_size
 	    = 0;
 
-	if (Packet->PageBufferCount) {
+	if (Packet->page_buf_count) {
 		ret =
 		    Device->Driver->VmbusChannelInterface.SendPacketPageBuffer(
-		    Device, Packet->PageBuffers, Packet->PageBufferCount,
+		    Device, Packet->page_buffers, Packet->page_buf_count,
 		    &send_msg, sizeof(nvsp_msg), (ULONG_PTR)Packet);
 	} else {
 		ret = Device->Driver->VmbusChannelInterface.SendPacket(Device,
@@ -1210,9 +1210,9 @@ hv_nv_on_receive(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 	SpinlockAcquire(netDevice->rx_packet_list_lock);
 	while (!IsListEmpty(&netDevice->rx_packet_list)) {	
 		entry = REMOVE_HEAD_LIST(&netDevice->rx_packet_list);
-		netvscPacket = CONTAINING_RECORD(entry, netvsc_packet, ListEntry);
+		netvscPacket = CONTAINING_RECORD(entry, netvsc_packet, list_entry);
 
-		INSERT_TAIL_LIST(&listHead, &netvscPacket->ListEntry);
+		INSERT_TAIL_LIST(&listHead, &netvscPacket->list_entry);
 
 		if (++count == vmxferpagePacket->RangeCount + 1)
 			break;
@@ -1234,10 +1234,10 @@ hv_nv_on_receive(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 		for (i=count; i != 0; i--) {
 			entry = REMOVE_HEAD_LIST(&listHead);
 			netvscPacket = CONTAINING_RECORD(entry, netvsc_packet,
-			    ListEntry);
+			    list_entry);
 
 			INSERT_TAIL_LIST(&netDevice->rx_packet_list,
-			    &netvscPacket->ListEntry);
+			    &netvscPacket->list_entry);
 		}
 		SpinlockRelease(netDevice->rx_packet_list_lock);
 
@@ -1266,28 +1266,28 @@ hv_nv_on_receive(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 	for (i=0; i < (count - 1); i++) {
 		entry = REMOVE_HEAD_LIST(&listHead);
 		netvscPacket = CONTAINING_RECORD(entry, netvsc_packet,
-		    ListEntry);
+		    list_entry);
 
 		/* Initialize the netvsc packet */
-		netvscPacket->XferPagePacket = xferpagePacket;
-		netvscPacket->Completion.Recv.OnReceiveCompletion =
+		netvscPacket->xfer_page_pkt = xferpagePacket;
+		netvscPacket->compl.rx.on_rx_completion =
 		    hv_nv_on_receive_completion;
-		netvscPacket->Completion.Recv.ReceiveCompletionContext =
+		netvscPacket->compl.rx.rx_completion_context =
 		    netvscPacket;
-		netvscPacket->Device = Device;
+		netvscPacket->device = Device;
 		/* Save this so that we can send it back */
-		netvscPacket->Completion.Recv.ReceiveCompletionTid =
+		netvscPacket->compl.rx.rx_completion_tid =
 		    vmxferpagePacket->d.TransactionId;
 
-		netvscPacket->TotalDataBufferLength =
+		netvscPacket->tot_data_buf_len =
 		    vmxferpagePacket->Ranges[i].ByteCount;
-		netvscPacket->PageBufferCount = 1;
+		netvscPacket->page_buf_count = 1;
 
 		ASSERT(vmxferpagePacket->Ranges[i].ByteOffset +
 		    vmxferpagePacket->Ranges[i].ByteCount <
 		    netDevice->rx_buf_size);
 
-		netvscPacket->PageBuffers[0].Length =
+		netvscPacket->page_buffers[0].Length =
 		    vmxferpagePacket->Ranges[i].ByteCount;
 
 		/* The virtual address of the packet in the receive buffer */
@@ -1296,11 +1296,11 @@ hv_nv_on_receive(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 		start = ((unsigned long)start) & ~(PAGE_SIZE - 1);
 
 		/* Page number of the virtual page containing packet start */
-		netvscPacket->PageBuffers[0].Pfn = start >> PAGE_SHIFT;
+		netvscPacket->page_buffers[0].Pfn = start >> PAGE_SHIFT;
 
 
 		/* Calculate the page relative offset */
-		netvscPacket->PageBuffers[0].Offset =
+		netvscPacket->page_buffers[0].Offset =
 		    vmxferpagePacket->Ranges[i].ByteOffset & (PAGE_SIZE -1);
 
 		/*
@@ -1316,19 +1316,19 @@ hv_nv_on_receive(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 		    i, 
 		    vmxferpagePacket->Ranges[i].ByteOffset,
 		    vmxferpagePacket->Ranges[i].ByteCount,
-		    netvscPacket->PageBuffers[0].Pfn, 
-		    netvscPacket->PageBuffers[0].Offset,
-		    netvscPacket->PageBuffers[0].Length);
+		    netvscPacket->page_buffers[0].Pfn, 
+		    netvscPacket->page_buffers[0].Offset,
+		    netvscPacket->page_buffers[0].Length);
 
 		/* Pass it to the upper layer */
-		((netvsc_driver_object *)Device->Driver)->OnReceiveCallback(Device,
+		((netvsc_driver_object *)Device->Driver)->on_rx_callback(Device,
 		    netvscPacket);
 
 		/*
 		 * The receive completion call has been moved into the
 		 * callback function above.
 		 */
-		// hv_nv_on_receive_completion(netvscPacket->Completion.Recv.ReceiveCompletionContext);
+		// hv_nv_on_receive_completion(netvscPacket->compl.Recv.ReceiveCompletionContext);
 	}
 
 	ASSERT(IsListEmpty(&listHead));
@@ -1394,14 +1394,14 @@ void
 hv_nv_on_receive_completion(void *Context)
 {
 	netvsc_packet *packet = (netvsc_packet *)Context;
-	DEVICE_OBJECT *device = (DEVICE_OBJECT *)packet->Device;
+	DEVICE_OBJECT *device = (DEVICE_OBJECT *)packet->device;
 	netvsc_dev *netDevice;
 	uint64_t       transactionId = 0;
 	BOOL fSendReceiveComp = FALSE;
 
 	DPRINT_ENTER(NETVSC);
 
-	ASSERT(packet->XferPagePacket);
+	ASSERT(packet->xfer_page_pkt);
 
 	/*
 	 * Even though it seems logical to do a hv_nv_get_outbound_net_device()
@@ -1420,26 +1420,26 @@ hv_nv_on_receive_completion(void *Context)
 	/* Overloading use of the lock. */
 	SpinlockAcquire(netDevice->rx_packet_list_lock);
 
-// 	ASSERT(packet->XferPagePacket->Count > 0);
-	if (packet->XferPagePacket->Count == 0) {
+// 	ASSERT(packet->xfer_page_pkt->Count > 0);
+	if (packet->xfer_page_pkt->Count == 0) {
 		hv_nv_put_net_device(device);
 		DPRINT_EXIT(NETVSC);
 	}
 
-	packet->XferPagePacket->Count--;
+	packet->xfer_page_pkt->Count--;
 
 	/* Last one in the line that represent 1 xfer page packet. */
 	/* Return the xfer page packet itself to the freelist */
-	if (packet->XferPagePacket->Count == 0) {
+	if (packet->xfer_page_pkt->Count == 0) {
 		fSendReceiveComp = TRUE;
-		transactionId = packet->Completion.Recv.ReceiveCompletionTid;
+		transactionId = packet->compl.rx.rx_completion_tid;
 
 		INSERT_TAIL_LIST(&netDevice->rx_packet_list,
-		    &packet->XferPagePacket->ListEntry);
+		    &packet->xfer_page_pkt->ListEntry);
 	}
 
 	/* Put the packet back */
-	INSERT_TAIL_LIST(&netDevice->rx_packet_list, &packet->ListEntry);
+	INSERT_TAIL_LIST(&netDevice->rx_packet_list, &packet->list_entry);
 	SpinlockRelease(netDevice->rx_packet_list_lock);
 
 	/* Send a receive completion for the xfer page packet */
