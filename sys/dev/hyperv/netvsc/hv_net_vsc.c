@@ -339,10 +339,10 @@ hv_nv_init_rx_buffer_with_net_vsp(DEVICE_OBJECT *Device)
 
 	memset(initPacket, 0, sizeof(nvsp_msg));
 
-	initPacket->Header.MessageType = nvsp_msg_1_type_send_rx_buf;
-	initPacket->Messages.Version1Messages.SendReceiveBuffer.GpadlHandle =
+	initPacket->hdr.msg_type = nvsp_msg_1_type_send_rx_buf;
+	initPacket->msgs.vers_1_msgs.send_rx_buf.gpadl_handle =
 	    netDevice->ReceiveBufferGpadlHandle;
-	initPacket->Messages.Version1Messages.SendReceiveBuffer.Id =
+	initPacket->msgs.vers_1_msgs.send_rx_buf.id =
 	    NETVSC_RECEIVE_BUFFER_ID;
 
 	/* Send the gpadl notification request */
@@ -359,12 +359,12 @@ hv_nv_init_rx_buffer_with_net_vsp(DEVICE_OBJECT *Device)
 	WaitEventWait(netDevice->ChannelInitEvent);
 
 	/* Check the response */
-	if (initPacket->Messages.Version1Messages.SendReceiveBufferComplete.Status
+	if (initPacket->msgs.vers_1_msgs.send_rx_buf_complete.status
 						       != nvsp_status_success) {
 		DPRINT_ERR(NETVSC, 
 		    "cannot complete RX buffer initialzation with NetVsp - "
 		    "status %d", 
-		    initPacket->Messages.Version1Messages.SendReceiveBufferComplete.Status);
+		    initPacket->msgs.vers_1_msgs.send_rx_buf_complete.status);
 		ret = -1;
 		goto Cleanup;
 	}
@@ -374,7 +374,7 @@ hv_nv_init_rx_buffer_with_net_vsp(DEVICE_OBJECT *Device)
 	ASSERT(netDevice->ReceiveSections == NULL);
 
 	netDevice->ReceiveSectionCount =
-	    initPacket->Messages.Version1Messages.SendReceiveBufferComplete.NumSections;
+	    initPacket->msgs.vers_1_msgs.send_rx_buf_complete.num_sections;
 
 	netDevice->ReceiveSections = malloc(netDevice->ReceiveSectionCount *
 	    sizeof(nvsp_1_rx_buf_section), M_DEVBUF, M_NOWAIT);
@@ -384,24 +384,24 @@ hv_nv_init_rx_buffer_with_net_vsp(DEVICE_OBJECT *Device)
 	}
 
 	memcpy(netDevice->ReceiveSections, 
-	    initPacket->Messages.Version1Messages.SendReceiveBufferComplete.Sections,
+	    initPacket->msgs.vers_1_msgs.send_rx_buf_complete.sections,
 	    netDevice->ReceiveSectionCount * sizeof(nvsp_1_rx_buf_section));
 
 	DPRINT_DBG(NETVSC, 
 	    "Receive sections info (count %d, offset %d, endoffset %d, "
 	    "suballoc size %d, num suballocs %d)",
 	    netDevice->ReceiveSectionCount,
-	    netDevice->ReceiveSections[0].Offset,
-	    netDevice->ReceiveSections[0].EndOffset,
-	    netDevice->ReceiveSections[0].SubAllocationSize,
-	    netDevice->ReceiveSections[0].NumSubAllocations);
+	    netDevice->ReceiveSections[0].offset,
+	    netDevice->ReceiveSections[0].end_offset,
+	    netDevice->ReceiveSections[0].sub_allocation_size,
+	    netDevice->ReceiveSections[0].num_sub_allocations);
 
 	/*
 	 * For first release, there should only be 1 section that represents
 	 * the entire receive buffer
 	 */
 	if (netDevice->ReceiveSectionCount != 1 ||
-		netDevice->ReceiveSections->Offset != 0) {
+		netDevice->ReceiveSections->offset != 0) {
 		ret = -1;
 		goto Cleanup;
 	}
@@ -477,10 +477,10 @@ hv_nv_init_send_buffer_with_net_vsp(DEVICE_OBJECT *Device)
 
 	memset(initPacket, 0, sizeof(nvsp_msg));
 
-	initPacket->Header.MessageType = nvsp_msg_1_type_send_send_buf;
-	initPacket->Messages.Version1Messages.SendReceiveBuffer.GpadlHandle =
+	initPacket->hdr.msg_type = nvsp_msg_1_type_send_send_buf;
+	initPacket->msgs.vers_1_msgs.send_rx_buf.gpadl_handle =
 	    netDevice->SendBufferGpadlHandle;
-	initPacket->Messages.Version1Messages.SendReceiveBuffer.Id =
+	initPacket->msgs.vers_1_msgs.send_rx_buf.id =
 	    NETVSC_SEND_BUFFER_ID;
 
 	// Send the gpadl notification request
@@ -495,19 +495,19 @@ hv_nv_init_send_buffer_with_net_vsp(DEVICE_OBJECT *Device)
 
 	WaitEventWait(netDevice->ChannelInitEvent);
 
-	// Check the response
-	if (initPacket->Messages.Version1Messages.SendSendBufferComplete.Status
+	/* Check the response */
+	if (initPacket->msgs.vers_1_msgs.send_send_buf_complete.status
 						       != nvsp_status_success) {
 		DPRINT_ERR(NETVSC, 
 		    "Cannot complete send buffer initialzation with NetVsp - "
 		    "status %d", 
-		    initPacket->Messages.Version1Messages.SendSendBufferComplete.Status);
+		    initPacket->msgs.vers_1_msgs.send_send_buf_complete.status);
 		ret = -1;
 		goto Cleanup;
 	}
 
 	netDevice->SendSectionSize =
-	    initPacket->Messages.Version1Messages.SendSendBufferComplete.SectionSize;
+	    initPacket->msgs.vers_1_msgs.send_send_buf_complete.section_size;
 
 	goto Exit;
 
@@ -534,7 +534,7 @@ hv_nv_destroy_rx_buffer(netvsc_dev *NetDevice)
 
 	/*
 	 * If we got a section count, it means we received a
-	 * SendReceiveBufferComplete msg 
+	 * send_rx_buf_complete msg 
 	 * (ie sent nvsp_msg_1_type_send_rx_buf msg) therefore,
 	 * we need to send a revoke msg here
 	 */
@@ -546,9 +546,9 @@ hv_nv_destroy_rx_buffer(netvsc_dev *NetDevice)
 		revokePacket = &NetDevice->RevokePacket;
 		memset(revokePacket, 0, sizeof(nvsp_msg));
 
-		revokePacket->Header.MessageType =
+		revokePacket->hdr.msg_type =
 		    nvsp_msg_1_type_revoke_rx_buf;
-		revokePacket->Messages.Version1Messages.RevokeReceiveBuffer.Id =
+		revokePacket->msgs.vers_1_msgs.revoke_rx_buf.id =
 		    NETVSC_RECEIVE_BUFFER_ID;
 
 		ret =
@@ -621,7 +621,7 @@ hv_nv_destroy_send_buffer(netvsc_dev *NetDevice)
 
 	/*
 	 * If we got a section count, it means we received a
-	 * SendReceiveBufferComplete msg 
+	 * send_rx_buf_complete msg 
 	 * (ie sent nvsp_msg_1_type_send_rx_buf msg) therefore,
 	 * we need to send a revoke msg here
 	 */
@@ -633,9 +633,9 @@ hv_nv_destroy_send_buffer(netvsc_dev *NetDevice)
 		revokePacket = &NetDevice->RevokePacket;
 		memset(revokePacket, 0, sizeof(nvsp_msg));
 
-		revokePacket->Header.MessageType =
+		revokePacket->hdr.msg_type =
 		    nvsp_msg_1_type_revoke_send_buf;
-		revokePacket->Messages.Version1Messages.RevokeSendBuffer.Id =
+		revokePacket->msgs.vers_1_msgs.revoke_send_buf.id =
 		    NETVSC_SEND_BUFFER_ID;
 
 		ret = NetDevice->Device->Driver->VmbusChannelInterface.SendPacket(
@@ -711,10 +711,10 @@ hv_nv_connect_to_vsp(DEVICE_OBJECT *Device)
 	initPacket = &netDevice->ChannelInitPacket;
 
 	memset(initPacket, 0, sizeof(nvsp_msg));
-	initPacket->Header.MessageType = nvsp_msg_type_init;
-	initPacket->Messages.InitMessages.Init.MinProtocolVersion =
+	initPacket->hdr.msg_type = nvsp_msg_type_init;
+	initPacket->msgs.init_msgs.init.min_protocol_version =
 	    NVSP_MIN_PROTOCOL_VERSION;
-	initPacket->Messages.InitMessages.Init.MaxProtocolVersion =
+	initPacket->msgs.init_msgs.init.max_protocol_version =
 	    NVSP_MAX_PROTOCOL_VERSION;
 
 	DPRINT_DBG(NETVSC, "Sending nvsp_msg_type_init...");
@@ -733,25 +733,25 @@ hv_nv_connect_to_vsp(DEVICE_OBJECT *Device)
 	WaitEventWait(netDevice->ChannelInitEvent);
 
 	/* Now, check the response */
-	//ASSERT(initPacket->Messages.InitMessages.InitComplete.MaximumMdlChainLength <= MAX_MULTIPAGE_BUFFER_COUNT);
+	//ASSERT(initPacket->msgs.init_msgs.init_compl.max_mdl_chain_len <= MAX_MULTIPAGE_BUFFER_COUNT);
 	DPRINT_DBG(NETVSC, "nvsp_msg_type_init status(%d) max mdl chain (%d)", 
-		initPacket->Messages.InitMessages.InitComplete.Status,
-		initPacket->Messages.InitMessages.InitComplete.MaximumMdlChainLength);
+		initPacket->msgs.init_msgs.init_compl.status,
+		initPacket->msgs.init_msgs.init_compl.max_mdl_chain_len);
 
-	if (initPacket->Messages.InitMessages.InitComplete.Status !=
+	if (initPacket->msgs.init_msgs.init_compl.status !=
 							  nvsp_status_success) {
 		DPRINT_ERR(NETVSC, "Cannot initialize with netvsp "
 		    "(status 0x%x)",
-		    initPacket->Messages.InitMessages.InitComplete.Status);
+		    initPacket->msgs.init_msgs.init_compl.status);
 		ret = -1;
 		goto Cleanup;
 	}
 
-	if (initPacket->Messages.InitMessages.InitComplete.NegotiatedProtocolVersion
+	if (initPacket->msgs.init_msgs.init_compl.negotiated_prot_vers
 						  != NVSP_PROTOCOL_VERSION_1) {
 		DPRINT_ERR(NETVSC, "Cannot initialize with netvsp "
 		    "(version expected 1 got %d)",
-		    initPacket->Messages.InitMessages.InitComplete.NegotiatedProtocolVersion);
+		    initPacket->msgs.init_msgs.init_compl.negotiated_prot_vers);
 		ret = -1;
 		goto Cleanup;
 	}
@@ -763,10 +763,10 @@ hv_nv_connect_to_vsp(DEVICE_OBJECT *Device)
 	/* Fixme:  Magic number */
 	ndisVersion = 0x00050000;
 
-	initPacket->Header.MessageType = nvsp_msg_1_type_send_ndis_vers;
-	initPacket->Messages.Version1Messages.SendNdisVersion.NdisMajorVersion =
+	initPacket->hdr.msg_type = nvsp_msg_1_type_send_ndis_vers;
+	initPacket->msgs.vers_1_msgs.send_ndis_vers.ndis_major_vers =
 	    (ndisVersion & 0xFFFF0000) >> 16;
-	initPacket->Messages.Version1Messages.SendNdisVersion.NdisMinorVersion =
+	initPacket->msgs.vers_1_msgs.send_ndis_vers.ndis_minor_vers =
 	    ndisVersion & 0xFFFF;
 
 	// Send the init request
@@ -1030,18 +1030,18 @@ hv_nv_on_send_completion(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 	    (Packet->DataOffset8 << 3));
 
 	DPRINT_DBG(NETVSC, "send completion packet - type %d",
-	    nvspPacket->Header.MessageType);
+	    nvspPacket->hdr.msg_type);
 
-	if (nvspPacket->Header.MessageType == nvsp_msg_type_init_complete ||
-	    nvspPacket->Header.MessageType ==
+	if (nvspPacket->hdr.msg_type == nvsp_msg_type_init_complete ||
+	    nvspPacket->hdr.msg_type ==
 	      nvsp_msg_1_type_send_rx_buf_complete ||
-	    nvspPacket->Header.MessageType ==
+	    nvspPacket->hdr.msg_type ==
 	      nvsp_msg_1_type_send_send_buf_complete) {
 		/* Copy the response back */
 		memcpy(&netDevice->ChannelInitPacket,
 		    nvspPacket, sizeof(nvsp_msg));			
 		WaitEventSet(netDevice->ChannelInitEvent);
-	} else if (nvspPacket->Header.MessageType ==
+	} else if (nvspPacket->hdr.msg_type ==
 				    nvsp_msg_1_type_send_rndis_pkt_complete) {
 		/* Get the send context */
 		nvscPacket = (netvsc_packet *)(ULONG_PTR)Packet->TransactionId;
@@ -1054,7 +1054,7 @@ hv_nv_on_send_completion(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 		InterlockedDecrement(&netDevice->NumOutstandingSends);
 	} else {
 		DPRINT_ERR(NETVSC, "Unknown send completion packet type - %d "
-		    "received!!", nvspPacket->Header.MessageType);
+		    "received!!", nvspPacket->hdr.msg_type);
 	}
 
 	hv_nv_put_net_device(Device);
@@ -1083,20 +1083,21 @@ hv_nv_on_send(DEVICE_OBJECT *Device, netvsc_packet *Packet)
 		return (-2);
 	}
 
-	send_msg.Header.MessageType = nvsp_msg_1_type_send_rndis_pkt;
-	if (Packet->IsDataPacket)
-		/* 0 is RMC_DATA; */
-		send_msg.Messages.Version1Messages.SendRNDISPacket.ChannelType
-		    = 0;
-	else
-		/* 1 is RMC_CONTROL; */
-		send_msg.Messages.Version1Messages.SendRNDISPacket.ChannelType
-		    = 1;
+	send_msg.hdr.msg_type = nvsp_msg_1_type_send_rndis_pkt;
+	if (Packet->IsDataPacket) {
+		/* 0 is RMC_DATA */
+		send_msg.msgs.vers_1_msgs.send_rndis_pkt.chan_type =
+		    0;
+	} else {
+		/* 1 is RMC_CONTROL */
+		send_msg.msgs.vers_1_msgs.send_rndis_pkt.chan_type =
+		    1;
+	}
 
 	/* Not using send buffer section */
-	send_msg.Messages.Version1Messages.SendRNDISPacket.SendBufferSectionIndex
+	send_msg.msgs.vers_1_msgs.send_rndis_pkt.send_buf_section_idx
 	    = 0xFFFFFFFF;
-	send_msg.Messages.Version1Messages.SendRNDISPacket.SendBufferSectionSize
+	send_msg.msgs.vers_1_msgs.send_rndis_pkt.send_buf_section_size
 	    = 0;
 
 	if (Packet->PageBufferCount) {
@@ -1109,7 +1110,6 @@ hv_nv_on_send(DEVICE_OBJECT *Device, netvsc_packet *Packet)
 		    &send_msg, sizeof(nvsp_msg), (ULONG_PTR)Packet,
 		    VmbusPacketTypeDataInBand,
 		    VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
-
 	}
 
 	if (ret != 0) {
@@ -1175,16 +1175,16 @@ hv_nv_on_receive(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 	    (Packet->DataOffset8 << 3));
 
 	// Make sure this is a valid nvsp packet
-	if (nvspPacket->Header.MessageType != nvsp_msg_1_type_send_rndis_pkt) {
+	if (nvspPacket->hdr.msg_type != nvsp_msg_1_type_send_rndis_pkt) {
 		DPRINT_ERR(NETVSC, "Unknown nvsp packet type received - %d",
-		    nvspPacket->Header.MessageType);
+		    nvspPacket->hdr.msg_type);
 		hv_nv_put_net_device(Device);
 
 		return;
 	}
 	
 	DPRINT_DBG(NETVSC, "NVSP packet received - type %d",
-	    nvspPacket->Header.MessageType);
+	    nvspPacket->hdr.msg_type);
 
 	vmxferpagePacket = (VMTRANSFER_PAGE_PACKET_HEADER *)Packet;
 
@@ -1350,11 +1350,11 @@ hv_nv_send_receive_completion(DEVICE_OBJECT *Device, uint64_t TransactionId)
 	DPRINT_DBG(NETVSC, "Sending receive completion pkt - %llx",
 	    TransactionId);
 	
-	rx_comp_msg.Header.MessageType =
+	rx_comp_msg.hdr.msg_type =
 	    nvsp_msg_1_type_send_rndis_pkt_complete;
 
 	/* Fixme:  Pass in the status */
-	rx_comp_msg.Messages.Version1Messages.SendRNDISPacketComplete.Status =
+	rx_comp_msg.msgs.vers_1_msgs.send_rndis_pkt_complete.status =
 	    nvsp_status_success;
 
 retry_send_cmplt:
