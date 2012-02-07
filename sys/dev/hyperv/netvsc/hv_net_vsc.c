@@ -125,9 +125,9 @@ hv_nv_alloc_net_device(DEVICE_OBJECT *Device)
 	}
 
 	// Set to 2 to allow both inbound and outbound traffic
-	InterlockedCompareExchange(&netDevice->RefCount, 2, 0);
+	InterlockedCompareExchange(&netDevice->ref_cnt, 2, 0);
 
-	netDevice->Device = Device;
+	netDevice->dev = Device;
 	Device->Extension = netDevice;
 
 	return (netDevice);
@@ -139,8 +139,8 @@ hv_nv_alloc_net_device(DEVICE_OBJECT *Device)
 static inline void
 hv_nv_free_net_device(netvsc_dev *Device)
 {
-	ASSERT(Device->RefCount == 0);
-	Device->Device->Extension = NULL;
+	ASSERT(Device->ref_cnt == 0);
+	Device->dev->Extension = NULL;
 	free(Device, M_DEVBUF);
 }
 
@@ -154,8 +154,8 @@ hv_nv_get_outbound_net_device(DEVICE_OBJECT *Device)
 	netvsc_dev *netDevice;
 
 	netDevice = (netvsc_dev *)Device->Extension;
-	if (netDevice && netDevice->RefCount > 1) {
-		InterlockedIncrement(&netDevice->RefCount);
+	if (netDevice && netDevice->ref_cnt > 1) {
+		InterlockedIncrement(&netDevice->ref_cnt);
 	} else {
 		netDevice = NULL;
 	}
@@ -172,8 +172,8 @@ hv_nv_get_inbound_net_device(DEVICE_OBJECT *Device)
 	netvsc_dev *netDevice;
 
 	netDevice = (netvsc_dev *)Device->Extension;
-	if (netDevice && netDevice->RefCount) {
-		InterlockedIncrement(&netDevice->RefCount);
+	if (netDevice && netDevice->ref_cnt) {
+		InterlockedIncrement(&netDevice->ref_cnt);
 	} else {
 		netDevice = NULL;
 	}
@@ -192,7 +192,7 @@ hv_nv_put_net_device(DEVICE_OBJECT *Device)
 	netDevice = (netvsc_dev *)Device->Extension;
 	ASSERT(netDevice);
 
-	InterlockedDecrement(&netDevice->RefCount);
+	InterlockedDecrement(&netDevice->ref_cnt);
 }
 
 /*
@@ -209,7 +209,7 @@ hv_nv_release_outbound_net_device(DEVICE_OBJECT *Device)
 	}
 
 	// Busy wait until the ref drop to 2, then set it to 1 
-	while (InterlockedCompareExchange(&netDevice->RefCount, 1, 2) != 2) {
+	while (InterlockedCompareExchange(&netDevice->ref_cnt, 1, 2) != 2) {
 		Sleep(100);
 	}
 
@@ -230,7 +230,7 @@ hv_nv_release_inbound_net_device(DEVICE_OBJECT *Device)
 	}
 
 	/* Busy wait until the ref drop to 1, then set it to 0 */
-	while (InterlockedCompareExchange(&netDevice->RefCount, 0, 1) != 1) {
+	while (InterlockedCompareExchange(&netDevice->ref_cnt, 0, 1) != 1) {
 		Sleep(100);
 	}
 
@@ -298,21 +298,21 @@ hv_nv_init_rx_buffer_with_net_vsp(DEVICE_OBJECT *Device)
 		DPRINT_EXIT(NETVSC);
 		return (-1);
 	}
-	ASSERT(netDevice->ReceiveBufferSize > 0);
+	ASSERT(netDevice->rx_buf_size > 0);
 	/* page-size granularity */
-	ASSERT((netDevice->ReceiveBufferSize & (PAGE_SIZE-1)) == 0);
+	ASSERT((netDevice->rx_buf_size & (PAGE_SIZE-1)) == 0);
 
-	netDevice->ReceiveBuffer =
-	    PageAlloc(netDevice->ReceiveBufferSize >> PAGE_SHIFT);
-	if (!netDevice->ReceiveBuffer) {
+	netDevice->rx_buf =
+	    PageAlloc(netDevice->rx_buf_size >> PAGE_SHIFT);
+	if (!netDevice->rx_buf) {
 		DPRINT_ERR(NETVSC,
 		    "unable to allocate receive buffer of size %d",
-		    netDevice->ReceiveBufferSize);
+		    netDevice->rx_buf_size);
 		ret = -1;
 		goto Cleanup;
 	}
 	/* page-aligned buffer */
-	ASSERT(((ULONG_PTR)netDevice->ReceiveBuffer & (PAGE_SIZE-1)) == 0);
+	ASSERT(((ULONG_PTR)netDevice->rx_buf & (PAGE_SIZE-1)) == 0);
 
 	DPRINT_DBG(NETVSC, "Establishing receive buffer's GPADL...");
 
@@ -322,26 +322,26 @@ hv_nv_init_rx_buffer_with_net_vsp(DEVICE_OBJECT *Device)
 	 * channel to establish the gpadl handle. 
 	 */
 	ret = Device->Driver->VmbusChannelInterface.EstablishGpadl(Device,
-	    netDevice->ReceiveBuffer, netDevice->ReceiveBufferSize,
-	    &netDevice->ReceiveBufferGpadlHandle);
+	    netDevice->rx_buf, netDevice->rx_buf_size,
+	    &netDevice->rx_buf_gpadl_handle);
 
 	if (ret != 0) {
 		DPRINT_ERR(NETVSC, "cannot establish RX buffer's gpadl");
 		goto Cleanup;
 	}
 	
-	//WaitEventWait(ext->ChannelInitEvent);
+	//WaitEventWait(ext->channel_init_event);
 
 	/* Notify the NetVsp of the gpadl handle */
 	DPRINT_DBG(NETVSC, "Sending nvsp_msg_1_type_send_rx_buf...");
 
-	initPacket = &netDevice->ChannelInitPacket;
+	initPacket = &netDevice->channel_init_packet;
 
 	memset(initPacket, 0, sizeof(nvsp_msg));
 
 	initPacket->hdr.msg_type = nvsp_msg_1_type_send_rx_buf;
 	initPacket->msgs.vers_1_msgs.send_rx_buf.gpadl_handle =
-	    netDevice->ReceiveBufferGpadlHandle;
+	    netDevice->rx_buf_gpadl_handle;
 	initPacket->msgs.vers_1_msgs.send_rx_buf.id =
 	    NETVSC_RECEIVE_BUFFER_ID;
 
@@ -356,7 +356,7 @@ hv_nv_init_rx_buffer_with_net_vsp(DEVICE_OBJECT *Device)
 		goto Cleanup;
 	}
 
-	WaitEventWait(netDevice->ChannelInitEvent);
+	WaitEventWait(netDevice->channel_init_event);
 
 	/* Check the response */
 	if (initPacket->msgs.vers_1_msgs.send_rx_buf_complete.status
@@ -370,38 +370,38 @@ hv_nv_init_rx_buffer_with_net_vsp(DEVICE_OBJECT *Device)
 	}
 
 	/* Parse the response */
-	ASSERT(netDevice->ReceiveSectionCount == 0);
-	ASSERT(netDevice->ReceiveSections == NULL);
+	ASSERT(netDevice->rx_section_count == 0);
+	ASSERT(netDevice->rx_sections == NULL);
 
-	netDevice->ReceiveSectionCount =
+	netDevice->rx_section_count =
 	    initPacket->msgs.vers_1_msgs.send_rx_buf_complete.num_sections;
 
-	netDevice->ReceiveSections = malloc(netDevice->ReceiveSectionCount *
+	netDevice->rx_sections = malloc(netDevice->rx_section_count *
 	    sizeof(nvsp_1_rx_buf_section), M_DEVBUF, M_NOWAIT);
-	if (netDevice->ReceiveSections == NULL) {
+	if (netDevice->rx_sections == NULL) {
 		ret = -1;
 		goto Cleanup;
 	}
 
-	memcpy(netDevice->ReceiveSections, 
+	memcpy(netDevice->rx_sections, 
 	    initPacket->msgs.vers_1_msgs.send_rx_buf_complete.sections,
-	    netDevice->ReceiveSectionCount * sizeof(nvsp_1_rx_buf_section));
+	    netDevice->rx_section_count * sizeof(nvsp_1_rx_buf_section));
 
 	DPRINT_DBG(NETVSC, 
 	    "Receive sections info (count %d, offset %d, endoffset %d, "
 	    "suballoc size %d, num suballocs %d)",
-	    netDevice->ReceiveSectionCount,
-	    netDevice->ReceiveSections[0].offset,
-	    netDevice->ReceiveSections[0].end_offset,
-	    netDevice->ReceiveSections[0].sub_allocation_size,
-	    netDevice->ReceiveSections[0].num_sub_allocations);
+	    netDevice->rx_section_count,
+	    netDevice->rx_sections[0].offset,
+	    netDevice->rx_sections[0].end_offset,
+	    netDevice->rx_sections[0].sub_allocation_size,
+	    netDevice->rx_sections[0].num_sub_allocations);
 
 	/*
 	 * For first release, there should only be 1 section that represents
 	 * the entire receive buffer
 	 */
-	if (netDevice->ReceiveSectionCount != 1 ||
-		netDevice->ReceiveSections->offset != 0) {
+	if (netDevice->rx_section_count != 1 ||
+		netDevice->rx_sections->offset != 0) {
 		ret = -1;
 		goto Cleanup;
 	}
@@ -437,20 +437,20 @@ hv_nv_init_send_buffer_with_net_vsp(DEVICE_OBJECT *Device)
 		DPRINT_EXIT(NETVSC);
 		return (-1);
 	}
-	ASSERT(netDevice->SendBufferSize > 0);
+	ASSERT(netDevice->send_buf_size > 0);
 	// page-size granularity
-	ASSERT((netDevice->SendBufferSize & (PAGE_SIZE-1)) == 0);
+	ASSERT((netDevice->send_buf_size & (PAGE_SIZE-1)) == 0);
 
-	netDevice->SendBuffer =
-	    PageAlloc(netDevice->SendBufferSize >> PAGE_SHIFT);
-	if (!netDevice->SendBuffer) {
+	netDevice->send_buf =
+	    PageAlloc(netDevice->send_buf_size >> PAGE_SHIFT);
+	if (!netDevice->send_buf) {
 		DPRINT_ERR(NETVSC, "unable to allocate send buffer of size %d",
-		    netDevice->SendBufferSize);
+		    netDevice->send_buf_size);
 		ret = -1;
 		goto Cleanup;
 	}
 	// page-aligned buffer
-	ASSERT(((ULONG_PTR)netDevice->SendBuffer & (PAGE_SIZE-1)) == 0);
+	ASSERT(((ULONG_PTR)netDevice->send_buf & (PAGE_SIZE-1)) == 0);
 
 	DPRINT_DBG(NETVSC, "Establishing send buffer's GPADL...");
 
@@ -460,26 +460,26 @@ hv_nv_init_send_buffer_with_net_vsp(DEVICE_OBJECT *Device)
 	 * channel to establish the gpadl handle. 
 	 */
 	ret = Device->Driver->VmbusChannelInterface.EstablishGpadl(Device,
-	    netDevice->SendBuffer, netDevice->SendBufferSize,
-	    &netDevice->SendBufferGpadlHandle);
+	    netDevice->send_buf, netDevice->send_buf_size,
+	    &netDevice->send_buf_gpadl_handle);
 
 	if (ret != 0) {
 		DPRINT_ERR(NETVSC, "unable to establish send buffer's gpadl");
 		goto Cleanup;
 	}
 	
-	//WaitEventWait(ext->ChannelInitEvent);
+	//WaitEventWait(ext->channel_init_event);
 
 	// Notify the NetVsp of the gpadl handle
 	DPRINT_DBG(NETVSC, "Sending nvsp_msg_1_type_send_send_buf...");
 
-	initPacket = &netDevice->ChannelInitPacket;
+	initPacket = &netDevice->channel_init_packet;
 
 	memset(initPacket, 0, sizeof(nvsp_msg));
 
 	initPacket->hdr.msg_type = nvsp_msg_1_type_send_send_buf;
 	initPacket->msgs.vers_1_msgs.send_rx_buf.gpadl_handle =
-	    netDevice->SendBufferGpadlHandle;
+	    netDevice->send_buf_gpadl_handle;
 	initPacket->msgs.vers_1_msgs.send_rx_buf.id =
 	    NETVSC_SEND_BUFFER_ID;
 
@@ -493,7 +493,7 @@ hv_nv_init_send_buffer_with_net_vsp(DEVICE_OBJECT *Device)
 		goto Cleanup;
 	}
 
-	WaitEventWait(netDevice->ChannelInitEvent);
+	WaitEventWait(netDevice->channel_init_event);
 
 	/* Check the response */
 	if (initPacket->msgs.vers_1_msgs.send_send_buf_complete.status
@@ -506,7 +506,7 @@ hv_nv_init_send_buffer_with_net_vsp(DEVICE_OBJECT *Device)
 		goto Cleanup;
 	}
 
-	netDevice->SendSectionSize =
+	netDevice->send_section_size =
 	    initPacket->msgs.vers_1_msgs.send_send_buf_complete.section_size;
 
 	goto Exit;
@@ -538,12 +538,12 @@ hv_nv_destroy_rx_buffer(netvsc_dev *NetDevice)
 	 * (ie sent nvsp_msg_1_type_send_rx_buf msg) therefore,
 	 * we need to send a revoke msg here
 	 */
-	if (NetDevice->ReceiveSectionCount) {
+	if (NetDevice->rx_section_count) {
 		DPRINT_DBG(NETVSC,
 		    "Sending nvsp_msg_1_type_revoke_rx_buf...");
 
 		// Send the revoke receive buffer
-		revokePacket = &NetDevice->RevokePacket;
+		revokePacket = &NetDevice->revoke_packet;
 		memset(revokePacket, 0, sizeof(nvsp_msg));
 
 		revokePacket->hdr.msg_type =
@@ -552,8 +552,8 @@ hv_nv_destroy_rx_buffer(netvsc_dev *NetDevice)
 		    NETVSC_RECEIVE_BUFFER_ID;
 
 		ret =
-		    NetDevice->Device->Driver->VmbusChannelInterface.SendPacket(
-		    NetDevice->Device, revokePacket, sizeof(nvsp_msg),
+		    NetDevice->dev->Driver->VmbusChannelInterface.SendPacket(
+		    NetDevice->dev, revokePacket, sizeof(nvsp_msg),
 		    (ULONG_PTR)revokePacket, VmbusPacketTypeDataInBand, 0);
 		/*
 		 * If we failed here, we might as well return and have a leak 
@@ -568,12 +568,12 @@ hv_nv_destroy_rx_buffer(netvsc_dev *NetDevice)
 	}
 		
 	// Teardown the gpadl on the vsp end
-	if (NetDevice->ReceiveBufferGpadlHandle) {
+	if (NetDevice->rx_buf_gpadl_handle) {
 		DPRINT_INFO(NETVSC, "Tearing down receive buffer's GPADL...");
 
-		ret = NetDevice->Device->Driver->VmbusChannelInterface.TeardownGpadl(
-		    NetDevice->Device,
-		    NetDevice->ReceiveBufferGpadlHandle);
+		ret = NetDevice->dev->Driver->VmbusChannelInterface.TeardownGpadl(
+		    NetDevice->dev,
+		    NetDevice->rx_buf_gpadl_handle);
 
 		/*
 		 * If we failed here, we might as well return and have a leak 
@@ -585,22 +585,22 @@ hv_nv_destroy_rx_buffer(netvsc_dev *NetDevice)
 			DPRINT_EXIT(NETVSC);
 			return (-1);
 		}
-		NetDevice->ReceiveBufferGpadlHandle = 0;
+		NetDevice->rx_buf_gpadl_handle = 0;
 	}
 
-	if (NetDevice->ReceiveBuffer) {
+	if (NetDevice->rx_buf) {
 		DPRINT_INFO(NETVSC, "Freeing up receive buffer...");
 
 		// Free up the receive buffer
-		PageFree(NetDevice->ReceiveBuffer,
-		    NetDevice->ReceiveBufferSize >> PAGE_SHIFT);
-		NetDevice->ReceiveBuffer = NULL;
+		PageFree(NetDevice->rx_buf,
+		    NetDevice->rx_buf_size >> PAGE_SHIFT);
+		NetDevice->rx_buf = NULL;
 	}
 
-	if (NetDevice->ReceiveSections) {
-		free(NetDevice->ReceiveSections, M_DEVBUF);
-		NetDevice->ReceiveSections = NULL;
-		NetDevice->ReceiveSectionCount = 0;
+	if (NetDevice->rx_sections) {
+		free(NetDevice->rx_sections, M_DEVBUF);
+		NetDevice->rx_sections = NULL;
+		NetDevice->rx_section_count = 0;
 	}
 
 	DPRINT_EXIT(NETVSC);
@@ -625,12 +625,12 @@ hv_nv_destroy_send_buffer(netvsc_dev *NetDevice)
 	 * (ie sent nvsp_msg_1_type_send_rx_buf msg) therefore,
 	 * we need to send a revoke msg here
 	 */
-	if (NetDevice->SendSectionSize) {
+	if (NetDevice->send_section_size) {
 		DPRINT_DBG(NETVSC,
 		    "Sending nvsp_msg_1_type_revoke_send_buf...");
 
 		// Send the revoke send buffer
-		revokePacket = &NetDevice->RevokePacket;
+		revokePacket = &NetDevice->revoke_packet;
 		memset(revokePacket, 0, sizeof(nvsp_msg));
 
 		revokePacket->hdr.msg_type =
@@ -638,8 +638,8 @@ hv_nv_destroy_send_buffer(netvsc_dev *NetDevice)
 		revokePacket->msgs.vers_1_msgs.revoke_send_buf.id =
 		    NETVSC_SEND_BUFFER_ID;
 
-		ret = NetDevice->Device->Driver->VmbusChannelInterface.SendPacket(
-		    NetDevice->Device, revokePacket, sizeof(nvsp_msg), 
+		ret = NetDevice->dev->Driver->VmbusChannelInterface.SendPacket(
+		    NetDevice->dev, revokePacket, sizeof(nvsp_msg), 
 		    (ULONG_PTR)revokePacket, VmbusPacketTypeDataInBand, 0);
 		/*
 		 * If we failed here, we might as well return and have a leak 
@@ -653,12 +653,12 @@ hv_nv_destroy_send_buffer(netvsc_dev *NetDevice)
 		}
 	}
 		
-	// Teardown the gpadl on the vsp end
-	if (NetDevice->SendBufferGpadlHandle) {
+	/* Tear down the gpadl on the vsp end */
+	if (NetDevice->send_buf_gpadl_handle) {
 		DPRINT_DBG(NETVSC, "Tearing down send buffer's GPADL...");
 
-		ret = NetDevice->Device->Driver->VmbusChannelInterface.TeardownGpadl(
-		    NetDevice->Device, NetDevice->SendBufferGpadlHandle);
+		ret = NetDevice->dev->Driver->VmbusChannelInterface.TeardownGpadl(
+		    NetDevice->dev, NetDevice->send_buf_gpadl_handle);
 
 		/*
 		 * If we failed here, we might as well return and have a leak 
@@ -670,16 +670,16 @@ hv_nv_destroy_send_buffer(netvsc_dev *NetDevice)
 			DPRINT_EXIT(NETVSC);
 			return (-1);
 		}
-		NetDevice->SendBufferGpadlHandle = 0;
+		NetDevice->send_buf_gpadl_handle = 0;
 	}
 
-	if (NetDevice->SendBuffer) {
+	if (NetDevice->send_buf) {
 		DPRINT_DBG(NETVSC, "Freeing up send buffer...");
 
 		// Free up the receive buffer
-		PageFree(NetDevice->SendBuffer,
-		    NetDevice->SendBufferSize >> PAGE_SHIFT);
-		NetDevice->SendBuffer = NULL;
+		PageFree(NetDevice->send_buf,
+		    NetDevice->send_buf_size >> PAGE_SHIFT);
+		NetDevice->send_buf = NULL;
 	}
 
 	DPRINT_EXIT(NETVSC);
@@ -708,7 +708,7 @@ hv_nv_connect_to_vsp(DEVICE_OBJECT *Device)
 		return (-1);
 	}
 
-	initPacket = &netDevice->ChannelInitPacket;
+	initPacket = &netDevice->channel_init_packet;
 
 	memset(initPacket, 0, sizeof(nvsp_msg));
 	initPacket->hdr.msg_type = nvsp_msg_type_init;
@@ -730,7 +730,7 @@ hv_nv_connect_to_vsp(DEVICE_OBJECT *Device)
 		goto Cleanup;
 	}
 
-	WaitEventWait(netDevice->ChannelInitEvent);
+	WaitEventWait(netDevice->channel_init_event);
 
 	/* Now, check the response */
 	//ASSERT(initPacket->msgs.init_msgs.init_compl.max_mdl_chain_len <= MAX_MULTIPAGE_BUFFER_COUNT);
@@ -785,7 +785,7 @@ hv_nv_connect_to_vsp(DEVICE_OBJECT *Device)
 	 * since our Vmbus always set the
 	 * VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED flag
 	 */
-	//WaitEventWait(NetVscChannel->ChannelInitEvent);
+	//WaitEventWait(NetVscChannel->channel_init_event);
 
 	// Post the big receive buffer to NetVSP
 	ret = hv_nv_init_rx_buffer_with_net_vsp(Device);
@@ -843,12 +843,12 @@ hv_nv_on_device_add(DEVICE_OBJECT *Device, void *AdditionalInfo)
 	DPRINT_DBG(NETVSC, "netvsc channel object allocated - %p", netDevice);
 
 	/* Initialize the NetVSC channel extension */
-	netDevice->ReceiveBufferSize = NETVSC_RECEIVE_BUFFER_SIZE;
-	netDevice->ReceivePacketListLock = SpinlockCreate();
+	netDevice->rx_buf_size = NETVSC_RECEIVE_BUFFER_SIZE;
+	netDevice->rx_packet_list_lock = SpinlockCreate();
 
-	netDevice->SendBufferSize = NETVSC_SEND_BUFFER_SIZE;
+	netDevice->send_buf_size = NETVSC_SEND_BUFFER_SIZE;
 
-	INITIALIZE_LIST_HEAD(&netDevice->ReceivePacketList);
+	INITIALIZE_LIST_HEAD(&netDevice->rx_packet_list);
 
 	for (i=0; i < NETVSC_RECEIVE_PACKETLIST_COUNT; i++) {
 		packet = malloc(sizeof(netvsc_packet) +
@@ -861,10 +861,10 @@ hv_nv_on_device_add(DEVICE_OBJECT *Device, void *AdditionalInfo)
 			break;
 		}
 
-		INSERT_TAIL_LIST(&netDevice->ReceivePacketList,
+		INSERT_TAIL_LIST(&netDevice->rx_packet_list,
 		    &packet->ListEntry);
 	}
-	netDevice->ChannelInitEvent = WaitEventCreate();
+	netDevice->channel_init_event = WaitEventCreate();
 
 	/* Open the channel */
 	ret = Device->Driver->VmbusChannelInterface.Open(Device,
@@ -902,16 +902,16 @@ Close:
 Cleanup:
 	
 	if (netDevice) {
-		WaitEventClose(netDevice->ChannelInitEvent);
+		WaitEventClose(netDevice->channel_init_event);
 
-		while (!IsListEmpty(&netDevice->ReceivePacketList)) {	
-			entry = REMOVE_HEAD_LIST(&netDevice->ReceivePacketList);
+		while (!IsListEmpty(&netDevice->rx_packet_list)) {	
+			entry = REMOVE_HEAD_LIST(&netDevice->rx_packet_list);
 			packet = CONTAINING_RECORD(entry, netvsc_packet,
 			    ListEntry);
 			free(packet, M_DEVBUF);
 		}
 
-		SpinlockClose(netDevice->ReceivePacketListLock);
+		SpinlockClose(netDevice->rx_packet_list_lock);
 
 		hv_nv_release_outbound_net_device(Device);
 		hv_nv_release_inbound_net_device(Device);
@@ -951,9 +951,9 @@ hv_nv_on_device_remove(DEVICE_OBJECT *Device)
 	}
 
 	// Wait for all send completions
-	while (netDevice->NumOutstandingSends) {
+	while (netDevice->num_outstanding_sends) {
 		DPRINT_INFO(NETVSC, "waiting for %d requests to complete...",
-		    netDevice->NumOutstandingSends);
+		    netDevice->num_outstanding_sends);
 
 		Sleep(100);
 	}
@@ -975,16 +975,16 @@ hv_nv_on_device_remove(DEVICE_OBJECT *Device)
 	Device->Driver->VmbusChannelInterface.Close(Device);
 
 	// Release all resources
-	while (!IsListEmpty(&netDevice->ReceivePacketList)) {	
-		entry = REMOVE_HEAD_LIST(&netDevice->ReceivePacketList);
+	while (!IsListEmpty(&netDevice->rx_packet_list)) {	
+		entry = REMOVE_HEAD_LIST(&netDevice->rx_packet_list);
 		netvscPacket =
 		    CONTAINING_RECORD(entry, netvsc_packet, ListEntry);
 
 		free(netvscPacket, M_DEVBUF);
 	}
 
-	SpinlockClose(netDevice->ReceivePacketListLock);
-	WaitEventClose(netDevice->ChannelInitEvent);
+	SpinlockClose(netDevice->rx_packet_list_lock);
+	WaitEventClose(netDevice->channel_init_event);
 	hv_nv_free_net_device(netDevice);
 
 	DPRINT_EXIT(NETVSC);
@@ -1038,9 +1038,9 @@ hv_nv_on_send_completion(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 	    nvspPacket->hdr.msg_type ==
 	      nvsp_msg_1_type_send_send_buf_complete) {
 		/* Copy the response back */
-		memcpy(&netDevice->ChannelInitPacket,
+		memcpy(&netDevice->channel_init_packet,
 		    nvspPacket, sizeof(nvsp_msg));			
-		WaitEventSet(netDevice->ChannelInitEvent);
+		WaitEventSet(netDevice->channel_init_event);
 	} else if (nvspPacket->hdr.msg_type ==
 				    nvsp_msg_1_type_send_rndis_pkt_complete) {
 		/* Get the send context */
@@ -1051,7 +1051,7 @@ hv_nv_on_send_completion(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 		nvscPacket->Completion.Send.OnSendCompletion(
 		    nvscPacket->Completion.Send.SendCompletionContext);
 
-		InterlockedDecrement(&netDevice->NumOutstandingSends);
+		InterlockedDecrement(&netDevice->num_outstanding_sends);
 	} else {
 		DPRINT_ERR(NETVSC, "Unknown send completion packet type - %d "
 		    "received!!", nvspPacket->hdr.msg_type);
@@ -1117,7 +1117,7 @@ hv_nv_on_send(DEVICE_OBJECT *Device, netvsc_packet *Packet)
 		    Packet, ret);
 	}
 
-	InterlockedIncrement(&netDevice->NumOutstandingSends);
+	InterlockedIncrement(&netDevice->num_outstanding_sends);
 	hv_nv_put_net_device(Device);
 
 	DPRINT_EXIT(NETVSC);
@@ -1207,9 +1207,9 @@ hv_nv_on_receive(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 	 * packet.  +1 to represent the xfer page packet itself.  We grab it
 	 * here so that we know exactly how many we can fulfill.
 	 */
-	SpinlockAcquire(netDevice->ReceivePacketListLock);
-	while (!IsListEmpty(&netDevice->ReceivePacketList)) {	
-		entry = REMOVE_HEAD_LIST(&netDevice->ReceivePacketList);
+	SpinlockAcquire(netDevice->rx_packet_list_lock);
+	while (!IsListEmpty(&netDevice->rx_packet_list)) {	
+		entry = REMOVE_HEAD_LIST(&netDevice->rx_packet_list);
 		netvscPacket = CONTAINING_RECORD(entry, netvsc_packet, ListEntry);
 
 		INSERT_TAIL_LIST(&listHead, &netvscPacket->ListEntry);
@@ -1217,7 +1217,7 @@ hv_nv_on_receive(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 		if (++count == vmxferpagePacket->RangeCount + 1)
 			break;
 	}
-	SpinlockRelease(netDevice->ReceivePacketListLock);
+	SpinlockRelease(netDevice->rx_packet_list_lock);
 
 	/*
 	 * We need at least 2 netvsc pkts (1 to represent the xfer page
@@ -1230,16 +1230,16 @@ hv_nv_on_receive(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 		    vmxferpagePacket->RangeCount + 1);
 
 		// Return it to the freelist
-		SpinlockAcquire(netDevice->ReceivePacketListLock);
+		SpinlockAcquire(netDevice->rx_packet_list_lock);
 		for (i=count; i != 0; i--) {
 			entry = REMOVE_HEAD_LIST(&listHead);
 			netvscPacket = CONTAINING_RECORD(entry, netvsc_packet,
 			    ListEntry);
 
-			INSERT_TAIL_LIST(&netDevice->ReceivePacketList,
+			INSERT_TAIL_LIST(&netDevice->rx_packet_list,
 			    &netvscPacket->ListEntry);
 		}
-		SpinlockRelease(netDevice->ReceivePacketListLock);
+		SpinlockRelease(netDevice->rx_packet_list_lock);
 
 		hv_nv_send_receive_completion(Device,
 		    vmxferpagePacket->d.TransactionId);
@@ -1285,13 +1285,13 @@ hv_nv_on_receive(DEVICE_OBJECT *Device, VMPACKET_DESCRIPTOR *Packet)
 
 		ASSERT(vmxferpagePacket->Ranges[i].ByteOffset +
 		    vmxferpagePacket->Ranges[i].ByteCount <
-		    netDevice->ReceiveBufferSize);
+		    netDevice->rx_buf_size);
 
 		netvscPacket->PageBuffers[0].Length =
 		    vmxferpagePacket->Ranges[i].ByteCount;
 
 		/* The virtual address of the packet in the receive buffer */
-		start = ((ULONG_PTR)netDevice->ReceiveBuffer +
+		start = ((ULONG_PTR)netDevice->rx_buf +
 		    vmxferpagePacket->Ranges[i].ByteOffset);
 		start = ((unsigned long)start) & ~(PAGE_SIZE - 1);
 
@@ -1418,7 +1418,7 @@ hv_nv_on_receive_completion(void *Context)
 	}
 	
 	/* Overloading use of the lock. */
-	SpinlockAcquire(netDevice->ReceivePacketListLock);
+	SpinlockAcquire(netDevice->rx_packet_list_lock);
 
 // 	ASSERT(packet->XferPagePacket->Count > 0);
 	if (packet->XferPagePacket->Count == 0) {
@@ -1434,13 +1434,13 @@ hv_nv_on_receive_completion(void *Context)
 		fSendReceiveComp = TRUE;
 		transactionId = packet->Completion.Recv.ReceiveCompletionTid;
 
-		INSERT_TAIL_LIST(&netDevice->ReceivePacketList,
+		INSERT_TAIL_LIST(&netDevice->rx_packet_list,
 		    &packet->XferPagePacket->ListEntry);
 	}
 
 	/* Put the packet back */
-	INSERT_TAIL_LIST(&netDevice->ReceivePacketList, &packet->ListEntry);
-	SpinlockRelease(netDevice->ReceivePacketListLock);
+	INSERT_TAIL_LIST(&netDevice->rx_packet_list, &packet->ListEntry);
+	SpinlockRelease(netDevice->rx_packet_list_lock);
 
 	/* Send a receive completion for the xfer page packet */
 	if (fSendReceiveComp) {

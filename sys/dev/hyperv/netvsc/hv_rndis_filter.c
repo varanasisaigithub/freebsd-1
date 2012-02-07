@@ -363,7 +363,7 @@ hv_rf_send_request(rndis_device *Device, rndis_request *Request)
 	    hv_rf_on_send_request_completion;
 	packet->Completion.Send.SendCompletionTid = (ULONG_PTR)Device;
 
-	ret = gRndisFilter.InnerDriver.OnSend(Device->NetDevice->Device,
+	ret = gRndisFilter.InnerDriver.OnSend(Device->NetDevice->dev,
 	    packet);
 	DPRINT_EXIT(NETVSC);
 
@@ -446,11 +446,11 @@ hv_rf_receive_indicate_status(rndis_device *Device, rndis_msg *Response)
 		
 	if (indicate->Status == RNDIS_STATUS_MEDIA_CONNECT) {
 		gRndisFilter.InnerDriver.OnLinkStatusChanged(
-		    Device->NetDevice->Device, 1);
+		    Device->NetDevice->dev, 1);
 	}
 	else if (indicate->Status == RNDIS_STATUS_MEDIA_DISCONNECT) {
 		gRndisFilter.InnerDriver.OnLinkStatusChanged(
-		    Device->NetDevice->Device, 0);
+		    Device->NetDevice->dev, 0);
 	} else {
 		// TODO:
 	}
@@ -490,7 +490,7 @@ hv_rf_receive_data(rndis_device *Device, rndis_msg *Message,
 
 	Packet->IsDataPacket = TRUE;
 		
-	gRndisFilter.InnerDriver.OnReceiveCallback(Device->NetDevice->Device,
+	gRndisFilter.InnerDriver.OnReceiveCallback(Device->NetDevice->dev,
 	    Packet);
 
 	DPRINT_EXIT(NETVSC);
@@ -512,7 +512,7 @@ hv_rf_on_receive(DEVICE_OBJECT *Device, netvsc_packet *Packet)
 	ASSERT(netDevice);
 
 	/* Make sure the rndis device state is initialized */
-	if (!netDevice->Extension) {
+	if (!netDevice->extension) {
 		DPRINT_ERR(NETVSC, "got rndis message but no rndis device... "
 		    "dropping this message!");
 		DPRINT_EXIT(NETVSC);
@@ -520,7 +520,7 @@ hv_rf_on_receive(DEVICE_OBJECT *Device, netvsc_packet *Packet)
 		return (-1);
 	}
 
-	rndisDevice = (rndis_device *)netDevice->Extension;
+	rndisDevice = (rndis_device *)netDevice->extension;
 	if (rndisDevice->State == RNDIS_DEV_UNINITIALIZED) {
 		DPRINT_ERR(NETVSC, "got rndis message but rndis device "
 		    "uninitialized... dropping this message!");
@@ -1003,9 +1003,9 @@ hv_rf_on_device_add(DEVICE_OBJECT *Device, void *AdditionalInfo)
 	 */
 	netDevice = (netvsc_dev *)Device->Extension;
 	ASSERT(netDevice);
-	ASSERT(netDevice->Device);
+	ASSERT(netDevice->dev);
 
-	netDevice->Extension = rndisDevice;
+	netDevice->extension = rndisDevice;
 	rndisDevice->NetDevice = netDevice;
 
 	/* Send the rndis initialization message */
@@ -1048,7 +1048,7 @@ static int
 hv_rf_on_device_remove(DEVICE_OBJECT *Device)
 {
 	netvsc_dev *netDevice = (netvsc_dev *)Device->Extension;
-	rndis_device *rndisDevice = (rndis_device *)netDevice->Extension;
+	rndis_device *rndisDevice = (rndis_device *)netDevice->extension;
 
 	DPRINT_ENTER(NETVSC);
 
@@ -1056,7 +1056,7 @@ hv_rf_on_device_remove(DEVICE_OBJECT *Device)
 	hv_rf_halt_device(rndisDevice);
 
 	hv_put_rndis_device(rndisDevice);
-	netDevice->Extension = NULL;
+	netDevice->extension = NULL;
 
 	/* Pass control to inner driver to remove the device */
 	gRndisFilter.InnerDriver.Base.OnDeviceRemove(Device);
@@ -1089,7 +1089,7 @@ hv_rf_on_open(DEVICE_OBJECT *Device)
 	DPRINT_ENTER(NETVSC);
 	
 	ASSERT(netDevice);
-	ret = hv_rf_open_device((rndis_device *)netDevice->Extension);
+	ret = hv_rf_open_device((rndis_device *)netDevice->extension);
 
 	DPRINT_EXIT(NETVSC);
 
@@ -1108,7 +1108,7 @@ hv_rf_on_close(DEVICE_OBJECT *Device)
 	DPRINT_ENTER(NETVSC);
 	
 	ASSERT(netDevice);
-	ret = hv_rf_close_device((rndis_device *)netDevice->Extension);
+	ret = hv_rf_close_device((rndis_device *)netDevice->extension);
 
 	DPRINT_EXIT(NETVSC);
 

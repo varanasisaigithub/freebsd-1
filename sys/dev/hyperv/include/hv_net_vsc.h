@@ -88,37 +88,37 @@
  * Per netvsc channel-specific
  */
 typedef struct netvsc_dev_ {
-	DEVICE_OBJECT				*Device;
+	DEVICE_OBJECT				*dev;
 
-	int					RefCount;
+	int					ref_cnt;
 
-	int					NumOutstandingSends;
+	int					num_outstanding_sends;
 	/* List of free preallocated NETVSC_PACKET to represent RX packet */
-	LIST_ENTRY				ReceivePacketList;
-	void					*ReceivePacketListLock;
+	LIST_ENTRY				rx_packet_list;
+	void					*rx_packet_list_lock;
 
 	/* Send buffer allocated by us but manages by NetVSP */
-	void					*SendBuffer;
-	uint32_t				SendBufferSize;
-	uint32_t				SendBufferGpadlHandle;
-	uint32_t				SendSectionSize;
+	void					*send_buf;
+	uint32_t				send_buf_size;
+	uint32_t				send_buf_gpadl_handle;
+	uint32_t				send_section_size;
 
 	/* Receive buffer allocated by us but managed by NetVSP */
-	void					*ReceiveBuffer;
-	uint32_t				ReceiveBufferSize;
-	uint32_t				ReceiveBufferGpadlHandle;
-	uint32_t				ReceiveSectionCount;
-	nvsp_1_rx_buf_section			*ReceiveSections;
+	void					*rx_buf;
+	uint32_t				rx_buf_size;
+	uint32_t				rx_buf_gpadl_handle;
+	uint32_t				rx_section_count;
+	nvsp_1_rx_buf_section			*rx_sections;
 
 	/* Used for NetVSP initialization protocol */
-	void					*ChannelInitEvent;
-	nvsp_msg				ChannelInitPacket;
+	void					*channel_init_event;
+	nvsp_msg				channel_init_packet;
 
-	nvsp_msg				RevokePacket;
-	//uint8_t				HwMacAddr[HW_MACADDR_LEN];
+	nvsp_msg				revoke_packet;
+	//uint8_t				hw_mac_addr[HW_MACADDR_LEN];
 
 	/* Holds rndis device info */
-	void					*Extension;
+	void					*extension;
 } netvsc_dev;
 
 #endif  /* __HV_NET_VSC_H__ */
