@@ -291,7 +291,11 @@ storvsc_attach(device_t dev)
 	sc->sto_drv.drv_obj.RingBufferSize =
 		g_drv_props_table[stor_type].drv_ringbuffer_size;
 
-	/* XXX THIS IS STUPID */
+	/*
+	 * XXX This call interface needs to be fixed.
+	 * It is not clear why this is needed and why
+	 * so much indirection is needed to set these properties.
+	 */
 	vmbus_get_interface(&sc->sto_drv.drv_obj.Base.VmbusChannelInterface);
 
 	device_ctx->device_obj.Driver = &sc->sto_drv.drv_obj.Base;
@@ -378,6 +382,7 @@ storvsc_attach(device_t dev)
 	}
 	return -1;
 }
+
 static int storvsc_detach(device_t dev)
 {
 	struct storvsc_softc *sc = device_get_softc(dev);
