@@ -94,6 +94,7 @@ uma_zone_t ata_composite_zone;
 int ata_wc = 1;
 int ata_setmax = 0;
 int ata_dma_check_80pin = 1;
+int ata_disk_enable = 1;
 
 /* local vars */
 static int ata_dma = 1;
@@ -101,6 +102,9 @@ static int atapi_dma = 1;
 
 /* sysctl vars */
 SYSCTL_NODE(_hw, OID_AUTO, ata, CTLFLAG_RD, 0, "ATA driver parameters");
+TUNABLE_INT("hw.ata.disk_enable", &ata_disk_enable);
+SYSCTL_INT(_hw_ata, OID_AUTO, disk_enable, CTLFLAG_RDTUN, &ata_disk_enable, 0,
+	   "ATA disk enable");
 TUNABLE_INT("hw.ata.ata_dma", &ata_dma);
 SYSCTL_INT(_hw_ata, OID_AUTO, ata_dma, CTLFLAG_RDTUN, &ata_dma, 0,
 	   "ATA disk DMA mode control");
@@ -1776,6 +1780,7 @@ atapoll(struct cam_sim *sim)
 static int
 ata_module_event_handler(module_t mod, int what, void *arg)
 {
+	u_int regs[4];
 #ifndef ATA_CAM
     static struct cdev *atacdev;
 #endif
@@ -1801,6 +1806,20 @@ ata_module_event_handler(module_t mod, int what, void *arg)
 	    }
 	}
 #endif
+	/*
+	 * On Hyper-V the default is to use the enlightened driver for
+	 * IDE disks. However, if the user wishes to use the native
+	 * ATA driver, the environment variable hw_ata.disk_enable
+	 * must be explicity set. 
+	 * TODO: Extend the check to be specific about HyperV
+	 * hypervisor.
+	 */
+	do_cpuid(1, regs);
+	if (regs[2] & 0x80000000) {
+	    if (!getenv_int("hw.ata.disk_enable",&ata_disk_enable)) {
+		ata_disk_enable = 0;
+	    }
+	}
 	return 0;
 
     case MOD_UNLOAD:
