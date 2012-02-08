@@ -112,6 +112,8 @@ DRIVER_MODULE(storvsc, vmbus, storvsc_driver, storvsc_devclass, 0, 0);
 MODULE_VERSION(storvsc,1);
 MODULE_DEPEND(storvsc, vmbus, 1, 1, 1);
 
+extern int ata_disk_enable;
+
 static void
 storvsc_xptdone(struct cam_periph *periph, union ccb *done_ccb)
 {
@@ -241,12 +243,18 @@ static int
 storvsc_probe(device_t dev)
 {
 	int ret	= ENXIO;
-	enum hv_storage_type stor_type;
 
-	stor_type = storvsc_get_storage_type(dev);
-
-	if ((stor_type == DRIVER_BLKVSC) || (stor_type == DRIVER_STORVSC)) {
+	switch (storvsc_get_storage_type(dev)) {
+	case DRIVER_BLKVSC:
+		if (ata_disk_enable == 0) {
+			ret = 0;
+		}
+		break;
+	case DRIVER_STORVSC:
 		ret = 0;
+		break;
+	default:
+		ret = ENXIO;
 	}
 
 	return (ret);
