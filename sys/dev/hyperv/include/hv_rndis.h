@@ -424,7 +424,7 @@ typedef struct rndis_query_request_ {
     uint32_t                                info_buffer_length;
     uint32_t                                info_buffer_offset;
     /* RNDIS handle */
-    uint32_t                                DeviceVcHandle;
+    uint32_t                                device_vc_handle;
 } rndis_query_request;
 
 /*

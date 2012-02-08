@@ -632,7 +632,7 @@ hv_rf_query_device(rndis_device *Device, uint32_t Oid, VOID *Result,
 	query->oid = Oid;
 	query->info_buffer_offset = sizeof(rndis_query_request); 
 	query->info_buffer_length = 0;
-	query->DeviceVcHandle = 0;
+	query->device_vc_handle = 0;
 
 	ret = hv_rf_send_request(Device, request);
 	if (ret != 0) {
