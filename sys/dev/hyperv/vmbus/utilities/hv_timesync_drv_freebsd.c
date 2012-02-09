@@ -80,7 +80,7 @@ timesync_attach(device_t dev) {
 	struct device_context *device_ctx = vmbus_get_devctx(dev);
 	DPRINT_INFO(VMBUS, "timesync_attach: channel addr: %p",
 		device_ctx->device_obj.context);
-	int stat = VmbusChannelOpen(device_ctx->device_obj.context,
+	int stat = hv_vmbus_channel_open(device_ctx->device_obj.context,
 		10 * PAGE_SIZE, 10 * PAGE_SIZE, NULL, 0, timesync_channel_cb,
 		device_ctx->device_obj.context);
 	if (stat == 0)

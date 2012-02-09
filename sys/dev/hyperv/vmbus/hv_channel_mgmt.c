@@ -222,7 +222,7 @@ AllocVmbusChannel(void) {
 		return NULL;
 	}
 
-	channel->PollTimer = TimerCreate(VmbusChannelOnTimer, channel);
+	channel->PollTimer = TimerCreate(hv_vmbus_channel_on_timer, channel);
 	if (!channel->PollTimer) {
 		hv_mtx_destroy(channel->InboundLock);
 		MemFree(channel);
@@ -303,7 +303,7 @@ shutdown_onchannelcallback(void *context) {
 	buflen = PAGE_SIZE;
 	buf = MemAllocAtomic(buflen);
 
-	VmbusChannelRecvPacket(channel, buf, buflen, &recvlen, &requestid);
+	hv_vmbus_channel_recv_packet(channel, buf, buflen, &recvlen, &requestid);
 
 	if (recvlen > 0) {
 		DPRINT_DBG(VMBUS, "shutdown packet: len=%d, requestid=%ld",
@@ -385,7 +385,7 @@ shutdown_onchannelcallback(void *context) {
 		icmsghdrp->icflags = ICMSGHDRFLAG_TRANSACTION
 			| ICMSGHDRFLAG_RESPONSE;
 
-		VmbusChannelSendPacket(channel, buf, recvlen, requestid,
+		hv_vmbus_channel_send_packet(channel, buf, recvlen, requestid,
 			VmbusPacketTypeDataInBand, 0);
 	}
 
@@ -496,7 +496,7 @@ VmbusChannelProcessOffer(PVOID context) {
 			&gSupportedDeviceClasses[5], sizeof(GUID)) == 0) {
 			DPRINT_INFO(VMBUS, "Opening Shutdown channel...");
 
-			if (VmbusChannelOpen(newChannel, 10 * PAGE_SIZE,
+			if (hv_vmbus_channel_open(newChannel, 10 * PAGE_SIZE,
 				10 * PAGE_SIZE, NULL, 0,
 				shutdown_onchannelcallback, newChannel) == 0)
 				DPRINT_INFO(

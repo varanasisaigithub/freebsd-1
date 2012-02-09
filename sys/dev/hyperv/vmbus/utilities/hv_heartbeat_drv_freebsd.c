@@ -81,7 +81,7 @@ heartbeat_attach(device_t dev) {
 	struct device_context *device_ctx = vmbus_get_devctx(dev);
 	DPRINT_INFO(VMBUS, "heartbeat_attach: channel addr: %p",
 		device_ctx->device_obj.context);
-	int stat = VmbusChannelOpen(device_ctx->device_obj.context,
+	int stat = hv_vmbus_channel_open(device_ctx->device_obj.context,
 		10 * PAGE_SIZE, 10 * PAGE_SIZE, NULL, 0,
 		heartbeat_onchannelcallback_cb, device_ctx->device_obj.context);
 	if (stat == 0)
@@ -120,7 +120,7 @@ void heartbeat_onchannelcallback_cb(void *context) {
 
 	if (buf != NULL) {
 
-		VmbusChannelRecvPacket(channel, buf, buflen, &recvlen,
+		hv_vmbus_channel_recv_packet(channel, buf, buflen, &recvlen,
 			&requestid);
 
 		if (recvlen > 0) {
@@ -167,7 +167,7 @@ void heartbeat_onchannelcallback_cb(void *context) {
 			icmsghdrp->icflags = ICMSGHDRFLAG_TRANSACTION
 				| ICMSGHDRFLAG_RESPONSE;
 
-			VmbusChannelSendPacket(channel, buf, recvlen, requestid,
+			hv_vmbus_channel_send_packet(channel, buf, recvlen, requestid,
 				VmbusPacketTypeDataInBand, 0);
 		}
 

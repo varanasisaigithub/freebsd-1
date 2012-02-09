@@ -110,7 +110,7 @@ timesync_channel_cb(void *context) {
 
 	if (buf != NULL) {
 
-		VmbusChannelRecvPacket(channel, buf, buflen, &recvlen, &requestid);
+		hv_vmbus_channel_recv_packet(channel, buf, buflen, &recvlen, &requestid);
 
 		if (recvlen > 0) {
 
@@ -151,7 +151,7 @@ timesync_channel_cb(void *context) {
 			icmsghdrp->icflags = ICMSGHDRFLAG_TRANSACTION |
 						ICMSGHDRFLAG_RESPONSE;
 
-			VmbusChannelSendPacket(channel, buf, recvlen, requestid,
+			hv_vmbus_channel_send_packet(channel, buf, recvlen, requestid,
 				VmbusPacketTypeDataInBand, 0);
 
 			free(buf, M_DEVBUF);

@@ -91,53 +91,53 @@ typedef struct _VMBUS_CHANNEL_PACKET_MULITPAGE_BUFFER {
 
 #pragma pack(pop)
 
-extern int
-VmbusChannelOpen(VMBUS_CHANNEL *Channel, UINT32 SendRingBufferSize,
+int
+hv_vmbus_channel_open(VMBUS_CHANNEL *Channel, UINT32 SendRingBufferSize,
 	UINT32 RecvRingBufferSize, PVOID UserData, UINT32 UserDataLen,
 	PFN_CHANNEL_CALLBACK pfnOnChannelCallback, PVOID Context);
 
-extern void
-VmbusChannelClose(VMBUS_CHANNEL *Channel);
+void
+hv_vmbus_channel_close(VMBUS_CHANNEL *Channel);
 
-extern int
-VmbusChannelSendPacket(VMBUS_CHANNEL *Channel, const PVOID Buffer,
+int
+hv_vmbus_channel_send_packet(VMBUS_CHANNEL *Channel, const PVOID Buffer,
 	UINT32 BufferLen, UINT64 RequestId, VMBUS_PACKET_TYPE Type,
 	UINT32 Flags);
 
-extern int
-VmbusChannelSendPacketPageBuffer(VMBUS_CHANNEL *Channel,
+int
+hv_vmbus_channel_send_packet_pagebuffer(VMBUS_CHANNEL *Channel,
 	PAGE_BUFFER PageBuffers[], UINT32 PageCount, PVOID Buffer,
 	UINT32 BufferLen, UINT64 RequestId);
 
-extern int
-VmbusChannelSendPacketMultiPageBuffer(VMBUS_CHANNEL *Channel,
+int
+hv_vmbus_channel_send_packet_multipagebuffer(VMBUS_CHANNEL *Channel,
 	MULTIPAGE_BUFFER *MultiPageBuffer, PVOID Buffer, UINT32 BufferLen,
 	UINT64 RequestId);
 
-extern int
-VmbusChannelEstablishGpadl(VMBUS_CHANNEL *Channel, PVOID Kbuffer,// from kmalloc()
+int
+hv_vmbus_channel_establish_gpadl(VMBUS_CHANNEL *Channel, PVOID Kbuffer,// from kmalloc()
 	UINT32 Size,		// page-size multiple
 	UINT32 *GpadlHandle);
 
-extern int
-VmbusChannelTeardownGpadl(VMBUS_CHANNEL *Channel, UINT32 GpadlHandle);
+int
+hv_vmbus_channel_teardown_gpdal(VMBUS_CHANNEL *Channel, UINT32 GpadlHandle);
 
-extern int
-VmbusChannelRecvPacket(VMBUS_CHANNEL *Channel, PVOID Buffer, UINT32 BufferLen,
+int
+hv_vmbus_channel_recv_packet(VMBUS_CHANNEL *Channel, PVOID Buffer, UINT32 BufferLen,
 	UINT32* BufferActualLen, UINT64* RequestId);
 
-extern int
-VmbusChannelRecvPacketRaw(VMBUS_CHANNEL *Channel, PVOID Buffer,
+int
+hv_vmbus_channel_recv_packet_raw(VMBUS_CHANNEL *Channel, PVOID Buffer,
 	UINT32 BufferLen, UINT32* BufferActualLen, UINT64* RequestId);
 
-extern void
-VmbusChannelOnChannelEvent(VMBUS_CHANNEL *Channel);
+void
+hv_vmbus_channel_on_channel_event(VMBUS_CHANNEL *Channel);
 
-extern void
-VmbusChannelGetDebugInfo(VMBUS_CHANNEL *Channel,
+void
+hv_vmbus_channel_get_debug_info(VMBUS_CHANNEL *Channel,
 	VMBUS_CHANNEL_DEBUG_INFO *DebugInfo);
 
-extern void
-VmbusChannelOnTimer(void *Context);
+void
+hv_vmbus_channel_on_timer(void *Context);
 
 #endif  /* __HV_CHANNEL_H__ */
