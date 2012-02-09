@@ -30,7 +30,7 @@ enum storvsc_request_type {
 struct hv_storvsc_request;
 
 struct hv_storvsc_req_ext {
-	struct hv_storvsc_request		*Request;
+	struct hv_storvsc_request		*request;
 	DEVICE_OBJECT					*device;
 
 	// Synchronize the request/response if needed
@@ -38,38 +38,38 @@ struct hv_storvsc_req_ext {
 		struct mtx mtx;
 	} event;
 
-	struct vstor_packet					VStorPacket;
+	struct vstor_packet				vstor_packet;
 };
 
 struct hv_storvsc_request {
 	LIST_ENTRY(hv_storvsc_request) link;
-	struct hv_storvsc_req_ext Extension;
-	uint32_t Host;
-	uint8_t TargetId;
-	uint8_t PathId;
-	uint8_t LunId;
-	uint8_t Bus;
-	uint8_t CdbLen;
-	uint8_t Cdb[CDB16GENERIC_LENGTH];
-	enum storvsc_request_type Type;
-	MULTIPAGE_BUFFER DataBuffer;
-	uint8_t Status;
-	uint8_t SenseBufferSize;
-	void *SenseBuffer;
-	union ccb *Ccb;
-	struct storvsc_softc *Softc;
-	uint32_t BytesXfer;
+	struct hv_storvsc_req_ext extension;
+	uint32_t host;
+	uint8_t target_id;
+	uint8_t path_id;
+	uint8_t lun;
+	uint8_t bus;
+	uint8_t cdb_len;
+	uint8_t cdb[CDB16GENERIC_LENGTH];
+	enum storvsc_request_type type;
+	MULTIPAGE_BUFFER data_buf;
+	uint8_t status;
+	uint8_t sense_info_len;
+	void *sense_data;
+	union ccb *ccb;
+	struct storvsc_softc *softc;
+	uint32_t transfer_len;
 };
 typedef struct storvsc_driver_object_s {
 	DRIVER_OBJECT Base;
-	uint32_t RingBufferSize;
+	uint32_t ringbuffer_size;
 } STORVSC_DRIVER_OBJECT;
 
 extern void storvsc_io_done(struct hv_storvsc_request *reqp);
 
-extern int hv_storvsc_on_deviceadd(DEVICE_OBJECT *Device);
-extern int hv_storvsc_on_deviceremove(DEVICE_OBJECT *Driver);
-extern void hv_storvsc_on_cleanup(DRIVER_OBJECT *Driver);
+extern int hv_storvsc_on_deviceadd(DEVICE_OBJECT *device);
+extern int hv_storvsc_on_deviceremove(DEVICE_OBJECT *driver);
+extern void hv_storvsc_on_cleanup(DRIVER_OBJECT *driver);
 extern int hv_storvsc_host_reset(DEVICE_OBJECT *device);
 extern int hv_storvsc_io_request(DEVICE_OBJECT *device,
 								 struct hv_storvsc_request *request);

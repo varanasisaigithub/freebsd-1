@@ -81,9 +81,10 @@
 //
 
 #define MAX_TRANSFER_LENGTH 0x40000
-#define DEFAULT_PACKET_SIZE (sizeof(VMDATA_GPA_DIRECT) +                            \
-                             sizeof(VSTOR_PACKET) +                                 \
-                             (sizeof(uint64_t) * (MAX_TRANSFER_LENGTH / PAGE_SIZE)))
+#define DEFAULT_PACKET_SIZE (sizeof(VMDATA_GPA_DIRECT) +   \
+                             sizeof(struct vstor_packet) + \
+                             (sizeof(uint64_t) * \
+							  (MAX_TRANSFER_LENGTH / PAGE_SIZE)))
 
 
 
@@ -91,21 +92,19 @@
 //  Packet structure describing virtual storage requests.
 //
 
-typedef enum
-{
-    VStorOperationCompleteIo            = 1,
-    VStorOperationRemoveDevice          = 2,
-    VStorOperationExecuteSRB            = 3,
-    VStorOperationResetLun              = 4,
-    VStorOperationResetAdapter          = 5,
-    VStorOperationResetBus              = 6,
-    VStorOperationBeginInitialization   = 7,
-    VStorOperationEndInitialization     = 8,
-    VStorOperationQueryProtocolVersion  = 9,
-    VStorOperationQueryProperties       = 10,
-    VStorOperationMaximum               = 10
-
-} VSTOR_PACKET_OPERATION;
+enum vstor_packet_ops {
+    VSTOROPERATIONCOMPLETEIO            = 1,
+    VSTOROPERATIONREMOVEDEVICE          = 2,
+    VSTOROPERATIONEXECUTESRB            = 3,
+    VSTOROPERATIONRESETLUN              = 4,
+    VSTOROPERATIONRESETADAPTER          = 5,
+    VSTOROPERATIONRESETBUS              = 6,
+    VSTOROPERATIONBEGININITIALIZATION   = 7,
+    VSTOROPERATIONENDINITIALIZATION     = 8,
+    VSTOROPERATIONQUERYPROTOCOLVERSION  = 9,
+    VSTOROPERATIONQUERYPROPERTIES       = 10,
+    VSTOROPERATIONMAXIMUM               = 10
+};
 
 
 //
@@ -219,7 +218,7 @@ struct vstor_packet {
     // Requested operation type
     //
 
-    VSTOR_PACKET_OPERATION operation;
+    enum vstor_packet_ops operation;
 
     //
     //  Flags - see below for values

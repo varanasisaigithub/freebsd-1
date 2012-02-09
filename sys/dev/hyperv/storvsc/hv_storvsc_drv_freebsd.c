@@ -296,7 +296,7 @@ storvsc_attach(device_t dev)
 	memcpy(&sc->sto_drv.drv_obj.Base.deviceType, &drv_guid, sizeof(GUID));
 	memcpy(&sc->sto_drv.drv_ctx.class_id, &drv_guid, sizeof(GUID));
 	sc->sto_drv.drv_props = &g_drv_props_table[stor_type];
-	sc->sto_drv.drv_obj.RingBufferSize =
+	sc->sto_drv.drv_obj.ringbuffer_size =
 		g_drv_props_table[stor_type].drv_ringbuffer_size;
 
 	/*
@@ -325,7 +325,7 @@ storvsc_attach(device_t dev)
 			goto cleanup;
 		}
 
-		reqp->Softc = sc;
+		reqp->softc = sc;
 
 		LIST_INSERT_HEAD(&sc->free_list, reqp, link);
 	}
@@ -543,52 +543,52 @@ create_storvsc_request(union ccb *ccb, struct hv_storvsc_request *reqp)
 	uint32_t pfn_num = 0;
 	uint32_t pfn;
 	
-	reqp->Host = cam_sim_unit(xpt_path_sim(ccb->ccb_h.path));
-	reqp->TargetId = ccb->ccb_h.target_id;
-	reqp->PathId = reqp->Bus = ccb->ccb_h.path_id;
-	reqp->LunId = ccb->ccb_h.target_lun;
+	reqp->host = cam_sim_unit(xpt_path_sim(ccb->ccb_h.path));
+	reqp->target_id = ccb->ccb_h.target_id;
+	reqp->path_id = reqp->bus = ccb->ccb_h.path_id;
+	reqp->lun = ccb->ccb_h.target_lun;
 
-	reqp->CdbLen = csio->cdb_len;
+	reqp->cdb_len = csio->cdb_len;
 	if(ccb->ccb_h.flags & CAM_CDB_POINTER) {
-		memcpy(reqp->Cdb, csio->cdb_io.cdb_ptr, reqp->CdbLen);
+		memcpy(reqp->cdb, csio->cdb_io.cdb_ptr, reqp->cdb_len);
 	} else {
-		memcpy(reqp->Cdb, csio->cdb_io.cdb_bytes, reqp->CdbLen);
+		memcpy(reqp->cdb, csio->cdb_io.cdb_bytes, reqp->cdb_len);
 	}
 
 	switch (ccb->ccb_h.flags & CAM_DIR_MASK) {
     	case CAM_DIR_OUT: 
-    		reqp->Type = WRITE_TYPE;
+    		reqp->type = WRITE_TYPE;
     		break;
     	case CAM_DIR_IN:
-    		reqp->Type = READ_TYPE;
+    		reqp->type = READ_TYPE;
     		break;
     	case CAM_DIR_NONE:
-    		reqp->Type = UNKNOWN_TYPE;
+    		reqp->type = UNKNOWN_TYPE;
     		break;
     	default:
-    		reqp->Type = UNKNOWN_TYPE;
+    		reqp->type = UNKNOWN_TYPE;
     		break;
 	}
 
-	reqp->SenseBuffer = (unsigned char *)  &csio->sense_data;
-	reqp->SenseBufferSize = SSD_FULL_SIZE;
-	reqp->Ccb = ccb;
+	reqp->sense_data = (unsigned char *)&csio->sense_data;
+	reqp->sense_info_len = SSD_FULL_SIZE;
+	reqp->ccb = ccb;
 	if (ccb->ccb_h.flags & CAM_SCATTER_VALID) {
 		KASSERT(0, "ccb is scatter gather valid\n");
 	}
 
 	if (csio->dxfer_len != 0) {
-		reqp->DataBuffer.Length = csio->dxfer_len;
+		reqp->data_buf.Length = csio->dxfer_len;
 		bytes_to_copy = csio->dxfer_len;
 		phys_addr = vtophys(csio->data_ptr);
-		reqp->DataBuffer.Offset = phys_addr - trunc_page(phys_addr);
+		reqp->data_buf.Offset = phys_addr - trunc_page(phys_addr);
 	}
 
 	while (bytes_to_copy != 0) {
 		int bytes, page_offset;
-		phys_addr = vtophys(&csio->data_ptr[reqp->DataBuffer.Length - bytes_to_copy]);
+		phys_addr = vtophys(&csio->data_ptr[reqp->data_buf.Length - bytes_to_copy]);
 		pfn = phys_addr >> PAGE_SHIFT;
-		reqp->DataBuffer.PfnArray[pfn_num] = pfn;
+		reqp->data_buf.PfnArray[pfn_num] = pfn;
 		page_offset = phys_addr - trunc_page(phys_addr);
 
 		bytes = min(PAGE_SIZE - page_offset, bytes_to_copy);
@@ -609,8 +609,8 @@ create_storvsc_request(union ccb *ccb, struct hv_storvsc_request *reqp)
 void
 storvsc_io_done(struct hv_storvsc_request *reqp)
 {
-	union ccb *ccb = reqp->Ccb;
-	struct storvsc_softc *sc = reqp->Softc;
+	union ccb *ccb = reqp->ccb;
+	struct storvsc_softc *sc = reqp->softc;
 	
 	ccb->ccb_h.status &= ~(CAM_SIM_QUEUED);
 	ccb->ccb_h.status |=  CAM_REQ_CMP;
@@ -622,9 +622,9 @@ storvsc_io_done(struct hv_storvsc_request *reqp)
 static void
 storvsc_free_request(struct storvsc_softc *sc, struct hv_storvsc_request *reqp)
 {
-	ASSERT(reqp->Softc == sc);
+	ASSERT(reqp->softc == sc);
 	bzero(reqp, sizeof(struct hv_storvsc_request));
-	reqp->Softc = sc;
+	reqp->softc = sc;
 
 	mtx_lock(&sc->free_list_lock);
 	LIST_INSERT_HEAD(&sc->free_list, reqp, link);
