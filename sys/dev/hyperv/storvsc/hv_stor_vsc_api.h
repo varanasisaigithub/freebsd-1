@@ -38,7 +38,7 @@ struct hv_storvsc_req_ext {
 		struct mtx mtx;
 	} event;
 
-	VSTOR_PACKET					VStorPacket;
+	struct vstor_packet					VStorPacket;
 };
 
 struct hv_storvsc_request {

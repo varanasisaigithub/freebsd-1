@@ -29,41 +29,23 @@
  *   Haiyang Zhang <haiyangz@microsoft.com>
  *   Hank Janssen  <hjanssen@microsoft.com>
  */
-#pragma once
 
-//#include <vmbuspacketformat.h>
-//#include <ntddscsi.h>
-
-#define C_ASSERT(x)
-//
-//  public interface to the server
-//
-
-//
-//  Storvsp device interface guid
-//
-
-
-//
-//  Protocol versions.
-//
-
-//
-// vstorage.w revision number.  This is used in the case of a version match,
-// to alert the user that structure sizes may be mismatched even though the
-// protocol versions match.
-//
+/*
+ * hv_vstorage.h revision number.  This is used in the case of a version match,
+ * to alert the user that structure sizes may be mismatched even though the
+ * protocol versions match.
+ */
 
 #define REVISION_STRING(REVISION_) #REVISION_
 #define FILL_VMSTOR_REVISION(RESULT_LVALUE_)                     \
 {                                                                \
-    char *revisionString = REVISION_STRING($Revision: 6 $) + 11; \
+    char *rev_str = REVISION_STRING($Revision: 6 $) + 11; \
     RESULT_LVALUE_ = 0;                                          \
-    while (*revisionString >= '0' && *revisionString <= '9')     \
+    while (*rev_str >= '0' && *rev_str <= '9')     \
     {                                                            \
         RESULT_LVALUE_ *= 10;                                    \
-        RESULT_LVALUE_ += *revisionString - '0';                 \
-        revisionString++;                                        \
+        RESULT_LVALUE_ += *rev_str - '0';                 \
+        rev_str++;                                        \
     }                                                            \
 }
 
@@ -101,7 +83,7 @@
 #define MAX_TRANSFER_LENGTH 0x40000
 #define DEFAULT_PACKET_SIZE (sizeof(VMDATA_GPA_DIRECT) +                            \
                              sizeof(VSTOR_PACKET) +                                 \
-                             (sizeof(UINT64) * (MAX_TRANSFER_LENGTH / PAGE_SIZE)))
+                             (sizeof(uint64_t) * (MAX_TRANSFER_LENGTH / PAGE_SIZE)))
 
 
 
@@ -137,45 +119,36 @@ typedef enum
 
 
 #define CDB16GENERIC_LENGTH 0x10
-
-#ifndef SENSE_BUFFER_SIZE
 #define SENSE_BUFFER_SIZE 0x12
-#endif
-C_ASSERT(SENSE_BUFFER_SIZE == 0x12);
-
 #define MAX_DATA_BUFFER_LENGTH_WITH_PADDING 0x14
 
 
-typedef struct
-{
-    USHORT Length;
-    UCHAR SrbStatus;
-    UCHAR ScsiStatus;
+struct vmscsi_req {
+    uint16_t length;
+    uint8_t srb_status;
+    uint8_t scsi_status;
 
-    UCHAR PortNumber;
-    UCHAR PathId;
-    UCHAR TargetId;
-    UCHAR Lun;
+    uint8_t port;
+    uint8_t path_id;
+    uint8_t target_id;
+    uint8_t lun;
 
-    UCHAR CdbLength;
-    UCHAR SenseInfoLength;
-    UCHAR DataIn;
-    UCHAR Reserved;
+    uint8_t cdb_len;
+    uint8_t sense_info_len;
+    uint8_t data_in;
+    uint8_t reserved;
 
-    ULONG DataTransferLength;
+    uint32_t transfer_len;
 
-    union
-    {
-        UCHAR Cdb[CDB16GENERIC_LENGTH];
+    union {
+        uint8_t cdb[CDB16GENERIC_LENGTH];
 
-        UCHAR SenseData[SENSE_BUFFER_SIZE];
+        uint8_t sense_data[SENSE_BUFFER_SIZE];
 
-        UCHAR ReservedArray[MAX_DATA_BUFFER_LENGTH_WITH_PADDING];
+        uint8_t reserved_array[MAX_DATA_BUFFER_LENGTH_WITH_PADDING];
     };
 
-} VMSCSI_REQUEST, *PVMSCSI_REQUEST;
-
-C_ASSERT((sizeof(VMSCSI_REQUEST) % 4) == 0);
+};
 
 
 //
@@ -183,44 +156,42 @@ C_ASSERT((sizeof(VMSCSI_REQUEST) % 4) == 0);
 //  properties of the channel.
 //
 
-typedef struct
+struct vmstor_chan_props
 {
-    USHORT ProtocolVersion;
-    UCHAR  PathId;
-    UCHAR  TargetId;
+    uint16_t proto_ver;
+    uint8_t  path_id;
+    uint8_t  target_id;
 
     //
     // Note: port number is only really known on the client side
     //
-    ULONG  PortNumber;
+    uint32_t  port;
 
-    ULONG  Flags;
+    uint32_t  flags;
 
-    ULONG  MaxTransferBytes;
+    uint32_t  max_transfer_bytes;
 
     //
     //  This id is unique for each channel and will correspond with
     //  vendor specific data in the inquirydata
     //
 
-    ULONGLONG UniqueId;
+    uint64_t unique_id;
 
-} VMSTORAGE_CHANNEL_PROPERTIES, *PVMSTORAGE_CHANNEL_PROPERTIES;
-
-C_ASSERT((sizeof(VMSTORAGE_CHANNEL_PROPERTIES) % 4) == 0);
+};
 
 
 //
 //  This structure is sent during the storage protocol negotiations.
 //
 
-typedef struct
+struct vmstor_proto_ver
 {
     //
     // Major (MSW) and minor (LSW) version numbers.
     //
 
-    USHORT MajorMinor;
+    uint16_t major_minor;
 
 
     //
@@ -229,11 +200,10 @@ typedef struct
     // indicate incompatibility--but it does indicate mismatched builds.
     //
 
-    USHORT Revision;
+    uint16_t revision;
 
-} VMSTORAGE_PROTOCOL_VERSION, *PVMSTORAGE_PROTOCOL_VERSION;
+};
 
-C_ASSERT((sizeof(VMSTORAGE_PROTOCOL_VERSION) % 4) == 0);
 
 
 //
@@ -244,54 +214,45 @@ C_ASSERT((sizeof(VMSTORAGE_PROTOCOL_VERSION) % 4) == 0);
 #define STORAGE_CHANNEL_EMULATED_IDE_FLAG               0x2
 
 
-typedef struct _VSTOR_PACKET
-{
+struct vstor_packet {
     //
     // Requested operation type
     //
 
-    VSTOR_PACKET_OPERATION Operation;
+    VSTOR_PACKET_OPERATION operation;
 
     //
     //  Flags - see below for values
     //
 
-    ULONG     Flags;
+    uint32_t     flags;
 
     //
     // Status of the request returned from the server side.
     //
 
-    ULONG     Status;
-
-    //
-    // Data payload area
-    //
+    uint32_t     status;
 
     union
     {
-        //
-        //  Structure used to forward SCSI commands from the client to the server.
-        //
+        /*
+		 * Structure used to forward SCSI commands from the client to the server.
+		 */
+        struct vmscsi_req vm_srb;
 
-        VMSCSI_REQUEST VmSrb;
+        /*
+		 * Structure used to query channel properties.
+		 */
+        struct vmstor_chan_props chan_props;
 
-        //
-        // Structure used to query channel properties.
-        //
-
-        VMSTORAGE_CHANNEL_PROPERTIES StorageChannelProperties;
-
-        //
-        // Used during version negotiations.
-        //
-
-        VMSTORAGE_PROTOCOL_VERSION Version;
+        /*
+		 * Used during version negotiations.
+		 */
+        struct vmstor_proto_ver version;
     };
 
-} VSTOR_PACKET, *PVSTOR_PACKET;
+};
 
-C_ASSERT((sizeof(VSTOR_PACKET) % 4) == 0);
 
 //
 //  Packet flags
