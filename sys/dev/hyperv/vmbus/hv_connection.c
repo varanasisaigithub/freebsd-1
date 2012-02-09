@@ -341,7 +341,7 @@ VmbusProcessChannelEvent(void *context) {
 	channel = GetChannelFromRelId(relId);
 
 	if (channel) {
-		VmbusChannelOnChannelEvent(channel);
+		hv_vmbus_channel_on_channel_event(channel);
 		//WorkQueueQueueWorkItem(channel->dataWorkQueue, VmbusChannelOnChannelEvent, (void*)channel);
 	} else {
 		DPRINT_ERR(VMBUS, "channel not found for relid - %ud.", relId);

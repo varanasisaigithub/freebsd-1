@@ -5,8 +5,6 @@
  *      Author: Larry Melia
  */
 
-// todo--need correct BSD banner here...
-// todo--remove includes that aren't needed
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -43,8 +41,6 @@ typedef struct heartbeat_softc {
 static
 void heartbeat_onchannelcallback_cb(void *context);
 
-static VMBUS_CHANNEL_INTERFACE vmbus_channel_interface;
-
 // prototypes
 static void heartbeat_init(void);
 static int heartbeat_probe(device_t dev);
@@ -55,11 +51,12 @@ static int heartbeat_shutdown(device_t dev);
 static void heartbeat_init(void) {
 	DPRINT_ENTER(VMBUS_UTILITY);
 	printf("heartbeat initializing.... ");
-	vmbus_get_interface(&vmbus_channel_interface);
+        // nothing to do
 	DPRINT_EXIT(VMBUS_UTILITY);
 }
 
-static int heartbeat_probe(device_t dev) {
+static int
+heartbeat_probe(device_t dev) {
 	static const GUID gheartbeatDeviceType = { .Data = // VMBus channel type GUID {57164f39-9115-4e78-ab55-382f3bd5422d}
 		{ 0x39, 0x4f, 0x16, 0x57, 0x15, 0x91, 0x78, 0x4e, 0xab, 0x55,
 			0x38, 0x2f, 0x3b, 0xd5, 0x42, 0x2d } };
@@ -76,14 +73,15 @@ static int heartbeat_probe(device_t dev) {
 	return rtn_value;
 }
 
-static int heartbeat_attach(device_t dev) {
+static int
+heartbeat_attach(device_t dev) {
 	DPRINT_INFO(VMBUS_UTILITY, "heartbeat_attach");
 
 	DPRINT_INFO(VMBUS, "Opening heartbeat channel...");
 	struct device_context *device_ctx = vmbus_get_devctx(dev);
 	DPRINT_INFO(VMBUS, "heartbeat_attach: channel addr: %p",
 		device_ctx->device_obj.context);
-	int stat = VmbusChannelOpen(device_ctx->device_obj.context,
+	int stat = hv_vmbus_channel_open(device_ctx->device_obj.context,
 		10 * PAGE_SIZE, 10 * PAGE_SIZE, NULL, 0,
 		heartbeat_onchannelcallback_cb, device_ctx->device_obj.context);
 	if (stat == 0)
@@ -92,20 +90,22 @@ static int heartbeat_attach(device_t dev) {
 	return 0;
 }
 
-static int heartbeat_detach(device_t dev) {
+static int
+heartbeat_detach(device_t dev) {
 	return 0;
 }
 
-static int heartbeat_shutdown(device_t dev) {
+static int
+heartbeat_shutdown(device_t dev) {
 	return 0;
 }
 
 static
 void heartbeat_onchannelcallback_cb(void *context) {
 	VMBUS_CHANNEL *channel = context;
-	u8 *buf;
-	u32 buflen, recvlen;
-	u64 requestid;
+	uint8_t *buf;
+	uint32_t buflen, recvlen;
+	uint64_t requestid;
 
 	struct heartbeat_msg_data *heartbeat_msg;
 
@@ -115,63 +115,67 @@ void heartbeat_onchannelcallback_cb(void *context) {
 	DPRINT_ENTER(VMBUS);
 
 	buflen = PAGE_SIZE;
-	buf = MemAllocAtomic(buflen);
 
-	VmbusChannelRecvPacket(channel, buf, buflen, &recvlen, &requestid);
+	buf = malloc(buflen, M_DEVBUF, M_NOWAIT);
 
-	if (recvlen > 0) {
-		DPRINT_DBG(VMBUS, "heartbeat packet: len=%d, requestid=%ld",
-			recvlen, requestid);
+	if (buf != NULL) {
 
-		//	printf("heartbeat packet: len=%d, requestid=%ld",
-		//		   recvlen, requestid);
+		hv_vmbus_channel_recv_packet(channel, buf, buflen, &recvlen,
+			&requestid);
 
-		icmsghdrp =
-			(struct icmsg_hdr *) &buf[sizeof(struct vmbuspipe_hdr)];
+		if (recvlen > 0) {
 
-		if (icmsghdrp->icmsgtype == ICMSGTYPE_NEGOTIATE) {
-			icmsghdrp->icmsgsize = 0x10;
+			icmsghdrp = (struct icmsg_hdr *)
+					&buf[sizeof(struct vmbuspipe_hdr)];
 
-			negop =
-				(struct icmsg_negotiate *) &buf[sizeof(struct vmbuspipe_hdr)
-					+ sizeof(struct icmsg_hdr)];
+			if (icmsghdrp->icmsgtype == ICMSGTYPE_NEGOTIATE) {
+				icmsghdrp->icmsgsize = 0x10;
 
-			if (negop->icframe_vercnt == 2
-				&& negop->icversion_data[1].major == 3) {
-				negop->icversion_data[0].major = 3;
-				negop->icversion_data[0].minor = 0;
-				negop->icversion_data[1].major = 3;
-				negop->icversion_data[1].minor = 0;
+				negop = (struct icmsg_negotiate *)
+					&buf[sizeof(struct vmbuspipe_hdr) +
+					     sizeof(struct icmsg_hdr)];
+
+				if (negop->icframe_vercnt == 2
+					&& negop->icversion_data[1].major == 3) {
+					negop->icversion_data[0].major = 3;
+					negop->icversion_data[0].minor = 0;
+					negop->icversion_data[1].major = 3;
+					negop->icversion_data[1].minor = 0;
+				} else {
+					negop->icversion_data[0].major = 1;
+					negop->icversion_data[0].minor = 0;
+					negop->icversion_data[1].major = 1;
+					negop->icversion_data[1].minor = 0;
+				}
+
+				negop->icframe_vercnt = 1;
+				negop->icmsg_vercnt = 1;
+
 			} else {
-				negop->icversion_data[0].major = 1;
-				negop->icversion_data[0].minor = 0;
-				negop->icversion_data[1].major = 1;
-				negop->icversion_data[1].minor = 0;
+				heartbeat_msg =
+					(struct heartbeat_msg_data *) &buf[sizeof(struct vmbuspipe_hdr)
+						+ sizeof(struct icmsg_hdr)];
+
+				DPRINT_DBG(VMBUS, "heartbeat seq = %ld",
+					heartbeat_msg->seq_num);
+				// printf("heartbeat seq = %lld",
+				//	   heartbeat_msg->seq_num);
+
+				heartbeat_msg->seq_num += 1;
 			}
 
-			negop->icframe_vercnt = 1;
-			negop->icmsg_vercnt = 1;
-		} else {
-			heartbeat_msg =
-				(struct heartbeat_msg_data *) &buf[sizeof(struct vmbuspipe_hdr)
-					+ sizeof(struct icmsg_hdr)];
+			icmsghdrp->icflags = ICMSGHDRFLAG_TRANSACTION
+				| ICMSGHDRFLAG_RESPONSE;
 
-			DPRINT_DBG(VMBUS, "heartbeat seq = %ld",
-				heartbeat_msg->seq_num);
-			// printf("heartbeat seq = %lld",
-			//	   heartbeat_msg->seq_num);
-
-			heartbeat_msg->seq_num += 1;
+			hv_vmbus_channel_send_packet(channel, buf, recvlen, requestid,
+				VmbusPacketTypeDataInBand, 0);
 		}
 
-		icmsghdrp->icflags = ICMSGHDRFLAG_TRANSACTION
-			| ICMSGHDRFLAG_RESPONSE;
+		free(buf, M_DEVBUF);
 
-		VmbusChannelSendPacket(channel, buf, recvlen, requestid,
-			VmbusPacketTypeDataInBand, 0);
+	} else {
+		// memory allocation problem
 	}
-
-	MemFree(buf);
 
 	DPRINT_EXIT(VMBUS);
 }

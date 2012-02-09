@@ -78,20 +78,20 @@ static int
 IVmbusChannelOpen(PDEVICE_OBJECT Device, UINT32 SendBufferSize,
 	UINT32 RecvRingBufferSize, PVOID UserData, UINT32 UserDataLen,
 	VMBUS_CHANNEL_CALLBACK ChannelCallback, PVOID Context) {
-	return VmbusChannelOpen((VMBUS_CHANNEL*) Device->context,
+	return hv_vmbus_channel_open((VMBUS_CHANNEL*) Device->context,
 		SendBufferSize, RecvRingBufferSize, UserData, UserDataLen,
 		ChannelCallback, Context);
 }
 
 static void
 IVmbusChannelClose(PDEVICE_OBJECT Device) {
-	VmbusChannelClose((VMBUS_CHANNEL*) Device->context);
+	hv_vmbus_channel_close((VMBUS_CHANNEL*) Device->context);
 }
 
 static int
 IVmbusChannelSendPacket(PDEVICE_OBJECT Device, const PVOID Buffer,
 	UINT32 BufferLen, UINT64 RequestId, UINT32 Type, UINT32 Flags) {
-	return VmbusChannelSendPacket((VMBUS_CHANNEL*) Device->context, Buffer,
+	return hv_vmbus_channel_send_packet((VMBUS_CHANNEL*) Device->context, Buffer,
 		BufferLen, RequestId, Type, Flags);
 }
 
@@ -99,7 +99,7 @@ static int
 IVmbusChannelSendPacketPageBuffer(PDEVICE_OBJECT Device,
 	PAGE_BUFFER PageBuffers[], UINT32 PageCount, PVOID Buffer,
 	UINT32 BufferLen, UINT64 RequestId) {
-	return VmbusChannelSendPacketPageBuffer(
+	return hv_vmbus_channel_send_packet_pagebuffer(
 		(VMBUS_CHANNEL*) Device->context, PageBuffers, PageCount,
 		Buffer, BufferLen, RequestId);
 }
@@ -108,7 +108,7 @@ static int
 IVmbusChannelSendPacketMultiPageBuffer(PDEVICE_OBJECT Device,
 	MULTIPAGE_BUFFER *MultiPageBuffer, PVOID Buffer, UINT32 BufferLen,
 	UINT64 RequestId) {
-	return VmbusChannelSendPacketMultiPageBuffer(
+	return hv_vmbus_channel_send_packet_multipagebuffer(
 		(VMBUS_CHANNEL*) Device->context, MultiPageBuffer, Buffer,
 		BufferLen, RequestId);
 }
@@ -116,27 +116,27 @@ IVmbusChannelSendPacketMultiPageBuffer(PDEVICE_OBJECT Device,
 static int
 IVmbusChannelRecvPacket(PDEVICE_OBJECT Device, PVOID Buffer,
 	UINT32 BufferLen, UINT32* BufferActualLen, UINT64* RequestId) {
-	return VmbusChannelRecvPacket((VMBUS_CHANNEL*) Device->context, Buffer,
+	return hv_vmbus_channel_recv_packet((VMBUS_CHANNEL*) Device->context, Buffer,
 		BufferLen, BufferActualLen, RequestId);
 }
 
 static int
 IVmbusChannelRecvPacketRaw(PDEVICE_OBJECT Device, PVOID Buffer,
 	UINT32 BufferLen, UINT32* BufferActualLen, UINT64* RequestId) {
-	return VmbusChannelRecvPacketRaw((VMBUS_CHANNEL*) Device->context,
+	return hv_vmbus_channel_recv_packet_raw((VMBUS_CHANNEL*) Device->context,
 		Buffer, BufferLen, BufferActualLen, RequestId);
 }
 
 static int
 IVmbusChannelEstablishGpadl(PDEVICE_OBJECT Device, PVOID Buffer,
 	UINT32 BufferLen, UINT32* GpadlHandle) {
-	return VmbusChannelEstablishGpadl((VMBUS_CHANNEL*) Device->context,
+	return hv_vmbus_channel_establish_gpadl((VMBUS_CHANNEL*) Device->context,
 		Buffer, BufferLen, GpadlHandle);
 }
 
 static int
 IVmbusChannelTeardownGpadl(PDEVICE_OBJECT Device, UINT32 GpadlHandle) {
-	return VmbusChannelTeardownGpadl((VMBUS_CHANNEL*) Device->context,
+	return hv_vmbus_channel_teardown_gpdal((VMBUS_CHANNEL*) Device->context,
 		GpadlHandle);
 }
 
@@ -145,7 +145,7 @@ GetChannelInfo(PDEVICE_OBJECT q, DEVICE_INFO *p) {
 	VMBUS_CHANNEL_DEBUG_INFO di;
 
 	if (q->context) {
-		VmbusChannelGetDebugInfo((VMBUS_CHANNEL*) q->context, &di);
+		hv_vmbus_channel_get_debug_info((VMBUS_CHANNEL*) q->context, &di);
 
 		p->ChannelId = di.RelId;
 		p->ChannelState = di.State;

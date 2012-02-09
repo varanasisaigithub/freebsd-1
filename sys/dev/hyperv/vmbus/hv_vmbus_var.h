@@ -96,7 +96,6 @@ typedef struct { //ChannelInterface.c : 160
 	int (*EstablishGpadl)(DEVICE_OBJECT *, PVOID, UINT32, UINT32*);
 	int (*TeardownGpadl)(DEVICE_OBJECT *, UINT32);
 	void (*GetInfo)(DEVICE_OBJECT *, DEVICE_INFO *);
-
 } VMBUS_CHANNEL_INTERFACE;
 
 typedef struct _DRIVER_OBJECT {        //BlkVsc.c : 56

@@ -38,7 +38,6 @@ typedef struct timesync_softc {
 //DEVICE_OBJECT *device_object;
 } timesync_softc;
 
-static VMBUS_CHANNEL_INTERFACE vmbus_channel_interface;
 
 // prototypes
 static void timesync_init(void);
@@ -47,17 +46,19 @@ static int timesync_attach(device_t dev);
 static int timesync_detach(device_t dev);
 static int timesync_shutdown(device_t dev);
 
-static void timesync_init(void) {
+static void
+timesync_init(void) {
 	DPRINT_ENTER(VMBUS_UTILITY);
 	printf("timesync initializing.... ");
-	vmbus_get_interface(&vmbus_channel_interface);
+        // nothing to do
 	DPRINT_EXIT(VMBUS_UTILITY);
 }
 
-static int timesync_probe(device_t dev) {
+static int
+timesync_probe(device_t dev) {
 	static const GUID gtimesyncDeviceType = { //{9527E630-D0AE-497b-ADCE-E80AB0175CAF}
 		.Data = { 0x30, 0xe6, 0x27, 0x95, 0xae, 0xd0, 0x7b, 0x49, 0xad,
-			0xce, 0xe8, 0x0a, 0xb0, 0x17, 0x5c, 0xaf } };
+			  0xce, 0xe8, 0x0a, 0xb0, 0x17, 0x5c, 0xaf } };
 
 	int rtn_value = ENXIO;
 
@@ -71,17 +72,15 @@ static int timesync_probe(device_t dev) {
 	return rtn_value;
 }
 
-static int timesync_attach(device_t dev) {
+static int
+timesync_attach(device_t dev) {
 	DPRINT_INFO(VMBUS_UTILITY, "timesync_attach");
 
 	DPRINT_INFO(VMBUS, "Opening Timesync channel...");
 	struct device_context *device_ctx = vmbus_get_devctx(dev);
 	DPRINT_INFO(VMBUS, "timesync_attach: channel addr: %p",
 		device_ctx->device_obj.context);
-//	int stat = vmbus_channel_interface.Open(device_ctx->device_obj.context,
-//			10*PAGE_SIZE, 10*PAGE_SIZE, NULL, 0,
-//		    timesync_channel_cb, device_ctx->device_obj.context);
-	int stat = VmbusChannelOpen(device_ctx->device_obj.context,
+	int stat = hv_vmbus_channel_open(device_ctx->device_obj.context,
 		10 * PAGE_SIZE, 10 * PAGE_SIZE, NULL, 0, timesync_channel_cb,
 		device_ctx->device_obj.context);
 	if (stat == 0)
@@ -90,11 +89,13 @@ static int timesync_attach(device_t dev) {
 	return 0;
 }
 
-static int timesync_detach(device_t dev) {
+static int
+timesync_detach(device_t dev) {
 	return 0;
 }
 
-static int timesync_shutdown(device_t dev) {
+static int
+timesync_shutdown(device_t dev) {
 	return 0;
 }
 

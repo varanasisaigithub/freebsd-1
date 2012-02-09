@@ -59,16 +59,11 @@
 #ifndef __HV_IC_H__
 #define __HV_IC_H__
 
-#include <dev/hyperv/include/hv_osd.h>
+#include <sys/types.h>
 
 /**
  * Common header for Hyper-V ICs
  */
-
-typedef UINT8 u8;
-typedef UINT16 u16;
-typedef UINT32 u32;
-typedef UINT64 u64;
 
 #define ICMSGTYPE_NEGOTIATE 0
 #define ICMSGTYPE_HEARTBEAT 1
@@ -82,43 +77,43 @@ typedef UINT64 u64;
 #define ICMSGHDRFLAG_RESPONSE 4
 
 struct vmbuspipe_hdr {
-	u32 flags;
-	u32 msgsize;
+	uint32_t flags;
+	uint32_t msgsize;
 }__attribute__((packed));
 
 struct ic_version {
-	u16 major;
-	u16 minor;
+	uint16_t major;
+	uint16_t minor;
 }__attribute__((packed));
 
 struct icmsg_hdr {
 	struct ic_version icverframe;
-	u16 icmsgtype;
+	uint16_t icmsgtype;
 	struct ic_version icvermsg;
-	u16 icmsgsize;
-	u32 status;
-	u8 ictransaction_id;
-	u8 icflags;
-	u8 reserved[2];
+	uint16_t icmsgsize;
+	uint32_t status;
+	uint8_t ictransaction_id;
+	uint8_t icflags;
+	uint8_t reserved[2];
 }__attribute__((packed));
 
 struct icmsg_negotiate {
-	u16 icframe_vercnt;
-	u16 icmsg_vercnt;
-	u32 reserved;
+	uint16_t icframe_vercnt;
+	uint16_t icmsg_vercnt;
+	uint32_t reserved;
 	struct ic_version icversion_data[1]; /* any size array */
 }__attribute__((packed));
 
 struct shutdown_msg_data {
-	u32 reason_code;
-	u32 timeout_seconds;
-	u32 flags;
-	u8 display_message[2048];
+	uint32_t reason_code;
+	uint32_t timeout_seconds;
+	uint32_t flags;
+	uint8_t display_message[2048];
 }__attribute__((packed));
 
 struct heartbeat_msg_data {
-	u64 seq_num;
-	u32 reserved[8];
+	uint64_t seq_num;
+	uint32_t reserved[8];
 }__attribute__((packed));
 
 #endif  /* __HV_IC_H__ */

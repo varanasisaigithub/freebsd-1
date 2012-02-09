@@ -56,11 +56,6 @@
  *   Hank Janssen  <hjanssen@microsoft.com>
  */
 
-#ifdef REMOVED
-#include "timesync_ic.h"
-#endif
-
-///////////// TODO - maybe we should use enum for this
 /* HYPER-V Time Sync IC defs */
 #define ICTIMESYNCFLAG_PROBE 			0
 #define ICTIMESYNCFLAG_SYNC 			1
@@ -97,12 +92,12 @@
 
 static void adj_guesttime(winfiletime_t hosttime, UINT8 flags);
 
-void timesync_channel_cb(void *context) 
-{
+void
+timesync_channel_cb(void *context) {
 	VMBUS_CHANNEL *channel = context;
-	u8 *buf;
-	u32 buflen, recvlen;
-	u64 requestid;
+	uint8_t *buf;
+	uint32_t buflen, recvlen;
+	uint64_t requestid;
 	struct icmsg_hdr *icmsghdrp;
 	struct icmsg_negotiate *negop;
 	struct ictimesync_data *timedatap;
@@ -110,72 +105,75 @@ void timesync_channel_cb(void *context)
 	DPRINT_ENTER(VMBUS);
 
 	buflen = PAGE_SIZE;
-	buf = MemAllocAtomic(buflen);
 
-	// todo NEED TO PUT SOME KIND OF INDIRECTION LATER ON-- coded to get around memory leak!
-	VmbusChannelRecvPacket(channel, buf, buflen, &recvlen, &requestid);
+	buf = malloc(buflen, M_DEVBUF, M_NOWAIT);
 
-	if (recvlen > 0) {
+	if (buf != NULL) {
 
-//		static int debug_counter = 0;
-//		if(debug_counter++ < 10)
-//		   DPRINT_INFO(VMBUS, "timesync packet: recvlen=%d, requestid=%ld", recvlen, requestid);
+		hv_vmbus_channel_recv_packet(channel, buf, buflen, &recvlen, &requestid);
 
-		DPRINT_DBG(VMBUS, "timesync packet: recvlen=%d, requestid=%ld",
-			recvlen, requestid);
+		if (recvlen > 0) {
 
-		icmsghdrp =
-			(struct icmsg_hdr *) &buf[sizeof(struct vmbuspipe_hdr)];
+			DPRINT_DBG(VMBUS,
+				"timesync packet: recvlen=%d, requestid=%ld",
+				recvlen, requestid);
 
-		if (icmsghdrp->icmsgtype == ICMSGTYPE_NEGOTIATE) {
-			icmsghdrp->icmsgsize = 0x10;
-			negop =
-				(struct icmsg_negotiate *) &buf[sizeof(struct vmbuspipe_hdr)
-					+ sizeof(struct icmsg_hdr)];
-			if (negop->icframe_vercnt == 2
-				&& negop->icversion_data[1].major == 3) {
-				negop->icversion_data[0].major = 3;
-				negop->icversion_data[0].minor = 0;
-				negop->icversion_data[1].major = 3;
-				negop->icversion_data[1].minor = 0;
+			icmsghdrp = (struct icmsg_hdr *)
+					 &buf[sizeof(struct vmbuspipe_hdr)];
+
+			if (icmsghdrp->icmsgtype == ICMSGTYPE_NEGOTIATE) {
+				icmsghdrp->icmsgsize = 0x10;
+				negop = (struct icmsg_negotiate *)
+					 &buf[sizeof(struct vmbuspipe_hdr) +
+					      sizeof(struct icmsg_hdr)];
+				if (negop->icframe_vercnt == 2 &&
+					negop->icversion_data[1].major == 3) {
+					negop->icversion_data[0].major = 3;
+					negop->icversion_data[0].minor = 0;
+					negop->icversion_data[1].major = 3;
+					negop->icversion_data[1].minor = 0;
+				} else {
+					negop->icversion_data[0].major = 1;
+					negop->icversion_data[0].minor = 0;
+					negop->icversion_data[1].major = 1;
+					negop->icversion_data[1].minor = 0;
+				}
+				negop->icframe_vercnt = 1;
+				negop->icmsg_vercnt = 1;
 			} else {
-				negop->icversion_data[0].major = 1;
-				negop->icversion_data[0].minor = 0;
-				negop->icversion_data[1].major = 1;
-				negop->icversion_data[1].minor = 0;
+				timedatap = (struct ictimesync_data *)
+					&buf[sizeof(struct vmbuspipe_hdr) +
+					     sizeof(struct icmsg_hdr)];
+				adj_guesttime(timedatap->parenttime,
+						timedatap->flags);
 			}
-			negop->icframe_vercnt = 1;
-			negop->icmsg_vercnt = 1;
+
+			icmsghdrp->icflags = ICMSGHDRFLAG_TRANSACTION |
+						ICMSGHDRFLAG_RESPONSE;
+
+			hv_vmbus_channel_send_packet(channel, buf, recvlen, requestid,
+				VmbusPacketTypeDataInBand, 0);
+
+			free(buf, M_DEVBUF);
+
 		} else {
-			timedatap =
-				(struct ictimesync_data *) &buf[sizeof(struct vmbuspipe_hdr)
-					+ sizeof(struct icmsg_hdr)];
-			adj_guesttime(timedatap->parenttime, timedatap->flags);
+			// memory allocation error
 		}
 
-		icmsghdrp->icflags = ICMSGHDRFLAG_TRANSACTION
-			| ICMSGHDRFLAG_RESPONSE;
-
-		VmbusChannelSendPacket(channel, buf, recvlen, requestid,
-			VmbusPacketTypeDataInBand, 0);
 	}
-
-	MemFree(buf);
-
 	DPRINT_EXIT(VMBUS);
 }
 
-// todo - const these defines
 #define WLTIMEDELTA 116444736000000000L  /* in 100ns unit */
-#define ADJ_THRESHOLD 500*1000           /* in nanosecond */
+#define ADJ_THRESHOLD 500*1000           /* in nanoseconds */
 #define NANO_SEC  1000000000L            /* 10^ 9 nanosecs = 1 sec */
 
-static void adj_guesttime(winfiletime_t hosttime, UINT8 flags) 
-{
+static void
+adj_guesttime(winfiletime_t hosttime, UINT8 flags) {
 	struct timespec ts, host_ts;
-	INT64 tns, host_tns, terr, tmp, tsec;
-	INT32 err_sign;
-	static INT32 scnt = 50;
+	int64_t tns, host_tns, terr, tmp, tsec;
+	int32_t err_sign;
+	static int32_t scnt = 50;
 
 	nanotime(&ts);
 	tns = ts.tv_sec * NANO_SEC + ts.tv_nsec;
