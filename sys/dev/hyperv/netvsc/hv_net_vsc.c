@@ -311,7 +311,7 @@ hv_nv_init_rx_buffer_with_net_vsp(DEVICE_OBJECT *device)
 		goto cleanup;
 	}
 	/* page-aligned buffer */
-	ASSERT(((ULONG_PTR)net_dev->rx_buf & (PAGE_SIZE-1)) == 0);
+	ASSERT(((unsigned long)net_dev->rx_buf & (PAGE_SIZE-1)) == 0);
 
 	DPRINT_DBG(NETVSC, "Establishing receive buffer's GPADL...");
 
@@ -346,7 +346,7 @@ hv_nv_init_rx_buffer_with_net_vsp(DEVICE_OBJECT *device)
 
 	/* Send the gpadl notification request */
 	ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-	    init_pkt, sizeof(nvsp_msg), (ULONG_PTR)init_pkt,
+	    init_pkt, sizeof(nvsp_msg), (unsigned long)init_pkt,
 	    VmbusPacketTypeDataInBand,
 	    VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
@@ -449,7 +449,7 @@ hv_nv_init_send_buffer_with_net_vsp(DEVICE_OBJECT *device)
 		goto cleanup;
 	}
 	/* page-aligned buffer */
-	ASSERT(((ULONG_PTR)net_dev->send_buf & (PAGE_SIZE-1)) == 0);
+	ASSERT(((unsigned long)net_dev->send_buf & (PAGE_SIZE-1)) == 0);
 
 	DPRINT_DBG(NETVSC, "Establishing send buffer's GPADL...");
 
@@ -484,7 +484,7 @@ hv_nv_init_send_buffer_with_net_vsp(DEVICE_OBJECT *device)
 
 	/* Send the gpadl notification request */
 	ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-	    init_pkt, sizeof(nvsp_msg), (ULONG_PTR)init_pkt,
+	    init_pkt, sizeof(nvsp_msg), (unsigned long)init_pkt,
 	    VmbusPacketTypeDataInBand, 
 	    VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	if (ret != 0) {
@@ -553,7 +553,7 @@ hv_nv_destroy_rx_buffer(netvsc_dev *net_dev)
 		ret =
 		    net_dev->dev->Driver->VmbusChannelInterface.SendPacket(
 		    net_dev->dev, revoke_pkt, sizeof(nvsp_msg),
-		    (ULONG_PTR)revoke_pkt, VmbusPacketTypeDataInBand, 0);
+		    (unsigned long)revoke_pkt, VmbusPacketTypeDataInBand, 0);
 		/*
 		 * If we failed here, we might as well return and have a leak 
 		 * rather than continue and a bugchk
@@ -639,7 +639,7 @@ hv_nv_destroy_send_buffer(netvsc_dev *net_dev)
 
 		ret = net_dev->dev->Driver->VmbusChannelInterface.SendPacket(
 		    net_dev->dev, revoke_pkt, sizeof(nvsp_msg), 
-		    (ULONG_PTR)revoke_pkt, VmbusPacketTypeDataInBand, 0);
+		    (unsigned long)revoke_pkt, VmbusPacketTypeDataInBand, 0);
 		/*
 		 * If we failed here, we might as well return and have a leak 
 		 * rather than continue and a bugchk
@@ -720,7 +720,7 @@ hv_nv_connect_to_vsp(DEVICE_OBJECT *device)
 
 	/* Send the init request */
 	ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-	    init_pkt, sizeof(nvsp_msg), (ULONG_PTR)init_pkt,
+	    init_pkt, sizeof(nvsp_msg), (unsigned long)init_pkt,
 	    VmbusPacketTypeDataInBand,
 	    VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
@@ -771,7 +771,7 @@ hv_nv_connect_to_vsp(DEVICE_OBJECT *device)
 
 	/* Send the init request */
 	ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-	    init_pkt, sizeof(nvsp_msg), (ULONG_PTR)init_pkt,
+	    init_pkt, sizeof(nvsp_msg), (unsigned long)init_pkt,
 	    VmbusPacketTypeDataInBand, 0);
 	if (ret != 0) {
 		DPRINT_ERR(NETVSC,
@@ -1025,7 +1025,8 @@ hv_nv_on_send_completion(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt)
 		return;
 	}
 
-	nvsp_msg_pkt = (nvsp_msg *)((ULONG_PTR)pkt + (pkt->DataOffset8 << 3));
+	nvsp_msg_pkt =
+	    (nvsp_msg *)((unsigned long)pkt + (pkt->DataOffset8 << 3));
 
 	DPRINT_DBG(NETVSC, "send completion packet - type %d",
 	    nvsp_msg_pkt->hdr.msg_type);
@@ -1042,7 +1043,8 @@ hv_nv_on_send_completion(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt)
 	} else if (nvsp_msg_pkt->hdr.msg_type ==
 				    nvsp_msg_1_type_send_rndis_pkt_complete) {
 		/* Get the send context */
-		net_vsc_pkt = (netvsc_packet *)(ULONG_PTR)pkt->TransactionId;
+		net_vsc_pkt =
+		    (netvsc_packet *)(unsigned long)pkt->TransactionId;
 		ASSERT(net_vsc_pkt);
 
 		/* Notify the layer above us */
@@ -1098,10 +1100,10 @@ hv_nv_on_send(DEVICE_OBJECT *device, netvsc_packet *pkt)
 		ret =
 		    device->Driver->VmbusChannelInterface.SendPacketPageBuffer(
 		    device, pkt->page_buffers, pkt->page_buf_count,
-		    &send_msg, sizeof(nvsp_msg), (ULONG_PTR)pkt);
+		    &send_msg, sizeof(nvsp_msg), (unsigned long)pkt);
 	} else {
 		ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-		    &send_msg, sizeof(nvsp_msg), (ULONG_PTR)pkt,
+		    &send_msg, sizeof(nvsp_msg), (unsigned long)pkt,
 		    VmbusPacketTypeDataInBand,
 		    VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	}
@@ -1134,7 +1136,7 @@ hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt)
 	nvsp_msg *nvsp_msg_pkt;
 	netvsc_packet *net_vsc_pkt = NULL;
 	LIST_ENTRY *entry;
-	ULONG_PTR start;
+	unsigned long start;
 	XFERPAGE_PACKET *xfer_page_pkt = NULL;
 	LIST_ENTRY list_head;
 	int count = 0;
@@ -1163,7 +1165,7 @@ hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt)
 		return;
 	}
 
-	nvsp_msg_pkt = (nvsp_msg *)((ULONG_PTR)pkt +
+	nvsp_msg_pkt = (nvsp_msg *)((unsigned long)pkt +
 	    (pkt->DataOffset8 << 3));
 
 	/* Make sure this is a valid nvsp packet */
@@ -1286,7 +1288,7 @@ hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt)
 		    vm_xfer_page_pkt->Ranges[i].ByteCount;
 
 		/* The virtual address of the packet in the receive buffer */
-		start = ((ULONG_PTR)net_dev->rx_buf +
+		start = ((unsigned long)net_dev->rx_buf +
 		    vm_xfer_page_pkt->Ranges[i].ByteOffset);
 		start = ((unsigned long)start) & ~(PAGE_SIZE - 1);
 
