@@ -1,4 +1,4 @@
-/*****************************************************************************
+/*-
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -28,9 +28,9 @@
  * protocol is possible because most of the work for facilitating a network
  * connection is handled by the RNDIS protocol.
  *
- *****************************************************************************/
+ */
 
-/*
+/*-
  * Copyright (c) 2009, Microsoft Corporation - All rights reserved.
  *
  *     Redistribution and use in source and binary forms, with or
@@ -64,262 +64,261 @@
 #define __HV_NVSP_PROTOCOL_H__
 
 
-#define NVSP_INVALID_PROTOCOL_VERSION           ((UINT32)0xFFFFFFFF)
+#define NVSP_INVALID_PROTOCOL_VERSION           ((uint32_t)0xFFFFFFFF)
 
 #define NVSP_PROTOCOL_VERSION_1                 2
-#define NVSP_MIN_PROTOCOL_VERSION               NVSP_PROTOCOL_VERSION_1
-#define NVSP_MAX_PROTOCOL_VERSION               NVSP_PROTOCOL_VERSION_1
+#define NVSP_MIN_PROTOCOL_VERSION               (NVSP_PROTOCOL_VERSION_1)
+#define NVSP_MAX_PROTOCOL_VERSION               (NVSP_PROTOCOL_VERSION_1)
 
-typedef enum _NVSP_MESSAGE_TYPE {
-    NvspMessageTypeNone = 0,
+typedef enum nvsp_msg_type_ {
+	nvsp_msg_type_none                      = 0,
 
-    //
-    // Init Messages
-    //
-    NvspMessageTypeInit                         = 1,
-    NvspMessageTypeInitComplete                 = 2,
+	/*
+	 * Init Messages
+	 */
+	nvsp_msg_type_init                      = 1,
+	nvsp_msg_type_init_complete             = 2,
 
-    NvspVersionMessageStart                     = 100,
+	nvsp_version_msg_start                  = 100,
 
-    //
-    // Version 1 Messages
-    //
-    NvspMessage1TypeSendNdisVersion             = NvspVersionMessageStart,
+	/*
+	 * Version 1 Messages
+	 */
+	nvsp_msg_1_type_send_ndis_vers          = nvsp_version_msg_start,
 
-    NvspMessage1TypeSendReceiveBuffer,
-    NvspMessage1TypeSendReceiveBufferComplete,
-    NvspMessage1TypeRevokeReceiveBuffer,
+	nvsp_msg_1_type_send_rx_buf,
+	nvsp_msg_1_type_send_rx_buf_complete,
+	nvsp_msg_1_type_revoke_rx_buf,
 
-    NvspMessage1TypeSendSendBuffer,
-    NvspMessage1TypeSendSendBufferComplete,
-    NvspMessage1TypeRevokeSendBuffer,
+	nvsp_msg_1_type_send_send_buf,
+	nvsp_msg_1_type_send_send_buf_complete,
+	nvsp_msg_1_type_revoke_send_buf,
 
-    NvspMessage1TypeSendRNDISPacket,
-    NvspMessage1TypeSendRNDISPacketComplete,
+	nvsp_msg_1_type_send_rndis_pkt,
+	nvsp_msg_1_type_send_rndis_pkt_complete,
     
-    //
-    // This should be set to the number of messages for the version
-    // with the maximum number of messages.
-    //
-    NvspNumMessagePerVersion                    = 9,
-} NVSP_MESSAGE_TYPE, *PNVSP_MESSAGE_TYPE;
+	/*
+	 * This should be set to the number of messages for the version
+	 * with the maximum number of messages.
+	 */
+	nvsp_num_msg_per_version                = 9,
+} nvsp_msg_type;
 
-typedef enum _NVSP_STATUS {
-    NvspStatusNone = 0,
-    NvspStatusSuccess,
-    NvspStatusFailure,
-    NvspStatusProtocolVersionRangeTooNew,
-    NvspStatusProtocolVersionRangeTooOld,
-    NvspStatusInvalidRndisPacket,
-    NvspStatusBusy,
-    NvspStatusMax,
-} NVSP_STATUS, *PNVSP_STATUS;
+typedef enum nvsp_status_ {
+	nvsp_status_none = 0,
+	nvsp_status_success,
+	nvsp_status_failure,
+	nvsp_status_prot_vers_range_too_new,
+	nvsp_status_prot_vers_range_too_old,
+	nvsp_status_invalid_rndis_pkt,
+	nvsp_status_busy,
+	nvsp_status_max,
+} nvsp_status;
 
 #pragma pack(push, 1)
 
-typedef struct _NVSP_MESSAGE_HEADER {
-    UINT32                                  MessageType;
-} NVSP_MESSAGE_HEADER, *PNVSP_MESSAGE_HEADER;
+typedef struct nvsp_msg_hdr_ {
+	uint32_t                                msg_type;
+} nvsp_msg_hdr;
 
-//
-// Init Messages
-//
+/*
+ * Init Messages
+ */
 
-//
-// This message is used by the VSC to initialize the channel
-// after the channels has been opened. This message should 
-// never include anything other then versioning (i.e. this
-// message will be the same for ever).
-//
-typedef struct _NVSP_MESSAGE_INIT {
-    UINT32                                  MinProtocolVersion;
-    UINT32                                  MaxProtocolVersion;
-} NVSP_MESSAGE_INIT, *PNVSP_MESSAGE_INIT;
+/*
+ * This message is used by the VSC to initialize the channel
+ * after the channels has been opened. This message should 
+ * never include anything other then versioning (i.e. this
+ * message will be the same for ever).
+ */
+typedef struct nvsp_msg_init_ {
+	uint32_t                                min_protocol_version;
+	uint32_t                                max_protocol_version;
+} nvsp_msg_init;
 
-//
-// This message is used by the VSP to complete the initialization
-// of the channel. This message should never include anything other 
-// then versioning (i.e. this message will be the same for ever).
-//
-typedef struct _NVSP_MESSAGE_INIT_COMPLETE {
-    UINT32                                  NegotiatedProtocolVersion;
-    UINT32                                  MaximumMdlChainLength;
-    UINT32                                  Status;
-} NVSP_MESSAGE_INIT_COMPLETE, *PNVSP_MESSAGE_INIT_COMPLETE;
+/*
+ * This message is used by the VSP to complete the initialization
+ * of the channel. This message should never include anything other 
+ * then versioning (i.e. this message will be the same for ever).
+ */
+typedef struct nvsp_msg_init_complete_ {
+	uint32_t                                negotiated_prot_vers;
+	uint32_t                                max_mdl_chain_len;
+	uint32_t                                status;
+} nvsp_msg_init_complete;
 
-typedef union _NVSP_MESSAGE_INIT_UBER {
-    NVSP_MESSAGE_INIT                       Init;
-    NVSP_MESSAGE_INIT_COMPLETE              InitComplete;
-} NVSP_MESSAGE_INIT_UBER;
+typedef union nvsp_msg_init_uber_ {
+	nvsp_msg_init                           init;
+	nvsp_msg_init_complete                  init_compl;
+} nvsp_msg_init_uber;
 
-//
-// Version 1 Messages
-//
+/*
+ * Version 1 Messages
+ */
 
-//
-// This message is used by the VSC to send the NDIS version
-// to the VSP. The VSP can use this information when handling
-// OIDs sent by the VSC.
-//
-typedef struct _NVSP_1_MESSAGE_SEND_NDIS_VERSION {
-    UINT32                                  NdisMajorVersion;
-    UINT32                                  NdisMinorVersion;
-} NVSP_1_MESSAGE_SEND_NDIS_VERSION, *PNVSP_1_MESSAGE_SEND_NDIS_VERSION;
+/*
+ * This message is used by the VSC to send the NDIS version
+ * to the VSP. The VSP can use this information when handling
+ * OIDs sent by the VSC.
+ */
+typedef struct nvsp_1_msg_send_ndis_version_ {
+	uint32_t                                ndis_major_vers;
+	uint32_t                                ndis_minor_vers;
+} nvsp_1_msg_send_ndis_version;
 
-//
-// This message is used by the VSC to send a receive buffer
-// to the VSP. The VSP can then use the receive buffer to
-// send data to the VSC.
-//
-typedef struct _NVSP_1_MESSAGE_SEND_RECEIVE_BUFFER {
-    GPADL_HANDLE                            GpadlHandle;
-    UINT16                                  Id;
-} NVSP_1_MESSAGE_SEND_RECEIVE_BUFFER, *PNVSP_1_MESSAGE_SEND_RECEIVE_BUFFER;
+/*
+ * This message is used by the VSC to send a receive buffer
+ * to the VSP. The VSP can then use the receive buffer to
+ * send data to the VSC.
+ */
+typedef struct nvsp_1_msg_send_rx_buf_ {
+	uint32_t                                gpadl_handle;
+	uint16_t                                id;
+} nvsp_1_msg_send_rx_buf;
 
-typedef struct _NVSP_1_RECEIVE_BUFFER_SECTION {
-    UINT32                                  Offset;
-    UINT32                                  SubAllocationSize;
-    UINT32                                  NumSubAllocations;
-    UINT32                                  EndOffset;
-} NVSP_1_RECEIVE_BUFFER_SECTION, *PNVSP_1_RECEIVE_BUFFER_SECTION;
+typedef struct nvsp_1_rx_buf_section_ {
+	uint32_t                                offset;
+	uint32_t                                sub_allocation_size;
+	uint32_t                                num_sub_allocations;
+	uint32_t                                end_offset;
+} nvsp_1_rx_buf_section;
 
-//
-// This message is used by the VSP to acknowledge a receive 
-// buffer send by the VSC. This message must be sent by the 
-// VSP before the VSP uses the receive buffer.
-//
-typedef struct _NVSP_1_MESSAGE_SEND_RECEIVE_BUFFER_COMPLETE {
-    UINT32                                  Status;
-    UINT32                                  NumSections;
+/*
+ * This message is used by the VSP to acknowledge a receive 
+ * buffer send by the VSC. This message must be sent by the 
+ * VSP before the VSP uses the receive buffer.
+ */
+typedef struct nvsp_1_msg_send_rx_buf_complete_ {
+	uint32_t                                status;
+	uint32_t                                num_sections;
 
-    //
-    // The receive buffer is split into two parts, a large
-    // suballocation section and a small suballocation
-    // section. These sections are then suballocated by a 
-    // certain size.
-    //
-    // For example, the following break up of the receive
-    // buffer has 6 large suballocations and 10 small
-    // suballocations.
-    //
-    // |            Large Section          |  |   Small Section   |
-    // ------------------------------------------------------------
-    // |     |     |     |     |     |     |  | | | | | | | | | | |
-    // |                                      |  
-    // LargeOffset                            SmallOffset
-    //
-    NVSP_1_RECEIVE_BUFFER_SECTION           Sections[1];
+	/*
+	 * The receive buffer is split into two parts, a large
+	 * suballocation section and a small suballocation
+	 * section. These sections are then suballocated by a 
+	 * certain size.
+	 *
+	 * For example, the following break up of the receive
+	 * buffer has 6 large suballocations and 10 small
+	 * suballocations.
+	 *
+	 * |            Large Section          |  |   Small Section   |
+	 * ------------------------------------------------------------
+	 * |     |     |     |     |     |     |  | | | | | | | | | | |
+	 * |                                      |  
+	 * LargeOffset                            SmallOffset
+	 */
+	nvsp_1_rx_buf_section                   sections[1];
 
-} NVSP_1_MESSAGE_SEND_RECEIVE_BUFFER_COMPLETE, *PNVSP_1_MESSAGE_SEND_RECEIVE_BUFFER_COMPLETE;
+} nvsp_1_msg_send_rx_buf_complete;
 
-//
-// This message is sent by the VSC to revoke the receive buffer.
-// After the VSP completes this transaction, the vsp should never
-// use the receive buffer again.
-//
-typedef struct _NVSP_1_MESSAGE_REVOKE_RECEIVE_BUFFER {
-    UINT16                                  Id;
-} NVSP_1_MESSAGE_REVOKE_RECEIVE_BUFFER, *PNVSP_1_MESSAGE_REVOKE_RECEIVE_BUFFER;
+/*
+ * This message is sent by the VSC to revoke the receive buffer.
+ * After the VSP completes this transaction, the vsp should never
+ * use the receive buffer again.
+ */
+typedef struct nvsp_1_msg_revoke_rx_buf_ {
+	uint16_t                                id;
+} nvsp_1_msg_revoke_rx_buf;
 
-//
-// This message is used by the VSC to send a send buffer
-// to the VSP. The VSC can then use the send buffer to
-// send data to the VSP.
-//
-typedef struct _NVSP_1_MESSAGE_SEND_SEND_BUFFER {
-    GPADL_HANDLE                            GpadlHandle;
-    UINT16                                  Id;
-} NVSP_1_MESSAGE_SEND_SEND_BUFFER, *PNVSP_1_MESSAGE_SEND_SEND_BUFFER;
+/*
+ * This message is used by the VSC to send a send buffer
+ * to the VSP. The VSC can then use the send buffer to
+ * send data to the VSP.
+ */
+typedef struct nvsp_1_msg_send_send_buf_ {
+	uint32_t                                gpadl_handle;
+	uint16_t                                id;
+} nvsp_1_msg_send_send_buf;
 
-//
-// This message is used by the VSP to acknowledge a send 
-// buffer sent by the VSC. This message must be sent by the 
-// VSP before the VSP uses the sent buffer.
-//
-typedef struct _NVSP_1_MESSAGE_SEND_SEND_BUFFER_COMPLETE {
-    UINT32                                  Status;
+/*
+ * This message is used by the VSP to acknowledge a send 
+ * buffer sent by the VSC. This message must be sent by the 
+ * VSP before the VSP uses the sent buffer.
+ */
+typedef struct nvsp_1_msg_send_send_buf_complete_ {
+	uint32_t                                status;
 
-    //
-    // The VSC gets to choose the size of the send buffer and
-    // the VSP gets to choose the sections size of the buffer.
-    // This was done to enable dynamic reconfigurations when
-    // the cost of GPA-direct buffers decreases.
-    //
-    UINT32                                  SectionSize;
-} NVSP_1_MESSAGE_SEND_SEND_BUFFER_COMPLETE, *PNVSP_1_MESSAGE_SEND_SEND_BUFFER_COMPLETE;
+	/*
+	 * The VSC gets to choose the size of the send buffer and
+	 * the VSP gets to choose the sections size of the buffer.
+	 * This was done to enable dynamic reconfigurations when
+	 * the cost of GPA-direct buffers decreases.
+	 */
+	uint32_t                                section_size;
+} nvsp_1_msg_send_send_buf_complete;
 
-//
-// This message is sent by the VSC to revoke the send buffer.
-// After the VSP completes this transaction, the vsp should never
-// use the send buffer again.
-//
-typedef struct _NVSP_1_MESSAGE_REVOKE_SEND_BUFFER {
-    UINT16                                  Id;
-} NVSP_1_MESSAGE_REVOKE_SEND_BUFFER, *PNVSP_1_MESSAGE_REVOKE_SEND_BUFFER;
+/*
+ * This message is sent by the VSC to revoke the send buffer.
+ * After the VSP completes this transaction, the vsp should never
+ * use the send buffer again.
+ */
+typedef struct nvsp_1_msg_revoke_send_buf_ {
+	uint16_t                                id;
+} nvsp_1_msg_revoke_send_buf;
 
-//
-// This message is used by both the VSP and the VSC to send
-// a RNDIS message to the opposite channel endpoint.
-//
-typedef struct _NVSP_1_MESSAGE_SEND_RNDIS_PACKET {
-    //
-    // This field is specified by RNIDS. They assume there's
-    // two different channels of communication. However, 
-    // the Network VSP only has one. Therefore, the channel
-    // travels with the RNDIS packet.
-    //
-    UINT32                                  ChannelType;
+/*
+ * This message is used by both the VSP and the VSC to send
+ * a RNDIS message to the opposite channel endpoint.
+ */
+typedef struct nvsp_1_msg_send_rndis_pkt_ {
+	/*
+	 * This field is specified by RNIDS.  They assume there's
+	 * two different channels of communication. However, 
+	 * the Network VSP only has one.  Therefore, the channel
+	 * travels with the RNDIS packet.
+	 */
+	uint32_t                                chan_type;
 
-    //
-    // This field is used to send part or all of the data
-    // through a send buffer. This values specifies an 
-    // index into the send buffer. If the index is 
-    // 0xFFFFFFFF, then the send buffer is not being used
-    // and all of the data was sent through other VMBus
-    // mechanisms.
-    //
-    UINT32                                  SendBufferSectionIndex;
-    UINT32                                  SendBufferSectionSize;
-} NVSP_1_MESSAGE_SEND_RNDIS_PACKET, *PNVSP_1_MESSAGE_SEND_RNDIS_PACKET;
+	/*
+	 * This field is used to send part or all of the data
+	 * through a send buffer. This values specifies an 
+	 * index into the send buffer.  If the index is 
+	 * 0xFFFFFFFF, then the send buffer is not being used
+	 * and all of the data was sent through other VMBus
+	 * mechanisms.
+	 */
+	uint32_t                                send_buf_section_idx;
+	uint32_t                                send_buf_section_size;
+} nvsp_1_msg_send_rndis_pkt;
 
-//
-// This message is used by both the VSP and the VSC to complete
-// a RNDIS message to the opposite channel endpoint. At this
-// point, the initiator of this message cannot use any resources
-// associated with the original RNDIS packet.
-//
-typedef struct _NVSP_1_MESSAGE_SEND_RNDIS_PACKET_COMPLETE {
-    UINT32                                  Status;
-} NVSP_1_MESSAGE_SEND_RNDIS_PACKET_COMPLETE, *PNVSP_1_MESSAGE_SEND_RNDIS_PACKET_COMPLETE;
+/*
+ * This message is used by both the VSP and the VSC to complete
+ * a RNDIS message to the opposite channel endpoint.  At this
+ * point, the initiator of this message cannot use any resources
+ * associated with the original RNDIS packet.
+ */
+typedef struct nvsp_1_msg_send_rndis_pkt_complete_ {
+	uint32_t                                status;
+} nvsp_1_msg_send_rndis_pkt_complete;
 
-typedef union _NVSP_MESSAGE_1_UBER {
-    NVSP_1_MESSAGE_SEND_NDIS_VERSION            SendNdisVersion;
+typedef union nvsp_1_msg_uber_ {
+	nvsp_1_msg_send_ndis_version            send_ndis_vers;
 
-    NVSP_1_MESSAGE_SEND_RECEIVE_BUFFER          SendReceiveBuffer;
-    NVSP_1_MESSAGE_SEND_RECEIVE_BUFFER_COMPLETE SendReceiveBufferComplete;
-    NVSP_1_MESSAGE_REVOKE_RECEIVE_BUFFER        RevokeReceiveBuffer;
+	nvsp_1_msg_send_rx_buf                  send_rx_buf;
+	nvsp_1_msg_send_rx_buf_complete         send_rx_buf_complete;
+	nvsp_1_msg_revoke_rx_buf                revoke_rx_buf;
 
-    NVSP_1_MESSAGE_SEND_SEND_BUFFER             SendSendBuffer;
-    NVSP_1_MESSAGE_SEND_SEND_BUFFER_COMPLETE    SendSendBufferComplete;
-    NVSP_1_MESSAGE_REVOKE_SEND_BUFFER           RevokeSendBuffer;
+	nvsp_1_msg_send_send_buf                send_send_buf;
+	nvsp_1_msg_send_send_buf_complete       send_send_buf_complete;
+	nvsp_1_msg_revoke_send_buf              revoke_send_buf;
 
-    NVSP_1_MESSAGE_SEND_RNDIS_PACKET            SendRNDISPacket;
-    NVSP_1_MESSAGE_SEND_RNDIS_PACKET_COMPLETE   SendRNDISPacketComplete;
-} NVSP_1_MESSAGE_UBER;
+	nvsp_1_msg_send_rndis_pkt               send_rndis_pkt;
+	nvsp_1_msg_send_rndis_pkt_complete      send_rndis_pkt_complete;
+} nvsp_1_msg_uber;
 
-typedef union _NVSP_ALL_MESSAGES {
-    NVSP_MESSAGE_INIT_UBER                  InitMessages;
-    NVSP_1_MESSAGE_UBER                     Version1Messages;
+typedef union nvsp_all_msgs_ {
+	nvsp_msg_init_uber                      init_msgs;
+	nvsp_1_msg_uber                         vers_1_msgs;
+} nvsp_all_msgs;
 
-} NVSP_ALL_MESSAGES;
-
-//
-// ALL Messages
-//
-typedef struct _NVSP_MESSAGE {
-    NVSP_MESSAGE_HEADER                     Header; 
-    NVSP_ALL_MESSAGES                       Messages;
-} NVSP_MESSAGE, *PNVSP_MESSAGE;
+/*
+ * ALL Messages
+ */
+typedef struct nvsp_msg_ {
+	nvsp_msg_hdr                            hdr; 
+	nvsp_all_msgs                           msgs;
+} nvsp_msg;
 
 #pragma pack(pop)
 

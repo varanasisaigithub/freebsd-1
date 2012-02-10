@@ -312,7 +312,7 @@ HANDLE WaitEventCreate(void) {
 }
 
 void WaitEventClose(HANDLE hWait) {
-	WAITEVENT *waitEvent = (WAITEVENT *) hWait;
+	WAITEVENT *waitEvent = (WAITEVENT *)hWait;
 
 	/* Do we need to care about the waiting processes - if any */
 	mtx_destroy(&waitEvent->mtx);
@@ -320,7 +320,7 @@ void WaitEventClose(HANDLE hWait) {
 }
 
 void WaitEventSet(HANDLE hWait) {
-	WAITEVENT *waitEvent = (WAITEVENT *) hWait;
+	WAITEVENT *waitEvent = (WAITEVENT *)hWait;
 #if 1
 	mtx_lock(&waitEvent->mtx);
 	waitEvent->condition = 1;
@@ -333,7 +333,7 @@ void WaitEventSet(HANDLE hWait) {
 
 int WaitEventWait(HANDLE hWait) {
 	int ret = 0;
-	WAITEVENT *waitEvent = (WAITEVENT *) hWait;
+	WAITEVENT *waitEvent = (WAITEVENT *)hWait;
 
 #if 1
 	mtx_lock(&waitEvent->mtx);
@@ -353,7 +353,7 @@ int WaitEventWait(HANDLE hWait) {
 
 int WaitEventWaitEx(HANDLE hWait, UINT32 TimeoutInMs) {
 	int ret = 1;
-	WAITEVENT *waitEvent = (WAITEVENT *) hWait;
+	WAITEVENT *waitEvent = (WAITEVENT *)hWait;
 
 #if 1
 	mtx_lock(&waitEvent->mtx);
