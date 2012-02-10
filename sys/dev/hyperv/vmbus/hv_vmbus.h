@@ -86,3 +86,4 @@ extern void vmbus_child_driver_register(struct driver_context* driver_ctx);
 
 
 #endif  /* __HV_VMBUS_H__ */
+

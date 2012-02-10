@@ -60,10 +60,6 @@
 #define __HV_RNDIS_FILTER_H__
 
 
-// Fixme:  No longer used
-//#define __struct_bcount(x)
-
-
 #define RNDIS_HEADER_SIZE (sizeof(rndis_msg) - sizeof(rndis_msg_container))
 
 #define NDIS_PACKET_TYPE_DIRECTED	0x00000001
@@ -83,7 +79,7 @@
 /*
  * Externs
  */
-extern int hv_rndis_filter_init(netvsc_driver_object *Driver);
+extern int hv_rndis_filter_init(netvsc_driver_object *driver);
 
 
 #endif  /* __HV_RNDIS_FILTER_H__ */
