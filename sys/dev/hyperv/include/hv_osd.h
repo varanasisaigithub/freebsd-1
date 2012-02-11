@@ -27,6 +27,7 @@
 #ifndef __HV_OSD_H__
 #define __HV_OSD_H__
 
+//#include <sys/types.h>
 #include <sys/param.h>
 
 /* Fixme -- added these for FreeBSD build */
@@ -261,12 +262,12 @@ extern void SpinlockRelease(HANDLE hSpin);
 void* Physical2LogicalAddr(ULONG_PTR PhysAddr);
 
 #define GetPhysicalAddress Logical2PhysicalAddr
-ULONG_PTR Logical2PhysicalAddr(PVOID LogicalAddr);
+unsigned long Logical2PhysicalAddr(PVOID LogicalAddr);
 
-ULONG_PTR Virtual2Physical(PVOID VirtAddr);
+unsigned long Virtual2Physical(PVOID VirtAddr);
 
-void* PageMapVirtualAddress(unsigned long Pfn);
-void PageUnmapVirtualAddress(void* VirtAddr);
+void	*PageMapVirtualAddress(unsigned long Pfn);
+void	PageUnmapVirtualAddress(void* VirtAddr);
 
 
 extern HANDLE WorkQueueCreate(char* name);

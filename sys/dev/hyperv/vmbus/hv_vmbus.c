@@ -313,7 +313,7 @@ VmbusChildDeviceRemove(DEVICE_OBJECT* ChildDevice) {
  --*/
 static int
 VmbusOnDeviceAdd(DEVICE_OBJECT *dev, void *AdditionalInfo) {
-	UINT32 *irqvector = (UINT32*) AdditionalInfo;
+	uint32_t *irqvector = (uint32_t*) AdditionalInfo;
 	int ret = 0;
 	int cpuid;
 

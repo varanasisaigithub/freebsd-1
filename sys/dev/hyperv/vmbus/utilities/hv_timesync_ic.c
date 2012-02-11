@@ -90,7 +90,7 @@
 
 #include "hv_timesync_ic.h"
 
-static void adj_guesttime(winfiletime_t hosttime, UINT8 flags);
+static void adj_guesttime(winfiletime_t hosttime, uint8_t flags);
 
 void
 timesync_channel_cb(void *context) {
@@ -169,7 +169,7 @@ timesync_channel_cb(void *context) {
 #define NANO_SEC  1000000000L            /* 10^ 9 nanosecs = 1 sec */
 
 static void
-adj_guesttime(winfiletime_t hosttime, UINT8 flags) {
+adj_guesttime(winfiletime_t hosttime, uint8_t flags) {
 	struct timespec ts, host_ts;
 	int64_t tns, host_tns, terr, tmp, tsec;
 	int32_t err_sign;

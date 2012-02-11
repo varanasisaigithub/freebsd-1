@@ -454,7 +454,7 @@ hn_start_locked(struct ifnet *ifp)
 				    paddr & (PAGE_SIZE - 1);
 				packet->page_buffers[i].Length = m->m_len;
 				DPRINT_DBG(NETVSC_DRV, 
-				    "vaddr: %p, pfn: %llx, Off: %x, len: %x\n", 
+				    "vaddr: %lx, pfn: %lx, Off: %x, len: %d\n",
 				    paddr, packet->page_buffers[i].Pfn, 
 				    packet->page_buffers[i].Offset, 
 				    packet->page_buffers[i].Length);
@@ -467,7 +467,7 @@ hn_start_locked(struct ifnet *ifp)
 		packet->compl.send.on_send_completion =
 		    netvsc_xmit_completion;
 		packet->compl.send.send_completion_context = packet;
-		packet->compl.send.send_completion_tid = (ULONG_PTR)m_head;
+		packet->compl.send.send_completion_tid = (uint64_t)m_head;
 retry_send:
 		critical_enter();
 		ret = net_drv_obj->on_send(&device_ctx->device_obj, packet);

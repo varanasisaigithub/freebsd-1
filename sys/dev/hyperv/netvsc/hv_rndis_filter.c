@@ -405,7 +405,7 @@ hv_rf_receive_response(rndis_device *device, rndis_msg *response)
 			    response->msg_len);
 		} else {
 			DPRINT_ERR(NETVSC, "rndis response buffer overflow "
-			    "detected (size %u max %u)",
+			    "detected (size %u max %lu)",
 			    response->msg_len,
 			    sizeof(rndis_filter_packet));
 
@@ -549,7 +549,7 @@ hv_rf_on_receive(DEVICE_OBJECT *device, netvsc_packet *pkt)
 	if ((rndis_hdr->ndis_msg_type != REMOTE_NDIS_PACKET_MSG) &&
 		     (rndis_hdr->msg_len > sizeof(rndis_msg))) {
 		DPRINT_ERR(NETVSC, "incoming rndis message buffer overflow "
-		    "detected (got %u, max %u)...marking it an error!",
+		    "detected (got %u, max %lu)...marking it an error!",
 		    rndis_hdr->msg_len, sizeof(rndis_msg));
 	}
 
@@ -759,7 +759,7 @@ hv_rndis_filter_init(netvsc_driver_object *driver)
 {
 	DPRINT_ENTER(NETVSC);
 
-	DPRINT_DBG(NETVSC, "sizeof(rndis_filter_packet) == %d",
+	DPRINT_DBG(NETVSC, "sizeof(rndis_filter_packet) == %lu",
 	    sizeof(rndis_filter_packet));
 
 	driver->request_ext_size = sizeof(rndis_filter_packet);

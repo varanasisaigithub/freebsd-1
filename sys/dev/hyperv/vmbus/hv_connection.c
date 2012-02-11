@@ -128,7 +128,7 @@ VmbusConnect(void) {
 
 	gVmbusConnection.RecvInterruptPage = gVmbusConnection.InterruptPage;
 	gVmbusConnection.SendInterruptPage =
-		(void*) ((ULONG_PTR) gVmbusConnection.InterruptPage
+		(void*) ((unsigned long) gVmbusConnection.InterruptPage
 			+ (PAGE_SIZE >> 1));
 
 	// Set up the monitor notification facility. The 1st page for
@@ -156,7 +156,7 @@ VmbusConnect(void) {
 	msg->MonitorPage1 = GetPhysicalAddress(gVmbusConnection.MonitorPages);
 	msg->MonitorPage2 =
 		GetPhysicalAddress(
-			(void *) ((ULONG_PTR) gVmbusConnection.MonitorPages
+			(void *) ((unsigned long) gVmbusConnection.MonitorPages
 				+ PAGE_SIZE));
 
 	// Add to list before we send the request since we may receive the
@@ -295,7 +295,7 @@ VmbusDisconnect(void) {
 
  --*/
 VMBUS_CHANNEL*
-GetChannelFromRelId(UINT32 relId) {
+GetChannelFromRelId(uint32_t relId) {
 	VMBUS_CHANNEL* channel;
 	VMBUS_CHANNEL* foundChannel = NULL;
 	LIST_ENTRY* anchor;
@@ -327,7 +327,7 @@ GetChannelFromRelId(UINT32 relId) {
 static void
 VmbusProcessChannelEvent(void *context) {
 	VMBUS_CHANNEL* channel;
-	UINT32 relId = (UINT32) (ULONG_PTR) context;
+	uint32_t relId = (uint32_t) (unsigned long) context;
 
 	ASSERT(relId > 0);
 	/* Fixme:  Added for NetScaler */
@@ -368,7 +368,7 @@ VmbusOnEvents(void) {
 	int mycnt = 0;
 	/* Fixme:  not in lis21 code */
 	int xcnt = 0;
-	UINT32* recvInterruptPage = gVmbusConnection.RecvInterruptPage;
+	uint32_t* recvInterruptPage = gVmbusConnection.RecvInterruptPage;
 	//VMBUS_CHANNEL_MESSAGE* receiveMsg;
 
 	DPRINT_ENTER(VMBUS);
@@ -399,7 +399,7 @@ VmbusOnEvents(void) {
 							//QueueWorkItem(VmbusProcessEvent, (void*)relid);
 							//ret = WorkQueueQueueWorkItem(gVmbusConnection.workQueue, VmbusProcessChannelEvent, (void*)relid);
 							VmbusProcessChannelEvent(
-								(void*) (ULONG_PTR) relid);
+								(void*) (unsigned long) relid);
 						}
 					}
 				}
@@ -427,7 +427,7 @@ int VmbusPostMessage(void *buffer, SIZE_T bufferLen) {
 	int ret = 0;
 	HV_CONNECTION_ID connId;
 
-	connId.AsUINT32 = 0;
+	connId.Asuint32_t = 0;
 	connId.u.Id = VMBUS_MESSAGE_CONNECTION_ID;
 	ret = HvPostMessage(connId, 1, buffer, bufferLen);
 
@@ -444,13 +444,13 @@ int VmbusPostMessage(void *buffer, SIZE_T bufferLen) {
 
  --*/
 int
-VmbusSetEvent(UINT32 childRelId) {
+VmbusSetEvent(uint32_t childRelId) {
 	int ret = 0;
 
 	DPRINT_ENTER(VMBUS);
 
-	// Each UINT32 represents 32 channels
-	BitSet((UINT32*) gVmbusConnection.SendInterruptPage + (childRelId >> 5),
+	// Each uint32_t represents 32 channels
+	BitSet((uint32_t*) gVmbusConnection.SendInterruptPage + (childRelId >> 5),
 		childRelId & 31);
 	ret = HvSignalEvent();
 
@@ -480,8 +480,8 @@ static int VmbusChannelMode[MAX_NUM_CHANNELS_SUPPORTED >> 5];
 void
 VmbusSetChannelMode(void *context, int mode) {
 	VMBUS_CHANNEL *channel = (VMBUS_CHANNEL *) context;
-	UINT32 relId = channel->OfferMsg.ChildRelId;
-	UINT32 bit = (1U << (relId & 0x1f));
+	uint32_t relId = channel->OfferMsg.ChildRelId;
+	uint32_t bit = (1U << (relId & 0x1f));
 
 	if (mode) {
 		VmbusChannelMode[relId >> 5] |= bit;
@@ -495,8 +495,8 @@ VmbusSetChannelMode(void *context, int mode) {
 }
 
 int
-VmbusGetChannelMode(UINT32 relId) {
-	UINT32 bit = (1U << (relId & 0x1f));
+VmbusGetChannelMode(uint32_t relId) {
+	uint32_t bit = (1U << (relId & 0x1f));
 
 	if (relId > MAX_NUM_CHANNELS_SUPPORTED)
 		return 0;
@@ -506,7 +506,7 @@ VmbusGetChannelMode(UINT32 relId) {
 
 int
 CheckEvents(void) {
-	UINT32* recvInterruptPage = gVmbusConnection.RecvInterruptPage;
+	uint32_t* recvInterruptPage = gVmbusConnection.RecvInterruptPage;
 	int maxdword = MAX_NUM_CHANNELS_SUPPORTED >> 5;
 	int dword;
 

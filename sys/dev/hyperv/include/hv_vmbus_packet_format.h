@@ -64,8 +64,8 @@
 typedef struct {
     union {
         struct {
-            volatile UINT32  In;        // Offset in bytes from the ring base
-            volatile UINT32  Out;       // Offset in bytes from the ring base
+            volatile uint32_t  In;        // Offset in bytes from the ring base
+            volatile uint32_t  Out;       // Offset in bytes from the ring base
         } io;
         volatile LONGLONG    InOut;
     } rio;
@@ -75,7 +75,7 @@ typedef struct {
     // endpoint should not send any interrupts.
     //
 
-    volatile UINT32 InterruptMask;
+    volatile uint32_t InterruptMask;
 } VMRCB, *PVMRCB;
 
 typedef struct {
@@ -83,27 +83,27 @@ typedef struct {
         struct {
             VMRCB Control;
         } ctl;
-        UINT8 Reserved[PAGE_SIZE];
+        uint8_t Reserved[PAGE_SIZE];
     } rctl;
     
     //
     // Beginning of the ring data.  Note: It must be guaranteed that
     // this data does not share a page with the control structure.
     //
-    UINT8 Data[1];
+    uint8_t Data[1];
 } VMRING, *PVMRING;
 
 #pragma pack(push, 1)
 
 typedef struct {
-    UINT16 Type;
-    UINT16 DataOffset8;
-    UINT16 Length8;
-    UINT16 Flags;
-    UINT64 TransactionId;
+    uint16_t Type;
+    uint16_t DataOffset8;
+    uint16_t Length8;
+    uint16_t Flags;
+    uint64_t TransactionId;
 } VMPACKET_DESCRIPTOR, *PVMPACKET_DESCRIPTOR;
 
-typedef UINT32 PREVIOUS_PACKET_OFFSET, *PPREVIOUS_PACKET_OFFSET;
+typedef uint32_t PREVIOUS_PACKET_OFFSET, *PPREVIOUS_PACKET_OFFSET;
 
 typedef struct {
     PREVIOUS_PACKET_OFFSET  PreviousPacketStartOffset;
@@ -111,30 +111,30 @@ typedef struct {
 } VMPACKET_HEADER, *PVMPACKET_HEADER;
 
 typedef struct {
-    UINT32  ByteCount;
-    UINT32  ByteOffset;
+    uint32_t  ByteCount;
+    uint32_t  ByteOffset;
 } VMTRANSFER_PAGE_RANGE, *PVMTRANSFER_PAGE_RANGE;
 
 typedef struct VMTRANSFER_PAGE_PACKET_HEADER {
     VMPACKET_DESCRIPTOR     d;
-    UINT16                  TransferPageSetId;
+    uint16_t                  TransferPageSetId;
     BOOLEAN                 SenderOwnsSet;
-    UINT8                   Reserved;
-    UINT32                  RangeCount;
+    uint8_t                   Reserved;
+    uint32_t                  RangeCount;
     VMTRANSFER_PAGE_RANGE   Ranges[1];
 } VMTRANSFER_PAGE_PACKET_HEADER, *PVMTRANSFER_PAGE_PACKET_HEADER;
 
 typedef struct _VMGPADL_PACKET_HEADER {
     VMPACKET_DESCRIPTOR d;
-    UINT32  Gpadl;
-    UINT32  Reserved;
+    uint32_t  Gpadl;
+    uint32_t  Reserved;
 } VMGPADL_PACKET_HEADER, *PVMGPADL_PACKET_HEADER;
 
 typedef struct _VMADD_REMOVE_TRANSFER_PAGE_SET {
     VMPACKET_DESCRIPTOR d;
-    UINT32  Gpadl;
-    UINT16  TransferPageSetId;
-    UINT16  Reserved;
+    uint32_t  Gpadl;
+    uint16_t  TransferPageSetId;
+    uint16_t  Reserved;
 } VMADD_REMOVE_TRANSFER_PAGE_SET, *PVMADD_REMOVE_TRANSFER_PAGE_SET;
 
 #pragma pack(pop)
@@ -145,9 +145,9 @@ typedef struct _VMADD_REMOVE_TRANSFER_PAGE_SET {
 // 
 
 typedef struct _GPA_RANGE {
-    UINT32  ByteCount;
-    UINT32  ByteOffset;
-    UINT64  PfnArray[0];
+    uint32_t  ByteCount;
+    uint32_t  ByteOffset;
+    uint64_t  PfnArray[0];
 } GPA_RANGE, *PGPA_RANGE;
 
 
@@ -163,8 +163,8 @@ typedef struct _GPA_RANGE {
 
 typedef struct _VMESTABLISH_GPADL {
     VMPACKET_DESCRIPTOR d;
-    UINT32      Gpadl;
-    UINT32      RangeCount;
+    uint32_t      Gpadl;
+    uint32_t      RangeCount;
     GPA_RANGE   Range[1];
 } VMESTABLISH_GPADL, *PVMESTABLISH_GPADL;
 
@@ -176,8 +176,8 @@ typedef struct _VMESTABLISH_GPADL {
 
 typedef struct _VMTEARDOWN_GPADL {
     VMPACKET_DESCRIPTOR d;
-    UINT32  Gpadl;
-    UINT32  Reserved; // for alignment to a 8-byte boundary
+    uint32_t  Gpadl;
+    uint32_t  Reserved; // for alignment to a 8-byte boundary
 } VMTEARDOWN_GPADL, *PVMTEARDOWN_GPADL;
 
 
@@ -188,8 +188,8 @@ typedef struct _VMTEARDOWN_GPADL {
 
 typedef struct _VMDATA_GPA_DIRECT {
     VMPACKET_DESCRIPTOR d;
-    UINT32      Reserved;
-    UINT32      RangeCount;
+    uint32_t      Reserved;
+    uint32_t      RangeCount;
     GPA_RANGE   Range[1];
 } VMDATA_GPA_DIRECT, *PVMDATA_GPA_DIRECT;
 
@@ -200,9 +200,9 @@ typedef struct _VMDATA_GPA_DIRECT {
 
 typedef struct _VMADDITIONAL_DATA {
     VMPACKET_DESCRIPTOR d;
-    UINT64  TotalBytes;
-    UINT32  ByteOffset;
-    UINT32  ByteCount;
+    uint64_t  TotalBytes;
+    uint32_t  ByteOffset;
+    uint32_t  ByteCount;
     UCHAR   Data[1];
 } VMADDITIONAL_DATA, *PVMADDITIONAL_DATA;
 

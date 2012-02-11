@@ -89,14 +89,14 @@ typedef enum _HV_GUEST_OS_MICROSOFT_IDS {
 #define HV_X64_MSR_GUEST_OS_ID 0x40000000
 
 typedef union _HV_X64_MSR_GUEST_OS_ID_CONTENTS {
-    UINT64 AsUINT64;
+    uint64_t Asuint64_t;
     struct {
-        UINT64 BuildNumber    : 16;
-        UINT64 ServiceVersion : 8; // Service Pack, etc.
-        UINT64 MinorVersion   : 8;
-        UINT64 MajorVersion   : 8;
-        UINT64 OsId           : 8; // HV_GUEST_OS_MICROSOFT_IDS (If Vendor=MS)
-        UINT64 VendorId       : 16; // HV_GUEST_OS_VENDOR
+        uint64_t BuildNumber    : 16;
+        uint64_t ServiceVersion : 8; // Service Pack, etc.
+        uint64_t MinorVersion   : 8;
+        uint64_t MajorVersion   : 8;
+        uint64_t OsId           : 8; // HV_GUEST_OS_MICROSOFT_IDS (If Vendor=MS)
+        uint64_t VendorId       : 16; // HV_GUEST_OS_VENDOR
     };
 } HV_X64_MSR_GUEST_OS_ID_CONTENTS, *PHV_X64_MSR_GUEST_OS_ID_CONTENTS;
 
@@ -106,11 +106,11 @@ typedef union _HV_X64_MSR_GUEST_OS_ID_CONTENTS {
 #define HV_X64_MSR_HYPERCALL 0x40000001
 
 typedef union _HV_X64_MSR_HYPERCALL_CONTENTS {
-    UINT64 AsUINT64;
+    uint64_t Asuint64_t;
     struct {
-        UINT64 Enable               : 1;
-        UINT64 Reserved             : 11;
-        UINT64 GuestPhysicalAddress : 52;
+        uint64_t Enable               : 1;
+        uint64_t Reserved             : 11;
+        uint64_t GuestPhysicalAddress : 52;
     };
 } HV_X64_MSR_HYPERCALL_CONTENTS, *PHV_X64_MSR_HYPERCALL_CONTENTS;
 

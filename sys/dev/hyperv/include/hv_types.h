@@ -60,7 +60,7 @@
 #define __HV_TYPES_H__
 
 
-typedef UINT64 HV_GPA, *PHV_GPA;
+typedef uint64_t HV_GPA, *PHV_GPA;
 
 #define HV_X64_PAGE_SIZE (4096)
 #define HV_PAGE_SIZE HV_X64_PAGE_SIZE
