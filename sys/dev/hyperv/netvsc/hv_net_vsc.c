@@ -249,8 +249,8 @@ hv_net_vsc_initialize(DRIVER_OBJECT *drv)
 
 	DPRINT_ENTER(NETVSC);
 
-	DPRINT_DBG(NETVSC, "sizeof(netvsc_packet)=%d, sizeof(nvsp_msg)=%d, "
-	    "sizeof(VMTRANSFER_PAGE_PACKET_HEADER)=%d",
+	DPRINT_DBG(NETVSC, "sizeof(netvsc_packet)=%lu, sizeof(nvsp_msg)=%lu, "
+	    "sizeof(VMTRANSFER_PAGE_PACKET_HEADER)=%lu",
 	    sizeof(netvsc_packet), sizeof(nvsp_msg),
 	    sizeof(VMTRANSFER_PAGE_PACKET_HEADER));
 
@@ -1309,7 +1309,7 @@ hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt)
 		 */
 
 		DPRINT_DBG(NETVSC, "[%d] - (abs offset %u len %u) => "
-		    "(pfn %llx, offset %u, len %u)", 
+		    "(pfn %lx, offset %u, len %u)", 
 		    i, 
 		    vm_xfer_page_pkt->Ranges[i].ByteOffset,
 		    vm_xfer_page_pkt->Ranges[i].ByteCount,
@@ -1345,7 +1345,7 @@ hv_nv_send_receive_completion(DEVICE_OBJECT *device, uint64_t tid)
 	int retries = 0;
 	int ret = 0;
 
-	DPRINT_DBG(NETVSC, "Sending receive completion pkt - %llx", tid);
+	DPRINT_DBG(NETVSC, "Sending receive completion pkt - %lx", tid);
 	
 	rx_comp_msg.hdr.msg_type =
 	    nvsp_msg_1_type_send_rndis_pkt_complete;
@@ -1366,19 +1366,18 @@ retry_send_cmplt:
 		/* no more room... wait a bit and attempt to retry 3 times */
 		retries++;
 		DPRINT_ERR(NETVSC, "unable to send receive completion pkt"
-		    "(tid %llx)...retrying %d", tid, retries);
+		    "(tid %lx)...retrying %d", tid, retries);
 
 		if (retries < 4) {
 			DELAY(100);
 			goto retry_send_cmplt;
 		} else {
 			DPRINT_ERR(NETVSC, "unable to send receive completion "
-			    "pkt (tid %llx)...give up retrying", tid);
+			    "pkt (tid %lx)...give up retrying", tid);
 		}
 	} else {
 		DPRINT_ERR(NETVSC,
-		    "unable to send receive completion pkt - %llx",
-		    tid);
+		    "unable to send receive completion pkt - %lx", tid);
 	}
 }
 
@@ -1485,7 +1484,7 @@ hv_nv_on_channel_callback(void *context)
 
 		if (ret == 0) {
 			if (bytes_rxed > 0) {
-				DPRINT_DBG(NETVSC, "receive %d bytes, tid %llx",
+				DPRINT_DBG(NETVSC, "receive %d bytes, tid %lx",
 				    bytes_rxed, request_id);
 			 
 				desc = (VMPACKET_DESCRIPTOR *)buffer;
@@ -1502,7 +1501,7 @@ hv_nv_on_channel_callback(void *context)
 
 				default:
 					DPRINT_ERR(NETVSC, "unhandled packet"
-					   " type %d, tid %llx len %d\n",
+					   " type %d, tid %lx len %d\n",
 					   desc->Type, request_id, bytes_rxed);
 					break;
 				}

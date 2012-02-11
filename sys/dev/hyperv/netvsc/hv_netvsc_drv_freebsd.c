@@ -454,7 +454,7 @@ hn_start_locked(struct ifnet *ifp)
 				    paddr & (PAGE_SIZE - 1);
 				packet->page_buffers[i].Length = m->m_len;
 				DPRINT_DBG(NETVSC_DRV, 
-				    "vaddr: %p, pfn: %llx, Off: %x, len: %x\n", 
+				    "vaddr: %lx, pfn: %lx, Off: %x, len: %x\n", 
 				    paddr, packet->page_buffers[i].Pfn, 
 				    packet->page_buffers[i].Offset, 
 				    packet->page_buffers[i].Length);

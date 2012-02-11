@@ -31,7 +31,7 @@
 #include <sys/systm.h>
 
 //#define DEBUG
-#define LogMsg printf
+//#define LogMsg printf
 
 // WARNING: only 16 bits allowed for modules
 #define VMBUS				0x0001
@@ -174,9 +174,9 @@ endif
 }
 #endif
 
-//static inline int LogMsg(const char *fmt, ...) {
-//	return 0;
-//}
+static inline int LogMsg(const char *fmt, ...) {
+	return 0;
+}
 
 
 #endif  /* __HV_LOGGING_H__ */
