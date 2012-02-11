@@ -87,7 +87,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 #include <dev/hyperv/vmbus/hv_vmbus_var.h>
 #include <dev/hyperv/vmbus/hv_vmbus_api.h>
 #include <dev/hyperv/vmbus/hv_vmbus.h>
-#include <dev/hyperv/include/hv_net_vsc_api.h>
+#include <dev/hyperv/netvsc/hv_net_vsc_api.h>
 
 #define NETVSC_DEVNAME "hn"
 #define ETH_ALEN       6
