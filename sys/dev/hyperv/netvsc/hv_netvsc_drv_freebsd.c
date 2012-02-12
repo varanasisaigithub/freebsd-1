@@ -87,7 +87,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 #include <dev/hyperv/vmbus/hv_vmbus_var.h>
 #include <dev/hyperv/vmbus/hv_vmbus_api.h>
 #include <dev/hyperv/vmbus/hv_vmbus.h>
-#include <dev/hyperv/include/hv_net_vsc_api.h>
+#include <dev/hyperv/netvsc/hv_net_vsc_api.h>
 
 #define NETVSC_DEVNAME "hn"
 #define ETH_ALEN       6
@@ -454,7 +454,7 @@ hn_start_locked(struct ifnet *ifp)
 				    paddr & (PAGE_SIZE - 1);
 				packet->page_buffers[i].Length = m->m_len;
 				DPRINT_DBG(NETVSC_DRV, 
-				    "vaddr: %lx, pfn: %lx, Off: %x, len: %d\n",
+				    "vaddr: %lx, pfn: %lx, Off: %x, len: %x\n", 
 				    paddr, packet->page_buffers[i].Pfn, 
 				    packet->page_buffers[i].Offset, 
 				    packet->page_buffers[i].Length);
@@ -467,7 +467,7 @@ hn_start_locked(struct ifnet *ifp)
 		packet->compl.send.on_send_completion =
 		    netvsc_xmit_completion;
 		packet->compl.send.send_completion_context = packet;
-		packet->compl.send.send_completion_tid = (uint64_t)m_head;
+		packet->compl.send.send_completion_tid = (ULONG_PTR)m_head;
 retry_send:
 		critical_enter();
 		ret = net_drv_obj->on_send(&device_ctx->device_obj, packet);

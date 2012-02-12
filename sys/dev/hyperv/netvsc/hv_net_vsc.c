@@ -69,13 +69,13 @@
 #include <dev/hyperv/include/hv_list.h>
 #include <dev/hyperv/include/hv_vmbus_channel_interface.h>
 #include <dev/hyperv/include/hv_vmbus_packet_format.h>
-#include <dev/hyperv/include/hv_nvsp_protocol.h>
+#include <dev/hyperv/netvsc/hv_nvsp_protocol.h>
 #include <dev/hyperv/vmbus/hv_vmbus_var.h>
-#include <dev/hyperv/include/hv_net_vsc_api.h>
+#include <dev/hyperv/netvsc/hv_net_vsc_api.h>
 #include <dev/hyperv/vmbus/hv_connection.h>
-#include <dev/hyperv/include/hv_net_vsc.h>
-#include <dev/hyperv/include/hv_rndis_filter.h>
-#include <dev/hyperv/include/hv_rndis.h>
+#include <dev/hyperv/netvsc/hv_net_vsc.h>
+#include <dev/hyperv/netvsc/hv_rndis_filter.h>
+#include <dev/hyperv/netvsc/hv_rndis.h>
 
 /*
  * Globals
@@ -1309,7 +1309,7 @@ hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt)
 		 */
 
 		DPRINT_DBG(NETVSC, "[%d] - (abs offset %u len %u) => "
-		    "(pfn %lx, offset %d, len %d)",
+		    "(pfn %lx, offset %u, len %u)", 
 		    i, 
 		    vm_xfer_page_pkt->Ranges[i].ByteOffset,
 		    vm_xfer_page_pkt->Ranges[i].ByteCount,
@@ -1377,8 +1377,7 @@ retry_send_cmplt:
 		}
 	} else {
 		DPRINT_ERR(NETVSC,
-		    "unable to send receive completion pkt - %lx",
-		    tid);
+		    "unable to send receive completion pkt - %lx", tid);
 	}
 }
 
@@ -1485,7 +1484,7 @@ hv_nv_on_channel_callback(void *context)
 
 		if (ret == 0) {
 			if (bytes_rxed > 0) {
-				DPRINT_DBG(NETVSC, "receive %u bytes, tid %lx",
+				DPRINT_DBG(NETVSC, "receive %d bytes, tid %lx",
 				    bytes_rxed, request_id);
 			 
 				desc = (VMPACKET_DESCRIPTOR *)buffer;
@@ -1502,7 +1501,7 @@ hv_nv_on_channel_callback(void *context)
 
 				default:
 					DPRINT_ERR(NETVSC, "unhandled packet"
-					   " type %u, tid %lx len %u\n",
+					   " type %d, tid %lx len %d\n",
 					   desc->Type, request_id, bytes_rxed);
 					break;
 				}
