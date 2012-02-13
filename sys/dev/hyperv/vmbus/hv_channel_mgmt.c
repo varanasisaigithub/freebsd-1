@@ -616,8 +616,8 @@ VmbusChannelOnOffer(PVMBUS_CHANNEL_MESSAGE_HEADER hdr) {
 
 	memcpy(&newChannel->OfferMsg, offer,
 		sizeof(VMBUS_CHANNEL_OFFER_CHANNEL));
-	newChannel->MonitorGroup = (UINT8) offer->MonitorId / 32;
-	newChannel->MonitorBit = (UINT8) offer->MonitorId % 32;
+	newChannel->MonitorGroup = (uint8_t) offer->MonitorId / 32;
+	newChannel->MonitorBit = (uint8_t) offer->MonitorId % 32;
 
 	// TODO: Make sure the offer comes from our parent partition
 	WorkQueueQueueWorkItem(newChannel->ControlWQ, VmbusChannelProcessOffer,

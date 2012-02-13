@@ -69,7 +69,7 @@ timesync_probe(device_t dev) {
 		rtn_value = 0;
 	}
 
-	return rtn_value;
+	return (rtn_value);
 }
 
 static int
@@ -86,17 +86,17 @@ timesync_attach(device_t dev) {
 	if (stat == 0)
 		DPRINT_INFO(VMBUS, "Opened Timesync channel successfully");
 
-	return 0;
+	return (0);
 }
 
 static int
 timesync_detach(device_t dev) {
-	return 0;
+	return (0);
 }
 
 static int
 timesync_shutdown(device_t dev) {
-	return 0;
+	return (0);
 }
 
 /************************************************************************************/

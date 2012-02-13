@@ -88,14 +88,14 @@ typedef struct _VMBUS_CHANNEL {
 
 	VMBUS_CHANNEL_OFFER_CHANNEL OfferMsg;
 	// These are based on the OfferMsg.MonitorId. Save it here for easy access.
-	UINT8 MonitorGroup;
-	UINT8 MonitorBit;
+	uint8_t MonitorGroup;
+	uint8_t MonitorBit;
 
-	UINT32 RingBufferGpadlHandle;
+	uint32_t RingBufferGpadlHandle;
 
 	// Allocated memory for ring buffer
 	VOID* RingBufferPages;
-	UINT32 RingBufferPageCount;
+	uint32_t RingBufferPageCount;
 	RING_BUFFER_INFO Outbound;	// send to parent
 	RING_BUFFER_INFO Inbound;	// receive from parent
 	struct mtx *InboundLock;
@@ -110,17 +110,17 @@ typedef struct _VMBUS_CHANNEL {
 } VMBUS_CHANNEL;
 
 typedef struct _VMBUS_CHANNEL_DEBUG_INFO {
-	UINT32 RelId;
+	uint32_t RelId;
 	VMBUS_CHANNEL_STATE State;
 	GUID InterfaceType;
 	GUID InterfaceInstance;
-	UINT32 MonitorId;
-	UINT32 ServerMonitorPending;
-	UINT32 ServerMonitorLatency;
-	UINT32 ServerMonitorConnectionId;
-	UINT32 ClientMonitorPending;
-	UINT32 ClientMonitorLatency;
-	UINT32 ClientMonitorConnectionId;
+	uint32_t MonitorId;
+	uint32_t ServerMonitorPending;
+	uint32_t ServerMonitorLatency;
+	uint32_t ServerMonitorConnectionId;
+	uint32_t ClientMonitorPending;
+	uint32_t ClientMonitorLatency;
+	uint32_t ClientMonitorConnectionId;
 
 	RING_BUFFER_DEBUG_INFO Inbound;
 	RING_BUFFER_DEBUG_INFO Outbound;
@@ -149,7 +149,7 @@ typedef struct _VMBUS_CHANNEL_MSGINFO {
 
 	VMBUS_CHANNEL_MESSAGE_RESPONSE Response;
 
-	UINT32 MessageSize;
+	uint32_t MessageSize;
 	// The channel message that goes out on the "wire".
 	// It will contain at minimum the VMBUS_CHANNEL_MESSAGE_HEADER header
 	unsigned char Msg[0];

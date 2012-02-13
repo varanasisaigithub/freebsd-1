@@ -261,7 +261,7 @@ HANDLE TimerCreate(PFN_TIMER_CALLBACK pfnTimerCB, void *context) {
 	return (t);
 }
 
-void TimerStart(HANDLE hTimer, UINT32 expirationInUs) {
+void TimerStart(HANDLE hTimer, uint32_t expirationInUs) {
 	TIMER *t = (TIMER *) hTimer;
 
 	t->handle = timeout(TimerCallback, t, expirationInUs / 1000);
@@ -351,7 +351,7 @@ int WaitEventWait(HANDLE hWait) {
 	return (ret);
 }
 
-int WaitEventWaitEx(HANDLE hWait, UINT32 TimeoutInMs) {
+int WaitEventWaitEx(HANDLE hWait, uint32_t TimeoutInMs) {
 	int ret = 1;
 	WAITEVENT *waitEvent = (WAITEVENT *)hWait;
 
@@ -432,16 +432,16 @@ void *Physical2LogicalAddr(ULONG_PTR PhysAddr) {
 	return (NULL);
 }
 
-ULONG_PTR Logical2PhysicalAddr(PVOID LogicalAddr) {
-	ULONG_PTR ret;
+unsigned long Logical2PhysicalAddr(PVOID LogicalAddr) {
+	unsigned long ret;
 
 	ret = (vtophys(LogicalAddr) | ((vm_offset_t) LogicalAddr & PAGE_MASK));
 
 	return (ret);
 }
 
-ULONG_PTR Virtual2Physical(PVOID VirtAddr) {
-	ULONG_PTR ret;
+unsigned long Virtual2Physical(PVOID VirtAddr) {
+	unsigned long ret;
 
 	ret = vtophys(VirtAddr);
 

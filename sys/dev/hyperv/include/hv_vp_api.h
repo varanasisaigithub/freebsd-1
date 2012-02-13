@@ -63,7 +63,7 @@
 //
 // Virtual Processor Indices
 //
-typedef UINT32 HV_VP_INDEX, *PHV_VP_INDEX;
+typedef uint32_t HV_VP_INDEX, *PHV_VP_INDEX;
 
 //
 // The below CPUID leaves are present if VersionAndFeatures.HypervisorPresent
