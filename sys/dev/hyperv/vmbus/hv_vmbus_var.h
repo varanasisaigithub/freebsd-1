@@ -68,7 +68,7 @@ typedef struct {
 	BOUND Inbound, Outbound;
 } DEVICE_INFO;
 
-typedef void (*VMBUS_CHANNEL_CALLBACK)(PVOID context);
+typedef void (*VMBUS_CHANNEL_CALLBACK)(void *context);
 
 struct _DRIVER_OBJECT;
 typedef struct {
@@ -81,19 +81,18 @@ typedef struct {
 } DEVICE_OBJECT;
 
 typedef struct { //ChannelInterface.c : 160
-	int (*Open)(DEVICE_OBJECT*, uint32_t, uint32_t, PVOID, uint32_t,
-		VMBUS_CHANNEL_CALLBACK, PVOID);
-
+	int (*Open)(DEVICE_OBJECT*, uint32_t, uint32_t, void *, uint32_t,
+		VMBUS_CHANNEL_CALLBACK, void *);
 	void (*Close)(DEVICE_OBJECT *); //42
-	int (*SendPacket)(DEVICE_OBJECT *, PVOID, uint32_t, uint64_t, uint32_t,
+	int (*SendPacket)(DEVICE_OBJECT *, void *, uint32_t, uint64_t, uint32_t,
 		uint32_t);        //50
 	int (*SendPacketPageBuffer)(DEVICE_OBJECT *, PAGE_BUFFER *, uint32_t,
-		PVOID, uint32_t, uint64_t);
+		void *, uint32_t, uint64_t);
 	int (*SendPacketMultiPageBuffer)(DEVICE_OBJECT *, MULTIPAGE_BUFFER *,
-		PVOID, uint32_t, uint64_t);
-	int (*RecvPacket)(DEVICE_OBJECT *, PVOID, uint32_t, uint32_t*, uint64_t*);
-	int (*RecvPacketRaw)(DEVICE_OBJECT *, PVOID, uint32_t, uint32_t*, uint64_t*);
-	int (*EstablishGpadl)(DEVICE_OBJECT *, PVOID, uint32_t, uint32_t*);
+		void *, uint32_t, uint64_t);
+	int (*RecvPacket)(DEVICE_OBJECT *, void *, uint32_t, uint32_t*, uint64_t*);
+	int (*RecvPacketRaw)(DEVICE_OBJECT *, void *, uint32_t, uint32_t*, uint64_t*);
+	int (*EstablishGpadl)(DEVICE_OBJECT *, void *, uint32_t, uint32_t*);
 	int (*TeardownGpadl)(DEVICE_OBJECT *, uint32_t);
 	void (*GetInfo)(DEVICE_OBJECT *, DEVICE_INFO *);
 } VMBUS_CHANNEL_INTERFACE;
@@ -105,7 +104,8 @@ typedef struct _DRIVER_OBJECT {        //BlkVsc.c : 56
 	int	(*OnDeviceRemove)(DEVICE_OBJECT *);
 	char 	**(*OnGetDeviceIds)(void);
 	void 	(*OnCleanup)(struct _DRIVER_OBJECT *);
-	VMBUS_CHANNEL_INTERFACE VmbusChannelInterface;
+	// replace indirect calls with direct ones
+	//VMBUS_CHANNEL_INTERFACE VmbusChannelInterface;
 } DRIVER_OBJECT;
 
 #define PDEVICE_OBJECT DEVICE_OBJECT*
@@ -114,7 +114,7 @@ typedef struct _DRIVER_OBJECT {        //BlkVsc.c : 56
 extern int hv_storvsc_init(PDRIVER_OBJECT);
 extern int hv_blkvsc_init(PDRIVER_OBJECT);
 
-extern VOID shutdown_onchannelcallback(PVOID); // drivers/closed/vmbus/ChannelMgmt.c
+extern void shutdown_onchannelcallback(void *); // drivers/closed/vmbus/ChannelMgmt.c
 
 typedef struct _XFERPAGE {
 	DLIST_ENTRY ListEntry;

@@ -244,11 +244,11 @@ static int hv_storvsc_channel_init(DEVICE_OBJECT *device)
 	DPRINT_INFO(STORVSC, "BEGIN_INITIALIZATION_OPERATION...");
 
 	ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-										vstor_packet, 
-										sizeof(struct vstor_packet), 
-										(uint64_t)request,
-										VmbusPacketTypeDataInBand, 
-										VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+					vstor_packet,
+					sizeof(struct vstor_packet),
+					(uint64_t)request,
+					VmbusPacketTypeDataInBand,
+					VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	if ( ret != 0)
 	{
 		DPRINT_ERR(STORVSC, "unable to send BEGIN_INITIALIZATION_OPERATION");
@@ -276,11 +276,11 @@ static int hv_storvsc_channel_init(DEVICE_OBJECT *device)
     FILL_VMSTOR_REVISION(vstor_packet->version.revision);
 
 	ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-															vstor_packet, 
-															sizeof(struct vstor_packet), 
-															(uint64_t)request,
-															VmbusPacketTypeDataInBand, 
-															VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+					vstor_packet,
+					sizeof(struct vstor_packet),
+					(uint64_t)request,
+					VmbusPacketTypeDataInBand,
+					VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	if ( ret != 0)
 	{
 		DPRINT_ERR(STORVSC, "unable to send BEGIN_INITIALIZATION_OPERATION");
@@ -306,11 +306,11 @@ static int hv_storvsc_channel_init(DEVICE_OBJECT *device)
 	vstor_packet->flags = REQUEST_COMPLETION_FLAG;
 
 	ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-															vstor_packet, 
-															sizeof(struct vstor_packet), 
-															(uint64_t)request,
-															VmbusPacketTypeDataInBand, 
-															VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+						vstor_packet,
+						sizeof(struct vstor_packet),
+						(uint64_t)request,
+						VmbusPacketTypeDataInBand,
+						VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	if ( ret != 0)
 	{
@@ -343,11 +343,11 @@ static int hv_storvsc_channel_init(DEVICE_OBJECT *device)
 	vstor_packet->flags = REQUEST_COMPLETION_FLAG;
 
 	ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-															vstor_packet, 
-															sizeof(struct vstor_packet), 
-															(uint64_t)request,
-															VmbusPacketTypeDataInBand, 
-															VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+						vstor_packet,
+						sizeof(struct vstor_packet),
+						(uint64_t)request,
+						VmbusPacketTypeDataInBand,
+						VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	if ( ret != 0)
 	{
@@ -495,11 +495,11 @@ hv_storvsc_host_reset(DEVICE_OBJECT *device)
     vstor_packet->flags = REQUEST_COMPLETION_FLAG;
 
 	ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-															vstor_packet, 
-															sizeof(struct vstor_packet),
-															(uint64_t)&stordev_ctx->reset_req,
-															VmbusPacketTypeDataInBand, 
-															VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+						vstor_packet,
+						sizeof(struct vstor_packet),
+						(uint64_t)&stordev_ctx->reset_req,
+						VmbusPacketTypeDataInBand,
+						VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	if (ret != 0)
 	{
 		DPRINT_ERR(STORVSC, "Unable to send reset packet %p ret %d", vstor_packet, ret);
@@ -608,11 +608,11 @@ hv_storvsc_io_request(DEVICE_OBJECT *device,
 	else
 	{
 		ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-															vstor_packet, 
-															sizeof(struct vstor_packet),
-															(uint64_t)requestExtension,
-															VmbusPacketTypeDataInBand, 
-															VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+						vstor_packet,
+						sizeof(struct vstor_packet),
+						(uint64_t)requestExtension,
+						VmbusPacketTypeDataInBand,
+						VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	}
 
 	if (ret != 0)
@@ -745,10 +745,10 @@ hv_storvsc_on_channel_callback(void *context)
 
 	do {
 		ret = device->Driver->VmbusChannelInterface.RecvPacket(device,
-																packet, 
-																roundup2(sizeof(struct vstor_packet), 8), 
-																&bytes_recvd, 
-																&request_id);
+					packet,
+					roundup2(sizeof(struct vstor_packet), 8),
+					&bytes_recvd,
+					&request_id);
 		if (ret == 0 && bytes_recvd > 0) {
 			DPRINT_DBG(STORVSC, "receive %d bytes - tid %lx",
 					   bytes_recvd, request_id);

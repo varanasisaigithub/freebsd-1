@@ -81,7 +81,7 @@ typedef DLIST_ENTRY *PLIST_ENTRY;
 
 
 /*
- *  VOID
+ *  void
  *  InitializeListHead(
  *      PLIST_ENTRY ListHead
  *      );
@@ -169,7 +169,7 @@ typedef DLIST_ENTRY *PLIST_ENTRY;
 
 
 /*
- *  VOID
+ *  void
  *  RemoveEntryList(
  *      PLIST_ENTRY Entry
  *      );
@@ -185,7 +185,7 @@ typedef DLIST_ENTRY *PLIST_ENTRY;
 
 
 /*
- *  VOID
+ *  void
  *  AttachList(
  *      PLIST_ENTRY ListHead,
  *      PLIST_ENTRY ListEntry
@@ -205,7 +205,7 @@ typedef DLIST_ENTRY *PLIST_ENTRY;
 
 
 /*
- *  VOID
+ *  void
  *  InsertTailList(
  *      PLIST_ENTRY ListHead,
  *      PLIST_ENTRY Entry
@@ -225,7 +225,7 @@ typedef DLIST_ENTRY *PLIST_ENTRY;
 
 
 /*
- *  VOID
+ *  void
  *  InsertHeadList(
  *      PLIST_ENTRY ListHead,
  *      PLIST_ENTRY Entry
@@ -244,7 +244,7 @@ typedef DLIST_ENTRY *PLIST_ENTRY;
 
 
 /*
- *  VOID
+ *  void
  *  IterateListEntries(
  *      PLIST_ENTRY anchor,
  *      PLIST_ENTRY index,
@@ -282,7 +282,7 @@ typedef DLIST_ENTRY *PLIST_ENTRY;
 
 
 /*
- *  VOID
+ *  void
  *  PushEntryList(
  *      PSINGLE_LIST_ENTRY ListHead,
  *		PSINGLE_LIST_ENTRY Entry
@@ -297,8 +297,8 @@ typedef DLIST_ENTRY *PLIST_ENTRY;
 
 #ifndef CONTAINING_RECORD
 #define CONTAINING_RECORD(address, type, field) ((type *)( \
-                                                  (PCHAR)(address) - \
-                                                  (PCHAR)(&((type *)0)->field)))
+                                                  (uint8_t *)(address) - \
+                                                  (uint8_t *)(&((type *)0)->field)))
 #endif /* CONTAINING_RECORD */
 
 #endif  /* __HV_LIST_H__ */

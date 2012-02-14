@@ -206,9 +206,9 @@ SetNextReadLocation(RING_BUFFER_INFO* RingInfo,
  Get the start of the ring buffer
 
  --*/
-static inline PVOID
+static inline void *
 GetRingBuffer(RING_BUFFER_INFO* RingInfo) {
-	return (PVOID) RingInfo->RingBuffer->Buffer;
+	return (void *) RingInfo->RingBuffer->Buffer;
 }
 
 /*++
@@ -328,7 +328,7 @@ GetRingBufferInterruptMask(RING_BUFFER_INFO *rbi) {
 
  --*/
 int
-RingBufferInit(RING_BUFFER_INFO *RingInfo, VOID *Buffer, uint32_t BufferLen) {
+RingBufferInit(RING_BUFFER_INFO *RingInfo, void *Buffer, uint32_t BufferLen) {
 	ASSERT(sizeof(RING_BUFFER) == PAGE_SIZE);
 
 	memset(RingInfo, 0, sizeof(RING_BUFFER_INFO));
@@ -563,12 +563,12 @@ CopyToRingBuffer(RING_BUFFER_INFO *RingInfo, uint32_t StartWriteOffset,
 
 		fragLen = ringBufferSize - StartWriteOffset;
 		/* Fixme:  Cast needed due to void pointer */
-		memcpy((UCHAR *)ringBuffer + StartWriteOffset, Src, fragLen);
+		memcpy((uint8_t *)ringBuffer + StartWriteOffset, Src, fragLen);
 		/* Fixme:  Cast needed due to void pointer */
-		memcpy(ringBuffer, (UCHAR *)Src + fragLen, SrcLen - fragLen);
+		memcpy(ringBuffer, (uint8_t *)Src + fragLen, SrcLen - fragLen);
 	} else {
 		/* Fixme:  Cast needed due to void pointer */
-		memcpy((unsigned char *)ringBuffer + StartWriteOffset, Src,
+		memcpy((uint8_t *)ringBuffer + StartWriteOffset, Src,
 			SrcLen);
 	}
 
@@ -604,12 +604,12 @@ CopyFromRingBuffer(RING_BUFFER_INFO *RingInfo, void *Dest,
 		fragLen = ringBufferSize - StartReadOffset;
 
 		/* Fixme:  Cast needed due to void pointer */
-		memcpy(Dest, (UCHAR *)ringBuffer + StartReadOffset, fragLen);
+		memcpy(Dest, (uint8_t *)ringBuffer + StartReadOffset, fragLen);
 		/* Fixme:  Cast needed due to void pointer */
-		memcpy((UCHAR *)Dest + fragLen, ringBuffer, DestLen - fragLen);
+		memcpy((uint8_t *)Dest + fragLen, ringBuffer, DestLen - fragLen);
 	} else {
 		/* Fixme:  Cast needed due to void pointer */
-		memcpy(Dest, (UCHAR *)ringBuffer + StartReadOffset, DestLen);
+		memcpy(Dest, (uint8_t *)ringBuffer + StartReadOffset, DestLen);
 	}
 
 	StartReadOffset += DestLen;

@@ -175,7 +175,7 @@ HvCleanup( void);
 
 extern HV_STATUS
 HvPostMessage(HV_CONNECTION_ID connectionId, HV_MESSAGE_TYPE messageType,
-	      void *payload, SIZE_T payloadSize);
+	      void *payload, size_t payloadSize);
 
 extern HV_STATUS
 HvSignalEvent( void);

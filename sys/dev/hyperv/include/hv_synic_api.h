@@ -445,7 +445,7 @@ typedef struct _HV_MONITOR_PAGE {
     HV_MONITOR_TRIGGER_GROUP TriggerGroup[4];
     uint64_t                   RsvdZ2[3];
 
-    INT32                    NextCheckTime[4][32];
+    int32_t                    NextCheckTime[4][32];
 
     uint16_t                   Latency[4][32];
     uint64_t                   RsvdZ3[32];

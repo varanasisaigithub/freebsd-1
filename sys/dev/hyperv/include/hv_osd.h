@@ -102,53 +102,53 @@ typedef struct _DLIST_ENTRY {
 /*
  * Unsigned types
  */
-typedef unsigned char		UINT8;
-typedef unsigned short		UINT16;
-typedef unsigned int		UINT32;
-#ifdef __x86_64__
-typedef unsigned long		UINT64;
-#else
-typedef unsigned long long	UINT64;
-#endif
-
-typedef unsigned long long	ULONGLONG;
-typedef unsigned int		ULONG;
-typedef unsigned short		USHORT;
-typedef unsigned char		UCHAR;
+//typedef unsigned char		UINT8;
+//typedef unsigned short		UINT16;
+//typedef unsigned int		UINT32;
+//#ifdef __x86_64__
+//typedef unsigned long		UINT64;
+//#else
+//typedef unsigned long long	UINT64;
+//#endif
+//
+//typedef unsigned long long	ULONGLONG;
+//typedef unsigned int		ULONG;
+//typedef unsigned short		USHORT;
+//typedef unsigned char		UCHAR;
 
 /*
  * Signed types
  */
-typedef char			INT8;
-typedef short			INT16;
-typedef int			INT32;
-#ifdef __x86_64__
-typedef long			INT64;
-#else
-typedef long long		INT64;
-#endif
-
-typedef int			LONG;
-typedef char			CHAR;
-typedef long long		LONGLONG;
+//typedef char			INT8;
+//typedef short			INT16;
+//typedef int			INT32;
+//#ifdef __x86_64__
+//typedef long			INT64;
+//#else
+//typedef long long		INT64;
+//#endif
+//
+//typedef int			LONG;
+//typedef char			CHAR;
+//typedef long long		LONGLONG;
 
 /*
  * Other types
  */
-typedef unsigned long		SIZE_T;
-typedef void			VOID;
-//typedef unsigned char		GUID[16];
-typedef void*			PVOID;
+//typedef unsigned long		SIZE_T;
+//typedef void			VOID;
+////typedef unsigned char		GUID[16];
+//typedef void*			PVOID;
 typedef unsigned char		BOOL;
 // Fixme:  customarily unsigned int
 typedef unsigned char		bool;
 typedef unsigned char		BOOLEAN;
 typedef void*			HANDLE;
-typedef UINT32			DWORD;
-typedef char*			PCHAR;
-typedef unsigned char		BYTE;
+//typedef UINT32		DWORD;
+//typedef char*			PCHAR;
+//typedef unsigned char		BYTE;
 
-typedef unsigned long		ULONG_PTR;
+//typedef unsigned long		ULONG_PTR;
 
 typedef struct {
 	unsigned char		Data[16];
@@ -157,23 +157,23 @@ typedef struct {
 typedef void (*PFN_WORKITEM_CALLBACK)(void* context);
 typedef void (*PFN_TIMER_CALLBACK)(void* context);
 
-typedef UINT64 winfiletime_t; /* Windows FILETIME type */
+typedef uint64_t winfiletime_t; /* Windows FILETIME type */
 
 
 #ifdef __x86_64__
 
 #define RDMSR(reg, v) {                                                        \
-    UINT32 h, l;                                                                 \
+    uint32_t h, l;                                                                 \
      __asm__ __volatile__("rdmsr"                                                               \
     : "=a" (l), "=d" (h)                                                       \
     : "c" (reg));                                                              \
-    v = (((UINT64)h) << 32) | l;                                                         \
+    v = (((uint64_t)h) << 32) | l;                                                         \
 }
 
 #define WRMSR(reg, v) {                                                        \
-    UINT32 h, l;                                                               \
-    l = (UINT32)(((UINT64)(v)) & 0xFFFFFFFF);                                  \
-    h = (UINT32)((((UINT64)(v)) >> 32) & 0xFFFFFFFF);                          \
+		uint32_t h, l;                                                               \
+    l = (uint32_t)(((uint64_t)(v)) & 0xFFFFFFFF);                                  \
+    h = (uint32_t)((((uint64_t)(v)) >> 32) & 0xFFFFFFFF);                          \
      __asm__ __volatile__("wrmsr"                                              \
     : /* no outputs */                                                         \
     : "c" (reg), "a" (l), "d" (h));                                            \
@@ -189,7 +189,7 @@ typedef UINT64 winfiletime_t; /* Windows FILETIME type */
 #define WRMSR(reg, v) 			                                               \
      __asm__ __volatile__("wrmsr" 	                                           \
     : /* no outputs */ 				                                           \
-    : "c" (reg), "A" ((UINT64)v))
+    : "c" (reg), "A" ((uint64_t)v))
 
 #endif
 
@@ -234,13 +234,13 @@ extern void* MemAlloc(unsigned int size);
 extern void* MemAllocZeroed(unsigned int size);
 extern void* MemAllocAtomic(unsigned int size);
 extern void MemFree(void* buf);
-extern void MemoryFence(VOID);
+extern void MemoryFence(void);
 
 extern HANDLE TimerCreate(PFN_TIMER_CALLBACK pfnTimerCB, void* context);
 extern void TimerClose(HANDLE hTimer);
 extern int  TimerStop(HANDLE hTimer);
-extern void TimerStart(HANDLE hTimer, UINT32 expirationInUs);
-extern SIZE_T GetTickCount(void);
+extern void TimerStart(HANDLE hTimer, uint32_t expirationInUs);
+extern size_t GetTickCount(void);
 
 //extern void adj_guesttime(winfiletime_t hosttime, UINT8 flags);
 
@@ -250,7 +250,7 @@ extern void WaitEventSet(HANDLE hWait);
 extern int  WaitEventWait(HANDLE hWait);
 
 // If >0, hWait got signaled. If ==0, timeout. If < 0, error
-extern int  WaitEventWaitEx(HANDLE hWait, UINT32 TimeoutInMs);
+extern int  WaitEventWaitEx(HANDLE hWait, uint32_t TimeoutInMs);
 
 extern HANDLE SpinlockCreate(void);
 extern void SpinlockClose(HANDLE hSpin);
@@ -259,15 +259,15 @@ extern void SpinlockRelease(HANDLE hSpin);
 
 
 #define GetVirtualAddress Physical2LogicalAddr
-void* Physical2LogicalAddr(ULONG_PTR PhysAddr);
+void* Physical2LogicalAddr(unsigned long PhysAddr);
 
 #define GetPhysicalAddress Logical2PhysicalAddr
-unsigned long Logical2PhysicalAddr(PVOID LogicalAddr);
+unsigned long Logical2PhysicalAddr(void *LogicalAddr);
 
-unsigned long Virtual2Physical(PVOID VirtAddr);
+unsigned long Virtual2Physical(void *VirtAddr);
 
 void	*PageMapVirtualAddress(unsigned long Pfn);
-void	PageUnmapVirtualAddress(void* VirtAddr);
+void	PageUnmapVirtualAddress(void *VirtAddr);
 
 
 extern HANDLE WorkQueueCreate(char* name);

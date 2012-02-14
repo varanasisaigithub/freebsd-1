@@ -186,7 +186,7 @@ typedef struct _VMBUS_CHANNEL_OPEN_CHANNEL
     //
     // User-specific data to be passed along to the server endpoint.
     //
-    UCHAR           UserData[MAX_USER_DEFINED_BYTES];
+    uint8_t           UserData[MAX_USER_DEFINED_BYTES];
 
 } VMBUS_CHANNEL_OPEN_CHANNEL, *PVMBUS_CHANNEL_OPEN_CHANNEL;
 

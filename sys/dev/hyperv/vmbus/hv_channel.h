@@ -93,29 +93,29 @@ typedef struct _VMBUS_CHANNEL_PACKET_MULITPAGE_BUFFER {
 
 int
 hv_vmbus_channel_open(VMBUS_CHANNEL *Channel, uint32_t SendRingBufferSize,
-	uint32_t RecvRingBufferSize, PVOID UserData, uint32_t UserDataLen,
-	PFN_CHANNEL_CALLBACK pfnOnChannelCallback, PVOID Context);
+	uint32_t RecvRingBufferSize, void *UserData, uint32_t UserDataLen,
+	PFN_CHANNEL_CALLBACK pfnOnChannelCallback, void *Context);
 
 void
 hv_vmbus_channel_close(VMBUS_CHANNEL *Channel);
 
 int
-hv_vmbus_channel_send_packet(VMBUS_CHANNEL *Channel, const PVOID Buffer,
+hv_vmbus_channel_send_packet(VMBUS_CHANNEL *Channel, void *Buffer,
 	uint32_t BufferLen, uint64_t RequestId, VMBUS_PACKET_TYPE Type,
 	uint32_t Flags);
 
 int
 hv_vmbus_channel_send_packet_pagebuffer(VMBUS_CHANNEL *Channel,
-	PAGE_BUFFER PageBuffers[], uint32_t PageCount, PVOID Buffer,
+	PAGE_BUFFER PageBuffers[], uint32_t PageCount, void *Buffer,
 	uint32_t BufferLen, uint64_t RequestId);
 
 int
 hv_vmbus_channel_send_packet_multipagebuffer(VMBUS_CHANNEL *Channel,
-	MULTIPAGE_BUFFER *MultiPageBuffer, PVOID Buffer, uint32_t BufferLen,
+	MULTIPAGE_BUFFER *MultiPageBuffer, void *Buffer, uint32_t BufferLen,
 	uint64_t RequestId);
 
 int
-hv_vmbus_channel_establish_gpadl(VMBUS_CHANNEL *Channel, PVOID Kbuffer,// from kmalloc()
+hv_vmbus_channel_establish_gpadl(VMBUS_CHANNEL *Channel, void *Kbuffer,// from kmalloc()
 	uint32_t Size,		// page-size multiple
 	uint32_t *GpadlHandle);
 
@@ -123,11 +123,11 @@ int
 hv_vmbus_channel_teardown_gpdal(VMBUS_CHANNEL *Channel, uint32_t GpadlHandle);
 
 int
-hv_vmbus_channel_recv_packet(VMBUS_CHANNEL *Channel, PVOID Buffer, uint32_t BufferLen,
+hv_vmbus_channel_recv_packet(VMBUS_CHANNEL *Channel, void *Buffer, uint32_t BufferLen,
 	uint32_t* BufferActualLen, uint64_t* RequestId);
 
 int
-hv_vmbus_channel_recv_packet_raw(VMBUS_CHANNEL *Channel, PVOID Buffer,
+hv_vmbus_channel_recv_packet_raw(VMBUS_CHANNEL *Channel, void *Buffer,
 	uint32_t BufferLen, uint32_t* BufferActualLen, uint64_t* RequestId);
 
 void

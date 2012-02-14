@@ -171,7 +171,7 @@ extern int
 VmbusDisconnect(void);
 
 extern int
-VmbusPostMessage(void * buffer, SIZE_T bufSize);
+VmbusPostMessage(void * buffer, size_t bufSize);
 
 extern int
 VmbusSetEvent(uint32_t childRelId);

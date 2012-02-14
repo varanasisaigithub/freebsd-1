@@ -67,7 +67,7 @@ typedef struct {
             volatile uint32_t  In;        // Offset in bytes from the ring base
             volatile uint32_t  Out;       // Offset in bytes from the ring base
         } io;
-        volatile LONGLONG    InOut;
+        volatile int64_t    InOut;
     } rio;
 
     //
@@ -203,7 +203,7 @@ typedef struct _VMADDITIONAL_DATA {
     uint64_t  TotalBytes;
     uint32_t  ByteOffset;
     uint32_t  ByteCount;
-    UCHAR   Data[1];
+    uint8_t   Data[1];
 } VMADDITIONAL_DATA, *PVMADDITIONAL_DATA;
 
 
@@ -220,7 +220,7 @@ typedef union {
 } VMPACKET_LARGEST_POSSIBLE_HEADER, *PVMPACKET_LARGEST_POSSIBLE_HEADER;
 
 #define VMPACKET_DATA_START_ADDRESS(__packet)                           \
-    (PVOID)(((PUCHAR)__packet) + ((PVMPACKET_DESCRIPTOR)__packet)->DataOffset8 * 8)
+    (void *)(((PUCHAR)__packet) + ((PVMPACKET_DESCRIPTOR)__packet)->DataOffset8 * 8)
 
 #define VMPACKET_DATA_LENGTH(__packet)                                  \
     ((((PVMPACKET_DESCRIPTOR)__packet)->Length8 - ((PVMPACKET_DESCRIPTOR)__packet)->DataOffset8) * 8)

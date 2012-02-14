@@ -78,7 +78,7 @@
 #include "hv_vmbus_private.h"
 
 static int
-VmbusChannelCreateGpadlHeader(PVOID Kbuffer, // must be phys and virt contiguous
+VmbusChannelCreateGpadlHeader(void *Kbuffer, // must be phys and virt contiguous
 	uint32_t Size,	 // page-size multiple
 	VMBUS_CHANNEL_MSGINFO **msgInfo, uint32_t *MessageCount);
 
@@ -241,8 +241,8 @@ hv_vmbus_channel_get_debug_info(VMBUS_CHANNEL *Channel,
  --*/
 int
 hv_vmbus_channel_open(VMBUS_CHANNEL *NewChannel, uint32_t SendRingBufferSize,
-	uint32_t RecvRingBufferSize, PVOID UserData, uint32_t UserDataLen,
-	PFN_CHANNEL_CALLBACK pfnOnChannelCallback, PVOID Context) {
+	uint32_t RecvRingBufferSize, void *UserData, uint32_t UserDataLen,
+	PFN_CHANNEL_CALLBACK pfnOnChannelCallback, void *Context) {
 
 	int ret = 0;
 	VMBUS_CHANNEL_OPEN_CHANNEL* openMsg;
@@ -458,7 +458,7 @@ DumpGpadlHeader2(VMBUS_CHANNEL_GPADL_HEADER *Gpadl) {
 
  --*/
 static int
-VmbusChannelCreateGpadlHeader(PVOID Kbuffer, // from kmalloc()
+VmbusChannelCreateGpadlHeader(void *Kbuffer, // from kmalloc()
 	uint32_t Size,	// page-size multiple
 	VMBUS_CHANNEL_MSGINFO **MsgInfo, uint32_t *MessageCount) {
 	int i;
@@ -577,7 +577,7 @@ VmbusChannelCreateGpadlHeader(PVOID Kbuffer, // from kmalloc()
 
  --*/
 int
-hv_vmbus_channel_establish_gpadl(VMBUS_CHANNEL *Channel, PVOID Kbuffer, // from kmalloc()
+hv_vmbus_channel_establish_gpadl(VMBUS_CHANNEL *Channel, void *Kbuffer, // from kmalloc()
 	uint32_t Size,	 // page-size multiple
 	uint32_t *GpadlHandle) {
 	int ret = 0;
@@ -833,7 +833,7 @@ hv_vmbus_channel_close(VMBUS_CHANNEL *Channel) {
 
  --*/
 int
-hv_vmbus_channel_send_packet(VMBUS_CHANNEL *Channel, const PVOID Buffer,
+hv_vmbus_channel_send_packet(VMBUS_CHANNEL *Channel, void *Buffer,
 	uint32_t BufferLen, uint64_t RequestId, VMBUS_PACKET_TYPE Type,
 	uint32_t Flags) {
 	
@@ -890,7 +890,7 @@ hv_vmbus_channel_send_packet(VMBUS_CHANNEL *Channel, const PVOID Buffer,
  --*/
 int
 hv_vmbus_channel_send_packet_pagebuffer(VMBUS_CHANNEL *Channel,
-	PAGE_BUFFER PageBuffers[], uint32_t PageCount, PVOID Buffer,
+	PAGE_BUFFER PageBuffers[], uint32_t PageCount, void *Buffer,
 	uint32_t BufferLen, uint64_t RequestId) {
 	
 	int ret = 0;
@@ -962,7 +962,7 @@ hv_vmbus_channel_send_packet_pagebuffer(VMBUS_CHANNEL *Channel,
  --*/
 int
 hv_vmbus_channel_send_packet_multipagebuffer(VMBUS_CHANNEL *Channel,
-	MULTIPAGE_BUFFER *MultiPageBuffer, PVOID Buffer, uint32_t BufferLen,
+	MULTIPAGE_BUFFER *MultiPageBuffer, void *Buffer, uint32_t BufferLen,
 	uint64_t RequestId) {
 	
 	int ret = 0;
@@ -1039,7 +1039,7 @@ hv_vmbus_channel_send_packet_multipagebuffer(VMBUS_CHANNEL *Channel,
  --*/
 // TODO: Do we ever receive a gpa direct packet other than the ones we send ?
 int
-hv_vmbus_channel_recv_packet(VMBUS_CHANNEL *Channel, PVOID Buffer,
+hv_vmbus_channel_recv_packet(VMBUS_CHANNEL *Channel, void *Buffer,
 	uint32_t BufferLen, uint32_t *BufferActualLen, uint64_t *RequestId) {
 
 	VMPACKET_DESCRIPTOR desc;
@@ -1109,7 +1109,7 @@ hv_vmbus_channel_recv_packet(VMBUS_CHANNEL *Channel, PVOID Buffer,
 
  --*/
 int
-hv_vmbus_channel_recv_packet_raw(VMBUS_CHANNEL *Channel, PVOID Buffer,
+hv_vmbus_channel_recv_packet_raw(VMBUS_CHANNEL *Channel, void *Buffer,
 	uint32_t BufferLen, uint32_t *BufferActualLen, uint64_t *RequestId) {
 	
 	VMPACKET_DESCRIPTOR desc;

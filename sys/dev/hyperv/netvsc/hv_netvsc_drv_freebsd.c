@@ -467,7 +467,7 @@ hn_start_locked(struct ifnet *ifp)
 		packet->compl.send.on_send_completion =
 		    netvsc_xmit_completion;
 		packet->compl.send.send_completion_context = packet;
-		packet->compl.send.send_completion_tid = (ULONG_PTR)m_head;
+		packet->compl.send.send_completion_tid = (unsigned long)m_head; // << todo this probably should be size_t
 retry_send:
 		critical_enter();
 		ret = net_drv_obj->on_send(&device_ctx->device_obj, packet);

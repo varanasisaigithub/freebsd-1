@@ -423,7 +423,7 @@ VmbusOnEvents(void) {
  Send a msg on the vmbus's message connection
 
  --*/
-int VmbusPostMessage(void *buffer, SIZE_T bufferLen) {
+int VmbusPostMessage(void *buffer, size_t bufferLen) {
 	int ret = 0;
 	HV_CONNECTION_ID connId;
 

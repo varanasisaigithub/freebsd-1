@@ -27,6 +27,7 @@
 #ifndef __HV_VMBUS_API_H__
 #define __HV_VMBUS_API_H__
 
+// todo ------------------ REFACTOR ------------------
 typedef struct {
 	DRIVER_OBJECT Base; //vmbus.c : 161
 	DEVICE_OBJECT* (*OnChildDeviceCreate)(GUID, GUID, void *); //vmbus.c : 263 :: vmbus_drv_freebsd.c : 255

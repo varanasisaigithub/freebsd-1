@@ -69,7 +69,7 @@
 #include "hv_ring_buffer.h"
 #include "hv_channel_interface.h"
 
-typedef void (*PFN_CHANNEL_CALLBACK)(PVOID context);
+typedef void (*PFN_CHANNEL_CALLBACK)(void *context);
 
 typedef enum {
 	CHANNEL_OFFER_STATE,
@@ -94,7 +94,7 @@ typedef struct _VMBUS_CHANNEL {
 	uint32_t RingBufferGpadlHandle;
 
 	// Allocated memory for ring buffer
-	VOID* RingBufferPages;
+	void *RingBufferPages;
 	uint32_t RingBufferPageCount;
 	RING_BUFFER_INFO Outbound;	// send to parent
 	RING_BUFFER_INFO Inbound;	// receive from parent
@@ -105,7 +105,7 @@ typedef struct _VMBUS_CHANNEL {
 	//HANDLE				dataWorkQueue;
 
 	PFN_CHANNEL_CALLBACK OnChannelCallback;
-	PVOID ChannelCallbackContext;
+	void *ChannelCallbackContext;
 
 } VMBUS_CHANNEL;
 
