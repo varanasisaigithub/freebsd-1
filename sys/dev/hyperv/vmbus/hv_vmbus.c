@@ -62,7 +62,6 @@
 #include <sys/systm.h>
 #include <sys/smp.h>    /* for mp_ncpus extern */
 
-#include <dev/hyperv/include/hv_osd.h>
 #include <dev/hyperv/include/hv_logging.h>
 #include "hv_version_info.h"
 #include "hv_hv.h"
@@ -71,9 +70,9 @@
 #include <dev/hyperv/include/hv_list.h>
 #include "hv_ring_buffer.h"
 #include <dev/hyperv/include/hv_vmbus_channel_interface.h>
-#include <dev/hyperv/include/hv_vmbus_packet_format.h>
-#include <dev/hyperv/include/hv_channel_messages.h>
-#include "hv_channel_mgmt.h"
+//#include <dev/hyperv/include/hv_vmbus_packet_format.h>
+//#include <dev/hyperv/include/hv_channel_messages.h>
+//#include "hv_channel_mgmt.h"
 #include "hv_channel.h"
 #include "hv_channel_interface.h"
 #include <dev/hyperv/vmbus/hv_connection.h>
@@ -101,8 +100,9 @@ static DEVICE_OBJECT* gDevice; // vmbus root device
 // Internal routines
 //
 
-static void
-VmbusGetChannelInterface(VMBUS_CHANNEL_INTERFACE *Interface);
+// todo - REMOVE SOON
+//static void
+//VmbusGetChannelInterface(VMBUS_CHANNEL_INTERFACE *Interface);
 
 static void
 VmbusGetChannelInfo(DEVICE_OBJECT *DeviceObject, DEVICE_INFO *DeviceInfo);
@@ -169,7 +169,8 @@ VmbusInitialize(DRIVER_OBJECT* drv) {
 	driver->OnMsgDpc = VmbusOnMsgDPC;
 	driver->OnEventDpc = VmbusOnEventDPC;
 	driver->GetChannelOffers = VmbusGetChannelOffers;
-	driver->GetChannelInterface = VmbusGetChannelInterface;
+// todo - RMOVE NEXT LINE SOON!!!
+// driver->GetChannelInterface = VmbusGetChannelInterface;
 	driver->GetChannelInfo = VmbusGetChannelInfo;
 
 	MemoryFence();
@@ -214,10 +215,11 @@ VmbusGetChannelOffers(void) {
  Get the channel interface
 
  --*/
-static void
-VmbusGetChannelInterface(VMBUS_CHANNEL_INTERFACE *Interface) {
-	GetChannelInterface(Interface);
-}
+// todo --- RMEOVE SOON
+//static void
+//VmbusGetChannelInterface(VMBUS_CHANNEL_INTERFACE *Interface) {
+//	GetChannelInterface(Interface);
+//}
 
 /*++;
 

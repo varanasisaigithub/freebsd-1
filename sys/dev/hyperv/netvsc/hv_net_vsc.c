@@ -70,6 +70,7 @@
 #include <dev/hyperv/include/hv_vmbus_channel_interface.h>
 #include <dev/hyperv/include/hv_vmbus_packet_format.h>
 #include <dev/hyperv/netvsc/hv_nvsp_protocol.h>
+#include <dev/hyperv/vmbus/hv_channel.h>
 #include <dev/hyperv/vmbus/hv_vmbus_var.h>
 #include <dev/hyperv/netvsc/hv_net_vsc_api.h>
 #include <dev/hyperv/vmbus/hv_connection.h>

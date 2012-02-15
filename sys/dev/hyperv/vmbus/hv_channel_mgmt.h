@@ -59,15 +59,10 @@
 #ifndef __HV_CHANNEL_MGMT_H__
 #define __HV_CHANNEL_MGMT_H__
 
-#include <sys/param.h>
-#include <sys/mutex.h>
-
-#include <dev/hyperv/include/hv_osd.h>
+#include "hv_vmbus_var.h"
 #include <dev/hyperv/include/hv_list.h>
 #include <dev/hyperv/include/hv_channel_messages.h>
-
 #include "hv_ring_buffer.h"
-#include "hv_channel_interface.h"
 
 typedef void (*PFN_CHANNEL_CALLBACK)(void *context);
 

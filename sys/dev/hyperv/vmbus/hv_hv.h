@@ -58,19 +58,14 @@
 
 #ifndef __HV_HV_H__
 #define __HV_HV_H__
-/*
- * Fixme -- not at all thrilled about including these in header file
- */
+
+#include <dev/hyperv/include/hv_osd.h>
 #include <dev/hyperv/include/hv_types.h>
 #include <dev/hyperv/include/hv_status.h>
-
 #include <dev/hyperv/include/hv_hal_api.h>
 #include <dev/hyperv/include/hv_vp_api.h>
-
 #include <dev/hyperv/include/hv_synic_api.h>
-
 #include <dev/hyperv/include/hv_hc_api.h>
-/* Fixme -- not sure this one is needed */
 #include <dev/hyperv/include/hv_pt_api.h>
 
 enum {

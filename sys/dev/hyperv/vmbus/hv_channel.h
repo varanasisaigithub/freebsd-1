@@ -61,7 +61,6 @@
 
 #include "hv_vmbus_var.h"
 #include "hv_channel_mgmt.h"
-#include <dev/hyperv/include/hv_channel_messages.h>
 
 #pragma pack(push,1)
 

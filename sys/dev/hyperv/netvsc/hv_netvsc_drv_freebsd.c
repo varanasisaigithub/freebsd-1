@@ -169,8 +169,6 @@ netvsc_drv_init(PFN_DRIVERINITIALIZE pfn_drv_init)
 
 	DPRINT_ENTER(NETVSC_DRV);
 
-	vmbus_get_interface(&net_drv_obj->base.VmbusChannelInterface);
-
 	net_drv_obj->ring_buf_size = netvsc_ringbuffer_size;
 	net_drv_obj->on_rx_callback = netvsc_recv_callback;
 	net_drv_obj->on_link_stat_changed = netvsc_linkstatus_callback;

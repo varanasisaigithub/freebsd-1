@@ -60,9 +60,6 @@
 #ifndef __HV_VMBUS_CHANNEL_INTERFACE_H__
 #define __HV_VMBUS_CHANNEL_INTERFACE_H__
 
-#include "hv_osd.h"
-#include <dev/hyperv/vmbus/hv_channel.h>
-
 // 
 // A revision number of vmbus that is used for ensuring both ends on a
 // partition are using compatible versions.

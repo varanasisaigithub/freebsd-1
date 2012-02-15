@@ -73,74 +73,74 @@
 #include "hv_channel.h"
 #include "hv_channel_interface.h"
 #include "hv_vmbus_private.h"
+//
+//static int
+//IVmbusChannelOpen(PDEVICE_OBJECT Device, uint32_t SendBufferSize,
+//	uint32_t RecvRingBufferSize, void *UserData, uint32_t UserDataLen,
+//	VMBUS_CHANNEL_CALLBACK ChannelCallback, void *Context) {
+//	return hv_vmbus_channel_open((VMBUS_CHANNEL*) Device->context,
+//		SendBufferSize, RecvRingBufferSize, UserData, UserDataLen,
+//		ChannelCallback, Context);
+//}
+//
+//static void
+//IVmbusChannelClose(PDEVICE_OBJECT Device) {
+//	hv_vmbus_channel_close((VMBUS_CHANNEL*) Device->context);
+//}
+//
+//static int
+//IVmbusChannelSendPacket(PDEVICE_OBJECT Device, void *Buffer,
+//	uint32_t BufferLen, uint64_t RequestId, uint32_t Type, uint32_t Flags) {
+//	return hv_vmbus_channel_send_packet((VMBUS_CHANNEL*) Device->context, Buffer,
+//		BufferLen, RequestId, Type, Flags);
+//}
+//
+//static int
+//IVmbusChannelSendPacketPageBuffer(PDEVICE_OBJECT Device,
+//	PAGE_BUFFER PageBuffers[], uint32_t PageCount, void *Buffer,
+//	uint32_t BufferLen, uint64_t RequestId) {
+//	return hv_vmbus_channel_send_packet_pagebuffer(
+//		(VMBUS_CHANNEL*) Device->context, PageBuffers, PageCount,
+//		Buffer, BufferLen, RequestId);
+//}
+//
+//static int
+//IVmbusChannelSendPacketMultiPageBuffer(PDEVICE_OBJECT Device,
+//	MULTIPAGE_BUFFER *MultiPageBuffer, void *Buffer, uint32_t BufferLen,
+//	uint64_t RequestId) {
+//	return hv_vmbus_channel_send_packet_multipagebuffer(
+//		(VMBUS_CHANNEL*) Device->context, MultiPageBuffer, Buffer,
+//		BufferLen, RequestId);
+//}
+//
+//static int
+//IVmbusChannelRecvPacket(PDEVICE_OBJECT Device, void *Buffer,
+//	uint32_t BufferLen, uint32_t* BufferActualLen, uint64_t* RequestId) {
+//	return hv_vmbus_channel_recv_packet((VMBUS_CHANNEL*) Device->context, Buffer,
+//		BufferLen, BufferActualLen, RequestId);
+//}
+//
+//static int
+//IVmbusChannelRecvPacketRaw(PDEVICE_OBJECT Device, void *Buffer,
+//	uint32_t BufferLen, uint32_t* BufferActualLen, uint64_t* RequestId) {
+//	return hv_vmbus_channel_recv_packet_raw((VMBUS_CHANNEL*) Device->context,
+//		Buffer, BufferLen, BufferActualLen, RequestId);
+//}
+//
+//static int
+//IVmbusChannelEstablishGpadl(PDEVICE_OBJECT Device, void *Buffer,
+//	uint32_t BufferLen, uint32_t* GpadlHandle) {
+//	return hv_vmbus_channel_establish_gpadl((VMBUS_CHANNEL*) Device->context,
+//		Buffer, BufferLen, GpadlHandle);
+//}
+//
+//static int
+//IVmbusChannelTeardownGpadl(PDEVICE_OBJECT Device, uint32_t GpadlHandle) {
+//	return hv_vmbus_channel_teardown_gpdal((VMBUS_CHANNEL*) Device->context,
+//		GpadlHandle);
+//}
 
-static int
-IVmbusChannelOpen(PDEVICE_OBJECT Device, uint32_t SendBufferSize,
-	uint32_t RecvRingBufferSize, void *UserData, uint32_t UserDataLen,
-	VMBUS_CHANNEL_CALLBACK ChannelCallback, void *Context) {
-	return hv_vmbus_channel_open((VMBUS_CHANNEL*) Device->context,
-		SendBufferSize, RecvRingBufferSize, UserData, UserDataLen,
-		ChannelCallback, Context);
-}
-
-static void
-IVmbusChannelClose(PDEVICE_OBJECT Device) {
-	hv_vmbus_channel_close((VMBUS_CHANNEL*) Device->context);
-}
-
-static int
-IVmbusChannelSendPacket(PDEVICE_OBJECT Device, void *Buffer,
-	uint32_t BufferLen, uint64_t RequestId, uint32_t Type, uint32_t Flags) {
-	return hv_vmbus_channel_send_packet((VMBUS_CHANNEL*) Device->context, Buffer,
-		BufferLen, RequestId, Type, Flags);
-}
-
-static int
-IVmbusChannelSendPacketPageBuffer(PDEVICE_OBJECT Device,
-	PAGE_BUFFER PageBuffers[], uint32_t PageCount, void *Buffer,
-	uint32_t BufferLen, uint64_t RequestId) {
-	return hv_vmbus_channel_send_packet_pagebuffer(
-		(VMBUS_CHANNEL*) Device->context, PageBuffers, PageCount,
-		Buffer, BufferLen, RequestId);
-}
-
-static int
-IVmbusChannelSendPacketMultiPageBuffer(PDEVICE_OBJECT Device,
-	MULTIPAGE_BUFFER *MultiPageBuffer, void *Buffer, uint32_t BufferLen,
-	uint64_t RequestId) {
-	return hv_vmbus_channel_send_packet_multipagebuffer(
-		(VMBUS_CHANNEL*) Device->context, MultiPageBuffer, Buffer,
-		BufferLen, RequestId);
-}
-
-static int
-IVmbusChannelRecvPacket(PDEVICE_OBJECT Device, void *Buffer,
-	uint32_t BufferLen, uint32_t* BufferActualLen, uint64_t* RequestId) {
-	return hv_vmbus_channel_recv_packet((VMBUS_CHANNEL*) Device->context, Buffer,
-		BufferLen, BufferActualLen, RequestId);
-}
-
-static int
-IVmbusChannelRecvPacketRaw(PDEVICE_OBJECT Device, void *Buffer,
-	uint32_t BufferLen, uint32_t* BufferActualLen, uint64_t* RequestId) {
-	return hv_vmbus_channel_recv_packet_raw((VMBUS_CHANNEL*) Device->context,
-		Buffer, BufferLen, BufferActualLen, RequestId);
-}
-
-static int
-IVmbusChannelEstablishGpadl(PDEVICE_OBJECT Device, void *Buffer,
-	uint32_t BufferLen, uint32_t* GpadlHandle) {
-	return hv_vmbus_channel_establish_gpadl((VMBUS_CHANNEL*) Device->context,
-		Buffer, BufferLen, GpadlHandle);
-}
-
-static int
-IVmbusChannelTeardownGpadl(PDEVICE_OBJECT Device, uint32_t GpadlHandle) {
-	return hv_vmbus_channel_teardown_gpdal((VMBUS_CHANNEL*) Device->context,
-		GpadlHandle);
-}
-
-extern void
+void
 GetChannelInfo(PDEVICE_OBJECT q, DEVICE_INFO *p) {
 	VMBUS_CHANNEL_DEBUG_INFO di;
 
@@ -176,17 +176,17 @@ GetChannelInfo(PDEVICE_OBJECT q, DEVICE_INFO *p) {
 		p->Outbound.BytesAvailToWrite = di.Outbound.BytesAvailToWrite;
 	}
 }
-
-extern void
-GetChannelInterface(VMBUS_CHANNEL_INTERFACE *p) {
-	p->Open = IVmbusChannelOpen;
-	p->Close = IVmbusChannelClose;
-	p->SendPacket = IVmbusChannelSendPacket;
-	p->SendPacketPageBuffer = IVmbusChannelSendPacketPageBuffer;
-	p->SendPacketMultiPageBuffer = IVmbusChannelSendPacketMultiPageBuffer;
-	p->RecvPacket = IVmbusChannelRecvPacket;
-	p->RecvPacketRaw = IVmbusChannelRecvPacketRaw;
-	p->EstablishGpadl = IVmbusChannelEstablishGpadl;
-	p->TeardownGpadl = IVmbusChannelTeardownGpadl;
-	p->GetInfo = GetChannelInfo;
-}
+// todo - REMOVE SOON!
+//extern void
+//GetChannelInterface(VMBUS_CHANNEL_INTERFACE *p) {
+//	p->Open = IVmbusChannelOpen;
+//	p->Close = IVmbusChannelClose;
+//	p->SendPacket = IVmbusChannelSendPacket;
+//	p->SendPacketPageBuffer = IVmbusChannelSendPacketPageBuffer;
+//	p->SendPacketMultiPageBuffer = IVmbusChannelSendPacketMultiPageBuffer;
+//	p->RecvPacket = IVmbusChannelRecvPacket;
+//	p->RecvPacketRaw = IVmbusChannelRecvPacketRaw;
+//	p->EstablishGpadl = IVmbusChannelEstablishGpadl;
+//	p->TeardownGpadl = IVmbusChannelTeardownGpadl;
+//	p->GetInfo = GetChannelInfo;
+//}

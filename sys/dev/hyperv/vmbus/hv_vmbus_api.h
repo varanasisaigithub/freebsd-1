@@ -27,6 +27,7 @@
 #ifndef __HV_VMBUS_API_H__
 #define __HV_VMBUS_API_H__
 
+// todo - another layer that needs to be removed
 // todo ------------------ REFACTOR ------------------
 typedef struct {
 	DRIVER_OBJECT Base; //vmbus.c : 161
@@ -38,7 +39,8 @@ typedef struct {
 	void (*OnMsgDpc)(DRIVER_OBJECT *);
 	void (*OnEventDpc)(DRIVER_OBJECT *);
 	void (*GetChannelOffers)(void);
-	void (*GetChannelInterface)(VMBUS_CHANNEL_INTERFACE *);
+	// REMOVED
+	//void (*GetChannelInterface)(VMBUS_CHANNEL_INTERFACE *);
 	void (*GetChannelInfo)(DEVICE_OBJECT *, DEVICE_INFO *);
 } VMBUS_DRIVER_OBJECT;
 

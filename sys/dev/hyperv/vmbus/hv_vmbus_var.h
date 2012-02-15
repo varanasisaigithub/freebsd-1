@@ -80,22 +80,23 @@ typedef struct {
 	void *Extension; // :172
 } DEVICE_OBJECT;
 
-typedef struct { //ChannelInterface.c : 160
-	int (*Open)(DEVICE_OBJECT*, uint32_t, uint32_t, void *, uint32_t,
-		VMBUS_CHANNEL_CALLBACK, void *);
-	void (*Close)(DEVICE_OBJECT *); //42
-	int (*SendPacket)(DEVICE_OBJECT *, void *, uint32_t, uint64_t, uint32_t,
-		uint32_t);        //50
-	int (*SendPacketPageBuffer)(DEVICE_OBJECT *, PAGE_BUFFER *, uint32_t,
-		void *, uint32_t, uint64_t);
-	int (*SendPacketMultiPageBuffer)(DEVICE_OBJECT *, MULTIPAGE_BUFFER *,
-		void *, uint32_t, uint64_t);
-	int (*RecvPacket)(DEVICE_OBJECT *, void *, uint32_t, uint32_t*, uint64_t*);
-	int (*RecvPacketRaw)(DEVICE_OBJECT *, void *, uint32_t, uint32_t*, uint64_t*);
-	int (*EstablishGpadl)(DEVICE_OBJECT *, void *, uint32_t, uint32_t*);
-	int (*TeardownGpadl)(DEVICE_OBJECT *, uint32_t);
-	void (*GetInfo)(DEVICE_OBJECT *, DEVICE_INFO *);
-} VMBUS_CHANNEL_INTERFACE;
+// todo - REMOVE SOON!
+//typedef struct { //ChannelInterface.c : 160
+//	int (*Open)(DEVICE_OBJECT*, uint32_t, uint32_t, void *, uint32_t,
+//		VMBUS_CHANNEL_CALLBACK, void *);
+//	void (*Close)(DEVICE_OBJECT *); //42
+//	int (*SendPacket)(DEVICE_OBJECT *, void *, uint32_t, uint64_t, uint32_t,
+//		uint32_t);        //50
+//	int (*SendPacketPageBuffer)(DEVICE_OBJECT *, PAGE_BUFFER *, uint32_t,
+//		void *, uint32_t, uint64_t);
+//	int (*SendPacketMultiPageBuffer)(DEVICE_OBJECT *, MULTIPAGE_BUFFER *,
+//		void *, uint32_t, uint64_t);
+//	int (*RecvPacket)(DEVICE_OBJECT *, void *, uint32_t, uint32_t*, uint64_t*);
+//	int (*RecvPacketRaw)(DEVICE_OBJECT *, void *, uint32_t, uint32_t*, uint64_t*);
+//	int (*EstablishGpadl)(DEVICE_OBJECT *, void *, uint32_t, uint32_t*);
+//	int (*TeardownGpadl)(DEVICE_OBJECT *, uint32_t);
+//	void (*GetInfo)(DEVICE_OBJECT *, DEVICE_INFO *);
+//} VMBUS_CHANNEL_INTERFACE;
 
 typedef struct _DRIVER_OBJECT {        //BlkVsc.c : 56
 	const char *name;  //67 : 39
@@ -104,7 +105,7 @@ typedef struct _DRIVER_OBJECT {        //BlkVsc.c : 56
 	int	(*OnDeviceRemove)(DEVICE_OBJECT *);
 	char 	**(*OnGetDeviceIds)(void);
 	void 	(*OnCleanup)(struct _DRIVER_OBJECT *);
-	// replace indirect calls with direct ones
+	// todo - REMOVE SOON! replace indirect calls with direct ones
 	//VMBUS_CHANNEL_INTERFACE VmbusChannelInterface;
 } DRIVER_OBJECT;
 
