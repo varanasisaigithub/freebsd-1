@@ -36,17 +36,6 @@
 #define __x86_64__  
 #endif
 
-/*
- * Defines
- */
-
-//#ifndef PAGE_SIZE
-//#define PAGE_SIZE		0x1000
-//#endif
-
-#ifndef PAGE_SHIFT
-#define PAGE_SHIFT		12
-#endif
 
 #define MAX_PAGE_BUFFER_COUNT	16
 #define HW_MACADDR_LEN		6
@@ -99,56 +88,12 @@ typedef struct _DLIST_ENTRY {
 	struct _DLIST_ENTRY *Blink;
 } DLIST_ENTRY;
 
-/*
- * Unsigned types
- */
-//typedef unsigned char		UINT8;
-//typedef unsigned short		UINT16;
-//typedef unsigned int		UINT32;
-//#ifdef __x86_64__
-//typedef unsigned long		UINT64;
-//#else
-//typedef unsigned long long	UINT64;
-//#endif
-//
-//typedef unsigned long long	ULONGLONG;
-//typedef unsigned int		ULONG;
-//typedef unsigned short		USHORT;
-//typedef unsigned char		UCHAR;
 
-/*
- * Signed types
- */
-//typedef char			INT8;
-//typedef short			INT16;
-//typedef int			INT32;
-//#ifdef __x86_64__
-//typedef long			INT64;
-//#else
-//typedef long long		INT64;
-//#endif
-//
-//typedef int			LONG;
-//typedef char			CHAR;
-//typedef long long		LONGLONG;
-
-/*
- * Other types
- */
-//typedef unsigned long		SIZE_T;
-//typedef void			VOID;
-////typedef unsigned char		GUID[16];
-//typedef void*			PVOID;
-typedef unsigned char		BOOL;
 // Fixme:  customarily unsigned int
+typedef unsigned char		BOOL;
 typedef unsigned char		bool;
 typedef unsigned char		BOOLEAN;
 typedef void*			HANDLE;
-//typedef UINT32		DWORD;
-//typedef char*			PCHAR;
-//typedef unsigned char		BYTE;
-
-//typedef unsigned long		ULONG_PTR;
 
 typedef struct {
 	unsigned char		Data[16];
@@ -284,8 +229,6 @@ extern int doOnAllCpus(void (*func) (void *info), void *info,
                        int retry, int wait);
 
 extern void* PageAllocAtomic(unsigned int);
-
-// extern void shutdown_onchannelcallback(void *context);
 
 
 #endif  /* __HV_OSD_H__ */

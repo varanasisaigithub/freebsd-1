@@ -61,12 +61,6 @@
 
 #include "hv_vmbus_var.h"
 
-// todo - REMOVE SOON!
-//extern void
-//GetChannelInterface(
-//	VMBUS_CHANNEL_INTERFACE *ChannelInterface
-//	);
-
 // todo - refactor and merge into another include
 void
 GetChannelInfo(

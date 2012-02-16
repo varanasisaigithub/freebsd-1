@@ -344,7 +344,8 @@ int WaitEventWait(HANDLE hWait) {
 			PWAIT | PCATCH, "hv sleep", 0);
 //		if (ret == 0)
 		waitEvent->condition = 0;
-	}mtx_unlock(&waitEvent->mtx);
+	}
+	mtx_unlock(&waitEvent->mtx);
 #else
 	ret = tsleep(&waitEvent->event, PWAIT | PCATCH, "hv sleep", 0);
 #endif

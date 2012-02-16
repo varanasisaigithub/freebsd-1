@@ -244,12 +244,6 @@ static int hv_storvsc_channel_init(DEVICE_OBJECT *device)
 
 	DPRINT_INFO(STORVSC, "BEGIN_INITIALIZATION_OPERATION...");
 
-//	ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-//					vstor_packet,
-//					sizeof(struct vstor_packet),
-//					(uint64_t)request,
-//					VmbusPacketTypeDataInBand,
-//					VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	ret = hv_vmbus_channel_send_packet(
 			(VMBUS_CHANNEL *)device->context,
 			vstor_packet,
@@ -284,12 +278,6 @@ static int hv_storvsc_channel_init(DEVICE_OBJECT *device)
     vstor_packet->version.major_minor = VMSTOR_PROTOCOL_VERSION_CURRENT;
     FILL_VMSTOR_REVISION(vstor_packet->version.revision);
 
-//	ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-//					vstor_packet,
-//					sizeof(struct vstor_packet),
-//					(uint64_t)request,
-//					VmbusPacketTypeDataInBand,
-//					VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	ret = hv_vmbus_channel_send_packet(
 			(VMBUS_CHANNEL *)device->context,
 			vstor_packet,
@@ -297,8 +285,6 @@ static int hv_storvsc_channel_init(DEVICE_OBJECT *device)
 			(uint64_t)request,
 			VmbusPacketTypeDataInBand,
 			VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
-
-
 
 	if ( ret != 0)
 	{
@@ -324,12 +310,6 @@ static int hv_storvsc_channel_init(DEVICE_OBJECT *device)
     vstor_packet->operation = VSTOR_OPERATION_QUERYPROPERTIES;
 	vstor_packet->flags = REQUEST_COMPLETION_FLAG;
 
-//	ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-//						vstor_packet,
-//						sizeof(struct vstor_packet),
-//						(uint64_t)request,
-//						VmbusPacketTypeDataInBand,
-//						VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	ret = hv_vmbus_channel_send_packet(
 				(VMBUS_CHANNEL *)device->context,
 				vstor_packet,
@@ -367,13 +347,6 @@ static int hv_storvsc_channel_init(DEVICE_OBJECT *device)
 	memset(vstor_packet, 0, sizeof(struct vstor_packet));
     vstor_packet->operation = VSTOR_OPERATION_ENDINITIALIZATION;
 	vstor_packet->flags = REQUEST_COMPLETION_FLAG;
-
-//	ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-//						vstor_packet,
-//						sizeof(struct vstor_packet),
-//						(uint64_t)request,
-//						VmbusPacketTypeDataInBand,
-//						VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	ret = hv_vmbus_channel_send_packet(
 				(VMBUS_CHANNEL *)device->context,
@@ -420,14 +393,7 @@ hv_storvsc_connect_vsp(DEVICE_OBJECT *device)
 	memset(&props, 0, sizeof(struct vmstor_chan_props));
 
 	// Open the channel
-//	ret = device->Driver->VmbusChannelInterface.Open(device,
-//		storDriver->ringbuffer_size,
-//		storDriver->ringbuffer_size,
-//		(void *)&props,
-//		sizeof(struct vmstor_chan_props),
-//		hv_storvsc_on_channel_callback,
-//		device
-//		);
+
 	ret = hv_vmbus_channel_open(
 		(VMBUS_CHANNEL *)device->context,
 		storDriver->ringbuffer_size,
@@ -487,8 +453,6 @@ hv_storvsc_on_deviceremove(DEVICE_OBJECT *device)
 
 	DPRINT_INFO(STORVSC, "storage device (%p) safe to remove", stordev_ctx);
 
-	// Close the channel
-	//device->Driver->VmbusChannelInterface.Close(device);
 	hv_vmbus_channel_close((VMBUS_CHANNEL *)device->context);
 	hv_free_storvsc_dev_ctx(stordev_ctx);
 
@@ -535,13 +499,6 @@ hv_storvsc_host_reset(DEVICE_OBJECT *device)
 
     vstor_packet->operation = VSTOR_OPERATION_RESETBUS;
     vstor_packet->flags = REQUEST_COMPLETION_FLAG;
-
-//	ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-//						vstor_packet,
-//						sizeof(struct vstor_packet),
-//						(uint64_t)&stordev_ctx->reset_req,
-//						VmbusPacketTypeDataInBand,
-//						VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	ret = hv_vmbus_channel_send_packet(
 			(VMBUS_CHANNEL *)device->context,vstor_packet,
@@ -649,11 +606,6 @@ hv_storvsc_io_request(DEVICE_OBJECT *device,
 
 	if (requestExtension->request->data_buf.Length)
 	{
-//		ret = device->Driver->VmbusChannelInterface.SendPacketMultiPageBuffer(device,
-//				&requestExtension->request->data_buf,
-//				vstor_packet,
-//				sizeof(struct vstor_packet),
-//				(uint64_t)requestExtension);
 		ret = hv_vmbus_channel_send_packet_multipagebuffer(
 				(VMBUS_CHANNEL *)device->context,
 				&requestExtension->request->data_buf,
@@ -664,12 +616,6 @@ hv_storvsc_io_request(DEVICE_OBJECT *device,
 	}
 	else
 	{
-//		ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-//						vstor_packet,
-//						sizeof(struct vstor_packet),
-//						(uint64_t)requestExtension,
-//						VmbusPacketTypeDataInBand,
-//						VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 		ret = hv_vmbus_channel_send_packet(
 				(VMBUS_CHANNEL *)device->context,
 				vstor_packet,
@@ -808,11 +754,6 @@ hv_storvsc_on_channel_callback(void *context)
 	}
 
 	do {
-//		ret = device->Driver->VmbusChannelInterface.RecvPacket(device,
-//					packet,
-//					roundup2(sizeof(struct vstor_packet), 8),
-//					&bytes_recvd,
-//					&request_id);
 		ret = hv_vmbus_channel_recv_packet(
 				(VMBUS_CHANNEL *)device->context,
 				packet,

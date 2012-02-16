@@ -321,12 +321,6 @@ hv_nv_init_rx_buffer_with_net_vsp(DEVICE_OBJECT *device)
 	 * Note:  This call uses the vmbus connection rather than the
 	 * channel to establish the gpadl handle. 
 	 */
-
-// todo *** REMOVE THIS
-//	ret = device->Driver->VmbusChannelInterface.EstablishGpadl(device,
-//	    net_dev->rx_buf, net_dev->rx_buf_size,
-//	    &net_dev->rx_buf_gpadl_handle);
-//
 	ret = hv_vmbus_channel_establish_gpadl(
 		(VMBUS_CHANNEL *)device->context,
 		net_dev->rx_buf, net_dev->rx_buf_size,
@@ -353,12 +347,7 @@ hv_nv_init_rx_buffer_with_net_vsp(DEVICE_OBJECT *device)
 	    NETVSC_RECEIVE_BUFFER_ID;
 
 	/* Send the gpadl notification request */
-// todo *** REMOVE THIS
-//	ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-//	    init_pkt, sizeof(nvsp_msg), (unsigned long)init_pkt,
-//	    VmbusPacketTypeDataInBand,
-//	    VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
-//
+
 	ret = hv_vmbus_channel_send_packet(
 		(VMBUS_CHANNEL *)device->context,
 		init_pkt, sizeof(nvsp_msg),
@@ -474,12 +463,6 @@ hv_nv_init_send_buffer_with_net_vsp(DEVICE_OBJECT *device)
 	 * Note:  This call uses the vmbus connection rather than the
 	 * channel to establish the gpadl handle. 
 	 */
-
-// todo *** REMOVE THIS
-//	ret = device->Driver->VmbusChannelInterface.EstablishGpadl(device,
-//	    net_dev->send_buf, net_dev->send_buf_size,
-//	    &net_dev->send_buf_gpadl_handle);
-//
 	ret = hv_vmbus_channel_establish_gpadl(
 		(VMBUS_CHANNEL *)device->context,
 		net_dev->send_buf, net_dev->send_buf_size,
@@ -506,11 +489,6 @@ hv_nv_init_send_buffer_with_net_vsp(DEVICE_OBJECT *device)
 	    NETVSC_SEND_BUFFER_ID;
 
 	/* Send the gpadl notification request */
-// todo *** REMOVE THIS
-//	ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-//	    init_pkt, sizeof(nvsp_msg), (unsigned long)init_pkt,
-//	    VmbusPacketTypeDataInBand,
-//	    VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	ret = hv_vmbus_channel_send_packet(
 		(VMBUS_CHANNEL *)device->context,
@@ -580,11 +558,6 @@ hv_nv_destroy_rx_buffer(netvsc_dev *net_dev)
 		    nvsp_msg_1_type_revoke_rx_buf;
 		revoke_pkt->msgs.vers_1_msgs.revoke_rx_buf.id =
 		    NETVSC_RECEIVE_BUFFER_ID;
-// todo *** REMOVE THIS
-//		ret =
-//		    net_dev->dev->Driver->VmbusChannelInterface.SendPacket(
-//		    net_dev->dev, revoke_pkt, sizeof(nvsp_msg),
-//		    (unsigned long)revoke_pkt, VmbusPacketTypeDataInBand, 0);
 
 		ret = hv_vmbus_channel_send_packet(
 			(VMBUS_CHANNEL *)net_dev->dev->context,
@@ -606,10 +579,6 @@ hv_nv_destroy_rx_buffer(netvsc_dev *net_dev)
 	/* Tear down the gpadl on the vsp end */
 	if (net_dev->rx_buf_gpadl_handle) {
 		DPRINT_INFO(NETVSC, "Tearing down receive buffer's GPADL...");
-// todo *** REMOVE THIS
-//		ret = net_dev->dev->Driver->VmbusChannelInterface.TeardownGpadl(
-//		    net_dev->dev,
-//		    net_dev->rx_buf_gpadl_handle);
 
 		ret = hv_vmbus_channel_teardown_gpdal(
 			(VMBUS_CHANNEL *)net_dev->dev->context,
@@ -677,10 +646,6 @@ hv_nv_destroy_send_buffer(netvsc_dev *net_dev)
 		    nvsp_msg_1_type_revoke_send_buf;
 		revoke_pkt->msgs.vers_1_msgs.revoke_send_buf.id =
 		    NETVSC_SEND_BUFFER_ID;
-// todo *** REMOVE THIS
-//		ret = net_dev->dev->Driver->VmbusChannelInterface.SendPacket(
-//		    net_dev->dev, revoke_pkt, sizeof(nvsp_msg),
-//		    (unsigned long)revoke_pkt, VmbusPacketTypeDataInBand, 0);
 
 		ret = hv_vmbus_channel_send_packet(
 			(VMBUS_CHANNEL *)net_dev->dev->context,
@@ -702,9 +667,6 @@ hv_nv_destroy_send_buffer(netvsc_dev *net_dev)
 	/* Tear down the gpadl on the vsp end */
 	if (net_dev->send_buf_gpadl_handle) {
 		DPRINT_DBG(NETVSC, "Tearing down send buffer's GPADL...");
-// todo *** REMOVE THIS
-//		ret = net_dev->dev->Driver->VmbusChannelInterface.TeardownGpadl(
-//		    net_dev->dev, net_dev->send_buf_gpadl_handle);
 
 		ret = hv_vmbus_channel_teardown_gpdal(
 			(VMBUS_CHANNEL *)net_dev->dev->context,
@@ -771,12 +733,6 @@ hv_nv_connect_to_vsp(DEVICE_OBJECT *device)
 
 	/* Send the init request */
 
-// todo *** REMOVE THIS
-//	ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-//	    init_pkt, sizeof(nvsp_msg), (unsigned long)init_pkt,
-//	    VmbusPacketTypeDataInBand,
-//	    VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
-
 	ret = hv_vmbus_channel_send_packet(
 			(VMBUS_CHANNEL *)device->context,
 			init_pkt, sizeof(nvsp_msg),
@@ -829,10 +785,6 @@ hv_nv_connect_to_vsp(DEVICE_OBJECT *device)
 	    ndis_version & 0xFFFF;
 
 	/* Send the init request */
-// todo *** REMOVE THIS
-//	ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-//	    init_pkt, sizeof(nvsp_msg), (unsigned long)init_pkt,
-//	    VmbusPacketTypeDataInBand, 0);
 
 	ret = hv_vmbus_channel_send_packet(
 			(VMBUS_CHANNEL *)device->context,
@@ -932,10 +884,6 @@ hv_nv_on_device_add(DEVICE_OBJECT *device, void *additional_info)
 	net_dev->channel_init_event = WaitEventCreate();
 
 	/* Open the channel */
-// todo *** REMOVE THIS
-//	ret = device->Driver->VmbusChannelInterface.Open(device,
-//	    netDriver->ring_buf_size, netDriver->ring_buf_size,
-//	    NULL, 0, hv_nv_on_channel_callback, device);
 
 	ret = hv_vmbus_channel_open(
 		(VMBUS_CHANNEL *)device->context,
@@ -968,8 +916,7 @@ hv_nv_on_device_add(DEVICE_OBJECT *device, void *additional_info)
 
 close:
 	/* Now, we can close the channel safely */
-// todo *** REMOVE THIS
-//	device->Driver->VmbusChannelInterface.Close(device);
+
 	hv_vmbus_channel_close((VMBUS_CHANNEL *)device->context);
 
 cleanup:
@@ -1046,8 +993,6 @@ hv_nv_on_device_remove(DEVICE_OBJECT *device)
 
 	/* Now, we can close the channel safely */
 
-	// todo *** REMOVE THIS
-	//	device->Driver->VmbusChannelInterface.Close(device);
 	hv_vmbus_channel_close((VMBUS_CHANNEL *)device->context);
 
 	/* Release all resources */
@@ -1174,25 +1119,11 @@ hv_nv_on_send(DEVICE_OBJECT *device, netvsc_packet *pkt)
 	send_msg.msgs.vers_1_msgs.send_rndis_pkt.send_buf_section_size = 0;
 
 	if (pkt->page_buf_count) {
-// todo *** REMOVE THIS
-//		ret =
-//		    device->Driver->VmbusChannelInterface.SendPacketPageBuffer(
-//		    device, pkt->page_buffers, pkt->page_buf_count,
-//		    &send_msg, sizeof(nvsp_msg), (unsigned long)pkt);
-
 		ret = hv_vmbus_channel_send_packet_pagebuffer(
 			(VMBUS_CHANNEL *)device->context,
 			pkt->page_buffers, pkt->page_buf_count,
 			&send_msg, sizeof(nvsp_msg), (uint64_t)pkt);
-
-
 	} else {
-// todo *** REMOVE THIS
-//		ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-//		    &send_msg, sizeof(nvsp_msg), (unsigned long)pkt,
-//		    VmbusPacketTypeDataInBand,
-//		    VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
-
 		ret = hv_vmbus_channel_send_packet(
 			(VMBUS_CHANNEL *)device->context,
 			&send_msg, sizeof(nvsp_msg), (uint64_t)pkt,
@@ -1449,11 +1380,6 @@ hv_nv_send_receive_completion(DEVICE_OBJECT *device, uint64_t tid)
 retry_send_cmplt:
 	/* Send the completion */
 
-// todo *** REMOVE THIS
-//	ret = device->Driver->VmbusChannelInterface.SendPacket(device,
-//	    &rx_comp_msg, sizeof(nvsp_msg), tid,
-//	    VmbusPacketTypeCompletion, 0);
-
 	ret = hv_vmbus_channel_send_packet(
 		(VMBUS_CHANNEL *)device->context,
 		&rx_comp_msg, sizeof(nvsp_msg), tid,
@@ -1579,9 +1505,6 @@ hv_nv_on_channel_callback(void *context)
 	}
 
 	do {
-// todo *** REMOVE THIS
-//		ret = device->Driver->VmbusChannelInterface.RecvPacketRaw(
-//		    device, buffer, bufferlen, &bytes_rxed, &request_id);
 		ret = hv_vmbus_channel_recv_packet_raw(
 			(VMBUS_CHANNEL *)device->context,
 			buffer, bufferlen, &bytes_rxed, &request_id);

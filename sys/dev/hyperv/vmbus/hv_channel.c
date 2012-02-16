@@ -261,12 +261,8 @@ hv_vmbus_channel_open(VMBUS_CHANNEL *NewChannel, uint32_t SendRingBufferSize,
 	// Allocate the ring buffer
 	out = PageAlloc(
 		(SendRingBufferSize + RecvRingBufferSize) >> PAGE_SHIFT);
-//out = MemAllocZeroed(sendRingBufferSize + recvRingBufferSize);
-// todo - fixme
-//	ASSERT(out);
-//	ASSERT(((ULONG_PTR)out & (PAGE_SIZE-1)) == 0);
-// todo - verify that unsigned long * is the correct expression
-	in = (void*) ((unsigned long) out + SendRingBufferSize);
+
+	in = (void*) ((unsigned char *)out + SendRingBufferSize);
 
 	NewChannel->RingBufferPages = out;
 	NewChannel->RingBufferPageCount = (SendRingBufferSize
@@ -337,7 +333,8 @@ hv_vmbus_channel_open(VMBUS_CHANNEL *NewChannel, uint32_t SendRingBufferSize,
 			NewChannel, openInfo->Response.OpenResult.Status);
 	}
 
-	Cleanup: mtx_lock(gVmbusConnection.ChannelMsgLock);
+Cleanup:
+	mtx_lock(gVmbusConnection.ChannelMsgLock);
 	REMOVE_ENTRY_LIST(&openInfo->MsgListEntry);
 	mtx_unlock(gVmbusConnection.ChannelMsgLock);
 
@@ -617,8 +614,8 @@ hv_vmbus_channel_establish_gpadl(VMBUS_CHANNEL *Channel, void *Kbuffer, // from 
 	DumpGpadlHeader(gpadlMsg);
 
 	mtx_lock(gVmbusConnection.ChannelMsgLock);
-	INSERT_TAIL_LIST(&gVmbusConnection.ChannelMsgList, &msgInfo->MsgListEntry);mtx_unlock(
-		gVmbusConnection.ChannelMsgLock);
+	INSERT_TAIL_LIST(&gVmbusConnection.ChannelMsgList, &msgInfo->MsgListEntry);
+	mtx_unlock(gVmbusConnection.ChannelMsgLock);
 
 	DPRINT_DBG(VMBUS, "buffer %p, size %d msg cnt %d",
 		Kbuffer, Size, msgCount);
@@ -688,9 +685,11 @@ hv_vmbus_channel_establish_gpadl(VMBUS_CHANNEL *Channel, void *Kbuffer, // from 
 
 	*GpadlHandle = gpadlMsg->Gpadl;
 
-	Cleanup: mtx_lock(gVmbusConnection.ChannelMsgLock);
-	REMOVE_ENTRY_LIST(&msgInfo->MsgListEntry);mtx_unlock(
-		gVmbusConnection.ChannelMsgLock);
+Cleanup:
+
+	mtx_lock(gVmbusConnection.ChannelMsgLock);
+	REMOVE_ENTRY_LIST(&msgInfo->MsgListEntry);
+	mtx_unlock(gVmbusConnection.ChannelMsgLock);
 
 	WaitEventClose(msgInfo->WaitEvent);
 	MemFree(msgInfo);
