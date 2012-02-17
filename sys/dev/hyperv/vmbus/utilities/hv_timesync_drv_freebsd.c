@@ -5,8 +5,6 @@
  *      Author: Larry Melia
  */
 
-// TODO--remove includes that aren't needed
-#include <sys/types.h>
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/sockio.h>

@@ -61,7 +61,6 @@
 #define ICTIMESYNCFLAG_SYNC 			1
 #define ICTIMESYNCFLAG_SAMPLE 			2
 
-#include <sys/types.h>
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/sockio.h>

@@ -128,7 +128,7 @@ VmbusConnect(void) {
 
 	gVmbusConnection.RecvInterruptPage = gVmbusConnection.InterruptPage;
 	gVmbusConnection.SendInterruptPage =
-		(void*) ((unsigned long) gVmbusConnection.InterruptPage
+		(void*) ((uint8_t *) gVmbusConnection.InterruptPage
 			+ (PAGE_SIZE >> 1));
 
 	// Set up the monitor notification facility. The 1st page for
@@ -155,9 +155,8 @@ VmbusConnect(void) {
 	msg->InterruptPage = GetPhysicalAddress(gVmbusConnection.InterruptPage);
 	msg->MonitorPage1 = GetPhysicalAddress(gVmbusConnection.MonitorPages);
 	msg->MonitorPage2 =
-		GetPhysicalAddress(
-			(void *) ((unsigned long) gVmbusConnection.MonitorPages
-				+ PAGE_SIZE));
+		GetPhysicalAddress(((uint8_t *) gVmbusConnection.MonitorPages
+					+ PAGE_SIZE));
 
 	// Add to list before we send the request since we may receive the
 	// response before returning from this routine
@@ -399,7 +398,7 @@ VmbusOnEvents(void) {
 							//QueueWorkItem(VmbusProcessEvent, (void*)relid);
 							//ret = WorkQueueQueueWorkItem(gVmbusConnection.workQueue, VmbusProcessChannelEvent, (void*)relid);
 							VmbusProcessChannelEvent(
-								(void*) (unsigned long) relid);
+								(void*) (size_t) relid);
 						}
 					}
 				}

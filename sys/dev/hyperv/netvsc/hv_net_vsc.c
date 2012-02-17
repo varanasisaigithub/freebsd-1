@@ -492,7 +492,7 @@ hv_nv_init_send_buffer_with_net_vsp(DEVICE_OBJECT *device)
 
 	ret = hv_vmbus_channel_send_packet(
 		(VMBUS_CHANNEL *)device->context,
-		 init_pkt, sizeof(nvsp_msg), (unsigned long)init_pkt,
+		 init_pkt, sizeof(nvsp_msg), (uint64_t)init_pkt,
 		 VmbusPacketTypeDataInBand,
 		 VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 

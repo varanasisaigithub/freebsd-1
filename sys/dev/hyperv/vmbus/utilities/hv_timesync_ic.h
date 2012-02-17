@@ -65,7 +65,7 @@ struct ictimesync_data {
 	winfiletime_t	childtime;
 	winfiletime_t	roundtriptime;
 	uint8_t		flags;
-}__attribute__((packed));
+} __packed;
 
 extern void timesync_channel_cb(void *context);
 

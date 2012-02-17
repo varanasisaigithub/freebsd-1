@@ -58,7 +58,6 @@
  */
 
 #include <sys/param.h>
-#include <sys/types.h>
 #include <sys/systm.h>
 #include <sys/smp.h>    /* for mp_ncpus extern */
 

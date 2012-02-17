@@ -27,7 +27,6 @@
 #ifndef __HV_OSD_H__
 #define __HV_OSD_H__
 
-//#include <sys/types.h>
 #include <sys/param.h>
 
 /* Fixme -- added these for FreeBSD build */

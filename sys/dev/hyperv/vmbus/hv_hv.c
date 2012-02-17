@@ -435,7 +435,7 @@ HvPostMessage(HV_CONNECTION_ID	connectionId,
 		return -1;
 	}
 
-	addr = (unsigned long) MemAllocAtomic(sizeof(struct alignedInput));
+	addr = (size_t) MemAllocAtomic(sizeof(struct alignedInput));
 
 	if (!addr) {
 		return -1;

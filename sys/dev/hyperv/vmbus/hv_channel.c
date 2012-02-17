@@ -262,7 +262,7 @@ hv_vmbus_channel_open(VMBUS_CHANNEL *NewChannel, uint32_t SendRingBufferSize,
 	out = PageAlloc(
 		(SendRingBufferSize + RecvRingBufferSize) >> PAGE_SHIFT);
 
-	in = (void*) ((unsigned char *)out + SendRingBufferSize);
+	in = (void*) ((uint8_t *)out + SendRingBufferSize);
 
 	NewChannel->RingBufferPages = out;
 	NewChannel->RingBufferPageCount = (SendRingBufferSize
