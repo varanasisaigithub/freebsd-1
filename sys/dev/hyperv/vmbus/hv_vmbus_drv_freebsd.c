@@ -340,6 +340,7 @@ vmbus_registration_mutex_init(void)
 {
 	mtx_init(&vmbus_reg_mutex.vmb_lock, "vmb_lock", NULL, MTX_DEF);
 }
+
 static void
 vmbus_registration_mutex_get(void)
 {
@@ -371,16 +372,6 @@ vmbus_registration_mutex_release(void)
 		wakeup_one(&vmbus_reg_mutex);
 	}
 	mtx_unlock(&vmbus_reg_mutex.vmb_lock);
-}
-
-/* 
- * Get the vmbus channel interface.  This is invoked by child/client 
- * driver that sits above vmbus
- */
-void vmbus_get_interface(VMBUS_CHANNEL_INTERFACE *interface) {
-	VMBUS_DRIVER_OBJECT *vmbus_drv_obj = &g_vmbus_drv.drv_obj;
-
-	vmbus_drv_obj->GetChannelInterface(interface);
 }
 
 static void vmbus_identify(driver_t *driver, device_t parent) {

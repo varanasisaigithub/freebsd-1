@@ -34,7 +34,7 @@
 typedef struct {
 	int Length; //channel.c :->897->936
 	int Offset; //channel.c :->937
-	UINT64 Pfn;    //channel.c:-> 938
+	uint64_t Pfn;    //channel.c:-> 938
 } PAGE_BUFFER; //channel.c : 897
 
 #define MAX_MULTIPAGE_BUFFER_COUNT 32
@@ -42,7 +42,7 @@ typedef struct {
 typedef struct { // Channel.c : 980
 	int Length;  // channel.c :1019
 	int Offset;  //channel.c :1020
-	UINT64 PfnArray[MAX_MULTIPAGE_BUFFER_COUNT]; //channel.c : 1022
+	uint64_t PfnArray[MAX_MULTIPAGE_BUFFER_COUNT]; //channel.c : 1022
 } MULTIPAGE_BUFFER;
 
 typedef struct {
@@ -68,7 +68,7 @@ typedef struct {
 	BOUND Inbound, Outbound;
 } DEVICE_INFO;
 
-typedef void (*VMBUS_CHANNEL_CALLBACK)(PVOID context);
+typedef void (*VMBUS_CHANNEL_CALLBACK)(void *context);
 
 struct _DRIVER_OBJECT;
 typedef struct {
@@ -80,24 +80,6 @@ typedef struct {
 	void *Extension; // :172
 } DEVICE_OBJECT;
 
-typedef struct { //ChannelInterface.c : 160
-	int (*Open)(DEVICE_OBJECT*, UINT32, UINT32, PVOID, UINT32,
-		VMBUS_CHANNEL_CALLBACK, PVOID);
-
-	void (*Close)(DEVICE_OBJECT *); //42
-	int (*SendPacket)(DEVICE_OBJECT *, PVOID, UINT32, UINT64, UINT32,
-		UINT32);        //50
-	int (*SendPacketPageBuffer)(DEVICE_OBJECT *, PAGE_BUFFER *, UINT32,
-		PVOID, UINT32, UINT64);
-	int (*SendPacketMultiPageBuffer)(DEVICE_OBJECT *, MULTIPAGE_BUFFER *,
-		PVOID, UINT32, UINT64);
-	int (*RecvPacket)(DEVICE_OBJECT *, PVOID, UINT32, UINT32*, UINT64*);
-	int (*RecvPacketRaw)(DEVICE_OBJECT *, PVOID, UINT32, UINT32*, UINT64*);
-	int (*EstablishGpadl)(DEVICE_OBJECT *, PVOID, UINT32, UINT32*);
-	int (*TeardownGpadl)(DEVICE_OBJECT *, UINT32);
-	void (*GetInfo)(DEVICE_OBJECT *, DEVICE_INFO *);
-} VMBUS_CHANNEL_INTERFACE;
-
 typedef struct _DRIVER_OBJECT {        //BlkVsc.c : 56
 	const char *name;  //67 : 39
 	GUID	deviceType; //68 :
@@ -105,7 +87,6 @@ typedef struct _DRIVER_OBJECT {        //BlkVsc.c : 56
 	int	(*OnDeviceRemove)(DEVICE_OBJECT *);
 	char 	**(*OnGetDeviceIds)(void);
 	void 	(*OnCleanup)(struct _DRIVER_OBJECT *);
-	VMBUS_CHANNEL_INTERFACE VmbusChannelInterface;
 } DRIVER_OBJECT;
 
 #define PDEVICE_OBJECT DEVICE_OBJECT*
@@ -114,11 +95,11 @@ typedef struct _DRIVER_OBJECT {        //BlkVsc.c : 56
 extern int hv_storvsc_init(PDRIVER_OBJECT);
 extern int hv_blkvsc_init(PDRIVER_OBJECT);
 
-extern VOID shutdown_onchannelcallback(PVOID); // drivers/closed/vmbus/ChannelMgmt.c
+extern void shutdown_onchannelcallback(void *); // drivers/closed/vmbus/ChannelMgmt.c
 
 typedef struct _XFERPAGE {
 	DLIST_ENTRY ListEntry;
-	UINT32 Count;
+	uint32_t Count;
 } XFERPAGE_PACKET;
 
 typedef int (*PFN_DRIVERINITIALIZE)(DRIVER_OBJECT*);

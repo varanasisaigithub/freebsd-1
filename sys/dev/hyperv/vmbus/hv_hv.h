@@ -58,19 +58,14 @@
 
 #ifndef __HV_HV_H__
 #define __HV_HV_H__
-/*
- * Fixme -- not at all thrilled about including these in header file
- */
+
+#include <dev/hyperv/include/hv_osd.h>
 #include <dev/hyperv/include/hv_types.h>
 #include <dev/hyperv/include/hv_status.h>
-
 #include <dev/hyperv/include/hv_hal_api.h>
 #include <dev/hyperv/include/hv_vp_api.h>
-
 #include <dev/hyperv/include/hv_synic_api.h>
-
 #include <dev/hyperv/include/hv_hc_api.h>
-/* Fixme -- not sure this one is needed */
 #include <dev/hyperv/include/hv_pt_api.h>
 
 enum {
@@ -90,11 +85,11 @@ enum {
 
 #define HV_XENLINUX_GUEST_ID_LO	0x00000000
 #define HV_XENLINUX_GUEST_ID_HI	0x0B00B135
-#define HV_XENLINUX_GUEST_ID	(((UINT64)HV_XENLINUX_GUEST_ID_HI << 32) | HV_XENLINUX_GUEST_ID_LO)
+#define HV_XENLINUX_GUEST_ID	(((uint64_t)HV_XENLINUX_GUEST_ID_HI << 32) | HV_XENLINUX_GUEST_ID_LO)
 
 #define HV_LINUX_GUEST_ID_LO	0x00000000
 #define HV_LINUX_GUEST_ID_HI	0xB16B00B5
-#define HV_LINUX_GUEST_ID	(((UINT64)HV_LINUX_GUEST_ID_HI << 32) | HV_LINUX_GUEST_ID_LO)
+#define HV_LINUX_GUEST_ID	(((uint64_t)HV_LINUX_GUEST_ID_HI << 32) | HV_LINUX_GUEST_ID_LO)
 
 #define HV_CPU_POWER_MANAGEMENT	(1 << 0)
 #define HV_RECOMMENDATIONS_MAX	4
@@ -102,7 +97,7 @@ enum {
 #define HV_X64_MAX		5
 #define HV_CAPS_MAX		8
 
-#define HV_HYPERCALL_PARAM_ALIGN sizeof(UINT64)
+#define HV_HYPERCALL_PARAM_ALIGN sizeof(uint64_t)
 
 //
 // Service definitions
@@ -134,12 +129,12 @@ static const GUID VMBUS_SERVICE_ID = { .Data = { 0xb8, 0x80, 0x81, 0x62, 0x8d,
 #define MAX_NUM_CPUS 4
 
 typedef struct {
-	UINT64 Align8;
+	uint64_t Align8;
 	HV_INPUT_SIGNAL_EVENT Event;
 } HV_INPUT_SIGNAL_EVENT_BUFFER;
 
 typedef struct {
-	UINT64 GuestId;	// XenLinux or native Linux. If XenLinux, the hypercall and synic pages has already been initialized
+	uint64_t GuestId;	// XenLinux or native Linux. If XenLinux, the hypercall and synic pages has already been initialized
 	void* HypercallPage;
 
 	BOOL SynICInitialized;
@@ -162,7 +157,7 @@ static inline unsigned long long ReadMsr(int msr) {
 	return val;
 }
 
-static inline void WriteMsr(int msr, UINT64 val) {
+static inline void WriteMsr(int msr, uint64_t val) {
 	WRMSR(msr, val);
 	return;
 }
@@ -175,7 +170,7 @@ HvCleanup( void);
 
 extern HV_STATUS
 HvPostMessage(HV_CONNECTION_ID connectionId, HV_MESSAGE_TYPE messageType,
-	      void *payload, SIZE_T payloadSize);
+	      void *payload, size_t payloadSize);
 
 extern HV_STATUS
 HvSignalEvent( void);

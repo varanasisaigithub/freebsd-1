@@ -130,10 +130,10 @@ static void
 VmbusChannelOnVersionResponse(PVMBUS_CHANNEL_MESSAGE_HEADER hdr);
 
 static void
-VmbusChannelProcessOffer(PVOID context);
+VmbusChannelProcessOffer(void *context);
 
 static void
-VmbusChannelProcessRescindOffer(PVOID context);
+VmbusChannelProcessRescindOffer(void *context);
 
 //
 // Globals
@@ -411,7 +411,7 @@ shutdown_onchannelcallback(void *context) {
 
  --*/
 static void
-VmbusChannelProcessOffer(PVOID context) {
+VmbusChannelProcessOffer(void *context) {
 	int ret = 0;
 	VMBUS_CHANNEL* newChannel = (VMBUS_CHANNEL*) context;
 	GUID *guidType;
@@ -534,7 +534,7 @@ VmbusChannelProcessOffer(PVOID context) {
 
  --*/
 static void
-VmbusChannelProcessRescindOffer(PVOID context) {
+VmbusChannelProcessRescindOffer(void *context) {
 	VMBUS_CHANNEL* channel = (VMBUS_CHANNEL*) context;
 
 	DPRINT_ENTER(VMBUS);
@@ -616,8 +616,8 @@ VmbusChannelOnOffer(PVMBUS_CHANNEL_MESSAGE_HEADER hdr) {
 
 	memcpy(&newChannel->OfferMsg, offer,
 		sizeof(VMBUS_CHANNEL_OFFER_CHANNEL));
-	newChannel->MonitorGroup = (UINT8) offer->MonitorId / 32;
-	newChannel->MonitorBit = (UINT8) offer->MonitorId % 32;
+	newChannel->MonitorGroup = (uint8_t) offer->MonitorId / 32;
+	newChannel->MonitorBit = (uint8_t) offer->MonitorId % 32;
 
 	// TODO: Make sure the offer comes from our parent partition
 	WorkQueueQueueWorkItem(newChannel->ControlWQ, VmbusChannelProcessOffer,
@@ -873,7 +873,7 @@ VmbusChannelOnVersionResponse(PVMBUS_CHANNEL_MESSAGE_HEADER hdr) {
  This is invoked in the vmbus worker thread context.
 
  --*/
-VOID
+void
 VmbusOnChannelMessage(void *Context) {
 	HV_MESSAGE *msg = (HV_MESSAGE*) Context;
 	VMBUS_CHANNEL_MESSAGE_HEADER* hdr;
@@ -917,7 +917,7 @@ VmbusOnChannelMessage(void *Context) {
 
  --*/
 int
-VmbusChannelRequestOffers(VOID) {
+VmbusChannelRequestOffers(void) {
 	int ret = 0;
 	VMBUS_CHANNEL_MESSAGE_HEADER* msg;
 	VMBUS_CHANNEL_MSGINFO* msgInfo;
@@ -974,7 +974,7 @@ VmbusChannelRequestOffers(VOID) {
 
  --*/
 void
-VmbusChannelReleaseUnattachedChannels(VOID) {
+VmbusChannelReleaseUnattachedChannels(void) {
 	LIST_ENTRY *entry;
 	VMBUS_CHANNEL *channel;
 	VMBUS_CHANNEL *start = NULL;

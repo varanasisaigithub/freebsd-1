@@ -58,11 +58,9 @@
  */
 
 #include <sys/param.h>
-#include <sys/types.h>
 #include <sys/systm.h>
 #include <sys/smp.h>    /* for mp_ncpus extern */
 
-#include <dev/hyperv/include/hv_osd.h>
 #include <dev/hyperv/include/hv_logging.h>
 #include "hv_version_info.h"
 #include "hv_hv.h"
@@ -71,9 +69,6 @@
 #include <dev/hyperv/include/hv_list.h>
 #include "hv_ring_buffer.h"
 #include <dev/hyperv/include/hv_vmbus_channel_interface.h>
-#include <dev/hyperv/include/hv_vmbus_packet_format.h>
-#include <dev/hyperv/include/hv_channel_messages.h>
-#include "hv_channel_mgmt.h"
 #include "hv_channel.h"
 #include "hv_channel_interface.h"
 #include <dev/hyperv/vmbus/hv_connection.h>
@@ -100,9 +95,6 @@ static DEVICE_OBJECT* gDevice; // vmbus root device
 //
 // Internal routines
 //
-
-static void
-VmbusGetChannelInterface(VMBUS_CHANNEL_INTERFACE *Interface);
 
 static void
 VmbusGetChannelInfo(DEVICE_OBJECT *DeviceObject, DEVICE_INFO *DeviceInfo);
@@ -169,7 +161,6 @@ VmbusInitialize(DRIVER_OBJECT* drv) {
 	driver->OnMsgDpc = VmbusOnMsgDPC;
 	driver->OnEventDpc = VmbusOnEventDPC;
 	driver->GetChannelOffers = VmbusGetChannelOffers;
-	driver->GetChannelInterface = VmbusGetChannelInterface;
 	driver->GetChannelInfo = VmbusGetChannelInfo;
 
 	MemoryFence();
@@ -203,20 +194,6 @@ VmbusGetChannelOffers(void) {
 	DPRINT_ENTER(VMBUS);
 	VmbusChannelRequestOffers();
 	DPRINT_EXIT(VMBUS);
-}
-
-/*++;
-
- Name:
- VmbusGetChannelInterface()
-
- Description:
- Get the channel interface
-
- --*/
-static void
-VmbusGetChannelInterface(VMBUS_CHANNEL_INTERFACE *Interface) {
-	GetChannelInterface(Interface);
 }
 
 /*++;
@@ -313,7 +290,7 @@ VmbusChildDeviceRemove(DEVICE_OBJECT* ChildDevice) {
  --*/
 static int
 VmbusOnDeviceAdd(DEVICE_OBJECT *dev, void *AdditionalInfo) {
-	UINT32 *irqvector = (UINT32*) AdditionalInfo;
+	uint32_t *irqvector = (uint32_t*) AdditionalInfo;
 	int ret = 0;
 	int cpuid;
 
@@ -447,7 +424,7 @@ VmbusOnMsgDPC(DRIVER_OBJECT* drv) {
  VmbusOnEventDPC()
 
  Description:
- DPC routine to handle events from the hypervisior
+ DPC routine to handle events from the hypervisor
 
  --*/
 void

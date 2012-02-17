@@ -261,7 +261,7 @@ HANDLE TimerCreate(PFN_TIMER_CALLBACK pfnTimerCB, void *context) {
 	return (t);
 }
 
-void TimerStart(HANDLE hTimer, UINT32 expirationInUs) {
+void TimerStart(HANDLE hTimer, uint32_t expirationInUs) {
 	TIMER *t = (TIMER *) hTimer;
 
 	t->handle = timeout(TimerCallback, t, expirationInUs / 1000);
@@ -284,7 +284,7 @@ void TimerClose(HANDLE hTimer) {
 }
 
 /* Not used */
-SIZE_T GetTickCount(void) {
+size_t GetTickCount(void) {
 	return (ticks);
 }
 
@@ -344,14 +344,15 @@ int WaitEventWait(HANDLE hWait) {
 			PWAIT | PCATCH, "hv sleep", 0);
 //		if (ret == 0)
 		waitEvent->condition = 0;
-	}mtx_unlock(&waitEvent->mtx);
+	}
+	mtx_unlock(&waitEvent->mtx);
 #else
 	ret = tsleep(&waitEvent->event, PWAIT | PCATCH, "hv sleep", 0);
 #endif
 	return (ret);
 }
 
-int WaitEventWaitEx(HANDLE hWait, UINT32 TimeoutInMs) {
+int WaitEventWaitEx(HANDLE hWait, uint32_t TimeoutInMs) {
 	int ret = 1;
 	WAITEVENT *waitEvent = (WAITEVENT *)hWait;
 
@@ -380,7 +381,7 @@ int WaitEventWaitEx(HANDLE hWait, UINT32 TimeoutInMs) {
 	return (ret);
 }
 
-HANDLE SpinlockCreate(VOID) {
+HANDLE SpinlockCreate(void) {
 #ifdef USE_CRITICAL_SECTION
 	return ((HANDLE)1);
 #else
@@ -395,7 +396,7 @@ HANDLE SpinlockCreate(VOID) {
 #endif
 }
 
-VOID SpinlockAcquire(HANDLE hSpin) {
+void SpinlockAcquire(HANDLE hSpin) {
 #ifdef USE_CRITICAL_SECTION
 	critical_enter();
 #else
@@ -405,7 +406,7 @@ VOID SpinlockAcquire(HANDLE hSpin) {
 #endif
 }
 
-VOID SpinlockRelease(HANDLE hSpin) {
+void SpinlockRelease(HANDLE hSpin) {
 #ifdef USE_CRITICAL_SECTION
 	critical_exit();
 #else
@@ -415,7 +416,7 @@ VOID SpinlockRelease(HANDLE hSpin) {
 #endif
 }
 
-VOID SpinlockClose(HANDLE hSpin) {
+void SpinlockClose(HANDLE hSpin) {
 #ifdef USE_CRITICAL_SECTION
 #else
 	SPINLOCK *spin = (SPINLOCK *) hSpin;
@@ -425,23 +426,23 @@ VOID SpinlockClose(HANDLE hSpin) {
 #endif
 }
 
-void *Physical2LogicalAddr(ULONG_PTR PhysAddr) {
+void *Physical2LogicalAddr(unsigned long PhysAddr) {
 	/* Should not be executed  - used in vmbus/hv.c */
 	printf("NOTYET - Physical2LogicalAddr\n");
 
 	return (NULL);
 }
 
-ULONG_PTR Logical2PhysicalAddr(PVOID LogicalAddr) {
-	ULONG_PTR ret;
+unsigned long Logical2PhysicalAddr(void *LogicalAddr) {
+	unsigned long ret;
 
 	ret = (vtophys(LogicalAddr) | ((vm_offset_t) LogicalAddr & PAGE_MASK));
 
 	return (ret);
 }
 
-ULONG_PTR Virtual2Physical(PVOID VirtAddr) {
-	ULONG_PTR ret;
+unsigned long Virtual2Physical(void *VirtAddr) {
+	unsigned long ret;
 
 	ret = vtophys(VirtAddr);
 

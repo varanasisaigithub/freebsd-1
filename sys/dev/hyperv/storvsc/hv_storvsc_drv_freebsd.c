@@ -1,4 +1,4 @@
-#include <sys/types.h>
+#include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/sockio.h>
 #include <sys/mbuf.h>
@@ -298,13 +298,6 @@ storvsc_attach(device_t dev)
 	sc->sto_drv.drv_props = &g_drv_props_table[stor_type];
 	sc->sto_drv.drv_obj.ringbuffer_size =
 		g_drv_props_table[stor_type].drv_ringbuffer_size;
-
-	/*
-	 * XXX This call interface needs to be fixed.
-	 * It is not clear why this is needed and why
-	 * so much indirection is needed to set these properties.
-	 */
-	vmbus_get_interface(&sc->sto_drv.drv_obj.Base.VmbusChannelInterface);
 
 	device_ctx->device_obj.Driver = &sc->sto_drv.drv_obj.Base;
 

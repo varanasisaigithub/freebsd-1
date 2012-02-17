@@ -27,10 +27,11 @@
 #ifndef __HV_CONNECTIONS_H__
 #define __HV_CONNECTIONS_H__
 
-extern void VmbusSetChannelMode(PVOID context, int mode);
-extern int VmbusGetChannelMode(UINT32 relId);
+//todo - refactor this stuff into the best include
+extern void VmbusSetChannelMode(void *context, int mode);
+extern int VmbusGetChannelMode(uint32_t relId);
 extern int CheckEvents(void);
-extern int VmbusDataReady(PVOID context);
+extern int VmbusDataReady(void *context);
 
 #endif  /* __HV_CONNECTIONS_H__ */
 

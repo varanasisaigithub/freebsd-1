@@ -829,13 +829,13 @@ typedef struct _rndis_msg {
  * get pointer to contained message from NDIS_MESSAGE pointer
  */
 #define RNDIS_MESSAGE_PTR_TO_MESSAGE_PTR(rndis_message)         \
-    ((PVOID) &rndis_message->Message)
+    ((void *) &rndis_message->Message)
 
 /*
  * get pointer to contained message from NDIS_MESSAGE pointer
  */
 #define RNDIS_MESSAGE_RAW_PTR_TO_MESSAGE_PTR(rndis_message)     \
-    ((PVOID) rndis_message)
+    ((void *) rndis_message)
 
 #endif  /* __HV_RNDIS_H__ */
 

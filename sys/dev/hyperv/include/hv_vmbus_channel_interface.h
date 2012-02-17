@@ -60,8 +60,6 @@
 #ifndef __HV_VMBUS_CHANNEL_INTERFACE_H__
 #define __HV_VMBUS_CHANNEL_INTERFACE_H__
 
-#include "hv_osd.h"
-
 // 
 // A revision number of vmbus that is used for ensuring both ends on a
 // partition are using compatible versions.
@@ -99,36 +97,38 @@
 
 typedef struct
 {
-    GUID    InterfaceType;
-    GUID    InterfaceInstance;
-    UINT64  InterruptLatencyIn100nsUnits;
-    UINT32  InterfaceRevision;
-    UINT32  ServerContextAreaSize;  // in bytes
-    UINT16  ChannelFlags;
-    UINT16  MmioMegabytes;          // in bytes * 1024 * 1024
+    GUID	InterfaceType;
+    GUID	InterfaceInstance;
+    uint64_t	InterruptLatencyIn100nsUnits;
+    uint32_t	InterfaceRevision;
+    uint32_t	ServerContextAreaSize;  /* in bytes */
+    uint16_t	ChannelFlags;
+    uint16_t	MmioMegabytes;          /* in bytes * 1024 * 1024 */
 
     union
     {
-        //
-        // Non-pipes: The user has MAX_USER_DEFINED_BYTES bytes.
-        //
+        /*
+         * Non-pipes: The user has MAX_USER_DEFINED_BYTES bytes.
+         */
         struct
         {
-            UCHAR   UserDefined[MAX_USER_DEFINED_BYTES];
+            uint8_t	UserDefined[MAX_USER_DEFINED_BYTES];
         } Standard;
 
-        //
-        // Pipes: The following sructure is an integrated pipe protocol, which
-        //        is implemented on top of standard user-defined data. Pipe clients
-        //        have MAX_PIPE_USER_DEFINED_BYTES left for their own use.
-        //
+        /*
+         * Pipes: The following structure is an integrated pipe protocol, which
+         *        is implemented on top of standard user-defined data. Pipe clients
+         *        have MAX_PIPE_USER_DEFINED_BYTES left for their own use.
+         */
         struct
         {
-            UINT32  PipeMode;
-            UCHAR   UserDefined[MAX_PIPE_USER_DEFINED_BYTES];
+            uint32_t	PipeMode;
+            uint8_t	UserDefined[MAX_PIPE_USER_DEFINED_BYTES];
         } Pipe;
     } u;
-	UINT32	Padding;
+
+    uint32_t	Padding;
+
 } VMBUS_CHANNEL_OFFER, *PVMBUS_CHANNEL_OFFER;
 #pragma pack(pop)
 
@@ -142,7 +142,7 @@ typedef struct
 //          FIELD_OFFSET(VMBUS_CHANNEL_OFFER, u.Standard.UserDefined)));
 //
 
-typedef UINT32 GPADL_HANDLE;
+typedef uint32_t GPADL_HANDLE;
 
 //
 // Server Flags

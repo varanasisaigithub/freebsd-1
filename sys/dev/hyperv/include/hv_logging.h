@@ -27,7 +27,7 @@
 #ifndef __HV_LOGGING_H__
 #define __HV_LOGGING_H__
 
-#include <sys/types.h>
+#include <sys/param.h>
 #include <sys/systm.h>
 
 //#define DEBUG

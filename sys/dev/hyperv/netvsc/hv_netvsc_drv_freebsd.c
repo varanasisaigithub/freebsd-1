@@ -174,8 +174,6 @@ netvsc_drv_init(void)
 
 	DPRINT_ENTER(NETVSC_DRV);
 
-	vmbus_get_interface(&net_drv_obj->base.VmbusChannelInterface);
-
 	net_drv_obj->ring_buf_size = netvsc_ringbuffer_size;
 	net_drv_obj->on_rx_callback = netvsc_recv_callback;
 	net_drv_obj->on_link_stat_changed = netvsc_linkstatus_callback;
@@ -476,7 +474,7 @@ hn_start_locked(struct ifnet *ifp)
 		packet->compl.send.on_send_completion =
 		    netvsc_xmit_completion;
 		packet->compl.send.send_completion_context = packet;
-		packet->compl.send.send_completion_tid = (ULONG_PTR)m_head;
+		packet->compl.send.send_completion_tid = (uint64_t)m_head;
 retry_send:
 		critical_enter();
 		ret = net_drv_obj->on_send(&device_ctx->device_obj, packet);

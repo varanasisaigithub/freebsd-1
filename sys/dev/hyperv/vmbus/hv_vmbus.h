@@ -27,7 +27,6 @@
 #ifndef __HV_VMBUS_H__
 #define __HV_VMBUS_H__
 
-
 struct driver_context {
 	GUID			class_id;
 	uint32_t		driver;
@@ -78,12 +77,7 @@ VMBUS_ACCESSOR(type, TYPE,  const char *)
 VMBUS_ACCESSOR(devctx, DEVCTX,  struct device_context *)
 
 
-/*
- * Externs
- */
-extern void vmbus_get_interface(VMBUS_CHANNEL_INTERFACE *);
-extern void vmbus_child_driver_register(struct driver_context* driver_ctx);
-
+void vmbus_child_driver_register(struct driver_context* driver_ctx);
 
 #endif  /* __HV_VMBUS_H__ */
 
