@@ -81,6 +81,8 @@
  */
 extern int hv_rndis_filter_init(netvsc_driver_object *driver);
 
+extern int hv_rf_on_receive(DEVICE_OBJECT *device, netvsc_packet *pkt);
+
 
 #endif  /* __HV_RNDIS_FILTER_H__ */
 

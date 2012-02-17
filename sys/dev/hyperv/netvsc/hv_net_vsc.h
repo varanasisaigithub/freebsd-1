@@ -95,7 +95,14 @@ typedef struct netvsc_dev_ {
 	int					num_outstanding_sends;
 	/* List of free preallocated NETVSC_PACKET to represent RX packet */
 	LIST_ENTRY				rx_packet_list;
-	void					*rx_packet_list_lock;
+	/*
+	 * Fixme:  Need to switch over from the pointer to the actual lock.
+	 * Fixme:  Remove the pointer when done.
+	 * Fixme:  Move to the end of the struct due to alignment issues.
+	 * Fixme:  Lock
+	 */
+	//void					*rx_packet_list_lock;
+	struct mtx				rx_pkt_list_lock;
 
 	/* Send buffer allocated by us but manages by NetVSP */
 	void					*send_buf;

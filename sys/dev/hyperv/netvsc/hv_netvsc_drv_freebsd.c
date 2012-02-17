@@ -151,17 +151,22 @@ static int  hn_start_locked(struct ifnet *ifp);
 static void hn_start(struct ifnet *ifp);
 
 static void netvsc_xmit_completion(void *context);
-static int  netvsc_recv_callback(DEVICE_OBJECT *device_obj,
-				 netvsc_packet *packet);
-static int  netvsc_drv_init(PFN_DRIVERINITIALIZE pfn_drv_init);
-static void netvsc_linkstatus_callback(DEVICE_OBJECT *, unsigned int);
+/* Fixme:  Function pointer removal */
+//static int  netvsc_recv_callback(DEVICE_OBJECT *device_obj,
+//				 netvsc_packet *packet);
+//static void netvsc_linkstatus_callback(DEVICE_OBJECT *, uint32_t);
+/* Fixme:  Function pointer removal */
+//static int  netvsc_drv_init(PFN_DRIVERINITIALIZE pfn_drv_init);
+static int  netvsc_drv_init(void);
 
 
 /*
  * NetVsc driver initialization
  */
-int
-netvsc_drv_init(PFN_DRIVERINITIALIZE pfn_drv_init)
+static int
+/* Fixme:  Function pointer removal */
+//netvsc_drv_init(PFN_DRIVERINITIALIZE pfn_drv_init)
+netvsc_drv_init(void)
 {
 	int ret = 0;
 	netvsc_driver_object *net_drv_obj = &g_netvsc_drv.drv_obj;
@@ -176,7 +181,9 @@ netvsc_drv_init(PFN_DRIVERINITIALIZE pfn_drv_init)
 	net_drv_obj->on_link_stat_changed = netvsc_linkstatus_callback;
 
 	/* Callback to client driver to complete the initialization */
-	pfn_drv_init(&net_drv_obj->base);
+	/* Fixme:  Function pointer removal */
+	//pfn_drv_init(&net_drv_obj->base);
+	hv_net_vsc_initialize(&net_drv_obj->base);
 
 	memcpy(&drv_ctx->class_id, &net_drv_obj->base.deviceType, sizeof(GUID));
 
@@ -198,8 +205,10 @@ netvsc_init(void)
 	printf("Netvsc initializing....");
 
 	if (!g_netvsc_drv.drv_inited) {
-		netvsc_drv_init(hv_net_vsc_initialize);
-		atomic_set_int(&g_netvsc_drv.drv_inited,1);
+		/* Fixme:  Function pointer removal */
+		//netvsc_drv_init(hv_net_vsc_initialize);
+		netvsc_drv_init();
+		atomic_set_int(&g_netvsc_drv.drv_inited, 1);
 	}
 
 	DPRINT_EXIT(NETVSC_DRV);
@@ -340,7 +349,7 @@ netvsc_shutdown(device_t dev)
 /*
  * Send completion processing
  */
-void
+static void
 netvsc_xmit_completion(void *context)
 {
 	netvsc_packet *packet = (netvsc_packet *)context;
@@ -520,9 +529,8 @@ retry_send:
 /*
  * Link up/down notification
  */
-static void
-netvsc_linkstatus_callback(DEVICE_OBJECT *device_obj,
-			   unsigned int status)
+void
+netvsc_linkstatus_callback(DEVICE_OBJECT *device_obj, uint32_t status)
 {
 	struct device_context *device_ctx = to_device_context(device_obj);
 	hn_softc_t *sc = device_get_softc(device_ctx->device);
@@ -548,7 +556,7 @@ netvsc_linkstatus_callback(DEVICE_OBJECT *device_obj,
  * RX Callback.  Called when we receive a packet from the "wire" on the
  * specified device
  */
-static int
+int
 netvsc_recv_callback(DEVICE_OBJECT *device_obj, netvsc_packet *packet)
 {
 	struct device_context *device_ctx = to_device_context(device_obj);
@@ -600,24 +608,12 @@ netvsc_recv_callback(DEVICE_OBJECT *device_obj, netvsc_packet *packet)
 	 * cannot be deallocated
 	 */
 	for (i=0; i < packet->page_buf_count; i++) {
-		/* Shifts virtual page number to form virtual page address */
-		unsigned char *vaddr = PageMapVirtualAddress((unsigned long)
-		    (packet->page_buffers[i].Pfn));
-#ifdef REMOVED
-		/* Function cannot fail */
-		if (vaddr == NULL) {
-			DPRINT_ERR(NETVSC_DRV, "NETVSC: Unable to map page");
-			m_freem(m_new);
-
-			return (0);
-		}
-#endif
+		/* Shift virtual page number to form virtual page address */
+		unsigned char *vaddr = (unsigned char *)
+		    (packet->page_buffers[i].Pfn << PAGE_SHIFT);
 
 		m_append(m_new, packet->page_buffers[i].Length,
 		    vaddr + packet->page_buffers[i].Offset);
-
-		/* no-op */
-		PageUnmapVirtualAddress(vaddr);
 	}
 
 	m_new->m_pkthdr.len = m_new->m_len = packet->tot_data_buf_len -

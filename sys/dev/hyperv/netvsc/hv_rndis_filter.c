@@ -59,6 +59,8 @@
 #include <sys/param.h>
 #include <sys/mbuf.h>
 #include <sys/socket.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
 #include <net/if_arp.h>
 
 #include <dev/hyperv/include/hv_osd.h>
@@ -97,7 +99,15 @@ typedef struct rndis_device_ {
 	uint32_t			link_status;
 	uint32_t			new_request_id;
 
-	void				*request_lock;
+	/*
+	 * Fixme:  Need to switch over from the pointer to the actual lock.
+	 * Fixme:  Remove the pointer when done.
+	 * Fixme:  Move to the end of the struct due to alignment issues.
+	 * Fixme:  Lock
+	 */
+	//void				*request_lock;
+	struct mtx			req_lock;
+
 	LIST_ENTRY			request_list;
 
 	uint8_t				hw_mac_addr[HW_MACADDR_LEN];
@@ -142,7 +152,8 @@ static void hv_rf_receive_indicate_status(rndis_device *device,
 extern void hv_rf_receive_data(rndis_device *device, rndis_msg *message,
 //static void hv_rf_receive_data(rndis_device *device, rndis_msg *message,
 				   netvsc_packet *pkt);
-static int  hv_rf_on_receive(DEVICE_OBJECT *device, netvsc_packet *pkt);
+/* Fixme  Function pointer removal */
+//static int  hv_rf_on_receive(DEVICE_OBJECT *device, netvsc_packet *pkt);
 static int  hv_rf_query_device(rndis_device *device, uint32_t oid,
 				   void *result, uint32_t *result_size);
 static inline int hv_rf_query_device_mac(rndis_device *device);
@@ -180,12 +191,19 @@ hv_get_rndis_device(void)
 		return (NULL);
 	}
 
-	device->request_lock = SpinlockCreate();
+	/* Fixme:  Lock */
+	//device->request_lock = SpinlockCreate();
+	/* Fixme:  Lock */
+	mtx_init(&device->req_lock, "HV-FRL", NULL, MTX_SPIN | MTX_RECURSE);
+
+#ifdef REMOVED
+	/* Fixme:  Lock */
 	if (!device->request_lock) {
 		free(device, M_DEVBUF);
 
 		return (NULL);
 	}
+#endif
 
 	INITIALIZE_LIST_HEAD(&device->request_list);
 
@@ -200,7 +218,10 @@ hv_get_rndis_device(void)
 static inline void
 hv_put_rndis_device(rndis_device *device)
 {
-	SpinlockClose(device->request_lock);
+	/* Fixme:  Lock */
+	//SpinlockClose(device->request_lock);
+	/* Fixme:  Lock */
+	mtx_destroy(&device->req_lock);
 	free(device, M_DEVBUF);
 }
 
@@ -240,9 +261,15 @@ hv_rndis_request(rndis_device *device, uint32_t message_type,
 	set->request_id = InterlockedIncrement((int *)&device->new_request_id);
 
 	/* Add to the request list */
-	SpinlockAcquire(device->request_lock);
+	/* Fixme:  Lock */
+	//SpinlockAcquire(device->request_lock);
+	/* Fixme:  Lock */
+	mtx_lock(&device->req_lock);
 	INSERT_TAIL_LIST(&device->request_list, &request->list_entry);
-	SpinlockRelease(device->request_lock);
+	/* Fixme:  Lock */
+	//SpinlockRelease(device->request_lock);
+	/* Fixme:  Lock */
+	mtx_unlock(&device->req_lock);
 
 	return (request);
 }
@@ -253,9 +280,15 @@ hv_rndis_request(rndis_device *device, uint32_t message_type,
 static inline void
 hv_put_rndis_request(rndis_device *device, rndis_request *request)
 {
-	SpinlockAcquire(device->request_lock);
+	/* Fixme:  Lock */
+	//SpinlockAcquire(device->request_lock);
+	/* Fixme:  Lock */
+	mtx_lock(&device->req_lock);
 	REMOVE_ENTRY_LIST(&request->list_entry);
-	SpinlockRelease(device->request_lock);
+	/* Fixme:  Lock */
+	//SpinlockRelease(device->request_lock);
+	/* Fixme:  Lock */
+	mtx_unlock(&device->req_lock);
 
 	WaitEventClose(request->wait_event);
 	free(request, M_DEVBUF);
@@ -377,7 +410,10 @@ hv_rf_receive_response(rndis_device *device, rndis_msg *response)
 
 	DPRINT_ENTER(NETVSC);
 
-	SpinlockAcquire(device->request_lock);
+	/* Fixme:  Lock */
+	//SpinlockAcquire(device->request_lock);
+	/* Fixme:  Lock */
+	mtx_lock(&device->req_lock);
 	ITERATE_LIST_ENTRIES(anchor, curr, &device->request_list) {		
 		request = CONTAINING_RECORD(curr, rndis_request, list_entry);
 
@@ -397,7 +433,10 @@ hv_rf_receive_response(rndis_device *device, rndis_msg *response)
 			break;
 		}
 	}
-	SpinlockRelease(device->request_lock);
+	/* Fixme:  Lock */
+	//SpinlockRelease(device->request_lock);
+	/* Fixme:  Lock */
+	mtx_unlock(&device->req_lock);
 
 	if (found) {
 		if (response->msg_len <= sizeof(rndis_msg)) {
@@ -439,12 +478,15 @@ hv_rf_receive_indicate_status(rndis_device *device, rndis_msg *response)
 	rndis_indicate_status *indicate = &response->msg.indicate_status;
 		
 	if (indicate->status == RNDIS_STATUS_MEDIA_CONNECT) {
-		g_rndis_filter.inner_drv.on_link_stat_changed(
-		    device->net_dev->dev, 1);
-	}
-	else if (indicate->status == RNDIS_STATUS_MEDIA_DISCONNECT) {
-		g_rndis_filter.inner_drv.on_link_stat_changed(
-		    device->net_dev->dev, 0);
+		/* Fixme:  Function pointer removal */
+		//g_rndis_filter.inner_drv.on_link_stat_changed(
+		//    device->net_dev->dev, 1);
+		netvsc_linkstatus_callback(device->net_dev->dev, 1);
+	} else if (indicate->status == RNDIS_STATUS_MEDIA_DISCONNECT) {
+		/* Fixme:  Function pointer removal */
+		//g_rndis_filter.inner_drv.on_link_stat_changed(
+		//    device->net_dev->dev, 0);
+		netvsc_linkstatus_callback(device->net_dev->dev, 0);
 	} else {
 		/* TODO: */
 	}
@@ -482,7 +524,9 @@ hv_rf_receive_data(rndis_device *device, rndis_msg *message, netvsc_packet *pkt)
 
 	pkt->is_data_pkt = TRUE;
 		
-	g_rndis_filter.inner_drv.on_rx_callback(device->net_dev->dev, pkt);
+	/* Fixme:  Function pointer removal */
+	//g_rndis_filter.inner_drv.on_rx_callback(device->net_dev->dev, pkt);
+	netvsc_recv_callback(device->net_dev->dev, pkt);
 
 	DPRINT_EXIT(NETVSC);
 }
@@ -490,7 +534,7 @@ hv_rf_receive_data(rndis_device *device, rndis_msg *message, netvsc_packet *pkt)
 /*
  * RNDIS filter on receive
  */
-static int
+int
 hv_rf_on_receive(DEVICE_OBJECT *device, netvsc_packet *pkt)
 {
 	netvsc_dev *net_dev = (netvsc_dev *)device->Extension;
@@ -520,8 +564,8 @@ hv_rf_on_receive(DEVICE_OBJECT *device, netvsc_packet *pkt)
 		return (-1);
 	}
 
-	rndis_hdr = (rndis_msg *)PageMapVirtualAddress(
-	    pkt->page_buffers[0].Pfn);
+	/* Shift virtual page number to form virtual page address */
+	rndis_hdr = (rndis_msg *)(pkt->page_buffers[0].Pfn << PAGE_SHIFT);
 
 	rndis_hdr = (void *)((unsigned long)rndis_hdr +
 	    pkt->page_buffers[0].Offset);
@@ -534,9 +578,6 @@ hv_rf_on_receive(DEVICE_OBJECT *device, netvsc_packet *pkt)
 	 */
 #if 0
 	if (pkt->tot_data_buf_len != rndis_hdr->msg_len) {
-		PageUnmapVirtualAddress((void *)(unsigned long)rndis_hdr -
-		    pkt->page_buffers[0].Offset);
-
 		DPRINT_ERR(NETVSC, "invalid rndis message? (expected %u "
 		    "bytes got %u)... dropping this message!",
 		    rndis_hdr->msg_len, pkt->tot_data_buf_len);
@@ -556,9 +597,6 @@ hv_rf_on_receive(DEVICE_OBJECT *device, netvsc_packet *pkt)
 	memcpy(&rndis_mesg, rndis_hdr,
 	    (rndis_hdr->msg_len > sizeof(rndis_msg)) ?
 	    sizeof(rndis_msg) : rndis_hdr->msg_len);
-
-	PageUnmapVirtualAddress((void *)((unsigned long)rndis_hdr -
-	    pkt->page_buffers[0].Offset));
 
 	hv_dump_rndis_message(&rndis_mesg);
 

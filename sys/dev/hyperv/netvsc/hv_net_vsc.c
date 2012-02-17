@@ -843,7 +843,11 @@ hv_nv_on_device_add(DEVICE_OBJECT *device, void *additional_info)
 
 	/* Initialize the NetVSC channel extension */
 	net_dev->rx_buf_size = NETVSC_RECEIVE_BUFFER_SIZE;
-	net_dev->rx_packet_list_lock = SpinlockCreate();
+	/* Fixme:  Lock */
+	//net_dev->rx_packet_list_lock = SpinlockCreate();
+	/* Fixme:  Lock */
+	mtx_init(&net_dev->rx_pkt_list_lock, "HV-RPL", NULL,
+	    MTX_SPIN | MTX_RECURSE);
 
 	net_dev->send_buf_size = NETVSC_SEND_BUFFER_SIZE;
 
@@ -910,7 +914,10 @@ cleanup:
 			free(packet, M_DEVBUF);
 		}
 
-		SpinlockClose(net_dev->rx_packet_list_lock);
+		/* Fixme:  Lock */
+		//SpinlockClose(net_dev->rx_packet_list_lock);
+		/* Fixme:  Lock */
+		mtx_destroy(&net_dev->rx_pkt_list_lock);
 
 		hv_nv_release_outbound_net_device(device);
 		hv_nv_release_inbound_net_device(device);
@@ -982,7 +989,11 @@ hv_nv_on_device_remove(DEVICE_OBJECT *device)
 		free(net_vsc_pkt, M_DEVBUF);
 	}
 
-	SpinlockClose(net_dev->rx_packet_list_lock);
+	/* Fixme:  Lock */
+	//SpinlockClose(net_dev->rx_packet_list_lock);
+	/* Fixme:  Lock */
+	mtx_destroy(&net_dev->rx_pkt_list_lock);
+
 	WaitEventClose(net_dev->channel_init_event);
 	hv_nv_free_net_device(net_dev);
 
@@ -1201,7 +1212,10 @@ hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt)
 	 * packet.  +1 to represent the xfer page packet itself.  We grab it
 	 * here so that we know exactly how many we can fulfill.
 	 */
-	SpinlockAcquire(net_dev->rx_packet_list_lock);
+	/* Fixme:  Lock */
+	//SpinlockAcquire(net_dev->rx_packet_list_lock);
+	/* Fixme:  Lock */
+	mtx_lock(&net_dev->rx_pkt_list_lock);
 	while (!IsListEmpty(&net_dev->rx_packet_list)) {	
 		entry = REMOVE_HEAD_LIST(&net_dev->rx_packet_list);
 		net_vsc_pkt = CONTAINING_RECORD(entry, netvsc_packet,
@@ -1213,7 +1227,10 @@ hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt)
 			break;
 		}
 	}
-	SpinlockRelease(net_dev->rx_packet_list_lock);
+	/* Fixme:  Lock */
+	//SpinlockRelease(net_dev->rx_packet_list_lock);
+	/* Fixme:  Lock */
+	mtx_unlock(&net_dev->rx_pkt_list_lock);
 
 	/*
 	 * We need at least 2 netvsc pkts (1 to represent the xfer page
@@ -1226,7 +1243,10 @@ hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt)
 		    vm_xfer_page_pkt->RangeCount + 1);
 
 		/* Return it to the freelist */
-		SpinlockAcquire(net_dev->rx_packet_list_lock);
+		/* Fixme:  Lock */
+		//SpinlockAcquire(net_dev->rx_packet_list_lock);
+		/* Fixme:  Lock */
+		mtx_lock(&net_dev->rx_pkt_list_lock);
 		for (i=count; i != 0; i--) {
 			entry = REMOVE_HEAD_LIST(&list_head);
 			net_vsc_pkt = CONTAINING_RECORD(entry, netvsc_packet,
@@ -1235,7 +1255,10 @@ hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt)
 			INSERT_TAIL_LIST(&net_dev->rx_packet_list,
 			    &net_vsc_pkt->list_entry);
 		}
-		SpinlockRelease(net_dev->rx_packet_list_lock);
+		/* Fixme:  Lock */
+		//SpinlockRelease(net_dev->rx_packet_list_lock);
+		/* Fixme:  Lock */
+		mtx_unlock(&net_dev->rx_pkt_list_lock);
 
 		hv_nv_send_receive_completion(device,
 		    vm_xfer_page_pkt->d.TransactionId);
@@ -1318,8 +1341,10 @@ hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt)
 		    net_vsc_pkt->page_buffers[0].Length);
 
 		/* Pass it to the upper layer */
-		((netvsc_driver_object *)device->Driver)->on_rx_callback(device,
-		    net_vsc_pkt);
+		/* Fixme  Function pointer removal */
+		//((netvsc_driver_object *)device->Driver)->on_rx_callback(device,
+		//    net_vsc_pkt);
+		hv_rf_on_receive(device, net_vsc_pkt);
 
 		/*
 		 * The receive completion call has been moved into the
@@ -1414,7 +1439,10 @@ hv_nv_on_receive_completion(void *context)
 	}
 	
 	/* Overloading use of the lock. */
-	SpinlockAcquire(net_dev->rx_packet_list_lock);
+	/* Fixme:  Lock */
+	//SpinlockAcquire(net_dev->rx_packet_list_lock);
+	/* Fixme:  Lock */
+	mtx_lock(&net_dev->rx_pkt_list_lock);
 
 // 	ASSERT(packet->xfer_page_pkt->Count > 0);
 	if (packet->xfer_page_pkt->Count == 0) {
@@ -1436,7 +1464,10 @@ hv_nv_on_receive_completion(void *context)
 
 	/* Put the packet back */
 	INSERT_TAIL_LIST(&net_dev->rx_packet_list, &packet->list_entry);
-	SpinlockRelease(net_dev->rx_packet_list_lock);
+	/* Fixme:  Lock */
+	//SpinlockRelease(net_dev->rx_packet_list_lock);
+	/* Fixme:  Lock */
+	mtx_unlock(&net_dev->rx_pkt_list_lock);
 
 	/* Send a receive completion for the xfer page packet */
 	if (send_rx_completion) {

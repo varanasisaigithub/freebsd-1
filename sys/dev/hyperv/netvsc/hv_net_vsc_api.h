@@ -108,11 +108,14 @@ typedef struct hn_softc {
  */
 extern int promisc_mode;
 
-extern void
-hv_nv_on_receive_completion(void *context);
+extern void hv_nv_on_receive_completion(void *context);
 
-extern int
-hv_net_vsc_initialize(DRIVER_OBJECT *drv);
+extern int  hv_net_vsc_initialize(DRIVER_OBJECT *drv);
+
+extern void netvsc_linkstatus_callback(DEVICE_OBJECT *device_obj,
+				       uint32_t status);
+extern int  netvsc_recv_callback(DEVICE_OBJECT *device_obj,
+				 netvsc_packet *packet);
 
 #endif  /* __HV_NET_VSC_API_H__ */
 
