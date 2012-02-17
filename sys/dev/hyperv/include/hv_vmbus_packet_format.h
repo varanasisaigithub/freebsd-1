@@ -96,45 +96,45 @@ typedef struct {
 #pragma pack(push, 1)
 
 typedef struct {
-    uint16_t Type;
-    uint16_t DataOffset8;
-    uint16_t Length8;
-    uint16_t Flags;
-    uint64_t TransactionId;
+	uint16_t Type;
+	uint16_t DataOffset8;
+	uint16_t Length8;
+	uint16_t Flags;
+	uint64_t TransactionId;
 } VMPACKET_DESCRIPTOR, *PVMPACKET_DESCRIPTOR;
 
 typedef uint32_t PREVIOUS_PACKET_OFFSET, *PPREVIOUS_PACKET_OFFSET;
 
 typedef struct {
-    PREVIOUS_PACKET_OFFSET  PreviousPacketStartOffset;
-    VMPACKET_DESCRIPTOR     Descriptor;
+	PREVIOUS_PACKET_OFFSET  PreviousPacketStartOffset;
+	VMPACKET_DESCRIPTOR     Descriptor;
 } VMPACKET_HEADER, *PVMPACKET_HEADER;
 
 typedef struct {
-    uint32_t  ByteCount;
-    uint32_t  ByteOffset;
+	uint32_t ByteCount;
+	uint32_t ByteOffset;
 } VMTRANSFER_PAGE_RANGE, *PVMTRANSFER_PAGE_RANGE;
 
 typedef struct VMTRANSFER_PAGE_PACKET_HEADER {
-    VMPACKET_DESCRIPTOR     d;
-    uint16_t                  TransferPageSetId;
-    BOOLEAN                 SenderOwnsSet;
-    uint8_t                   Reserved;
-    uint32_t                  RangeCount;
-    VMTRANSFER_PAGE_RANGE   Ranges[1];
+	VMPACKET_DESCRIPTOR d;
+	uint16_t	TransferPageSetId;
+	BOOLEAN	SenderOwnsSet;
+	uint8_t	Reserved;
+	uint32_t	RangeCount;
+	VMTRANSFER_PAGE_RANGE   Ranges[1];
 } VMTRANSFER_PAGE_PACKET_HEADER, *PVMTRANSFER_PAGE_PACKET_HEADER;
 
 typedef struct _VMGPADL_PACKET_HEADER {
-    VMPACKET_DESCRIPTOR d;
-    uint32_t  Gpadl;
-    uint32_t  Reserved;
+	VMPACKET_DESCRIPTOR d;
+	uint32_t  Gpadl;
+	uint32_t  Reserved;
 } VMGPADL_PACKET_HEADER, *PVMGPADL_PACKET_HEADER;
 
 typedef struct _VMADD_REMOVE_TRANSFER_PAGE_SET {
-    VMPACKET_DESCRIPTOR d;
-    uint32_t  Gpadl;
-    uint16_t  TransferPageSetId;
-    uint16_t  Reserved;
+	VMPACKET_DESCRIPTOR d;
+	uint32_t  Gpadl;
+	uint16_t  TransferPageSetId;
+	uint16_t  Reserved;
 } VMADD_REMOVE_TRANSFER_PAGE_SET, *PVMADD_REMOVE_TRANSFER_PAGE_SET;
 
 #pragma pack(pop)
@@ -145,9 +145,9 @@ typedef struct _VMADD_REMOVE_TRANSFER_PAGE_SET {
 // 
 
 typedef struct _GPA_RANGE {
-    uint32_t  ByteCount;
-    uint32_t  ByteOffset;
-    uint64_t  PfnArray[0];
+	uint32_t  ByteCount;
+	uint32_t  ByteOffset;
+	uint64_t  PfnArray[0];
 } GPA_RANGE, *PGPA_RANGE;
 
 
@@ -162,10 +162,10 @@ typedef struct _GPA_RANGE {
 // 
 
 typedef struct _VMESTABLISH_GPADL {
-    VMPACKET_DESCRIPTOR d;
-    uint32_t      Gpadl;
-    uint32_t      RangeCount;
-    GPA_RANGE   Range[1];
+	VMPACKET_DESCRIPTOR d;
+	uint32_t  Gpadl;
+	uint32_t  RangeCount;
+	GPA_RANGE Range[1];
 } VMESTABLISH_GPADL, *PVMESTABLISH_GPADL;
 
 
@@ -175,9 +175,9 @@ typedef struct _VMESTABLISH_GPADL {
 //
 
 typedef struct _VMTEARDOWN_GPADL {
-    VMPACKET_DESCRIPTOR d;
-    uint32_t  Gpadl;
-    uint32_t  Reserved; // for alignment to a 8-byte boundary
+	VMPACKET_DESCRIPTOR d;
+	uint32_t  Gpadl;
+	uint32_t  Reserved; // for alignment to a 8-byte boundary
 } VMTEARDOWN_GPADL, *PVMTEARDOWN_GPADL;
 
 
@@ -187,10 +187,10 @@ typedef struct _VMTEARDOWN_GPADL {
 // 
 
 typedef struct _VMDATA_GPA_DIRECT {
-    VMPACKET_DESCRIPTOR d;
-    uint32_t      Reserved;
-    uint32_t      RangeCount;
-    GPA_RANGE   Range[1];
+	VMPACKET_DESCRIPTOR d;
+	uint32_t      Reserved;
+	uint32_t      RangeCount;
+	GPA_RANGE   Range[1];
 } VMDATA_GPA_DIRECT, *PVMDATA_GPA_DIRECT;
 
 
@@ -199,24 +199,24 @@ typedef struct _VMDATA_GPA_DIRECT {
 // 
 
 typedef struct _VMADDITIONAL_DATA {
-    VMPACKET_DESCRIPTOR d;
-    uint64_t  TotalBytes;
-    uint32_t  ByteOffset;
-    uint32_t  ByteCount;
-    uint8_t   Data[1];
+	VMPACKET_DESCRIPTOR d;
+	uint64_t  TotalBytes;
+	uint32_t  ByteOffset;
+	uint32_t  ByteCount;
+	uint8_t   Data[1];
 } VMADDITIONAL_DATA, *PVMADDITIONAL_DATA;
 
 
 #pragma pack(pop)
 
 typedef union {
-    VMPACKET_DESCRIPTOR             SimpleHeader;
-    VMTRANSFER_PAGE_PACKET_HEADER   TransferPageHeader;
-    VMGPADL_PACKET_HEADER           GpadlHeader;
-    VMADD_REMOVE_TRANSFER_PAGE_SET  AddRemoveTransferPageHeader;
-    VMESTABLISH_GPADL               EstablishGpadlHeader;
-    VMTEARDOWN_GPADL                TeardownGpadlHeader;
-    VMDATA_GPA_DIRECT               DataGpaDirectHeader;
+	VMPACKET_DESCRIPTOR             SimpleHeader;
+	VMTRANSFER_PAGE_PACKET_HEADER   TransferPageHeader;
+	VMGPADL_PACKET_HEADER           GpadlHeader;
+	VMADD_REMOVE_TRANSFER_PAGE_SET  AddRemoveTransferPageHeader;
+	VMESTABLISH_GPADL               EstablishGpadlHeader;
+	VMTEARDOWN_GPADL                TeardownGpadlHeader;
+	VMDATA_GPA_DIRECT               DataGpaDirectHeader;
 } VMPACKET_LARGEST_POSSIBLE_HEADER, *PVMPACKET_LARGEST_POSSIBLE_HEADER;
 
 #define VMPACKET_DATA_START_ADDRESS(__packet)                           \

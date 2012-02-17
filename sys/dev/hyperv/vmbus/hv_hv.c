@@ -74,6 +74,7 @@
 
 #include <dev/hyperv/include/hv_osd.h>
 #include <dev/hyperv/include/hv_logging.h>
+#include "hv_support.h"
 #include "hv_hv.h"
 #include "hv_vmbus_var.h"
 #include "hv_vmbus_api.h"
@@ -302,7 +303,7 @@ HvInit(void) {
 	if (gHvContext.GuestId == HV_LINUX_GUEST_ID) {
 		DPRINT_INFO(VMBUS, "Guest OS Id is HV_LINUX_GUEST_ID");
 		// Allocate the hypercall page memory
-		//virtAddr = PageAlloc(1);
+		//virtAddr = hv_page_contigmalloc(1);
 		virtAddr = VirtualAllocExec(PAGE_SIZE);
 
 		if (!virtAddr) {
@@ -339,8 +340,9 @@ HvInit(void) {
 		gHvContext.HypercallPage, (unsigned long)hypercallMsr.GuestPhysicalAddress << PAGE_SHIFT);
 
 	// Setup the global signal event param for the signal event hypercall
-	gHvContext.SignalEventBuffer = MemAlloc(
-		sizeof(HV_INPUT_SIGNAL_EVENT_BUFFER));
+	gHvContext.SignalEventBuffer =
+		malloc(sizeof(HV_INPUT_SIGNAL_EVENT_BUFFER), M_DEVBUF, M_NOWAIT);
+
 	if (!gHvContext.SignalEventBuffer) {
 		goto Cleanup;
 	}
@@ -389,7 +391,7 @@ HvCleanup(void) {
 	DPRINT_ENTER(VMBUS);
 
 	if (gHvContext.SignalEventBuffer) {
-		MemFree(gHvContext.SignalEventBuffer);
+		free(gHvContext.SignalEventBuffer, M_DEVBUF);
 		gHvContext.SignalEventBuffer = NULL;
 		gHvContext.SignalEventParam = NULL;
 	}
@@ -429,20 +431,19 @@ HvPostMessage(HV_CONNECTION_ID	connectionId,
 
 	PHV_INPUT_POST_MESSAGE alignedMsg;
 	HV_STATUS status;
-	unsigned long addr;
+	size_t addr;
 
 	if (payloadSize > HV_MESSAGE_PAYLOAD_BYTE_COUNT) {
 		return -1;
 	}
 
-	addr = (size_t) MemAllocAtomic(sizeof(struct alignedInput));
-
+	addr = (size_t)malloc(sizeof(struct alignedInput), M_DEVBUF, M_NOWAIT);
 	if (!addr) {
 		return -1;
 	}
 
-	alignedMsg =
-		(PHV_INPUT_POST_MESSAGE) (ALIGN_UP(addr, HV_HYPERCALL_PARAM_ALIGN));
+	alignedMsg = (PHV_INPUT_POST_MESSAGE)
+					(ALIGN_UP(addr, HV_HYPERCALL_PARAM_ALIGN));
 
 	alignedMsg->ConnectionId = connectionId;
 	alignedMsg->MessageType = messageType;
@@ -454,8 +455,7 @@ HvPostMessage(HV_CONNECTION_ID	connectionId,
 //	}
 	status = HvDoHypercall(HvCallPostMessage, alignedMsg, 0) & 0xFFFF;
 
-	MemFree((void*) addr);
-
+	free((void *) addr, M_DEVBUF);
 	return status;
 }
 
@@ -686,8 +686,8 @@ void HvSynicCleanup(void *arg) {
 
 		WriteMsr(HV_X64_MSR_SIEFP, siefp.Asuint64_t);
 
-		PageFree(gHvContext.synICMessagePage[cpu], 1);
-		PageFree(gHvContext.synICEventPage[cpu], 1);
+		hv_page_contigfree(gHvContext.synICMessagePage[cpu], 1);
+		hv_page_contigfree(gHvContext.synICEventPage[cpu], 1);
 	}
 
 	DPRINT_EXIT(VMBUS);
