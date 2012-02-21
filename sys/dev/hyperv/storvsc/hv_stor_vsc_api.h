@@ -60,15 +60,15 @@ struct hv_storvsc_request {
 	struct storvsc_softc *softc;
 	uint32_t transfer_len;
 };
-typedef struct storvsc_driver_object_s {
+struct storvsc_driver_object {
 	DRIVER_OBJECT Base;
 	uint32_t ringbuffer_size;
-} STORVSC_DRIVER_OBJECT;
+};
 
 extern void storvsc_io_done(struct hv_storvsc_request *reqp);
 
 extern int hv_storvsc_on_deviceadd(DEVICE_OBJECT *device);
-extern int hv_storvsc_on_deviceremove(DEVICE_OBJECT *driver);
+extern int hv_storvsc_on_deviceremove(DEVICE_OBJECT *device);
 extern void hv_storvsc_on_cleanup(DRIVER_OBJECT *driver);
 extern int hv_storvsc_host_reset(DEVICE_OBJECT *device);
 extern int hv_storvsc_io_request(DEVICE_OBJECT *device,

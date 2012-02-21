@@ -388,7 +388,8 @@ hv_storvsc_connect_vsp(DEVICE_OBJECT *device)
 	int ret = 0;
     struct vmstor_chan_props props;
 		
-	STORVSC_DRIVER_OBJECT *storDriver = (STORVSC_DRIVER_OBJECT*) device->Driver;;
+	struct storvsc_driver_object *storDriver =
+		(struct storvsc_driver_object *) device->Driver;
 
 	memset(&props, 0, sizeof(struct vmstor_chan_props));
 
@@ -500,12 +501,12 @@ hv_storvsc_host_reset(DEVICE_OBJECT *device)
     vstor_packet->operation = VSTOR_OPERATION_RESETBUS;
     vstor_packet->flags = REQUEST_COMPLETION_FLAG;
 
-	ret = hv_vmbus_channel_send_packet(
-			(VMBUS_CHANNEL *)device->context,vstor_packet,
-			sizeof(struct vstor_packet),
-			(uint64_t)&stordev_ctx->reset_req,
-			VmbusPacketTypeDataInBand,
-			VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+	ret = hv_vmbus_channel_send_packet((VMBUS_CHANNEL *)device->context,
+									   vstor_packet,
+									   sizeof(struct vstor_packet),
+									   (uint64_t)&stordev_ctx->reset_req,
+									   VmbusPacketTypeDataInBand,
+									   VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	if (ret != 0)
 	{
@@ -548,9 +549,9 @@ hv_storvsc_io_request(DEVICE_OBJECT *device,
 					  struct hv_storvsc_request *request)
 {
 	struct hv_storvsc_dev_ctx *stordev_ctx;
-	struct hv_storvsc_req_ext *requestExtension =
+	struct hv_storvsc_req_ext *req_ext =
 		(struct hv_storvsc_req_ext *) &request->extension;
-	struct vstor_packet *vstor_packet = &requestExtension->vstor_packet;
+	struct vstor_packet *vstor_packet = &req_ext->vstor_packet;
 	int ret = 0;
 
 	DPRINT_ENTER(STORVSC);
@@ -558,7 +559,7 @@ hv_storvsc_io_request(DEVICE_OBJECT *device,
 	stordev_ctx = hv_get_storvsc_dev_ctx(device);
 
 	DPRINT_INFO(STORVSC, "enter - device %p, deviceExt %p, request %p, extension %p",
-		device, stordev_ctx, request, requestExtension);
+		device, stordev_ctx, request, req_ext);
 
 	DPRINT_INFO(STORVSC, "req %p len %d bus %d, target %d, lun %d cdblen %d", 
 		request, request->data_buf.Length, request->bus, request->target_id, request->lun, request->cdb_len);
@@ -570,8 +571,8 @@ hv_storvsc_io_request(DEVICE_OBJECT *device,
 		return -2;
 	}
 
-	requestExtension->request = request;
-	requestExtension->device  = device;
+	req_ext->request = request;
+	req_ext->device  = device;
 	
 	memset(vstor_packet, 0 , sizeof(struct vstor_packet));
 
@@ -604,14 +605,14 @@ hv_storvsc_io_request(DEVICE_OBJECT *device,
 		vstor_packet->vm_srb.sense_info_len,
 		vstor_packet->vm_srb.cdb_len);
 
-	if (requestExtension->request->data_buf.Length)
+	if (req_ext->request->data_buf.Length)
 	{
 		ret = hv_vmbus_channel_send_packet_multipagebuffer(
 				(VMBUS_CHANNEL *)device->context,
-				&requestExtension->request->data_buf,
+				&req_ext->request->data_buf,
 				vstor_packet, 
 				sizeof(struct vstor_packet), 
-				(uint64_t)requestExtension);
+				(uint64_t)req_ext);
 
 	}
 	else
@@ -620,7 +621,7 @@ hv_storvsc_io_request(DEVICE_OBJECT *device,
 				(VMBUS_CHANNEL *)device->context,
 				vstor_packet,
 				sizeof(struct vstor_packet),
-				(uint64_t)requestExtension,
+				(uint64_t)req_ext,
 				VmbusPacketTypeDataInBand,
 				VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	}

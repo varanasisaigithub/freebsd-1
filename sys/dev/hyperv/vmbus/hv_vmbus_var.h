@@ -92,9 +92,6 @@ typedef struct _DRIVER_OBJECT {        //BlkVsc.c : 56
 #define PDEVICE_OBJECT DEVICE_OBJECT*
 #define PDRIVER_OBJECT DRIVER_OBJECT*
 
-extern int hv_storvsc_init(PDRIVER_OBJECT);
-extern int hv_blkvsc_init(PDRIVER_OBJECT);
-
 extern void shutdown_onchannelcallback(void *); // drivers/closed/vmbus/ChannelMgmt.c
 
 typedef struct _XFERPAGE {

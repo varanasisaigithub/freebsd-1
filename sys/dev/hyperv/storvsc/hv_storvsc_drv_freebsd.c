@@ -64,23 +64,16 @@ static struct storvsc_driver_props g_drv_props_table[] = {
 	 STORVSC_RINGBUFFER_SIZE}
 };
 
-struct storvsc_driver_context {
-	/*
-	 * These must be the first two fields
-	 */
-	struct driver_context    drv_ctx;
-	STORVSC_DRIVER_OBJECT    drv_obj;
-	struct storvsc_driver_props	 *drv_props;
-};
-
 struct storvsc_softc {
 	DEVICE_OBJECT *storvsc_dev;
-	struct storvsc_driver_context sto_drv;
+	LIST_HEAD(, hv_storvsc_request) free_list;
+	struct mtx free_list_lock;
+	struct storvsc_driver_object  drv_obj;
+	struct storvsc_driver_props	 *drv_props;
 	int unit;
 	struct cam_sim *sim;
 	struct cam_path *path;
-	LIST_HEAD(, hv_storvsc_request) free_list;
-	struct mtx free_list_lock;
+
 };
 
 /* static functions */
@@ -135,7 +128,7 @@ storvsc_xptscandone(struct cam_periph *periph, union ccb *request_ccb)
 
 	//xpt_print(new_path, "LUN %d scan 0x%p On this controller\n", lun_nb, new_path);
 	xpt_release_path(new_path);
-	if (++lun_nb < storvsc_softc->sto_drv.drv_props->drv_max_luns_per_target) {
+	if (++lun_nb < storvsc_softc->drv_props->drv_max_luns_per_target) {
 	
 		/*
 		 * Scan the next LUN. Reuse path and ccb structs.
@@ -269,7 +262,6 @@ storvsc_attach(device_t dev)
 	struct cam_devq *devq;
 	int ret, i;
 	struct hv_storvsc_request *reqp;
-	GUID drv_guid;
 
 	DPRINT_ENTER(STORVSC_DRV);
 
@@ -288,18 +280,13 @@ storvsc_attach(device_t dev)
 
 	bzero(sc, sizeof(struct storvsc_softc));
 
-	drv_guid = (stor_type == DRIVER_STORVSC) ? gStorVscDeviceType :
-		gBlkVscDeviceType;
-
 	/* fill in driver specific properties */
-	sc->sto_drv.drv_obj.Base.name = g_drv_props_table[stor_type].drv_name;
-	memcpy(&sc->sto_drv.drv_obj.Base.deviceType, &drv_guid, sizeof(GUID));
-	memcpy(&sc->sto_drv.drv_ctx.class_id, &drv_guid, sizeof(GUID));
-	sc->sto_drv.drv_props = &g_drv_props_table[stor_type];
-	sc->sto_drv.drv_obj.ringbuffer_size =
+	sc->drv_obj.Base.name = g_drv_props_table[stor_type].drv_name;
+	sc->drv_props = &g_drv_props_table[stor_type];
+	sc->drv_obj.ringbuffer_size =
 		g_drv_props_table[stor_type].drv_ringbuffer_size;
 
-	device_ctx->device_obj.Driver = &sc->sto_drv.drv_obj.Base;
+	device_ctx->device_obj.Driver = &sc->drv_obj.Base;
 
 	/* fill in device specific properties */
 	sc->unit	= device_get_unit(dev);
@@ -310,7 +297,7 @@ storvsc_attach(device_t dev)
 	mtx_init(&sc->free_list_lock, "storvsc free list lock", NULL,
 			 MTX_SPIN | MTX_RECURSE);
 
-	for (i = 0; i < sc->sto_drv.drv_props->drv_max_ios_per_target; ++i) {
+	for (i = 0; i < sc->drv_props->drv_max_ios_per_target; ++i) {
 		reqp = malloc(sizeof(struct hv_storvsc_request), M_DEVBUF,
 					  M_NOWAIT | M_ZERO);
 		if (reqp == NULL) {
@@ -333,7 +320,7 @@ storvsc_attach(device_t dev)
 
 	// Create the device queue.
 	// Hyper-V maps each target to one SCSI HBA
-	devq = cam_simq_alloc(sc->sto_drv.drv_props->drv_max_ios_per_target);
+	devq = cam_simq_alloc(sc->drv_props->drv_max_ios_per_target);
 	if (devq == NULL) {
 		printf("Failed to alloc device queue\n");
 		return (ENOMEM);
@@ -342,11 +329,11 @@ storvsc_attach(device_t dev)
 	// XXX avoid Giant?
 	sc->sim = cam_sim_alloc(storvsc_action,
 				storvsc_poll,
-				sc->sto_drv.drv_props->drv_name,
+				sc->drv_props->drv_name,
 				sc,
 				sc->unit,
 				&Giant, 1,
-				sc->sto_drv.drv_props->drv_max_ios_per_target,
+				sc->drv_props->drv_max_ios_per_target,
 				devq);
 
 	if (sc->sim == NULL) {
@@ -409,7 +396,6 @@ static void storvsc_poll(struct cam_sim *sim)
 static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 {
 	struct storvsc_softc *sc = cam_sim_softc(sim);
-	struct storvsc_driver_context *sto_drv = &sc->sto_drv;
 	int res;
 
 	switch (ccb->ccb_h.func_code) {
@@ -425,7 +411,7 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		cpi->hba_misc = PIM_NOBUSRESET;
 		cpi->hba_eng_cnt = 0;
 		cpi->max_target = STORVSC_MAX_TARGETS;
-		cpi->max_lun = sto_drv->drv_props->drv_max_luns_per_target;
+		cpi->max_lun = sc->drv_props->drv_max_luns_per_target;
 		cpi->initiator_id = 0;
 		cpi->bus_id = cam_sim_bus(sim);
 		cpi->base_transfer_speed = 300000;
@@ -434,7 +420,7 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		cpi->protocol = PROTO_SCSI;
 		cpi->protocol_version = SCSI_REV_SPC2;
 		strncpy(cpi->sim_vid, "FreeBSD", SIM_IDLEN);
-		strncpy(cpi->hba_vid, sto_drv->drv_props->drv_name, HBA_IDLEN);
+		strncpy(cpi->hba_vid, sc->drv_props->drv_name, HBA_IDLEN);
 		strncpy(cpi->dev_name, cam_sim_name(sim), DEV_IDLEN);
 		cpi->unit_number = cam_sim_unit(sim);
 
