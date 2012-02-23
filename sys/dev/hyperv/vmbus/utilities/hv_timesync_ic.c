@@ -153,11 +153,9 @@ timesync_channel_cb(void *context) {
 			hv_vmbus_channel_send_packet(channel, buf, recvlen, requestid,
 				VmbusPacketTypeDataInBand, 0);
 
-			free(buf, M_DEVBUF);
 
-		} else {
-			// memory allocation error
-		}
+		} 
+		free(buf, M_DEVBUF);
 
 	}
 	DPRINT_EXIT(VMBUS);

@@ -172,9 +172,7 @@ void heartbeat_onchannelcallback_cb(void *context) {
 
 		free(buf, M_DEVBUF);
 
-	} else {
-		// memory allocation problem
-	}
+	} 
 
 	DPRINT_EXIT(VMBUS);
 }
