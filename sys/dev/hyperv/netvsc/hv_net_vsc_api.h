@@ -117,5 +117,12 @@ extern void netvsc_linkstatus_callback(DEVICE_OBJECT *device_obj,
 extern int  netvsc_recv_callback(DEVICE_OBJECT *device_obj,
 				 netvsc_packet *packet);
 
+extern int  hv_nv_on_device_add(DEVICE_OBJECT *device, void *additional_info);
+extern int  hv_nv_on_device_remove(DEVICE_OBJECT *device);
+extern void hv_nv_on_cleanup(DRIVER_OBJECT *driver);
+
+extern int  hv_nv_on_send(DEVICE_OBJECT *device, netvsc_packet *pkt);
+
+
 #endif  /* __HV_NET_VSC_API_H__ */
 

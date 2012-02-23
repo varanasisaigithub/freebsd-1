@@ -84,10 +84,13 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
 #include <dev/hyperv/include/hv_osd.h>
 #include <dev/hyperv/include/hv_logging.h>
+#include <dev/hyperv/include/hv_list.h>
 #include <dev/hyperv/vmbus/hv_vmbus_var.h>
 #include <dev/hyperv/vmbus/hv_vmbus_api.h>
 #include <dev/hyperv/vmbus/hv_vmbus.h>
 #include <dev/hyperv/netvsc/hv_net_vsc_api.h>
+#include <dev/hyperv/netvsc/hv_rndis_filter.h>
+
 
 #define NETVSC_DEVNAME "hn"
 #define ETH_ALEN       6
@@ -173,6 +176,9 @@ netvsc_drv_init(void)
 	struct driver_context *drv_ctx = &g_netvsc_drv.drv_ctx;
 
 	DPRINT_ENTER(NETVSC_DRV);
+
+// Fixme:  Removed by Larry's changes
+//	vmbus_get_interface(&net_drv_obj->base.VmbusChannelInterface);
 
 	net_drv_obj->ring_buf_size = netvsc_ringbuffer_size;
 	net_drv_obj->on_rx_callback = netvsc_recv_callback;
@@ -262,6 +268,9 @@ netvsc_attach(device_t dev)
 		return (ENOMEM);
 	}
 
+// Fixme:  Remove
+// Fixme:  Remove
+// Fixme:  Remove
 	if (!net_drv_obj->base.OnDeviceAdd) {
 		DPRINT_ERR(NETVSC_DRV, "OnDeviceAdd is not initialized");
 
@@ -277,7 +286,9 @@ netvsc_attach(device_t dev)
 	sc->hn_dev_obj = &device_ctx->device_obj;
 
 	device_ctx->device_obj.Driver = &g_netvsc_drv.drv_obj.base;
-	ret = net_drv_obj->base.OnDeviceAdd(&device_ctx->device_obj,
+	/* Fixme:  Function pointer removal */
+	//ret = net_drv_obj->base.OnDeviceAdd(&device_ctx->device_obj,
+	ret = hv_rf_on_device_add(&device_ctx->device_obj,
 	    (void*)&device_info);
 
 	if (ret != 0) {
@@ -477,7 +488,9 @@ hn_start_locked(struct ifnet *ifp)
 		packet->compl.send.send_completion_tid = (uint64_t)m_head;
 retry_send:
 		critical_enter();
-		ret = net_drv_obj->on_send(&device_ctx->device_obj, packet);
+		/* Fixme:  Function pointer removal */
+		//ret = net_drv_obj->on_send(&device_ctx->device_obj, packet);
+		ret = hv_rf_on_send(&device_ctx->device_obj, packet);
 		critical_exit();
 
 		if (ret == 0) {
@@ -735,7 +748,8 @@ hn_stop(hn_softc_t *sc)
 {
 	struct ifnet *ifp;
 	int ret;
-	netvsc_driver_object *net_drv_obj = &g_netvsc_drv.drv_obj;
+	/* Fixme:  Function pointer removal */
+	//netvsc_driver_object *net_drv_obj = &g_netvsc_drv.drv_obj;
 	struct device_context *device_ctx = vmbus_get_devctx(sc->hn_dev);
 
 	SN_LOCK_ASSERT(sc);
@@ -746,7 +760,9 @@ hn_stop(hn_softc_t *sc)
 	ifp->if_drv_flags &= ~(IFF_DRV_RUNNING | IFF_DRV_OACTIVE);
 	sc->hn_initdone = 0;
 
-	ret = net_drv_obj->on_close(&device_ctx->device_obj);
+	/* Fixme:  Function pointer removal */
+	//ret = net_drv_obj->on_close(&device_ctx->device_obj);
+	ret = hv_rf_on_close(&device_ctx->device_obj);
 	if (ret != 0) {
 		DPRINT_ERR(NETVSC_DRV, "unable to close device (ret %d).", ret);
 	}
@@ -773,7 +789,8 @@ static void
 hn_ifinit_locked(hn_softc_t *sc)
 {
 	struct ifnet *ifp;
-	netvsc_driver_object *net_drv_obj = &g_netvsc_drv.drv_obj;
+	/* Fixme:  Function pointer removal */
+	//netvsc_driver_object *net_drv_obj = &g_netvsc_drv.drv_obj;
 	struct device_context *device_ctx = vmbus_get_devctx(sc->hn_dev);
 	int ret;
 
@@ -787,7 +804,9 @@ hn_ifinit_locked(hn_softc_t *sc)
 
 	promisc_mode = 1;
 
-	ret = net_drv_obj->on_open(&device_ctx->device_obj);
+	/* Fixme:  Function pointer removal */
+	//ret = net_drv_obj->on_open(&device_ctx->device_obj);
+	ret = hv_rf_on_open(&device_ctx->device_obj);
 	if (ret != 0) {
 		DPRINT_ERR(NETVSC_DRV, "unable to open device (ret %d).", ret);
 		return;

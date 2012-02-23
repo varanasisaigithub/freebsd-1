@@ -93,9 +93,10 @@ static const GUID g_net_vsc_device_type = {
 /*
  * Forward declarations
  */
-static int  hv_nv_on_device_add(DEVICE_OBJECT *device, void *additional_info);
-static int  hv_nv_on_device_remove(DEVICE_OBJECT *device);
-static void hv_nv_on_cleanup(DRIVER_OBJECT *driver);
+/* Fixme:  Function pointer removal */
+//static int  hv_nv_on_device_add(DEVICE_OBJECT *device, void *additional_info);
+//static int  hv_nv_on_device_remove(DEVICE_OBJECT *device);
+//static void hv_nv_on_cleanup(DRIVER_OBJECT *driver);
 static void hv_nv_on_channel_callback(void *context);
 static int  hv_nv_init_send_buffer_with_net_vsp(DEVICE_OBJECT *device);
 static int  hv_nv_init_rx_buffer_with_net_vsp(DEVICE_OBJECT *device);
@@ -104,7 +105,8 @@ static int  hv_nv_destroy_rx_buffer(netvsc_dev *net_dev);
 static int  hv_nv_connect_to_vsp(DEVICE_OBJECT *device);
 static void hv_nv_on_send_completion(DEVICE_OBJECT *device,
 				     VMPACKET_DESCRIPTOR *pkt);
-static int  hv_nv_on_send(DEVICE_OBJECT *device, netvsc_packet *pkt);
+/* Fixme:  Function pointer removal */
+//static int  hv_nv_on_send(DEVICE_OBJECT *device, netvsc_packet *pkt);
 // Fixme
 extern void hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt);
 //static void hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt);
@@ -754,7 +756,7 @@ hv_nv_connect_to_vsp(DEVICE_OBJECT *device)
 		init_pkt->msgs.init_msgs.init_compl.max_mdl_chain_len);
 
 	if (init_pkt->msgs.init_msgs.init_compl.status !=
-				      nvsp_status_success) {
+							  nvsp_status_success) {
 		DPRINT_ERR(NETVSC, "Cannot initialize with netvsp "
 		    "(status 0x%x)",
 		    init_pkt->msgs.init_msgs.init_compl.status);
@@ -837,7 +839,7 @@ hv_nv_disconnect_from_vsp(netvsc_dev *net_dev)
  * 
  * Callback when the device belonging to this driver is added
  */
-static int
+int
 hv_nv_on_device_add(DEVICE_OBJECT *device, void *additional_info)
 {
 	netvsc_dev *net_dev;
@@ -956,7 +958,7 @@ cleanup:
  *
  * Callback when the root bus device is removed
  */
-static int
+int
 hv_nv_on_device_remove(DEVICE_OBJECT *device)
 {
 	netvsc_dev *net_dev;
@@ -1029,7 +1031,7 @@ hv_nv_on_device_remove(DEVICE_OBJECT *device)
  *
  * Perform any cleanup when the driver is removed
  */
-static void
+void
 hv_nv_on_cleanup(DRIVER_OBJECT *driver)
 {
 	DPRINT_ENTER(NETVSC);
@@ -1097,7 +1099,7 @@ hv_nv_on_send_completion(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt)
 /*
  * Net VSC on send
  */
-static int
+int
 hv_nv_on_send(DEVICE_OBJECT *device, netvsc_packet *pkt)
 {
 	netvsc_dev *net_dev;

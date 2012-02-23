@@ -162,12 +162,13 @@ static int  hv_rf_set_packet_filter(rndis_device *device, uint32_t new_filter);
 static int  hv_rf_init_device(rndis_device *device);
 static int  hv_rf_open_device(rndis_device *device);
 static int  hv_rf_close_device(rndis_device *device);
-static int  hv_rf_on_device_add(DEVICE_OBJECT *device, void *additl_info);
-static int  hv_rf_on_device_remove(DEVICE_OBJECT *device);
-static void hv_rf_on_cleanup(DRIVER_OBJECT *driver);
-static int  hv_rf_on_open(DEVICE_OBJECT *device);
-static int  hv_rf_on_close(DEVICE_OBJECT *device);
-static int  hv_rf_on_send(DEVICE_OBJECT *device, netvsc_packet *pkt);
+/* Fixme:  Function pointer removal */
+//static int  hv_rf_on_device_add(DEVICE_OBJECT *device, void *additl_info);
+//static int  hv_rf_on_device_remove(DEVICE_OBJECT *device);
+//static void hv_rf_on_cleanup(DRIVER_OBJECT *driver);
+//static int  hv_rf_on_open(DEVICE_OBJECT *device);
+//static int  hv_rf_on_close(DEVICE_OBJECT *device);
+//static int  hv_rf_on_send(DEVICE_OBJECT *device, netvsc_packet *pkt);
 static void hv_rf_on_send_completion(void *context);
 static void hv_rf_on_send_request_completion(void *context);
 
@@ -390,8 +391,10 @@ hv_rf_send_request(rndis_device *device, rndis_request *request)
 	    hv_rf_on_send_request_completion;
 	packet->compl.send.send_completion_tid = (unsigned long)device;
 
-	ret = g_rndis_filter.inner_drv.on_send(device->net_dev->dev,
-	    packet);
+	/* Fixme:  Function pointer removal */
+	//ret = g_rndis_filter.inner_drv.on_send(device->net_dev->dev,
+	//    packet);
+	ret = hv_nv_on_send(device->net_dev->dev, packet);
 	DPRINT_EXIT(NETVSC);
 
 	return (ret);
@@ -998,7 +1001,7 @@ hv_rf_close_device(rndis_device *device)
 /*
  * RNDIS filter on device add
  */
-static int
+int
 hv_rf_on_device_add(DEVICE_OBJECT *device, void *additl_info)
 {
 	int ret;
@@ -1021,7 +1024,9 @@ hv_rf_on_device_add(DEVICE_OBJECT *device, void *additl_info)
 	 * NOTE! Once the channel is created, we may get a receive callback 
 	 * (hv_rf_on_receive()) before this call is completed
 	 */
-	ret = g_rndis_filter.inner_drv.base.OnDeviceAdd(device, additl_info);
+	/* Fixme:  Function pointer removal */
+	//ret = g_rndis_filter.inner_drv.base.OnDeviceAdd(device, additl_info);
+	ret = hv_nv_on_device_add(device, additl_info);
 	if (ret != 0) {
 		hv_put_rndis_device(rndis_dev);
 		DPRINT_EXIT(NETVSC);
@@ -1075,7 +1080,7 @@ hv_rf_on_device_add(DEVICE_OBJECT *device, void *additl_info)
 /*
  * RNDIS filter on device remove
  */
-static int
+int
 hv_rf_on_device_remove(DEVICE_OBJECT *device)
 {
 	netvsc_dev *net_dev = (netvsc_dev *)device->Extension;
@@ -1090,7 +1095,9 @@ hv_rf_on_device_remove(DEVICE_OBJECT *device)
 	net_dev->extension = NULL;
 
 	/* Pass control to inner driver to remove the device */
-	g_rndis_filter.inner_drv.base.OnDeviceRemove(device);
+	/* Fixme:  Function pointer removal */
+	//g_rndis_filter.inner_drv.base.OnDeviceRemove(device);
+	hv_nv_on_device_remove(device);
 
 	DPRINT_EXIT(NETVSC);
 
@@ -1100,7 +1107,7 @@ hv_rf_on_device_remove(DEVICE_OBJECT *device)
 /*
  * RNDIS filter on cleanup
  */
-static void
+void
 hv_rf_on_cleanup(DRIVER_OBJECT *driver)
 {
 	DPRINT_ENTER(NETVSC);
@@ -1111,7 +1118,7 @@ hv_rf_on_cleanup(DRIVER_OBJECT *driver)
 /*
  * RNDIS filter on open
  */
-static int
+int
 hv_rf_on_open(DEVICE_OBJECT *device)
 {
 	int ret;
@@ -1130,7 +1137,7 @@ hv_rf_on_open(DEVICE_OBJECT *device)
 /*
  * RNDIS filter on close
  */
-static int 
+int 
 hv_rf_on_close(DEVICE_OBJECT *device)
 {
 	int ret;
@@ -1149,7 +1156,7 @@ hv_rf_on_close(DEVICE_OBJECT *device)
 /*
  * RNDIS filter on send
  */
-static int
+int
 hv_rf_on_send(DEVICE_OBJECT *device, netvsc_packet *pkt)
 {
 	rndis_filter_packet *filter_pkt;
@@ -1192,10 +1199,13 @@ hv_rf_on_send(DEVICE_OBJECT *device, netvsc_packet *pkt)
 	pkt->compl.send.on_send_completion = hv_rf_on_send_completion;
 	pkt->compl.send.send_completion_context = filter_pkt;
 
-	ret = g_rndis_filter.inner_drv.on_send(device, pkt);
+	/* Fixme:  Function pointer removal */
+	//ret = g_rndis_filter.inner_drv.on_send(device, pkt);
+	ret = hv_nv_on_send(device, pkt);
 	if (ret != 0) {
 		/*
 		 * Reset the completion to originals to allow retries from above
+		 * Fixme:  Research how to eliminate this function pointer.
 		 */
 		pkt->compl.send.on_send_completion =
 		    filter_pkt->on_completion;
