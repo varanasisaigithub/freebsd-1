@@ -62,6 +62,7 @@
 #include <sys/smp.h>    /* for mp_ncpus extern */
 
 #include <dev/hyperv/include/hv_logging.h>
+#include "hv_support.h"
 #include "hv_version_info.h"
 #include "hv_hv.h"
 #include "hv_vmbus_var.h"
@@ -72,7 +73,6 @@
 #include "hv_channel.h"
 #include "hv_channel_interface.h"
 #include <dev/hyperv/vmbus/hv_connection.h>
-
 #include "hv_vmbus_private.h"
 
 //
@@ -308,8 +308,8 @@ VmbusOnDeviceAdd(DEVICE_OBJECT *dev, void *AdditionalInfo) {
 	 * be alloc'd.  Allocation moved out of HvSynicInit()
 	 */
 	for (cpuid = 0; cpuid < mp_ncpus; cpuid++) {
-		gHvContext.synICMessagePage[cpuid] = PageAlloc(1);
-		gHvContext.synICEventPage[cpuid] = PageAlloc(1);
+		gHvContext.synICMessagePage[cpuid] = hv_page_contigmalloc(1);
+		gHvContext.synICEventPage[cpuid] = hv_page_contigmalloc(1);
 	}
 
 	doOnAllCpus(HvSynicInit, (void *) (irqvector), 1, 1);
@@ -387,21 +387,21 @@ VmbusOnMsgDPC(DRIVER_OBJECT* drv) {
 	int cpu = 0;
 	void *page_addr = gHvContext.synICMessagePage[cpu];
 
-	HV_MESSAGE* msg = (HV_MESSAGE*) page_addr + VMBUS_MESSAGE_SINT;
+	HV_MESSAGE *msg = (HV_MESSAGE*) page_addr + VMBUS_MESSAGE_SINT;
 	HV_MESSAGE *copied;
 	while (1) {
 		if (msg->Header.MessageType == HvMessageTypeNone) // no msg
 			{
 			break;
 		} else {
-			copied = MemAllocAtomic(sizeof(HV_MESSAGE));
+			copied = malloc(sizeof(HV_MESSAGE), M_DEVBUF, M_NOWAIT);
 			if (copied == NULL) {
 				continue;
 			}
 
 			memcpy(copied, msg, sizeof(HV_MESSAGE));
 			WorkQueueQueueWorkItem(gVmbusConnection.WorkQueue,
-				VmbusOnChannelMessage, (void*) copied);
+				VmbusOnChannelMessage, copied);
 		}
 
 		msg->Header.MessageType = HvMessageTypeNone;

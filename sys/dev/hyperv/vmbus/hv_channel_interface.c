@@ -58,8 +58,6 @@
 
 #include <dev/hyperv/include/hv_osd.h>
 #include <dev/hyperv/include/hv_logging.h>
-/* Fixme -- contains globals, cannot be included more than once */
-//#include "hv_version_info.h"
 #include "hv_hv.h"
 #include "hv_vmbus_var.h"
 #include "hv_vmbus_api.h"
