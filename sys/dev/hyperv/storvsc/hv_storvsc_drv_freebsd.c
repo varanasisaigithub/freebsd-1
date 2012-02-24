@@ -46,11 +46,12 @@ enum hv_storage_type {
 	DRIVER_UNKNOWN
 };
 
-//{ba6163d9-04a1-4d29-b605-72e2ffb1dc7f}
+/* {ba6163d9-04a1-4d29-b605-72e2ffb1dc7f} */
 static const GUID gStorVscDeviceType={
 	.Data = {0xd9, 0x63, 0x61, 0xba, 0xa1, 0x04, 0x29, 0x4d, 0xb6, 0x05, 0x72, 0xe2, 0xff, 0xb1, 0xdc, 0x7f}
 };
-//{32412632-86cb-44a2-9b5c-50d1417354f5}
+
+/* {32412632-86cb-44a2-9b5c-50d1417354f5} */
 static const GUID gBlkVscDeviceType={
 	.Data = {0x32, 0x26, 0x41, 0x32, 0xcb, 0x86, 0xa2, 0x44, 0x9b, 0x5c, 0x50, 0xd1, 0x41, 0x73, 0x54, 0xf5}
 };
@@ -318,15 +319,17 @@ storvsc_attach(device_t dev)
 		return ret;
 	}
 
-	// Create the device queue.
-	// Hyper-V maps each target to one SCSI HBA
+	/*
+	 *  Create the device queue.
+	 * Hyper-V maps each target to one SCSI HBA
+	 */
 	devq = cam_simq_alloc(sc->drv_props->drv_max_ios_per_target);
 	if (devq == NULL) {
 		printf("Failed to alloc device queue\n");
 		return (ENOMEM);
 	}
 
-	// XXX avoid Giant?
+	/* XXX avoid Giant? */
 	sc->sim = cam_sim_alloc(storvsc_action,
 				storvsc_poll,
 				sc->drv_props->drv_name,
@@ -436,7 +439,7 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		cts->protocol = PROTO_SCSI;
 		cts->protocol_version = SCSI_REV_SPC2;
 
-		// Enable tag queuing and disconnected mode
+		/* Enable tag queuing and disconnected mode */
 		cts->proto_specific.valid = CTS_SCSI_VALID_TQ;
 		cts->proto_specific.scsi.valid = CTS_SCSI_VALID_TQ;
 		cts->proto_specific.scsi.flags = CTS_SCSI_FLAGS_TAG_ENB;
@@ -522,35 +525,36 @@ create_storvsc_request(union ccb *ccb, struct hv_storvsc_request *reqp)
 	uint32_t pfn_num = 0;
 	uint32_t pfn;
 	
-	reqp->host = cam_sim_unit(xpt_path_sim(ccb->ccb_h.path));
-	reqp->target_id = ccb->ccb_h.target_id;
-	reqp->path_id = reqp->bus = ccb->ccb_h.path_id;
-	reqp->lun = ccb->ccb_h.target_lun;
+	reqp->vstor_packet.vm_srb.port = cam_sim_unit(xpt_path_sim(ccb->ccb_h.path));
+	reqp->vstor_packet.vm_srb.target_id = ccb->ccb_h.target_id;
+	reqp->vstor_packet.vm_srb.path_id =  ccb->ccb_h.path_id;
+	reqp->vstor_packet.vm_srb.lun = ccb->ccb_h.target_lun;
 
-	reqp->cdb_len = csio->cdb_len;
+	reqp->vstor_packet.vm_srb.cdb_len = csio->cdb_len;
 	if(ccb->ccb_h.flags & CAM_CDB_POINTER) {
-		memcpy(reqp->cdb, csio->cdb_io.cdb_ptr, reqp->cdb_len);
+		memcpy(&reqp->vstor_packet.vm_srb.cdb, csio->cdb_io.cdb_ptr, csio->cdb_len);
 	} else {
-		memcpy(reqp->cdb, csio->cdb_io.cdb_bytes, reqp->cdb_len);
+		memcpy(&reqp->vstor_packet.vm_srb.cdb, csio->cdb_io.cdb_bytes, csio->cdb_len);
 	}
 
 	switch (ccb->ccb_h.flags & CAM_DIR_MASK) {
     	case CAM_DIR_OUT: 
-    		reqp->type = WRITE_TYPE;
+    		reqp->vstor_packet.vm_srb.data_in = WRITE_TYPE;
     		break;
     	case CAM_DIR_IN:
-    		reqp->type = READ_TYPE;
+    		reqp->vstor_packet.vm_srb.data_in = READ_TYPE;
     		break;
     	case CAM_DIR_NONE:
-    		reqp->type = UNKNOWN_TYPE;
+    		reqp->vstor_packet.vm_srb.data_in = UNKNOWN_TYPE;
     		break;
     	default:
-    		reqp->type = UNKNOWN_TYPE;
+    		reqp->vstor_packet.vm_srb.data_in = UNKNOWN_TYPE;
     		break;
 	}
 
-	reqp->sense_data = (unsigned char *)&csio->sense_data;
 	reqp->sense_info_len = SSD_FULL_SIZE;
+	reqp->sense_data = (uint8_t *)&csio->sense_data;
+
 	reqp->ccb = ccb;
 	if (ccb->ccb_h.flags & CAM_SCATTER_VALID) {
 		KASSERT(0, "ccb is scatter gather valid\n");

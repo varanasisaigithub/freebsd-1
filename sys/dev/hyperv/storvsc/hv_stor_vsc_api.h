@@ -1,8 +1,5 @@
 #ifndef __HV_STORVSC_API_H__
 #define __HV_STORVSC_API_H__
-/*
- * File referenced in MS Hyper-v code, but missing.
- */
 
 #include <hv_osd.h>
 #include <hv_vmbus_api.h>
@@ -27,38 +24,19 @@ enum storvsc_request_type {
 	UNKNOWN_TYPE
 };
 
-struct hv_storvsc_request;
-
-struct hv_storvsc_req_ext {
-	struct hv_storvsc_request		*request;
-	DEVICE_OBJECT					*device;
+struct hv_storvsc_request {
+	LIST_ENTRY(hv_storvsc_request) link;
+	struct vstor_packet	vstor_packet;
+	MULTIPAGE_BUFFER data_buf;
+	uint8_t sense_info_len;
+	void *sense_data;
+	union ccb *ccb;
+	struct storvsc_softc *softc;
 
 	// Synchronize the request/response if needed
 	struct {
 		struct mtx mtx;
 	} event;
-
-	struct vstor_packet				vstor_packet;
-};
-
-struct hv_storvsc_request {
-	LIST_ENTRY(hv_storvsc_request) link;
-	struct hv_storvsc_req_ext extension;
-	uint32_t host;
-	uint8_t target_id;
-	uint8_t path_id;
-	uint8_t lun;
-	uint8_t bus;
-	uint8_t cdb_len;
-	uint8_t cdb[CDB16GENERIC_LENGTH];
-	enum storvsc_request_type type;
-	MULTIPAGE_BUFFER data_buf;
-	uint8_t status;
-	uint8_t sense_info_len;
-	void *sense_data;
-	union ccb *ccb;
-	struct storvsc_softc *softc;
-	uint32_t transfer_len;
 };
 struct storvsc_driver_object {
 	DRIVER_OBJECT Base;
