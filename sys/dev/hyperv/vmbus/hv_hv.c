@@ -298,7 +298,7 @@ HvInit(void) {
 	}
 
 	// See if the hypercall page is already set
-	hypercallMsr.Asuint64_t = ReadMsr(HV_X64_MSR_HYPERCALL);
+	hypercallMsr.as_uint64_t = ReadMsr(HV_X64_MSR_HYPERCALL);
 
 	if (gHvContext.GuestId == HV_LINUX_GUEST_ID) {
 		DPRINT_INFO(VMBUS, "Guest OS Id is HV_LINUX_GUEST_ID");
@@ -316,11 +316,11 @@ HvInit(void) {
 		//hypercallMsr.GuestPhysicalAddress = Logical2PhysicalAddr(virtAddr) >> PAGE_SHIFT;
 		hypercallMsr.GuestPhysicalAddress = Virtual2Physical(
 			virtAddr) >> PAGE_SHIFT;
-		WriteMsr(HV_X64_MSR_HYPERCALL, hypercallMsr.Asuint64_t);
+		WriteMsr(HV_X64_MSR_HYPERCALL, hypercallMsr.as_uint64_t);
 
 		// Confirm that hypercall page did get set up.
-		hypercallMsr.Asuint64_t = 0;
-		hypercallMsr.Asuint64_t = ReadMsr(HV_X64_MSR_HYPERCALL);
+		hypercallMsr.as_uint64_t = 0;
+		hypercallMsr.as_uint64_t = ReadMsr(HV_X64_MSR_HYPERCALL);
 
 		if (!hypercallMsr.Enable) {
 			DPRINT_ERR(VMBUS, "unable to set hypercall page!!");
@@ -363,8 +363,8 @@ HvInit(void) {
 
 	Cleanup: if (virtAddr) {
 		if (hypercallMsr.Enable) {
-			hypercallMsr.Asuint64_t = 0;
-			WriteMsr(HV_X64_MSR_HYPERCALL, hypercallMsr.Asuint64_t);
+			hypercallMsr.as_uint64_t = 0;
+			WriteMsr(HV_X64_MSR_HYPERCALL, hypercallMsr.as_uint64_t);
 		}
 
 		VirtualFree(virtAddr);
@@ -398,8 +398,8 @@ HvCleanup(void) {
 
 	if (gHvContext.GuestId == HV_LINUX_GUEST_ID) {
 		if (gHvContext.HypercallPage) {
-			hypercallMsr.Asuint64_t = 0;
-			WriteMsr(HV_X64_MSR_HYPERCALL, hypercallMsr.Asuint64_t);
+			hypercallMsr.as_uint64_t = 0;
+			WriteMsr(HV_X64_MSR_HYPERCALL, hypercallMsr.as_uint64_t);
 			VirtualFree(gHvContext.HypercallPage);
 			gHvContext.HypercallPage = NULL;
 		}
@@ -567,59 +567,59 @@ HvSynicInit(void *irqArg) {
 		//
 		// Setup the Synic's message page
 		//
-		simp.Asuint64_t = ReadMsr(HV_X64_MSR_SIMP);
+		simp.as_uint64_t = ReadMsr(HV_X64_MSR_SIMP);
 		simp.SimpEnabled = 1;
 		simp.BaseSimpGpa = GetPhysicalAddress(
 			gHvContext.synICMessagePage[cpu]) >> PAGE_SHIFT;
 
 		DPRINT_DBG(VMBUS, "HV_X64_MSR_SIMP msr set to: %lx",
-			simp.Asuint64_t);
+			simp.as_uint64_t);
 
-		WriteMsr(HV_X64_MSR_SIMP, simp.Asuint64_t);
+		WriteMsr(HV_X64_MSR_SIMP, simp.as_uint64_t);
 
 		//
 		// Setup the Synic's event page
 		//
-		siefp.Asuint64_t = ReadMsr(HV_X64_MSR_SIEFP);
+		siefp.as_uint64_t = ReadMsr(HV_X64_MSR_SIEFP);
 		siefp.SiefpEnabled = 1;
 		siefp.BaseSiefpGpa = GetPhysicalAddress(
 			gHvContext.synICEventPage[cpu]) >> PAGE_SHIFT;
 
 		DPRINT_DBG(VMBUS, "HV_X64_MSR_SIEFP msr set to: %lx",
-			siefp.Asuint64_t);
+			siefp.as_uint64_t);
 
-		WriteMsr(HV_X64_MSR_SIEFP, siefp.Asuint64_t);
+		WriteMsr(HV_X64_MSR_SIEFP, siefp.as_uint64_t);
 	}
 	//
 	// Set up the interception SINT.
 	//
 	//WriteMsr((HV_X64_MSR_SINT0 + HV_SYNIC_INTERCEPTION_SINT_INDEX),
-	//             interceptionSint.Asuint64_t);
+	//             interceptionSint.as_uint64_t);
 
 	//
 	// Set up the shared SINT.
 	// 
 //	DPRINT_INFO(VMBUS, "setup shared SINT.");
-	sharedSint.Asuint64_t = ReadMsr(HV_X64_MSR_SINT0 + VMBUS_MESSAGE_SINT);
+	sharedSint.as_uint64_t = ReadMsr(HV_X64_MSR_SINT0 + VMBUS_MESSAGE_SINT);
 
-	sharedSint.Asuint64_t = 0;
+	sharedSint.as_uint64_t = 0;
 	sharedSint.Vector = irqVector; //HV_SHARED_SINT_IDT_VECTOR + 0x20;
 	sharedSint.Masked = FALSE;
 	sharedSint.AutoEoi = FALSE;
 
-	DPRINT_DBG(VMBUS, "HV_X64_MSR_SINT1 msr set to: %lx", sharedSint.Asuint64_t);
+	DPRINT_DBG(VMBUS, "HV_X64_MSR_SINT1 msr set to: %lx", sharedSint.as_uint64_t);
 
-	WriteMsr(HV_X64_MSR_SINT0 + VMBUS_MESSAGE_SINT, sharedSint.Asuint64_t);
+	WriteMsr(HV_X64_MSR_SINT0 + VMBUS_MESSAGE_SINT, sharedSint.as_uint64_t);
 
 	// Enable the global synic bit
-	sctrl.Asuint64_t = ReadMsr(HV_X64_MSR_SCONTROL);
+	sctrl.as_uint64_t = ReadMsr(HV_X64_MSR_SCONTROL);
 	sctrl.Enable = 1;
 
-	WriteMsr(HV_X64_MSR_SCONTROL, sctrl.Asuint64_t);
+	WriteMsr(HV_X64_MSR_SCONTROL, sctrl.as_uint64_t);
 
 	gHvContext.SynICInitialized = TRUE;
 
-//	sharedSint1.Asuint64_t = ReadMsr(HV_X64_MSR_SINT0 + VMBUS_MESSAGE_SINT);
+//	sharedSint1.as_uint64_t = ReadMsr(HV_X64_MSR_SINT0 + VMBUS_MESSAGE_SINT);
 //	printf("HV: Vec: %x, Masked: %x, EOI: %x\n",
 //	    sharedSint1.Vector, sharedSint1.Masked, sharedSint1.AutoEoi);
 
@@ -663,28 +663,28 @@ void HvSynicCleanup(void *arg) {
 		return;
 	}
 
-	sharedSint.Asuint64_t = ReadMsr(HV_X64_MSR_SINT0 + VMBUS_MESSAGE_SINT);
+	sharedSint.as_uint64_t = ReadMsr(HV_X64_MSR_SINT0 + VMBUS_MESSAGE_SINT);
 
 	sharedSint.Masked = 1;
 
 	//KYS: Need to correctly cleanup in the case of SMP!!!
 	// Disable the interrupt
-	WriteMsr(HV_X64_MSR_SINT0 + VMBUS_MESSAGE_SINT, sharedSint.Asuint64_t);
+	WriteMsr(HV_X64_MSR_SINT0 + VMBUS_MESSAGE_SINT, sharedSint.as_uint64_t);
 
 	// Disable and free the resources only if we are running as native linux
 	// since in xenlinux, we are sharing the resources with the x2v shim
 	if (gHvContext.GuestId == HV_LINUX_GUEST_ID) {
-		simp.Asuint64_t = ReadMsr(HV_X64_MSR_SIMP);
+		simp.as_uint64_t = ReadMsr(HV_X64_MSR_SIMP);
 		simp.SimpEnabled = 0;
 		simp.BaseSimpGpa = 0;
 
-		WriteMsr(HV_X64_MSR_SIMP, simp.Asuint64_t);
+		WriteMsr(HV_X64_MSR_SIMP, simp.as_uint64_t);
 
-		siefp.Asuint64_t = ReadMsr(HV_X64_MSR_SIEFP);
+		siefp.as_uint64_t = ReadMsr(HV_X64_MSR_SIEFP);
 		siefp.SiefpEnabled = 0;
 		siefp.BaseSiefpGpa = 0;
 
-		WriteMsr(HV_X64_MSR_SIEFP, siefp.Asuint64_t);
+		WriteMsr(HV_X64_MSR_SIEFP, siefp.as_uint64_t);
 
 		hv_page_contigfree(gHvContext.synICMessagePage[cpu], 1);
 		hv_page_contigfree(gHvContext.synICEventPage[cpu], 1);

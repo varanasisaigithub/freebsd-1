@@ -345,7 +345,7 @@ typedef struct _HV_SYNIC_EVENT_FLAGS_PAGE {
 // Define SynIC control register.
 //
 typedef union _HV_SYNIC_SCONTROL {
-    uint64_t Asuint64_t;
+    uint64_t as_uint64_t;
     struct {
         uint64_t Enable:1;
         uint64_t Reserved:63;
@@ -356,7 +356,7 @@ typedef union _HV_SYNIC_SCONTROL {
 // Define synthetic interrupt source.
 //
 typedef union _HV_SYNIC_SINT {
-    uint64_t Asuint64_t;
+    uint64_t as_uint64_t;
     struct {
         uint64_t Vector    :8;
         uint64_t Reserved1 :8;
@@ -370,7 +370,7 @@ typedef union _HV_SYNIC_SINT {
 // Define the format of the SIMP register
 //
 typedef union _HV_SYNIC_SIMP {
-    uint64_t Asuint64_t;
+    uint64_t as_uint64_t;
     struct {
         uint64_t SimpEnabled : 1;
         uint64_t Preserved   : 11;
@@ -382,7 +382,7 @@ typedef union _HV_SYNIC_SIMP {
 // Define the format of the SIEFP register
 //
 typedef union _HV_SYNIC_SIEFP {
-    uint64_t Asuint64_t;
+    uint64_t as_uint64_t;
     struct {
         uint64_t SiefpEnabled : 1;
         uint64_t Preserved   : 11;
@@ -394,7 +394,7 @@ typedef union _HV_SYNIC_SIEFP {
 // Definitions for the monitored notification facility
 //
 typedef union _HV_MONITOR_TRIGGER_GROUP {
-    uint64_t Asuint64_t;
+    uint64_t as_uint64_t;
 
     struct {
         uint32_t Pending;

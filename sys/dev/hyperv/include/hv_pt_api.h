@@ -89,7 +89,7 @@ typedef enum _HV_GUEST_OS_MICROSOFT_IDS {
 #define HV_X64_MSR_GUEST_OS_ID 0x40000000
 
 typedef union _HV_X64_MSR_GUEST_OS_ID_CONTENTS {
-    uint64_t Asuint64_t;
+    uint64_t as_uint64_t;
     struct {
         uint64_t BuildNumber    : 16;
         uint64_t ServiceVersion : 8; // Service Pack, etc.
@@ -106,7 +106,7 @@ typedef union _HV_X64_MSR_GUEST_OS_ID_CONTENTS {
 #define HV_X64_MSR_HYPERCALL 0x40000001
 
 typedef union _HV_X64_MSR_HYPERCALL_CONTENTS {
-    uint64_t Asuint64_t;
+    uint64_t as_uint64_t;
     struct {
         uint64_t Enable               : 1;
         uint64_t Reserved             : 11;

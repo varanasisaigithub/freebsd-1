@@ -201,7 +201,6 @@ extern void SpinlockClose(HANDLE hSpin);
 extern void SpinlockAcquire(HANDLE hSpin);
 extern void SpinlockRelease(HANDLE hSpin);
 
-
 #define GetVirtualAddress Physical2LogicalAddr
 void* Physical2LogicalAddr(unsigned long PhysAddr);
 

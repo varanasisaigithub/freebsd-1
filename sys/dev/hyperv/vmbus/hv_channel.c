@@ -100,7 +100,7 @@ DumpMonitorPage( HV_MONITOR_PAGE *MonitorPage)
 
 	for (i=0; i<4; i++)
 	{
-		DPRINT_DBG(VMBUS, "trigger group (%d) - %lx", i, MonitorPage->TriggerGroup[i].Asuint64_t);
+		DPRINT_DBG(VMBUS, "trigger group (%d) - %lx", i, MonitorPage->TriggerGroup[i].as_uint64_t);
 	}
 
 	for (i=0; i<4; i++)
