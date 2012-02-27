@@ -61,6 +61,7 @@
 
 #include <dev/hyperv/include/hv_osd.h>
 #include <dev/hyperv/include/hv_logging.h>
+#include "hv_support.h"
 #include "hv_hv.h"
 #include "hv_vmbus_var.h"
 #include "hv_vmbus_api.h"
@@ -259,10 +260,10 @@ hv_vmbus_channel_open(VMBUS_CHANNEL *NewChannel, uint32_t SendRingBufferSize,
 	NewChannel->ChannelCallbackContext = Context;
 
 	// Allocate the ring buffer
-	out = PageAlloc(
+	out = hv_page_contigmalloc(
 		(SendRingBufferSize + RecvRingBufferSize) >> PAGE_SHIFT);
 
-	in = (void*) ((uint8_t *)out + SendRingBufferSize);
+	in = ((uint8_t *)out + SendRingBufferSize);
 
 	NewChannel->RingBufferPages = out;
 	NewChannel->RingBufferPageCount = (SendRingBufferSize
@@ -289,9 +290,10 @@ hv_vmbus_channel_open(VMBUS_CHANNEL *NewChannel, uint32_t SendRingBufferSize,
 		NewChannel, NewChannel->OfferMsg.ChildRelId, NewChannel->RingBufferGpadlHandle, NewChannel->Outbound.RingBuffer, NewChannel->Outbound.RingSize, NewChannel->Inbound.RingBuffer, NewChannel->Inbound.RingSize, SendRingBufferSize);
 
 	// Create and init the channel open message 
-	openInfo = (VMBUS_CHANNEL_MSGINFO*) MemAlloc(
-		sizeof(VMBUS_CHANNEL_MSGINFO)
-			+ sizeof(VMBUS_CHANNEL_OPEN_CHANNEL));
+	openInfo = (VMBUS_CHANNEL_MSGINFO*)malloc(
+		   sizeof(VMBUS_CHANNEL_MSGINFO) +
+		   sizeof(VMBUS_CHANNEL_OPEN_CHANNEL), M_DEVBUF, M_NOWAIT);
+
 	ASSERT(openInfo != NULL);
 
 	openInfo->WaitEvent = WaitEventCreate();
@@ -339,7 +341,7 @@ Cleanup:
 	mtx_unlock(gVmbusConnection.ChannelMsgLock);
 
 	WaitEventClose(openInfo->WaitEvent);
-	MemFree(openInfo);
+	free(openInfo, M_DEVBUF);
 
 	DPRINT_EXIT(VMBUS);
 
@@ -486,8 +488,7 @@ VmbusChannelCreateGpadlHeader(void *Kbuffer, // from kmalloc()
 		msgSize = sizeof(VMBUS_CHANNEL_MSGINFO)
 			+ sizeof(VMBUS_CHANNEL_GPADL_HEADER) + sizeof(GPA_RANGE)
 			+ pfnCount * sizeof(uint64_t);
-		msgHeader = MemAllocZeroed(msgSize);
-
+		msgHeader = malloc(msgSize, M_DEVBUF, M_NOWAIT | M_ZERO);
 		INITIALIZE_LIST_HEAD(&msgHeader->SubMsgList);
 		msgHeader->MessageSize = msgSize;
 
@@ -522,7 +523,7 @@ VmbusChannelCreateGpadlHeader(void *Kbuffer, // from kmalloc()
 			msgSize = sizeof(VMBUS_CHANNEL_MSGINFO)
 				+ sizeof(VMBUS_CHANNEL_GPADL_BODY)
 				+ pfnCurr * sizeof(uint64_t);
-			msgBody = MemAllocZeroed(msgSize);
+			msgBody = malloc(msgSize, M_DEVBUF, M_NOWAIT | M_ZERO);
 			ASSERT(msgBody);
 			msgBody->MessageSize = msgSize;
 			(*MessageCount)++;
@@ -544,7 +545,7 @@ VmbusChannelCreateGpadlHeader(void *Kbuffer, // from kmalloc()
 		msgSize = sizeof(VMBUS_CHANNEL_MSGINFO)
 			+ sizeof(VMBUS_CHANNEL_GPADL_HEADER) + sizeof(GPA_RANGE)
 			+ pageCount * sizeof(uint64_t);
-		msgHeader = MemAllocZeroed(msgSize);
+		msgHeader = malloc(msgSize, M_DEVBUF, M_NOWAIT | M_ZERO);
 		msgHeader->MessageSize = msgSize;
 
 		gpaHeader = (VMBUS_CHANNEL_GPADL_HEADER*) msgHeader->Msg;
@@ -692,8 +693,7 @@ Cleanup:
 	mtx_unlock(gVmbusConnection.ChannelMsgLock);
 
 	WaitEventClose(msgInfo->WaitEvent);
-	MemFree(msgInfo);
-
+	free(msgInfo, M_DEVBUF);
 	DPRINT_EXIT(VMBUS);
 
 	return ret;
@@ -718,9 +718,11 @@ hv_vmbus_channel_teardown_gpdal(VMBUS_CHANNEL *Channel, uint32_t GpadlHandle) {
 
 	ASSERT(GpadlHandle != 0);
 
-	info = (VMBUS_CHANNEL_MSGINFO*) MemAlloc(
-		sizeof(VMBUS_CHANNEL_MSGINFO)
-			+ sizeof(VMBUS_CHANNEL_GPADL_TEARDOWN));
+	info = (VMBUS_CHANNEL_MSGINFO *)
+		malloc(	sizeof(VMBUS_CHANNEL_MSGINFO) +
+			sizeof(VMBUS_CHANNEL_GPADL_TEARDOWN),
+				M_DEVBUF, M_NOWAIT);
+
 	ASSERT(info != NULL);
 
 	info->WaitEvent = WaitEventCreate();
@@ -748,8 +750,7 @@ hv_vmbus_channel_teardown_gpdal(VMBUS_CHANNEL *Channel, uint32_t GpadlHandle) {
 	mtx_unlock(gVmbusConnection.ChannelMsgLock);
 
 	WaitEventClose(info->WaitEvent);
-	MemFree(info);
-
+	free(info, M_DEVBUF);
 	DPRINT_EXIT(VMBUS);
 
 	return ret;
@@ -777,9 +778,11 @@ hv_vmbus_channel_close(VMBUS_CHANNEL *Channel) {
 	TimerStop(Channel->PollTimer);
 
 	// Send a closing message
-	info = (VMBUS_CHANNEL_MSGINFO*) MemAlloc(
-		sizeof(VMBUS_CHANNEL_MSGINFO)
-			+ sizeof(VMBUS_CHANNEL_CLOSE_CHANNEL));
+	info = (VMBUS_CHANNEL_MSGINFO *)
+		malloc(	sizeof(VMBUS_CHANNEL_MSGINFO) +
+			sizeof(VMBUS_CHANNEL_CLOSE_CHANNEL),
+				M_DEVBUF, M_NOWAIT);
+
 	ASSERT(info != NULL);
 
 	//info->waitEvent = WaitEventCreate();
@@ -805,9 +808,9 @@ hv_vmbus_channel_close(VMBUS_CHANNEL *Channel) {
 	RingBufferCleanup(&Channel->Outbound);
 	RingBufferCleanup(&Channel->Inbound);
 
-	PageFree(Channel->RingBufferPages, Channel->RingBufferPageCount);
+	hv_page_contigfree(Channel->RingBufferPages, Channel->RingBufferPageCount);
 
-	MemFree(info);
+	free(info, M_DEVBUF);
 
 	// If we are closing the channel during an error path in opening the channel, don't free the channel
 	// since the caller will free the channel

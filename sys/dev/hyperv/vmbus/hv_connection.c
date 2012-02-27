@@ -120,7 +120,7 @@ VmbusConnect(void) {
 
 	// Set up the vmbus event connection for channel interrupt abstraction
 	// stuff
-	gVmbusConnection.InterruptPage = PageAlloc(1);
+	gVmbusConnection.InterruptPage = hv_page_contigmalloc(1);
 	if (gVmbusConnection.InterruptPage == NULL) {
 		ret = -1;
 		goto Cleanup;
@@ -128,20 +128,21 @@ VmbusConnect(void) {
 
 	gVmbusConnection.RecvInterruptPage = gVmbusConnection.InterruptPage;
 	gVmbusConnection.SendInterruptPage =
-		(void*) ((uint8_t *) gVmbusConnection.InterruptPage
-			+ (PAGE_SIZE >> 1));
+		((uint8_t *) gVmbusConnection.InterruptPage + (PAGE_SIZE >> 1));
 
 	// Set up the monitor notification facility. The 1st page for
 	// parent->child and the 2nd page for child->parent
-	gVmbusConnection.MonitorPages = PageAlloc(2);
+	gVmbusConnection.MonitorPages = hv_page_contigmalloc(2);
 	if (gVmbusConnection.MonitorPages == NULL) {
 		ret = -1;
 		goto Cleanup;
 	}
 
-	msgInfo = (VMBUS_CHANNEL_MSGINFO*) MemAllocZeroed(
-		sizeof(VMBUS_CHANNEL_MSGINFO)
-			+ sizeof(VMBUS_CHANNEL_INITIATE_CONTACT));
+	msgInfo = (VMBUS_CHANNEL_MSGINFO*)
+			malloc(sizeof(VMBUS_CHANNEL_MSGINFO) +
+				sizeof(VMBUS_CHANNEL_INITIATE_CONTACT),
+				M_DEVBUF, M_NOWAIT | M_ZERO);
+
 	if (msgInfo == NULL) {
 		ret = -1;
 		goto Cleanup;
@@ -198,7 +199,7 @@ VmbusConnect(void) {
 	}
 
 	WaitEventClose(msgInfo->WaitEvent);
-	MemFree(msgInfo);
+	free(msgInfo, M_DEVBUF);
 	DPRINT_EXIT(VMBUS);
 
 	return 0;
@@ -212,20 +213,19 @@ VmbusConnect(void) {
 	hv_mtx_destroy(gVmbusConnection.ChannelMsgLock);
 
 	if (gVmbusConnection.InterruptPage) {
-		PageFree(gVmbusConnection.InterruptPage, 1);
+		hv_page_contigfree(gVmbusConnection.InterruptPage, 1);
 		gVmbusConnection.InterruptPage = NULL;
 	}
 
 	if (gVmbusConnection.MonitorPages) {
-		PageFree(gVmbusConnection.MonitorPages, 2);
+		hv_page_contigfree(gVmbusConnection.MonitorPages, 2);
 		gVmbusConnection.MonitorPages = NULL;
 	}
 
 	if (msgInfo) {
 		if (msgInfo->WaitEvent)
 			WaitEventClose(msgInfo->WaitEvent);
-
-		MemFree(msgInfo);
+		free(msgInfo, M_DEVBUF);
 	}
 
 	DPRINT_EXIT(VMBUS);
@@ -253,7 +253,7 @@ VmbusDisconnect(void) {
 	if (gVmbusConnection.ConnectState != Connected)
 		return -1;
 
-	msg = MemAllocZeroed(sizeof(VMBUS_CHANNEL_UNLOAD));
+	msg = malloc(sizeof(VMBUS_CHANNEL_UNLOAD), M_DEVBUF, M_NOWAIT | M_ZERO);
 
 	msg->MessageType = ChannelMessageUnload;
 
@@ -263,7 +263,7 @@ VmbusDisconnect(void) {
 		goto Cleanup;
 	}
 
-	PageFree(gVmbusConnection.InterruptPage, 1);
+	hv_page_contigfree(gVmbusConnection.InterruptPage, 1);
 
 	// TODO: iterate thru the msg list and free up
 
@@ -276,7 +276,7 @@ VmbusDisconnect(void) {
 	DPRINT_INFO(VMBUS, "Vmbus disconnected!!");
 
 	Cleanup: if (msg) {
-		MemFree(msg);
+		free(msg, M_DEVBUF);
 	}
 
 	DPRINT_EXIT(VMBUS);

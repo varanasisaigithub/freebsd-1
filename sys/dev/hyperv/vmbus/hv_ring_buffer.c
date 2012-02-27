@@ -374,7 +374,7 @@ RingBufferWrite(RING_BUFFER_INFO* OutRingInfo, SG_BUFFER_LIST SgBuffers[],
 	uint32_t byteAvailToRead;
 	uint32_t totalBytesToWrite = 0;
 
-	__volatile__ uint32_t nextWriteLocation;
+	volatile uint32_t nextWriteLocation;
 	uint64_t prevIndices=0;
 
 	DPRINT_ENTER(VMBUS);

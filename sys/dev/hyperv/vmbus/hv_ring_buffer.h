@@ -64,31 +64,28 @@
 #include <sys/mutex.h>
 
 typedef struct _SG_BUFFER_LIST {
-	void	*Data;
+	void		*Data;
 	uint32_t	Length;
 } SG_BUFFER_LIST;
 
 typedef struct _RING_BUFFER {
-    __volatile__ uint32_t	WriteIndex;     // Offset in bytes from the start of ring data below
-    __volatile__ uint32_t	ReadIndex;      // Offset in bytes from the start of ring data below
-
-	__volatile__ uint32_t InterruptMask;
-	uint8_t	Reserved[4084];			// Pad it to PAGE_SIZE so that data starts on page boundary
+	volatile uint32_t	WriteIndex;     // Offset in bytes from the start of ring data below
+	volatile uint32_t	ReadIndex;      // Offset in bytes from the start of ring data below
+	volatile uint32_t	InterruptMask;
+	uint8_t			Reserved[4084];	// Pad it to PAGE_SIZE so that data starts on page boundary
 	// NOTE: The InterruptMask field is used only for channels but since our vmbus connection
 	// also uses this data structure and its data starts here, we commented out this field.
 	// __volatile__ uint32_t InterruptMask;
 	// Ring data starts here + RingDataStartOffset !!! DO NOT place any fields below this !!!
 	uint8_t Buffer[0];
-}STRUCT_PACKED RING_BUFFER;
+} STRUCT_PACKED RING_BUFFER;
 
 typedef struct _RING_BUFFER_INFO {
 	RING_BUFFER* RingBuffer;
 	uint32_t RingSize;	// Include the shared header
 	struct mtx *RingLock;
-
 	uint32_t RingDataSize;	// < ringSize
 	uint32_t RingDataStartOffset;
-
 } RING_BUFFER_INFO;
 
 typedef struct _RING_BUFFER_DEBUG_INFO {

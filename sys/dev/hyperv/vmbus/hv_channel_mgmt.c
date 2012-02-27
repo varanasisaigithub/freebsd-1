@@ -63,6 +63,7 @@
 
 #include <dev/hyperv/include/hv_osd.h>
 #include <dev/hyperv/include/hv_logging.h>
+#include "hv_support.h"
 #include "hv_hv.h"
 #include "hv_vmbus_var.h"
 #include "hv_vmbus_api.h"
@@ -210,22 +211,21 @@ VMBUS_CHANNEL*
 AllocVmbusChannel(void) {
 	VMBUS_CHANNEL* channel;
 
-	channel = (VMBUS_CHANNEL*) MemAllocAtomic(sizeof(VMBUS_CHANNEL));
+	channel = (VMBUS_CHANNEL*) malloc(sizeof(VMBUS_CHANNEL), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (!channel) {
 		return NULL;
 	}
 
-	memset(channel, 0, sizeof(VMBUS_CHANNEL));
-	channel->InboundLock = hv_mtx_create("vmbus inbound channel");
+	channel->InboundLock = hv_mtx_create("vmbus inbound channel mtx");
 	if (channel->InboundLock == NULL) {
-		MemFree(channel);
+		free(channel, M_DEVBUF);
 		return NULL;
 	}
 
 	channel->PollTimer = TimerCreate(hv_vmbus_channel_on_timer, channel);
 	if (!channel->PollTimer) {
 		hv_mtx_destroy(channel->InboundLock);
-		MemFree(channel);
+		free(channel, M_DEVBUF);
 		return NULL;
 	}
 
@@ -234,7 +234,7 @@ AllocVmbusChannel(void) {
 	if (!channel->ControlWQ) {
 		TimerClose(channel->PollTimer);
 		hv_mtx_destroy(channel->InboundLock);
-		MemFree(channel);
+		free(channel, M_DEVBUF);
 		return NULL;
 	}
 
@@ -260,7 +260,7 @@ ReleaseVmbusChannel(void* Context) {
 	WorkQueueClose(channel->ControlWQ);
 	DPRINT_DBG(VMBUS, "channel released (%p)", channel);
 
-	MemFree(channel);
+	free(channel, M_DEVBUF);
 
 	DPRINT_EXIT(VMBUS);
 }
@@ -301,7 +301,10 @@ shutdown_onchannelcallback(void *context) {
 	DPRINT_ENTER(VMBUS);
 
 	buflen = PAGE_SIZE;
-	buf = MemAllocAtomic(buflen);
+
+	buf = malloc(buflen, M_DEVBUF, M_NOWAIT);
+
+// todo - check for null pointer
 
 	hv_vmbus_channel_recv_packet(channel, buf, buflen, &recvlen, &requestid);
 
@@ -389,7 +392,7 @@ shutdown_onchannelcallback(void *context) {
 			VmbusPacketTypeDataInBand, 0);
 	}
 
-	MemFree(buf);
+	free(buf, M_DEVBUF);
 
 	DPRINT_EXIT(VMBUS);
 
@@ -891,7 +894,7 @@ VmbusOnChannelMessage(void *Context) {
 			"Received invalid channel message type %d size %d",
 			hdr->MessageType, size);
 //		PrintBytes((unsigned char *)msg->u.Payload, size);
-		MemFree(msg);
+		free(msg, M_DEVBUF);
 		return;
 	}
 
@@ -903,7 +906,7 @@ VmbusOnChannelMessage(void *Context) {
 	}
 
 	// Free the msg that was allocated in VmbusOnMsgDPC()
-	MemFree(msg);
+	free(msg, M_DEVBUF);
 	DPRINT_EXIT(VMBUS);
 }
 
@@ -924,9 +927,10 @@ VmbusChannelRequestOffers(void) {
 
 	DPRINT_ENTER(VMBUS);
 
-	msgInfo = (VMBUS_CHANNEL_MSGINFO*) MemAlloc(
-		sizeof(VMBUS_CHANNEL_MSGINFO)
-			+ sizeof(VMBUS_CHANNEL_MESSAGE_HEADER));
+	msgInfo = (VMBUS_CHANNEL_MSGINFO *)
+	        malloc(sizeof(VMBUS_CHANNEL_MSGINFO) +
+	          sizeof(VMBUS_CHANNEL_MESSAGE_HEADER), M_DEVBUF, M_NOWAIT);
+
 	ASSERT(msgInfo != NULL);
 
 	msgInfo->WaitEvent = WaitEventCreate();
@@ -956,7 +960,7 @@ VmbusChannelRequestOffers(void) {
 
 	Cleanup: if (msgInfo) {
 		WaitEventClose(msgInfo->WaitEvent);
-		MemFree(msgInfo);
+		free(msgInfo, M_DEVBUF);
 	}
 
 	DPRINT_EXIT(VMBUS);
