@@ -40,14 +40,11 @@
 #include <sys/taskqueue.h>
 #include <sys/bus.h>
 #include <sys/mutex.h>
-#include <hv_osd.h>
 #include <hv_logging.h>
 
 #include <hv_channel.h>
 #include <hv_vmbus_var.h>
-#include <hv_vmbus_api.h>
 #include "hv_stor_vsc_api.h"
-#include <hv_vmbus_packet_format.h>
 #include "hv_vstorage.h"
 
 /* Storvsc device context structure */

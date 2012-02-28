@@ -24,9 +24,7 @@
 #include <cam/scsi/scsi_all.h>
 #include <cam/scsi/scsi_message.h>
 
-#include <hv_osd.h>
 #include <hv_vmbus_var.h>
-#include <hv_vmbus_api.h>
 #include <hv_vmbus.h>
 #include <hv_logging.h>
 

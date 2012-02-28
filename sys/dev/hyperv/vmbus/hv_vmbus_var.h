@@ -29,8 +29,6 @@
 
 #include <dev/hyperv/include/hv_osd.h>
 
-#define BLKVSC_RING_BUFFER_SIZE 32
-
 typedef struct {
 	int Length; //channel.c :->897->936
 	int Offset; //channel.c :->937
