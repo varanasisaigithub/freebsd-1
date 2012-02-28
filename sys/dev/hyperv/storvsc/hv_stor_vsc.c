@@ -237,6 +237,8 @@ static int hv_storvsc_channel_init(DEVICE_OBJECT *device)
 	// Now, initiate the vsc/vsp initialization protocol on the open channel
 
 	memset(request, 0, sizeof(struct hv_storvsc_request));
+
+	cv_init(&request->event.cv, "storvsc channel cv");
 	mtx_init(&request->event.mtx, "storvsc channel wait event mutex", NULL, MTX_DEF);
 
 	vstor_packet->operation = VSTOR_OPERATION_BEGININITIALIZATION;
@@ -244,6 +246,7 @@ static int hv_storvsc_channel_init(DEVICE_OBJECT *device)
 
 	DPRINT_INFO(STORVSC, "BEGIN_INITIALIZATION_OPERATION...");
 
+	mtx_lock(&request->event.mtx);
 	ret = hv_vmbus_channel_send_packet(
 			(VMBUS_CHANNEL *)device->context,
 			vstor_packet,
@@ -257,9 +260,7 @@ static int hv_storvsc_channel_init(DEVICE_OBJECT *device)
 		goto Cleanup;
 	}
 
-	mtx_lock(&request->event.mtx);
-	msleep(&request->event, &request->event.mtx, PWAIT, "storvsc channel wait event", 0);
-	mtx_unlock(&request->event.mtx);
+	cv_wait(&request->event.cv, &request->event.mtx);
 
 	if (vstor_packet->operation != VSTOR_OPERATION_COMPLETEIO ||
 		vstor_packet->status != 0) {
@@ -275,8 +276,8 @@ static int hv_storvsc_channel_init(DEVICE_OBJECT *device)
 	vstor_packet->operation = VSTOR_OPERATION_QUERYPROTOCOLVERSION;
 	vstor_packet->flags = REQUEST_COMPLETION_FLAG;
 
-    vstor_packet->version.major_minor = VMSTOR_PROTOCOL_VERSION_CURRENT;
-    FILL_VMSTOR_REVISION(vstor_packet->version.revision);
+	vstor_packet->version.major_minor = VMSTOR_PROTOCOL_VERSION_CURRENT;
+	FILL_VMSTOR_REVISION(vstor_packet->version.revision);
 
 	ret = hv_vmbus_channel_send_packet(
 			(VMBUS_CHANNEL *)device->context,
@@ -291,9 +292,7 @@ static int hv_storvsc_channel_init(DEVICE_OBJECT *device)
 		goto Cleanup;
 	}
 	
-	mtx_lock(&request->event.mtx);
-	msleep(&request->event, &request->event.mtx, PWAIT, "storvsc channel wait event", 0);
-	mtx_unlock(&request->event.mtx);
+	cv_wait(&request->event.cv, &request->event.mtx);
 
 	// TODO: Check returned version 
 	if (vstor_packet->operation != VSTOR_OPERATION_COMPLETEIO ||
@@ -307,7 +306,7 @@ static int hv_storvsc_channel_init(DEVICE_OBJECT *device)
 	DPRINT_DBG(STORVSC, "QUERY_PROPERTIES_OPERATION...");
 
 	memset(vstor_packet, 0, sizeof(struct vstor_packet));
-    vstor_packet->operation = VSTOR_OPERATION_QUERYPROPERTIES;
+	vstor_packet->operation = VSTOR_OPERATION_QUERYPROPERTIES;
 	vstor_packet->flags = REQUEST_COMPLETION_FLAG;
 
 	ret = hv_vmbus_channel_send_packet(
@@ -323,9 +322,7 @@ static int hv_storvsc_channel_init(DEVICE_OBJECT *device)
 		goto Cleanup;
 	}
 
-	mtx_lock(&request->event.mtx);
-	msleep(&request->event, &request->event.mtx, PWAIT, "storvsc channel wait event", 0);
-	mtx_unlock(&request->event.mtx);
+	cv_wait(&request->event.cv, &request->event.mtx);
 
 	// TODO: Check returned version 
 	if (vstor_packet->operation != VSTOR_OPERATION_COMPLETEIO ||
@@ -345,7 +342,7 @@ static int hv_storvsc_channel_init(DEVICE_OBJECT *device)
 	DPRINT_INFO(STORVSC, "END_INITIALIZATION_OPERATION...");
 
 	memset(vstor_packet, 0, sizeof(struct vstor_packet));
-    vstor_packet->operation = VSTOR_OPERATION_ENDINITIALIZATION;
+	vstor_packet->operation = VSTOR_OPERATION_ENDINITIALIZATION;
 	vstor_packet->flags = REQUEST_COMPLETION_FLAG;
 
 	ret = hv_vmbus_channel_send_packet(
@@ -361,9 +358,7 @@ static int hv_storvsc_channel_init(DEVICE_OBJECT *device)
 		goto Cleanup;
 	}
 	
-	mtx_lock(&request->event.mtx);
-	msleep(&request->event, &request->event.mtx, PWAIT, "storvsc channel wait event", 0);
-	mtx_unlock(&request->event.mtx);
+	cv_wait(&request->event.cv, &request->event.mtx);
 
 	if (vstor_packet->operation != VSTOR_OPERATION_COMPLETEIO ||
 		vstor_packet->status != 0)	{
@@ -375,6 +370,9 @@ static int hv_storvsc_channel_init(DEVICE_OBJECT *device)
 	DPRINT_INFO(STORVSC, "**** storage channel up and running!! ****");
 
 Cleanup:
+	mtx_unlock(&request->event.mtx);
+	mtx_destroy(&request->event.mtx);
+	cv_destroy(&request->event.cv);
 	hv_put_storvsc_dev_ctx(device);
 	
 	DPRINT_EXIT(STORVSC);
@@ -492,17 +490,19 @@ hv_storvsc_host_reset(DEVICE_OBJECT *device)
 	request = &stordev_ctx->reset_req;
 	vstor_packet = &request->vstor_packet;
 
+	cv_init(&request->event.cv, "storvsc host reset cv");
 	mtx_init(&request->event.mtx, "storvsc on host reset wait event mutex", NULL, MTX_DEF);
 
-    vstor_packet->operation = VSTOR_OPERATION_RESETBUS;
-    vstor_packet->flags = REQUEST_COMPLETION_FLAG;
+	vstor_packet->operation = VSTOR_OPERATION_RESETBUS;
+	vstor_packet->flags = REQUEST_COMPLETION_FLAG;
 
+	mtx_lock(&request->event.mtx);
 	ret = hv_vmbus_channel_send_packet((VMBUS_CHANNEL *)device->context,
-									   vstor_packet,
-									   sizeof(struct vstor_packet),
-									   (uint64_t)&stordev_ctx->reset_req,
-									   VmbusPacketTypeDataInBand,
-									   VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+			vstor_packet,
+			sizeof(struct vstor_packet),
+			(uint64_t)&stordev_ctx->reset_req,
+			VmbusPacketTypeDataInBand,
+			VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	if (ret != 0) {
 		DPRINT_ERR(STORVSC, "Unable to send reset packet %p ret %d", vstor_packet, ret);
@@ -510,16 +510,16 @@ hv_storvsc_host_reset(DEVICE_OBJECT *device)
 	}
 
 	// XXX add timeout
-	mtx_lock(&request->event.mtx);
-	msleep(&request->event, &request->event.mtx, PWAIT, "storvsc host reset wait event", 0);
-	mtx_unlock(&request->event.mtx);
+	cv_wait(&request->event.cv, &request->event.mtx);
 
-	mtx_destroy(&request->event.mtx);
 	DPRINT_INFO(STORVSC, "host adapter reset completed");
 
 	// At this point, all outstanding requests in the adapter should have been flushed out and return to us
 
 Cleanup:
+	mtx_unlock(&request->event.mtx);
+	mtx_destroy(&request->event.mtx);
+	cv_destroy(&request->event.cv);
 
 	mtx_lock(&stordev_ctx->lock);
 	stordev_ctx->reset = 0;
@@ -734,7 +734,7 @@ hv_storvsc_on_channel_callback(void *context)
 				memcpy(&request->vstor_packet, packet, sizeof(struct vstor_packet));
 
 				mtx_lock(&request->event.mtx);
-				wakeup(&request->event);
+				cv_signal(&request->event.cv);
 				mtx_unlock(&request->event.mtx);
 			} else {
 				vstor_packet = (struct vstor_packet *)packet;

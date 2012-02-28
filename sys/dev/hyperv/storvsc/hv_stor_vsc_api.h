@@ -1,6 +1,10 @@
 #ifndef __HV_STORVSC_API_H__
 #define __HV_STORVSC_API_H__
 
+#include <sys/param.h>
+#include <sys/proc.h>
+#include <sys/condvar.h>
+
 #include <hv_osd.h>
 #include <hv_vmbus_api.h>
 #include "hv_vstorage.h"
@@ -35,6 +39,7 @@ struct hv_storvsc_request {
 
 	// Synchronize the request/response if needed
 	struct {
+		struct cv  cv;
 		struct mtx mtx;
 	} event;
 };
