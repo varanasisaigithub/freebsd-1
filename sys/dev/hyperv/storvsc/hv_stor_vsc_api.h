@@ -5,8 +5,6 @@
 #include <sys/proc.h>
 #include <sys/condvar.h>
 
-#include <hv_osd.h>
-#include <hv_vmbus_api.h>
 #include "hv_vstorage.h"
 
 #include <cam/cam.h>
