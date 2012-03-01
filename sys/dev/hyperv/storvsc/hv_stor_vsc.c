@@ -639,6 +639,7 @@ hv_storvsc_on_iocompletion(DEVICE_OBJECT *device,
 						   struct hv_storvsc_request *request)
 {
 	struct hv_storvsc_dev_ctx *stordev_ctx;
+	struct vmscsi_req *vm_srb;
 
 	DPRINT_ENTER(STORVSC);
 
@@ -654,29 +655,30 @@ hv_storvsc_on_iocompletion(DEVICE_OBJECT *device,
 
 	KASSERT(request != NULL, ("request != NULL"));
 
-	if (vstor_packet->vm_srb.scsi_status != 0 ||
-		vstor_packet->vm_srb.srb_status != 1) {
+	vm_srb = &vstor_packet->vm_srb;
+	if (vm_srb->scsi_status != 0 || vm_srb->srb_status != 1) {
 		DPRINT_DBG(STORVSC, "cmd 0x%x scsi status 0x%x srb status 0x%x\n",
-				   vstor_packet->vm_srb.cdb[0],
-				   vstor_packet->vm_srb.scsi_status,
-				   vstor_packet->vm_srb.srb_status);
+				   vm_srb->cdb[0],
+				   vm_srb->scsi_status,
+				   vm_srb->srb_status);
 	}
 
-	if ((vstor_packet->vm_srb.scsi_status & 0xFF) == 0x02) {
-		if (vstor_packet->vm_srb.srb_status & 0x80) {
+	if ((vm_srb->scsi_status & 0xFF) == 0x02) {
+		if (!(vm_srb->srb_status & 0x80)) {
+			request->sense_info_len = 0;
+		} else {
 			/* autosense data available */
 			DPRINT_DBG(STORVSC, "storvsc pkt %p autosense data valid - len %d\n",
-				request, vstor_packet->vm_srb.sense_info_len);
+					request, vm_srb->sense_info_len);
 			
-			KASSERT(vstor_packet->vm_srb.sense_info_len <= request->sense_info_len,
-					("vstor_packet->vm_srb.sense_info_len <= request->sense_info_len"));
+			KASSERT(vm_srb->sense_info_len <= request->sense_info_len,
+					("vstor_packet->vm_srb.sense_info_len <= "
+					 "request->sense_info_len"));
 	
-			memcpy(request->sense_data, 
-				   vstor_packet->vm_srb.sense_data,
-				   vstor_packet->vm_srb.sense_info_len);
+			memcpy(request->sense_data, vm_srb->sense_data,
+					vm_srb->sense_info_len);
 
-			request->sense_info_len = vstor_packet->vm_srb.sense_info_len;
-
+			request->sense_info_len = vm_srb->sense_info_len;
 		}
 	}
 

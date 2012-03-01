@@ -552,8 +552,8 @@ create_storvsc_request(union ccb *ccb, struct hv_storvsc_request *reqp)
     		break;
 	}
 
-	reqp->sense_info_len = SSD_FULL_SIZE;
 	reqp->sense_data = (uint8_t *)&csio->sense_data;
+	reqp->sense_info_len = csio->sense_len;
 
 	reqp->ccb = ccb;
 	if (ccb->ccb_h.flags & CAM_SCATTER_VALID) {
@@ -593,10 +593,28 @@ void
 storvsc_io_done(struct hv_storvsc_request *reqp)
 {
 	union ccb *ccb = reqp->ccb;
+	struct ccb_scsiio *csio = &ccb->csio;
 	struct storvsc_softc *sc = reqp->softc;
+	struct vmscsi_req *vm_srb = &reqp->vstor_packet.vm_srb;
 	
 	ccb->ccb_h.status &= ~(CAM_SIM_QUEUED);
-	ccb->ccb_h.status |=  CAM_REQ_CMP;
+	ccb->ccb_h.status &= ~CAM_STATUS_MASK;
+
+	if (vm_srb->scsi_status == SCSI_STATUS_OK) {
+		ccb->ccb_h.status |=  CAM_REQ_CMP;
+	} else {
+		ccb->ccb_h.status |= CAM_SCSI_STATUS_ERROR;
+	}
+
+	ccb->csio.scsi_status = vm_srb->scsi_status;
+	ccb->csio.resid = ccb->csio.dxfer_len - vm_srb->transfer_len;
+
+	if (reqp->sense_info_len != 0) {
+		ASSERT(reqp->sense_info_len <= csio->sense_len);
+		csio->sense_resid = csio->sense_len - reqp->sense_info_len;
+		ccb->ccb_h.status |= CAM_AUTOSNS_VALID;
+	}
+
 	xpt_done(ccb);
 
 	storvsc_free_request(sc, reqp);
