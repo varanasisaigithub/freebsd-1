@@ -653,17 +653,17 @@ hv_storvsc_on_iocompletion(DEVICE_OBJECT *device,
 	KASSERT(request != NULL, ("request != NULL"));
 
 	vm_srb = &vstor_packet->vm_srb;
-	if (vm_srb->scsi_status != 0 || vm_srb->srb_status != 1) {
+	if ((vm_srb->scsi_status != SCSI_STATUS_OK) ||
+			(vm_srb->srb_status != SRB_STATUS_SUCCESS)) {
 		DPRINT_DBG(STORVSC, "cmd 0x%x scsi status 0x%x srb status 0x%x\n",
 				   vm_srb->cdb[0],
 				   vm_srb->scsi_status,
 				   vm_srb->srb_status);
 	}
 
-	if ((vm_srb->scsi_status & 0xFF) == 0x02) {
-		if (!(vm_srb->srb_status & 0x80)) {
-			request->sense_info_len = 0;
-		} else {
+	request->sense_info_len = 0;
+	if ((vm_srb->scsi_status & 0xFF) == SCSI_STATUS_CHECK_COND) {
+		if (vm_srb->srb_status & SRB_STATUS_AUTOSENSE_VALID) {
 			/* autosense data available */
 			DPRINT_DBG(STORVSC, "storvsc pkt %p autosense data valid - len %d\n",
 					request, vm_srb->sense_info_len);

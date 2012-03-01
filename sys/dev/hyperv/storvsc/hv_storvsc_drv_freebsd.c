@@ -604,7 +604,7 @@ storvsc_io_done(struct hv_storvsc_request *reqp)
 		ccb->ccb_h.status |= CAM_SCSI_STATUS_ERROR;
 	}
 
-	ccb->csio.scsi_status = vm_srb->scsi_status;
+	ccb->csio.scsi_status = (vm_srb->scsi_status & 0xFF);
 	ccb->csio.resid = ccb->csio.dxfer_len - vm_srb->transfer_len;
 
 	if (reqp->sense_info_len != 0) {

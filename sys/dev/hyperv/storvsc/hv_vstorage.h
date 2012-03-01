@@ -243,6 +243,12 @@ struct vstor_packet {
 
 };
 
+/*
+ * SRB (SCSI Request Block) Status Bits (http://support.microsoft.com/kb/244780) 
+ */
+#define SRB_STATUS_SUCCESS		0x01
+#define SRB_STATUS_AUTOSENSE_VALID	0x80
+
 
 /*
  *  Packet flags
