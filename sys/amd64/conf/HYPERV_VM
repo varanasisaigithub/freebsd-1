@@ -18,11 +18,3 @@ options 	NO_ADAPTIVE_RWLOCKS
 # Hyper-V VM support
 options 	HYPERV
 
-# Lock checking etc
-#options 	INVARIANTS
-# options		INVARIANT_SUPPORT
-
-# GDB support
-options		GDB
-# Get to GDB by ctrl-C on the console
-options		BREAK_TO_DEBUGGER
