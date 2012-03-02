@@ -385,7 +385,7 @@ RingBufferWrite(RING_BUFFER_INFO* OutRingInfo, SG_BUFFER_LIST SgBuffers[],
 
 	totalBytesToWrite += sizeof(uint64_t);
 
-	mtx_lock(OutRingInfo->RingLock);
+	mtx_lock_spin(OutRingInfo->RingLock);
 
 	GetRingBufferAvailBytes(OutRingInfo, &byteAvailToRead,
 		&byteAvailToWrite);
@@ -402,7 +402,7 @@ RingBufferWrite(RING_BUFFER_INFO* OutRingInfo, SG_BUFFER_LIST SgBuffers[],
 			"No more space left on outbound ring buffer (needed %u, avail %u)",
 			totalBytesToWrite, byteAvailToWrite);
 
-		mtx_unlock(OutRingInfo->RingLock);
+		mtx_unlock_spin(OutRingInfo->RingLock);
 
 		DPRINT_EXIT(VMBUS);
 
@@ -432,7 +432,7 @@ RingBufferWrite(RING_BUFFER_INFO* OutRingInfo, SG_BUFFER_LIST SgBuffers[],
 
 	//DumpRingInfo(OutRingInfo, "AFTER ");
 
-	mtx_unlock(OutRingInfo->RingLock);
+	mtx_unlock_spin(OutRingInfo->RingLock);
 
 	DPRINT_EXIT(VMBUS);
 
@@ -454,7 +454,7 @@ RingBufferPeek(RING_BUFFER_INFO* InRingInfo, void* Buffer, uint32_t BufferLen) {
 	uint32_t bytesAvailToRead;
 	uint32_t nextReadLocation = 0;
 
-	mtx_lock(InRingInfo->RingLock);
+	mtx_lock_spin(InRingInfo->RingLock);
 
 	GetRingBufferAvailBytes(InRingInfo, &bytesAvailToRead,
 		&bytesAvailToWrite);
@@ -462,7 +462,7 @@ RingBufferPeek(RING_BUFFER_INFO* InRingInfo, void* Buffer, uint32_t BufferLen) {
 	// Make sure there is something to read
 	if (bytesAvailToRead < BufferLen) {
 		//DPRINT_DBG(VMBUS, "got callback but not enough to read <avail to read %d read size %d>!!", bytesAvailToRead, BufferLen);
-		mtx_unlock(InRingInfo->RingLock);
+		mtx_unlock_spin(InRingInfo->RingLock);
 		return -1;
 	}
 
@@ -472,7 +472,7 @@ RingBufferPeek(RING_BUFFER_INFO* InRingInfo, void* Buffer, uint32_t BufferLen) {
 	nextReadLocation = CopyFromRingBuffer(InRingInfo, Buffer, BufferLen,
 		nextReadLocation);
 
-	mtx_unlock(InRingInfo->RingLock);
+	mtx_unlock_spin(InRingInfo->RingLock);
 
 	return 0;
 }
@@ -496,7 +496,7 @@ RingBufferRead(RING_BUFFER_INFO* InRingInfo, void *Buffer, uint32_t BufferLen,
 
 	ASSERT(BufferLen > 0);
 
-	mtx_lock(InRingInfo->RingLock);
+	mtx_lock_spin(InRingInfo->RingLock);
 
 	GetRingBufferAvailBytes(InRingInfo, &bytesAvailToRead,
 		&bytesAvailToWrite);
@@ -512,7 +512,7 @@ RingBufferRead(RING_BUFFER_INFO* InRingInfo, void *Buffer, uint32_t BufferLen,
 			"got callback but not enough to read <avail to read %d read size %d>!!",
 			bytesAvailToRead, BufferLen);
 
-		mtx_unlock(InRingInfo->RingLock);
+		mtx_unlock_spin(InRingInfo->RingLock);
 
 		return -1;
 	}
@@ -534,7 +534,7 @@ RingBufferRead(RING_BUFFER_INFO* InRingInfo, void *Buffer, uint32_t BufferLen,
 
 	//DumpRingInfo(InRingInfo, "AFTER ");
 
-	mtx_unlock(InRingInfo->RingLock);
+	mtx_unlock_spin(InRingInfo->RingLock);
 
 	return 0;
 }

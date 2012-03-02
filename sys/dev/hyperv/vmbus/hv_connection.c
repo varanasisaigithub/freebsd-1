@@ -161,9 +161,9 @@ VmbusConnect(void) {
 
 	// Add to list before we send the request since we may receive the
 	// response before returning from this routine
-	mtx_lock(gVmbusConnection.ChannelMsgLock);
+	mtx_lock_spin(gVmbusConnection.ChannelMsgLock);
 	INSERT_TAIL_LIST(&gVmbusConnection.ChannelMsgList, &msgInfo->MsgListEntry);
-	mtx_unlock(gVmbusConnection.ChannelMsgLock);
+	mtx_unlock_spin(gVmbusConnection.ChannelMsgLock);
 
 	DPRINT_DBG(VMBUS, "Vmbus connection:  interrupt pfn %lx, monitor1 pfn "
 	"%lx,, monitor2 pfn %lx",
@@ -300,7 +300,7 @@ GetChannelFromRelId(uint32_t relId) {
 	LIST_ENTRY* anchor;
 	LIST_ENTRY* curr;
 
-	mtx_lock(gVmbusConnection.ChannelLock);
+	mtx_lock_spin(gVmbusConnection.ChannelLock);
 	ITERATE_LIST_ENTRIES(anchor, curr, &gVmbusConnection.ChannelList) {
 		channel = CONTAINING_RECORD(curr, VMBUS_CHANNEL, ListEntry);
 
@@ -309,7 +309,7 @@ GetChannelFromRelId(uint32_t relId) {
 			break;
 		}
 	}
-	mtx_unlock(gVmbusConnection.ChannelLock);
+	mtx_unlock_spin(gVmbusConnection.ChannelLock);
 
 	return foundChannel;
 }

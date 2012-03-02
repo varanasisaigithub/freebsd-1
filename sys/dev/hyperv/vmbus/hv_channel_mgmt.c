@@ -426,7 +426,7 @@ VmbusChannelProcessOffer(void *context) {
 	DPRINT_ENTER(VMBUS);
 
 	// Make sure this is a new offer
-	mtx_lock(gVmbusConnection.ChannelLock);
+	mtx_lock_spin(gVmbusConnection.ChannelLock);
 
 	ITERATE_LIST_ENTRIES(anchor, curr, &gVmbusConnection.ChannelList) {
 		channel = CONTAINING_RECORD(curr, VMBUS_CHANNEL, ListEntry);
@@ -444,7 +444,7 @@ VmbusChannelProcessOffer(void *context) {
 	if (fNew) {
 		INSERT_TAIL_LIST(&gVmbusConnection.ChannelList, &newChannel->ListEntry);
 	}
-	mtx_unlock(gVmbusConnection.ChannelLock);
+	mtx_unlock_spin(gVmbusConnection.ChannelLock);
 
 	if (!fNew) {
 		DPRINT_DBG(VMBUS, "Ignoring duplicate offer for relid (%d)",
@@ -475,9 +475,9 @@ VmbusChannelProcessOffer(void *context) {
 			"unable to add child device object (relid %d)",
 			newChannel->OfferMsg.ChildRelId);
 
-		mtx_lock(gVmbusConnection.ChannelLock);
+		mtx_lock_spin(gVmbusConnection.ChannelLock);
 		REMOVE_ENTRY_LIST(&newChannel->ListEntry);
-		mtx_unlock(gVmbusConnection.ChannelLock);
+		mtx_unlock_spin(gVmbusConnection.ChannelLock);
 
 		FreeVmbusChannel(newChannel);
 	} else {
@@ -700,7 +700,7 @@ VmbusChannelOnOpenResult(PVMBUS_CHANNEL_MESSAGE_HEADER hdr) {
 	DPRINT_DBG(VMBUS, "vmbus open result - %d", result->Status);
 
 	// Find the open msg, copy the result and signal/unblock the wait event
-	mtx_lock(gVmbusConnection.ChannelMsgLock);
+	mtx_lock_spin(gVmbusConnection.ChannelMsgLock);
 
 	ITERATE_LIST_ENTRIES(anchor, curr, &gVmbusConnection.ChannelMsgList) {
 		msgInfo = (VMBUS_CHANNEL_MSGINFO*) curr;
@@ -717,7 +717,7 @@ VmbusChannelOnOpenResult(PVMBUS_CHANNEL_MESSAGE_HEADER hdr) {
 			}
 		}
 	}
-	mtx_unlock(gVmbusConnection.ChannelMsgLock);
+	mtx_unlock_spin(gVmbusConnection.ChannelMsgLock);
 
 	DPRINT_EXIT(VMBUS);
 }
@@ -749,7 +749,7 @@ VmbusChannelOnGpadlCreated(PVMBUS_CHANNEL_MESSAGE_HEADER hdr) {
 		gpadlCreated->CreationStatus);
 
 	// Find the establish msg, copy the result and signal/unblock the wait event
-	mtx_lock(gVmbusConnection.ChannelMsgLock);
+	mtx_lock_spin(gVmbusConnection.ChannelMsgLock);
 
 	ITERATE_LIST_ENTRIES(anchor, curr, &gVmbusConnection.ChannelMsgList) {
 		msgInfo = (VMBUS_CHANNEL_MSGINFO*) curr;
@@ -769,7 +769,7 @@ VmbusChannelOnGpadlCreated(PVMBUS_CHANNEL_MESSAGE_HEADER hdr) {
 			}
 		}
 	}
-	mtx_unlock(gVmbusConnection.ChannelMsgLock);
+	mtx_unlock_spin(gVmbusConnection.ChannelMsgLock);
 
 	DPRINT_EXIT(VMBUS);
 }
@@ -798,7 +798,7 @@ VmbusChannelOnGpadlTorndown(PVMBUS_CHANNEL_MESSAGE_HEADER hdr) {
 	DPRINT_ENTER(VMBUS);
 
 	// Find the open msg, copy the result and signal/unblock the wait event
-	mtx_lock(gVmbusConnection.ChannelMsgLock);
+	mtx_lock_spin(gVmbusConnection.ChannelMsgLock);
 
 	ITERATE_LIST_ENTRIES(anchor, curr, &gVmbusConnection.ChannelMsgList) {
 		msgInfo = (VMBUS_CHANNEL_MSGINFO*) curr;
@@ -817,7 +817,7 @@ VmbusChannelOnGpadlTorndown(PVMBUS_CHANNEL_MESSAGE_HEADER hdr) {
 			}
 		}
 	}
-	mtx_unlock(gVmbusConnection.ChannelMsgLock);
+	mtx_unlock_spin(gVmbusConnection.ChannelMsgLock);
 
 	DPRINT_EXIT(VMBUS);
 }
@@ -845,7 +845,7 @@ VmbusChannelOnVersionResponse(PVMBUS_CHANNEL_MESSAGE_HEADER hdr) {
 
 	DPRINT_ENTER(VMBUS);
 
-	mtx_lock(gVmbusConnection.ChannelMsgLock);
+	mtx_lock_spin(gVmbusConnection.ChannelMsgLock);
 
 	ITERATE_LIST_ENTRIES(anchor, curr, &gVmbusConnection.ChannelMsgList) {
 		msgInfo = (VMBUS_CHANNEL_MSGINFO*) curr;
@@ -861,7 +861,7 @@ VmbusChannelOnVersionResponse(PVMBUS_CHANNEL_MESSAGE_HEADER hdr) {
 			WaitEventSet(msgInfo->WaitEvent);
 		}
 	}
-	mtx_unlock(gVmbusConnection.ChannelMsgLock);
+	mtx_unlock_spin(gVmbusConnection.ChannelMsgLock);
 
 	DPRINT_EXIT(VMBUS);
 }
@@ -940,7 +940,7 @@ VmbusChannelRequestOffers(void) {
 
 	/*mtx_lock(gVmbusConnection.channelMsgLock);
 	 INSERT_TAIL_LIST(&gVmbusConnection.channelMsgList, &msgInfo->msgListEntry);
-	 mtx_unlock(gVmbusConnection.channelMsgLock);*/
+	 mtx_unlock_spin(gVmbusConnection.channelMsgLock);*/
 
 	ret = VmbusPostMessage(msg, sizeof(VMBUS_CHANNEL_MESSAGE_HEADER));
 	if (ret != 0) {
@@ -948,7 +948,7 @@ VmbusChannelRequestOffers(void) {
 
 		/*mtx_lock(gVmbusConnection.channelMsgLock);
 		 REMOVE_ENTRY_LIST(&msgInfo->msgListEntry);
-		 mtx_unlock(gVmbusConnection.channelMsgLock);*/
+		 mtx_unlock_spin(gVmbusConnection.channelMsgLock);*/
 
 		goto Cleanup;
 	}
@@ -956,7 +956,7 @@ VmbusChannelRequestOffers(void) {
 
 	/*mtx_lock(gVmbusConnection.channelMsgLock);
 	 REMOVE_ENTRY_LIST(&msgInfo->msgListEntry);
-	 mtx_unlock(gVmbusConnection.channelMsgLock);*/
+	 mtx_unlock_spin(gVmbusConnection.channelMsgLock);*/
 
 	Cleanup: if (msgInfo) {
 		WaitEventClose(msgInfo->WaitEvent);
@@ -983,7 +983,7 @@ VmbusChannelReleaseUnattachedChannels(void) {
 	VMBUS_CHANNEL *channel;
 	VMBUS_CHANNEL *start = NULL;
 
-	mtx_lock(gVmbusConnection.ChannelLock);
+	mtx_lock_spin(gVmbusConnection.ChannelLock);
 
 	while (!IsListEmpty(&gVmbusConnection.ChannelList)) {
 		entry = TOP_LIST_ENTRY(&gVmbusConnection.ChannelList);
@@ -1006,6 +1006,6 @@ VmbusChannelReleaseUnattachedChannels(void) {
 		}
 	}
 
-	mtx_unlock(gVmbusConnection.ChannelLock);
+	mtx_unlock_spin(gVmbusConnection.ChannelLock);
 }
 

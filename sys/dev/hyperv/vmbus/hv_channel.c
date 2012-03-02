@@ -313,9 +313,9 @@ hv_vmbus_channel_open(VMBUS_CHANNEL *NewChannel, uint32_t SendRingBufferSize,
 		memcpy(openMsg->UserData, UserData, UserDataLen);
 	}
 
-	mtx_lock(gVmbusConnection.ChannelMsgLock);
+	mtx_lock_spin(gVmbusConnection.ChannelMsgLock);
 	INSERT_TAIL_LIST(&gVmbusConnection.ChannelMsgList, &openInfo->MsgListEntry);
-	mtx_unlock(gVmbusConnection.ChannelMsgLock);
+	mtx_unlock_spin(gVmbusConnection.ChannelMsgLock);
 
 	DPRINT_DBG(VMBUS, "Sending channel open msg...");
 
@@ -336,9 +336,9 @@ hv_vmbus_channel_open(VMBUS_CHANNEL *NewChannel, uint32_t SendRingBufferSize,
 	}
 
 Cleanup:
-	mtx_lock(gVmbusConnection.ChannelMsgLock);
+	mtx_lock_spin(gVmbusConnection.ChannelMsgLock);
 	REMOVE_ENTRY_LIST(&openInfo->MsgListEntry);
-	mtx_unlock(gVmbusConnection.ChannelMsgLock);
+	mtx_unlock_spin(gVmbusConnection.ChannelMsgLock);
 
 	WaitEventClose(openInfo->WaitEvent);
 	free(openInfo, M_DEVBUF);
@@ -614,9 +614,9 @@ hv_vmbus_channel_establish_gpadl(VMBUS_CHANNEL *Channel, void *Kbuffer, // from 
 
 	DumpGpadlHeader(gpadlMsg);
 
-	mtx_lock(gVmbusConnection.ChannelMsgLock);
+	mtx_lock_spin(gVmbusConnection.ChannelMsgLock);
 	INSERT_TAIL_LIST(&gVmbusConnection.ChannelMsgList, &msgInfo->MsgListEntry);
-	mtx_unlock(gVmbusConnection.ChannelMsgLock);
+	mtx_unlock_spin(gVmbusConnection.ChannelMsgLock);
 
 	DPRINT_DBG(VMBUS, "buffer %p, size %d msg cnt %d",
 		Kbuffer, Size, msgCount);
@@ -688,9 +688,9 @@ hv_vmbus_channel_establish_gpadl(VMBUS_CHANNEL *Channel, void *Kbuffer, // from 
 
 Cleanup:
 
-	mtx_lock(gVmbusConnection.ChannelMsgLock);
+	mtx_lock_spin(gVmbusConnection.ChannelMsgLock);
 	REMOVE_ENTRY_LIST(&msgInfo->MsgListEntry);
-	mtx_unlock(gVmbusConnection.ChannelMsgLock);
+	mtx_unlock_spin(gVmbusConnection.ChannelMsgLock);
 
 	WaitEventClose(msgInfo->WaitEvent);
 	free(msgInfo, M_DEVBUF);
@@ -733,9 +733,9 @@ hv_vmbus_channel_teardown_gpdal(VMBUS_CHANNEL *Channel, uint32_t GpadlHandle) {
 	msg->ChildRelId = Channel->OfferMsg.ChildRelId;
 	msg->Gpadl = GpadlHandle;
 
-	mtx_lock(gVmbusConnection.ChannelMsgLock);
+	mtx_lock_spin(gVmbusConnection.ChannelMsgLock);
 	INSERT_TAIL_LIST(&gVmbusConnection.ChannelMsgList, &info->MsgListEntry);
-	mtx_unlock(gVmbusConnection.ChannelMsgLock);
+	mtx_unlock_spin(gVmbusConnection.ChannelMsgLock);
 
 	ret = VmbusPostMessage(msg, sizeof(VMBUS_CHANNEL_GPADL_TEARDOWN));
 	if (ret != 0) {
@@ -745,9 +745,9 @@ hv_vmbus_channel_teardown_gpdal(VMBUS_CHANNEL *Channel, uint32_t GpadlHandle) {
 	WaitEventWait(info->WaitEvent);
 
 	// Received a torndown response
-	mtx_lock(gVmbusConnection.ChannelMsgLock);
+	mtx_lock_spin(gVmbusConnection.ChannelMsgLock);
 	REMOVE_ENTRY_LIST(&info->MsgListEntry);
-	mtx_unlock(gVmbusConnection.ChannelMsgLock);
+	mtx_unlock_spin(gVmbusConnection.ChannelMsgLock);
 
 	WaitEventClose(info->WaitEvent);
 	free(info, M_DEVBUF);
@@ -815,9 +815,9 @@ hv_vmbus_channel_close(VMBUS_CHANNEL *Channel) {
 	// If we are closing the channel during an error path in opening the channel, don't free the channel
 	// since the caller will free the channel
 	if (Channel->State == CHANNEL_OPEN_STATE) {
-		mtx_lock(gVmbusConnection.ChannelLock);
+		mtx_lock_spin(gVmbusConnection.ChannelLock);
 		REMOVE_ENTRY_LIST(&Channel->ListEntry);
-		mtx_unlock(gVmbusConnection.ChannelLock);
+		mtx_unlock_spin(gVmbusConnection.ChannelLock);
 
 		FreeVmbusChannel(Channel);
 	}
@@ -1054,12 +1054,12 @@ hv_vmbus_channel_recv_packet(VMBUS_CHANNEL *Channel, void *Buffer,
 	*BufferActualLen = 0;
 	*RequestId = 0;
 
-	mtx_lock(Channel->InboundLock);
+	mtx_lock_spin(Channel->InboundLock);
 
 	ret = RingBufferPeek(&Channel->Inbound, &desc,
 		sizeof(VMPACKET_DESCRIPTOR));
 	if (ret != 0) {
-		mtx_unlock(Channel->InboundLock);
+		mtx_unlock_spin(Channel->InboundLock);
 		//DPRINT_DBG(VMBUS, "nothing to read!!");
 		DPRINT_EXIT(VMBUS);
 		return 0;
@@ -1079,7 +1079,7 @@ hv_vmbus_channel_recv_packet(VMBUS_CHANNEL *Channel, void *Buffer,
 	*BufferActualLen = userLen;
 
 	if (userLen > BufferLen) {
-		mtx_unlock(Channel->InboundLock);
+		mtx_unlock_spin(Channel->InboundLock);
 
 		/* Fixme:  NetScaler:  Commented out */
 //		DPRINT_ERR(VMBUS, "buffer too small - got %d needs %d", BufferLen, userLen);
@@ -1094,7 +1094,7 @@ hv_vmbus_channel_recv_packet(VMBUS_CHANNEL *Channel, void *Buffer,
 	ret = RingBufferRead(&Channel->Inbound, Buffer, userLen,
 		(desc.DataOffset8 << 3));
 
-	mtx_unlock(Channel->InboundLock);
+	mtx_unlock_spin(Channel->InboundLock);
 
 	DPRINT_EXIT(VMBUS);
 
@@ -1124,12 +1124,12 @@ hv_vmbus_channel_recv_packet_raw(VMBUS_CHANNEL *Channel, void *Buffer,
 	*BufferActualLen = 0;
 	*RequestId = 0;
 
-	mtx_lock(Channel->InboundLock);
+	mtx_lock_spin(Channel->InboundLock);
 
 	ret = RingBufferPeek(&Channel->Inbound, &desc,
 		sizeof(VMPACKET_DESCRIPTOR));
 	if (ret != 0) {
-		mtx_unlock(Channel->InboundLock);
+		mtx_unlock_spin(Channel->InboundLock);
 
 		//DPRINT_DBG(VMBUS, "nothing to read!!");
 		DPRINT_EXIT(VMBUS);
@@ -1149,7 +1149,7 @@ hv_vmbus_channel_recv_packet_raw(VMBUS_CHANNEL *Channel, void *Buffer,
 	*BufferActualLen = packetLen;
 
 	if (packetLen > BufferLen) {
-		mtx_unlock(Channel->InboundLock);
+		mtx_unlock_spin(Channel->InboundLock);
 
 		/* Fixme:  NetScaler:  Commented out */
 //		DPRINT_ERR(VMBUS, "buffer too small - needed %d bytes but got space for only %d bytes", packetLen, BufferLen);
@@ -1162,7 +1162,7 @@ hv_vmbus_channel_recv_packet_raw(VMBUS_CHANNEL *Channel, void *Buffer,
 	// Copy over the entire packet to the user buffer
 	ret = RingBufferRead(&Channel->Inbound, Buffer, packetLen, 0);
 
-	mtx_unlock(Channel->InboundLock);
+	mtx_unlock_spin(Channel->InboundLock);
 
 	DPRINT_EXIT(VMBUS);
 

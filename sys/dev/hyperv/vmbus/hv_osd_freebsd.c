@@ -170,7 +170,7 @@ void Sleep(unsigned long usecs) {
 void *VirtualAllocExec(unsigned int size) {
 	void *p;
 
-	p = malloc(size, M_DEVBUF, M_ZERO);
+	p = malloc(size, M_DEVBUF, M_WAITOK|M_ZERO);
 
 	return (p);
 }
@@ -212,7 +212,7 @@ void *MemAlloc(unsigned int size) {
 }
 
 void *MemAllocZeroed(unsigned int size) {
-	return (malloc(size, M_DEVBUF, M_NOWAIT | M_ZERO));
+	return (malloc(size, M_DEVBUF, M_NOWAIT|M_ZERO));
 }
 
 void *MemAllocAtomic(unsigned int size) {
@@ -299,7 +299,7 @@ static signed long long GetTimestamp(void)
 #endif
 
 HANDLE WaitEventCreate(void) {
-	WAITEVENT *wait = malloc(sizeof(WAITEVENT), M_DEVBUF, M_ZERO);
+	WAITEVENT *wait = malloc(sizeof(WAITEVENT), M_DEVBUF, M_WAITOK|M_ZERO);
 	if (!wait) {
 		printf("Failed to create WaitEvent\n");
 		return (NULL);
@@ -385,11 +385,7 @@ HANDLE SpinlockCreate(void) {
 #ifdef USE_CRITICAL_SECTION
 	return ((HANDLE)1);
 #else
-	SPINLOCK *spin = malloc(sizeof(SPINLOCK), M_DEVBUF, M_ZERO);
-	if (!spin) {
-		printf("Unable to create a spin lock\n");
-		return NULL;
-	}
+	SPINLOCK *spin = malloc(sizeof(SPINLOCK), M_DEVBUF, M_WAITOK|M_ZERO);
 	mtx_init(spin, "HV spin lock", NULL, MTX_SPIN | MTX_RECURSE);
 
 	return (spin);
@@ -402,7 +398,7 @@ void SpinlockAcquire(HANDLE hSpin) {
 #else
 	SPINLOCK *spin = (SPINLOCK *) hSpin;
 
-	mtx_lock(spin);
+	mtx_lock_spin(spin);
 #endif
 }
 
@@ -412,7 +408,7 @@ void SpinlockRelease(HANDLE hSpin) {
 #else
 	SPINLOCK *spin = (SPINLOCK *) hSpin;
 
-	mtx_unlock(spin);
+	mtx_unlock_spin(spin);
 #endif
 }
 

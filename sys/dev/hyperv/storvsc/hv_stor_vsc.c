@@ -50,7 +50,7 @@
 /* Storvsc device context structure */
 struct hv_storvsc_dev_ctx {
 	DEVICE_OBJECT				*device;
-	struct mtx 					lock;
+	struct mtx			*hs_lockp;
 	uint8_t						reset;
 	uint32_t					ref_cnt;
 	uint32_t					num_out_reqs;
@@ -66,22 +66,20 @@ static void hv_storvsc_on_iocompletion(DEVICE_OBJECT *device, struct vstor_packe
 									   struct hv_storvsc_request *request);
 static int hv_storvsc_connect_vsp(DEVICE_OBJECT *device);
 
-static inline struct hv_storvsc_dev_ctx* hv_alloc_storvsc_dev_ctx(DEVICE_OBJECT *device)
+static inline struct hv_storvsc_dev_ctx* hv_alloc_storvsc_dev_ctx(
+			DEVICE_OBJECT *device,
+			struct mtx *lockp)
 {
 	struct hv_storvsc_dev_ctx *stordev_ctx;
 
-	stordev_ctx = malloc(sizeof(struct hv_storvsc_dev_ctx), M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (stordev_ctx == NULL) {
-		return NULL;
-	}
-
+	stordev_ctx = malloc(sizeof(struct hv_storvsc_dev_ctx), M_DEVBUF, M_WAITOK|M_ZERO);
 	// Set to 2 to allow both inbound and outbound traffics 
 	// (ie hv_get_storvsc_dev() and hv_must_get_storvsc_dev()) to proceed.
 	atomic_cmpset_int(&stordev_ctx->ref_cnt, 0, 2);
 
 	stordev_ctx->device = device;
 	stordev_ctx->reset = 0;
-	mtx_init(&stordev_ctx->lock, "storvsc device lock", NULL, MTX_SPIN | MTX_RECURSE);
+	stordev_ctx->hs_lockp = lockp;
 	device->Extension = stordev_ctx;
 
 	return stordev_ctx;
@@ -90,8 +88,6 @@ static inline struct hv_storvsc_dev_ctx* hv_alloc_storvsc_dev_ctx(DEVICE_OBJECT 
 static inline void hv_free_storvsc_dev_ctx(struct hv_storvsc_dev_ctx *device)
 {
 	KASSERT(device->ref_cnt == 0, ("no storvsc to free"));
-	mtx_destroy(&device->lock);
-	free(&device->lock, M_DEVBUF);
 	free(device, M_DEVBUF);
 }
 
@@ -101,20 +97,22 @@ static inline struct hv_storvsc_dev_ctx* hv_get_storvsc_dev_ctx(DEVICE_OBJECT *d
 	struct hv_storvsc_dev_ctx *stordev_ctx;
 
 	stordev_ctx = (struct hv_storvsc_dev_ctx*)device->Extension;
-	mtx_lock(&stordev_ctx->lock);
+	if (stordev_ctx == NULL) {
+		return NULL;
+	}
+
+	mtx_lock(stordev_ctx->hs_lockp);
 
 	if (stordev_ctx->reset == 1) {
-		mtx_unlock(&stordev_ctx->lock);
+		mtx_unlock(stordev_ctx->hs_lockp);
 		return NULL;
 	} 
 
-	if (stordev_ctx && stordev_ctx->ref_cnt > 1) {
+	if (stordev_ctx->ref_cnt > 1) {
 		atomic_add_int(&stordev_ctx->ref_cnt, 1);
-	} else {
-		stordev_ctx = NULL;
 	}
 
-	mtx_unlock(&stordev_ctx->lock);
+	mtx_unlock(stordev_ctx->hs_lockp);
 	return stordev_ctx;
 }
 
@@ -124,15 +122,16 @@ static inline struct hv_storvsc_dev_ctx* hv_must_get_storvsc_dev_ctx(DEVICE_OBJE
 	struct hv_storvsc_dev_ctx *stordev_ctx;
 
 	stordev_ctx = (struct hv_storvsc_dev_ctx*)device->Extension;
-	mtx_lock(&stordev_ctx->lock);
+	if (stordev_ctx == NULL) {
+		return NULL;
+	}
+	mtx_lock(stordev_ctx->hs_lockp);
 
-	if (stordev_ctx && stordev_ctx->ref_cnt) {
+	if (stordev_ctx->ref_cnt) {
 		atomic_add_int(&stordev_ctx->ref_cnt, 1);
-	} else {
-		stordev_ctx = NULL;
 	}
 
-	mtx_unlock(&stordev_ctx->lock);
+	mtx_unlock(stordev_ctx->hs_lockp);
 
 	return stordev_ctx;
 }
@@ -191,14 +190,14 @@ Description:
 
 --*/
 int
-hv_storvsc_on_deviceadd(DEVICE_OBJECT *device)
+hv_storvsc_on_deviceadd(DEVICE_OBJECT *device, struct mtx *lockp)
 {
 	int ret = 0;
 	struct hv_storvsc_dev_ctx *stordev_ctx;
 
 	DPRINT_ENTER(STORVSC);
 
-	stordev_ctx = hv_alloc_storvsc_dev_ctx(device);
+	stordev_ctx = hv_alloc_storvsc_dev_ctx(device, lockp);
 	if (stordev_ctx == NULL) {
 		ret = -1;
 		goto Cleanup;
@@ -473,9 +472,9 @@ hv_storvsc_host_reset(DEVICE_OBJECT *device)
 		return -1;
 	}
 
-	mtx_lock(&stordev_ctx->lock);
+	mtx_lock(stordev_ctx->hs_lockp);
 	stordev_ctx->reset = 1;
-	mtx_unlock(&stordev_ctx->lock);
+	mtx_unlock(stordev_ctx->hs_lockp);
 
 	/*
 	 * Wait for traffic in transit to complete
@@ -493,7 +492,6 @@ hv_storvsc_host_reset(DEVICE_OBJECT *device)
 	vstor_packet->operation = VSTOR_OPERATION_RESETBUS;
 	vstor_packet->flags = REQUEST_COMPLETION_FLAG;
 
-	mtx_lock(&request->event.mtx);
 	ret = hv_vmbus_channel_send_packet((VMBUS_CHANNEL *)device->context,
 			vstor_packet,
 			sizeof(struct vstor_packet),
@@ -518,9 +516,9 @@ Cleanup:
 	mtx_destroy(&request->event.mtx);
 	cv_destroy(&request->event.cv);
 
-	mtx_lock(&stordev_ctx->lock);
+	mtx_lock(stordev_ctx->hs_lockp);
 	stordev_ctx->reset = 0;
-	mtx_unlock(&stordev_ctx->lock);
+	mtx_unlock(stordev_ctx->hs_lockp);
 
 	hv_put_storvsc_dev_ctx(device);
 	DPRINT_EXIT(STORVSC);
@@ -632,8 +630,8 @@ hv_storvsc_on_cleanup(DRIVER_OBJECT *Driver)
  */
 static void
 hv_storvsc_on_iocompletion(DEVICE_OBJECT *device,
-						   struct vstor_packet *vstor_packet,
-						   struct hv_storvsc_request *request)
+			   struct vstor_packet *vstor_packet,
+			   struct hv_storvsc_request *request)
 {
 	struct hv_storvsc_dev_ctx *stordev_ctx;
 	struct vmscsi_req *vm_srb;
@@ -669,7 +667,7 @@ hv_storvsc_on_iocompletion(DEVICE_OBJECT *device,
 					request, vm_srb->sense_info_len);
 			
 			KASSERT(vm_srb->sense_info_len <= request->sense_info_len,
-					("vstor_packet->vm_srb.sense_info_len <= "
+					("vm_srb->sense_info_len <= "
 					 "request->sense_info_len"));
 	
 			memcpy(request->sense_data, vm_srb->sense_data,

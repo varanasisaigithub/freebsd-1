@@ -44,6 +44,8 @@ enum hv_storage_type {
 	DRIVER_UNKNOWN
 };
 
+#define HS_MAX_ADAPTERS 10
+
 /* {ba6163d9-04a1-4d29-b605-72e2ffb1dc7f} */
 static const GUID gStorVscDeviceType={
 	.Data = {0xd9, 0x63, 0x61, 0xba, 0xa1, 0x04, 0x29, 0x4d, 0xb6, 0x05, 0x72, 0xe2, 0xff, 0xb1, 0xdc, 0x7f}
@@ -63,15 +65,18 @@ static struct storvsc_driver_props g_drv_props_table[] = {
 	 STORVSC_RINGBUFFER_SIZE}
 };
 
+static struct storvsc_softc *hs_softc[HS_MAX_ADAPTERS];
+
 struct storvsc_softc {
 	DEVICE_OBJECT *storvsc_dev;
 	LIST_HEAD(, hv_storvsc_request) free_list;
-	struct mtx free_list_lock;
+	struct mtx	 hs_lock;
 	struct storvsc_driver_object  drv_obj;
 	struct storvsc_driver_props	 *drv_props;
 	int unit;
-	struct cam_sim *sim;
-	struct cam_path *path;
+	uint32_t	 hs_frozen;
+	struct cam_sim	*hs_sim;
+	struct cam_path *hs_path;
 
 };
 
@@ -112,59 +117,6 @@ storvsc_xptdone(struct cam_periph *periph, union ccb *done_ccb)
 	wakeup(&done_ccb->ccb_h.cbfcnp);
 }
 
-static void
-storvsc_xptscandone(struct cam_periph *periph, union ccb *request_ccb)
-{
-	struct storvsc_softc *storvsc_softc;
-	struct cam_path	     *new_path;
-	int		      lun_nb;
-	int		      status;
-
-	storvsc_softc = request_ccb->ccb_h.sim_priv.entries[0].ptr;
-
-	new_path      = request_ccb->ccb_h.path;
-	lun_nb	      = request_ccb->ccb_h.sim_priv.entries[1].field;
-
-	//xpt_print(new_path, "LUN %d scan 0x%p On this controller\n", lun_nb, new_path);
-	xpt_release_path(new_path);
-	if (++lun_nb < storvsc_softc->drv_props->drv_max_luns_per_target) {
-	
-		/*
-		 * Scan the next LUN. Reuse path and ccb structs.
-		 */
-		bzero(new_path, sizeof(*new_path));
-		bzero(request_ccb, sizeof(*request_ccb));
-		status = xpt_compile_path(new_path,
-                                          xpt_periph,
-                                          storvsc_softc->path->bus->path_id,
-                                          0,
-                                          lun_nb);
-
-                if (status != CAM_REQ_CMP) {
-                        xpt_print(storvsc_softc->path, "scan_for_luns: can't compile path, 0x%p "
-                                          "can't continue\n", storvsc_softc->path);
-                        free(request_ccb, M_CAMXPT);
-                        free(new_path, M_CAMXPT);
-                        return;
-                }
-		xpt_setup_ccb(&request_ccb->ccb_h, new_path, 5);
-		request_ccb->ccb_h.func_code		     = XPT_SCAN_LUN;
-		request_ccb->ccb_h.cbfcnp		     = storvsc_xptscandone;
-		request_ccb->crcn.flags			     = CAM_FLAG_NONE;
-		request_ccb->ccb_h.sim_priv.entries[0].ptr   = storvsc_softc;
-		request_ccb->ccb_h.sim_priv.entries[1].field = lun_nb;
-
-		xpt_action(request_ccb);
-		
-	} else {
-		/*
-		 * Done scanning for LUNs
-		 */	
-		free(new_path, M_CAMXPT);
-		free(request_ccb, M_CAMXPT);
-	}
-}
-
 /**
  * scan_for_luns
  *
@@ -175,60 +127,63 @@ storvsc_xptscandone(struct cam_periph *periph, union ccb *request_ccb)
  * number of luns.
  */
 static void
-scan_for_luns(struct storvsc_softc *storvsc_softc)
+scan_for_luns(struct storvsc_softc *sc)
 {
 	union ccb *request_ccb;
-	struct cam_path *path = storvsc_softc->path;
-	struct cam_path *new_path = NULL;
+	struct cam_path *path = sc->hs_path;
+	struct cam_path *my_path = NULL;
 	cam_status status;
 	int lun_nb = 0;
+	int error;
 
-	request_ccb = malloc(sizeof(union ccb), M_CAMXPT, M_NOWAIT | M_ZERO);
+	request_ccb = malloc(sizeof(union ccb), M_CAMXPT, M_WAITOK);
 	if (request_ccb == NULL) {
-                xpt_print(path, "scan_for_lunsX: can't compile path, 0x%p "
-                                         "can't continue\n", storvsc_softc->path);
+		xpt_print(path, "scan_for_lunsX: can't compile path, 0x%p "
+					 "can't continue\n", sc->hs_path);
 		return;
 	}
-	new_path = malloc(sizeof(*new_path), M_CAMXPT, M_NOWAIT | M_ZERO);
-	if (new_path == NULL) {
+	my_path = malloc(sizeof(*my_path), M_CAMXPT, M_WAITOK);
+	if (my_path == NULL) {
 		xpt_print(path, "scan_for_luns: can't allocate path, "
 				  "can't continue\n");
 		free(request_ccb, M_CAMXPT);
 		return;
 	}
-	status = xpt_compile_path(new_path,
+
+	mtx_lock(&sc->hs_lock);
+	do {
+		/*
+		 * Scan the next LUN. Reuse path and ccb structs.
+		 */
+		bzero(my_path, sizeof(*my_path));
+		bzero(request_ccb, sizeof(*request_ccb));
+		status = xpt_compile_path(my_path,
 				  xpt_periph,
 				  path->bus->path_id,
 				  0,
 				  lun_nb);
 
-	if (status != CAM_REQ_CMP) {
-                xpt_print(path, "scan_for_lunYYY: can't compile path, 0x%p "
-                                         "can't continue\n", storvsc_softc->path);
-		free(request_ccb, M_CAMXPT);
-		free(new_path, M_CAMXPT);
-		return;
-	}
+		if (status != CAM_REQ_CMP) {
+			mtx_unlock(&sc->hs_lock);
+	       		xpt_print(path, "scan_for_lunYYY: can't compile path, 0x%p "
+					 "can't continue\n", sc->hs_path);
+			free(request_ccb, M_CAMXPT);
+			free(my_path, M_CAMXPT);
+			return;
+		}
 
-	//xpt_print(new_path, "New %d scan 0x%p \n", lun_nb, new_path);
-	xpt_setup_ccb(&request_ccb->ccb_h, new_path, 5);
-	request_ccb->ccb_h.func_code		     = XPT_SCAN_LUN;
-	request_ccb->ccb_h.cbfcnp		     = storvsc_xptdone;
-	request_ccb->crcn.flags			     = CAM_FLAG_NONE;
-	request_ccb->ccb_h.sim_priv.entries[0].ptr   = storvsc_softc;
-	request_ccb->ccb_h.sim_priv.entries[1].field = lun_nb;
+		xpt_setup_ccb(&request_ccb->ccb_h, my_path, 5);
+		request_ccb->ccb_h.func_code = XPT_SCAN_LUN;
+		request_ccb->ccb_h.cbfcnp    = storvsc_xptdone;
+		request_ccb->crcn.flags	     = CAM_FLAG_NONE;
 
-	xpt_action(request_ccb);
-	/*
-	 * Wait for LUN 0 to configure. This is to synchronize mountroot on IDE controllers.
-         * They only have LUN 0
-	 */
-	cam_periph_ccbwait(request_ccb);
-
-	/*
-	 * Kick of next LUN
-	 */
-	storvsc_xptscandone(request_ccb->ccb_h.path->periph, request_ccb);
+		error = cam_periph_runccb(request_ccb, NULL, CAM_FLAG_NONE, 0, NULL);
+		KASSERT(error == 0, ("cam_periph_runccb failed %d\n", error));
+		//xpt_release_path(my_path);
+	} while ( ++lun_nb < sc->drv_props->drv_max_luns_per_target);
+	mtx_unlock(&sc->hs_lock);
+	free(request_ccb, M_CAMXPT);
+	free(my_path, M_CAMXPT);
 }
 
 static int
@@ -293,12 +248,10 @@ storvsc_attach(device_t dev)
 	device_set_desc(dev, g_drv_props_table[stor_type].drv_desc);
 
 	LIST_INIT(&sc->free_list);
-	mtx_init(&sc->free_list_lock, "storvsc free list lock", NULL,
-			 MTX_SPIN | MTX_RECURSE);
+	mtx_init(&sc->hs_lock, "hvslck", NULL, MTX_DEF|MTX_RECURSE);
 
 	for (i = 0; i < sc->drv_props->drv_max_ios_per_target; ++i) {
-		reqp = malloc(sizeof(struct hv_storvsc_request), M_DEVBUF,
-					  M_NOWAIT | M_ZERO);
+		reqp = malloc(sizeof(struct hv_storvsc_request), M_DEVBUF, M_WAITOK|M_ZERO);
 		if (reqp == NULL) {
 			printf("cannot alloc struct hv_storvsc_request\n");
 			goto cleanup;
@@ -309,7 +262,7 @@ storvsc_attach(device_t dev)
 		LIST_INSERT_HEAD(&sc->free_list, reqp, link);
 	}
 
-	ret = hv_storvsc_on_deviceadd(&device_ctx->device_obj);
+	ret = hv_storvsc_on_deviceadd(&device_ctx->device_obj, &sc->hs_lock);
 
 	if (ret != 0) {
 		DPRINT_ERR(STORVSC_DRV, "unable to add storvsc device (ret %d)", ret);
@@ -328,36 +281,44 @@ storvsc_attach(device_t dev)
 	}
 
 	/* XXX avoid Giant? */
-	sc->sim = cam_sim_alloc(storvsc_action,
+	sc->hs_sim = cam_sim_alloc(storvsc_action,
 				storvsc_poll,
 				sc->drv_props->drv_name,
 				sc,
 				sc->unit,
-				&Giant, 1,
+				&sc->hs_lock, 1,
 				sc->drv_props->drv_max_ios_per_target,
 				devq);
 
-	if (sc->sim == NULL) {
+	if (sc->hs_sim == NULL) {
 		printf("Failed to alloc sim\n");
 		cam_simq_free(devq);
 		return (ENOMEM);
 	}
 
-	if (xpt_bus_register(sc->sim, dev, 0) != CAM_SUCCESS) {
-		cam_sim_free(sc->sim, /*free_devq*/TRUE);
+	mtx_lock(&sc->hs_lock);
+	if (xpt_bus_register(sc->hs_sim, dev, 0) != CAM_SUCCESS) {
+		cam_sim_free(sc->hs_sim, /*free_devq*/TRUE);
+		mtx_unlock(&sc->hs_lock);
 		printf("Unable to register SCSI bus\n");
 		return (ENXIO);
 	}
 
-	if (xpt_create_path(&sc->path, /*periph*/NULL, cam_sim_path(sc->sim),
+	if (xpt_create_path(&sc->hs_path, /*periph*/NULL, cam_sim_path(sc->hs_sim),
 						CAM_TARGET_WILDCARD, CAM_LUN_WILDCARD) != CAM_REQ_CMP) {
-		xpt_bus_deregister(cam_sim_path(sc->sim));
-		cam_sim_free(sc->sim, /*free_devq*/TRUE);
+		xpt_bus_deregister(cam_sim_path(sc->hs_sim));
+		cam_sim_free(sc->hs_sim, /*free_devq*/TRUE);
+		mtx_unlock(&sc->hs_lock);
 		printf("Unable to create path\n");
 		return (ENXIO);
 	}
 
+	mtx_unlock(&sc->hs_lock);
 	scan_for_luns(sc);
+	for (i = 0; (hs_softc[i] != NULL) && (i < HS_MAX_ADAPTERS); i++);
+	KASSERT(i < HS_MAX_ADAPTERS, ("storvsc_attach: hs_softc full\n"));
+	hs_softc[i] = sc;
+
 	DPRINT_EXIT(STORVSC_DRV);
 	return 0;
 
@@ -366,7 +327,6 @@ storvsc_attach(device_t dev)
 	while (!LIST_EMPTY(&sc->free_list)) {
 		reqp = LIST_FIRST(&sc->free_list);
 		LIST_REMOVE(reqp, link);
-
 		free(reqp, M_DEVBUF);
 	}
 	return -1;
@@ -379,14 +339,14 @@ static int storvsc_detach(device_t dev)
 
 	/* XXX call hv_storvsc_on_deviceremove? */
 
-	mtx_lock(&sc->free_list_lock);
+	mtx_lock(&sc->hs_lock);
 	while (!LIST_EMPTY(&sc->free_list)) {
 		reqp = LIST_FIRST(&sc->free_list);
 		LIST_REMOVE(reqp, link);
 
 		free(reqp, M_DEVBUF);
 	}
-	mtx_unlock(&sc->free_list_lock);
+	mtx_unlock(&sc->hs_lock);
 	return 0;
 }
 
@@ -426,7 +386,9 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		cpi->unit_number = cam_sim_unit(sim);
 
 		ccb->ccb_h.status = CAM_REQ_CMP;
+		mtx_lock(&sc->hs_lock);
 		xpt_done(ccb);
+		mtx_unlock(&sc->hs_lock);
 		return;
 	}
 	case XPT_GET_TRAN_SETTINGS: {
@@ -445,17 +407,23 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		cts->xport_specific.spi.flags = CTS_SPI_FLAGS_DISC_ENB;
 			
 		ccb->ccb_h.status = CAM_REQ_CMP;
+		mtx_lock(&sc->hs_lock);
 		xpt_done(ccb);
+		mtx_unlock(&sc->hs_lock);
 		return;
 	}
 	case XPT_SET_TRAN_SETTINGS:	{
 		ccb->ccb_h.status = CAM_REQ_CMP;
+		mtx_lock(&sc->hs_lock);
 		xpt_done(ccb);
+		mtx_unlock(&sc->hs_lock);
 		return;
 	}
 	case XPT_CALC_GEOMETRY:{
 		cam_calc_geometry(&ccb->ccg, 1);
+		mtx_lock(&sc->hs_lock);
 		xpt_done(ccb);
+		mtx_unlock(&sc->hs_lock);
 		return;
 	}
 	case  XPT_RESET_BUS:
@@ -464,12 +432,16 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		if ((res = hv_storvsc_host_reset(sc->storvsc_dev)) != 0) {
 			printf("hv_storvsc_host_reset failed with %d\n", res);
 			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
+			mtx_lock(&sc->hs_lock);
 			xpt_done(ccb);
+			mtx_unlock(&sc->hs_lock);
 			return;
 		}
 #endif	 /* notyet */
 		ccb->ccb_h.status = CAM_REQ_CMP;
+		mtx_lock(&sc->hs_lock);
 		xpt_done(ccb);
+		mtx_unlock(&sc->hs_lock);
 		return;
 	}
 	case XPT_SCSI_IO:
@@ -480,19 +452,25 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 			panic("cdl_len is 0\n");
 		}
 
-		mtx_lock(&sc->free_list_lock);
+		mtx_lock(&sc->hs_lock);
 		if (LIST_EMPTY(&sc->free_list)) {
-			mtx_unlock(&sc->free_list_lock);
-			printf("no free requests\n");
-			ccb->ccb_h.status = CAM_RESRC_UNAVAIL;
+			ccb->ccb_h.status = CAM_REQUEUE_REQ;
+			if (sc->hs_frozen == 0) {
+				sc->hs_frozen = 1;
+				xpt_freeze_simq(sim, /* count*/1);
+			}
+			printf("no free requests on sc 0x%p\n", sc);
 			xpt_done(ccb);
+			mtx_unlock(&sc->hs_lock);
 			return;
 		}
 
 		reqp = LIST_FIRST(&sc->free_list);
 		LIST_REMOVE(reqp, link);
-		mtx_unlock(&sc->free_list_lock);
+		mtx_unlock(&sc->hs_lock);
 		ASSERT(reqp);
+		bzero(reqp, sizeof(struct hv_storvsc_request));
+		reqp->softc = sc;
 
 		ccb->ccb_h.status = CAM_SIM_QUEUED;	    
 
@@ -500,8 +478,10 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		if ((res = hv_storvsc_io_request(sc->storvsc_dev, reqp)) == -1) {
 			printf("hv_storvsc_io_request failed with %d\n", res);
 			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
-			storvsc_free_request(sc, reqp);
+			mtx_lock(&sc->hs_lock);
 			xpt_done(ccb);
+			storvsc_free_request(sc, reqp);
+			mtx_unlock(&sc->hs_lock);
 			return;
 		}
 		return;
@@ -509,7 +489,9 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 
 	default:
 		ccb->ccb_h.status = CAM_REQ_INVALID;
+		mtx_lock(&sc->hs_lock);
 		xpt_done(ccb);
+		mtx_unlock(&sc->hs_lock);
 		return;
 	}
 }
@@ -550,13 +532,11 @@ create_storvsc_request(union ccb *ccb, struct hv_storvsc_request *reqp)
     		break;
 	}
 
-	reqp->sense_data = (uint8_t *)&csio->sense_data;
+	reqp->sense_data     = &csio->sense_data;
 	reqp->sense_info_len = csio->sense_len;
 
 	reqp->ccb = ccb;
-	if (ccb->ccb_h.flags & CAM_SCATTER_VALID) {
-		KASSERT(0, "ccb is scatter gather valid\n");
-	}
+	KASSERT((ccb->ccb_h.flags & CAM_SCATTER_VALID) == 0, ("ccb is scatter gather valid\n"));
 
 	if (csio->dxfer_len != 0) {
 		reqp->data_buf.Length = csio->dxfer_len;
@@ -577,7 +557,6 @@ create_storvsc_request(union ccb *ccb, struct hv_storvsc_request *reqp)
 		bytes_to_copy -= bytes;
 		pfn_num++;
 	}
-		
 }
 
 /*
@@ -595,12 +574,12 @@ storvsc_io_done(struct hv_storvsc_request *reqp)
 	struct storvsc_softc *sc = reqp->softc;
 	struct vmscsi_req *vm_srb = &reqp->vstor_packet.vm_srb;
 	
-	ccb->ccb_h.status &= ~(CAM_SIM_QUEUED);
+	ccb->ccb_h.status &= ~CAM_SIM_QUEUED;
 	ccb->ccb_h.status &= ~CAM_STATUS_MASK;
-
 	if (vm_srb->scsi_status == SCSI_STATUS_OK) {
-		ccb->ccb_h.status |=  CAM_REQ_CMP;
-	} else {
+		ccb->ccb_h.status |= CAM_REQ_CMP;
+	 } else {
+		printf("srovsc scsi_status = %d\n", vm_srb->scsi_status);
 		ccb->ccb_h.status |= CAM_SCSI_STATUS_ERROR;
 	}
 
@@ -613,23 +592,25 @@ storvsc_io_done(struct hv_storvsc_request *reqp)
 		ccb->ccb_h.status |= CAM_AUTOSNS_VALID;
 	}
 
-	xpt_done(ccb);
+	mtx_lock(&sc->hs_lock);
+	if (reqp->softc->hs_frozen == 1) {
+		printf("storvsc unfreezing softc 0x%p\n", reqp->softc);
+		ccb->ccb_h.status |= CAM_RELEASE_SIMQ;
+		reqp->softc->hs_frozen = 0;
+	}
 
 	storvsc_free_request(sc, reqp);
+	xpt_done(ccb);
+	mtx_unlock(&sc->hs_lock);
 }
 	
 static void
 storvsc_free_request(struct storvsc_softc *sc, struct hv_storvsc_request *reqp)
 {
 	ASSERT(reqp->softc == sc);
-	bzero(reqp, sizeof(struct hv_storvsc_request));
-	reqp->softc = sc;
 
-	mtx_lock(&sc->free_list_lock);
 	LIST_INSERT_HEAD(&sc->free_list, reqp, link);
-	mtx_unlock(&sc->free_list_lock);
 }
-
 static enum hv_storage_type
 storvsc_get_storage_type(device_t dev)
 {

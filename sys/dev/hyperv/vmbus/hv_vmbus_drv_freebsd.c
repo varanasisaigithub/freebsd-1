@@ -226,7 +226,7 @@ static DEVICE_OBJECT* vmbus_child_device_create(GUID type,
 
 	// Allocate the new child device
 	child_device_ctx = malloc(sizeof(struct device_context), M_DEVBUF,
-		M_ZERO);
+		M_WAITOK|M_ZERO);
 	if (!child_device_ctx) {
 		DPRINT_ERR(VMBUS_DRV,
 			"unable to allocate device_context for child device");
@@ -360,10 +360,12 @@ vmbus_registration_mutex_get(void)
 	}
 	vmbus_reg_mutex.vmb_owner = curthread;
 	mtx_unlock(&vmbus_reg_mutex.vmb_lock);
+	mtx_lock(&Giant); /* Compulsory when adding devices */
 }
 static void
 vmbus_registration_mutex_release(void)
 {
+	mtx_unlock(&Giant); /* Compulsory when adding devices */
 	mtx_lock(&vmbus_reg_mutex.vmb_lock);
 	KASSERT((vmbus_reg_mutex.vmb_owner == curthread),
 		("vmbus_registration_mutex_release not owner"));
