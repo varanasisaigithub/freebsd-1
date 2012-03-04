@@ -11,6 +11,7 @@
 #include <sys/taskqueue.h>
 #include <sys/bus.h>
 #include <sys/mutex.h>
+#include <sys/callout.h>
 #include <vm/vm.h>
 #include <vm/pmap.h>
 
@@ -29,6 +30,16 @@
 #include <hv_logging.h>
 
 #include "hv_stor_vsc_api.h"
+
+/* HyperV storvsc timeout testing cases:
+ * a. IO returned after first timeout;
+ * b. IO returned after second timeout and queue freeze;
+ * c. IO returned while timer handler is running
+ * The first can be tested by "sg_senddiag -vv /dev/daX",
+ * and the second and third can be done by
+ * "sg_wr_mode -v -p 08 -c 0,1a -m 0,ff /dev/daX".
+ */ 
+#define HVS_TIMEOUT_TEST 0
 
 struct storvsc_driver_props {
 	char		*drv_name;
@@ -350,6 +361,106 @@ static int storvsc_detach(device_t dev)
 	return 0;
 }
 
+#if HVS_TIMEOUT_TEST
+static void
+storvsc_timeout_test(struct hv_storvsc_request *reqp,
+		uint8_t opcode, int wait)
+{
+	int ret;
+	union ccb *ccb = reqp->ccb;
+	struct storvsc_softc *sc = reqp->softc;
+
+	if (reqp->vstor_packet.vm_srb.cdb[0] != opcode) {
+		return;
+	}
+
+	if (wait) {
+		mtx_lock(&reqp->event.mtx);
+	}
+	ret = hv_storvsc_io_request(sc->storvsc_dev, reqp);
+	if (ret == -1) {
+		if (wait) {
+			mtx_unlock(&reqp->event.mtx);
+		}
+		printf("%s: io_request failed with %d.\n",
+				__func__, ret);
+		ccb->ccb_h.status = CAM_PROVIDE_FAIL;
+		mtx_lock(&sc->hs_lock);
+		storvsc_free_request(sc, reqp);
+		xpt_done(ccb);
+		mtx_unlock(&sc->hs_lock);
+		return;
+	}
+
+	if (wait) {
+		xpt_print(ccb->ccb_h.path,
+				"%u: %s: waiting for IO return.\n",
+				ticks, __func__);
+		ret = cv_timedwait(&reqp->event.cv, &reqp->event.mtx, 60*hz);
+		mtx_unlock(&reqp->event.mtx);
+		xpt_print(ccb->ccb_h.path, "%u: %s: %s.\n",
+				ticks, __func__, (ret == 0)?
+				"IO return detected" :
+				"IO return not detected");
+		/* Now both the timer handler and io done are running simultaneously.
+		 * We want to confirm the io done always finishes after the timer
+		 * handler exits. So reqp used by timer handler is not freed or stale.
+		 * Do busy loop for another 1/10 second to make sure io done does
+		 * wait for the timer handler to complete.
+		 */
+		DELAY(100*1000);
+		mtx_lock(&sc->hs_lock);
+		xpt_print(ccb->ccb_h.path,
+				"%u: %s: finishing, queue frozen %d, "
+				"ccb status 0x%x scsi_status 0x%x.\n",
+				ticks, __func__, sc->hs_frozen,
+				ccb->ccb_h.status,
+				ccb->csio.scsi_status);
+		mtx_unlock(&sc->hs_lock);
+	}
+}
+#endif /* HVS_TIMEOUT_TEST */
+
+static void
+storvsc_timeout(void *arg)
+{
+	struct hv_storvsc_request *reqp = arg;
+	struct storvsc_softc *sc = reqp->softc;
+	union ccb *ccb = reqp->ccb;
+
+	if (reqp->retries == 0) {
+		xpt_print(ccb->ccb_h.path,
+				"%u: IO timed out, wait for another %u seconds.\n",
+				ticks, ccb->ccb_h.timeout / 1000);
+		cam_error_print(ccb, CAM_ESF_ALL, CAM_EPF_ALL);
+
+		reqp->retries++;
+		callout_reset(&reqp->callout,
+				(ccb->ccb_h.timeout * hz) / 1000,
+				storvsc_timeout, reqp);
+#if HVS_TIMEOUT_TEST
+		storvsc_timeout_test(reqp, SEND_DIAGNOSTIC, 0);
+#endif
+		return;
+	}
+
+	mtx_lock(&sc->hs_lock);
+	xpt_print(ccb->ccb_h.path,
+			"%u: IO did not return for %u seconds, %s.\n",
+			ticks, ccb->ccb_h.timeout * (reqp->retries+1) / 1000,
+			(sc->hs_frozen == 0)?
+			"freezing the queue" : "the queue is already frozen");
+	if (sc->hs_frozen == 0) {
+		sc->hs_frozen = 1;
+		xpt_freeze_simq(xpt_path_sim(ccb->ccb_h.path), 1);
+	}
+	mtx_unlock(&sc->hs_lock);
+	
+#if HVS_TIMEOUT_TEST
+	storvsc_timeout_test(reqp, MODE_SELECT_10, 1);
+#endif
+}
+
 static void storvsc_poll(struct cam_sim *sim)
 {
 }
@@ -437,12 +548,19 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 			mtx_unlock(&sc->hs_lock);
 			return;
 		}
-#endif	 /* notyet */
 		ccb->ccb_h.status = CAM_REQ_CMP;
 		mtx_lock(&sc->hs_lock);
 		xpt_done(ccb);
 		mtx_unlock(&sc->hs_lock);
 		return;
+#else	/* !notyet */
+		printf("hv_storvsc: %s reset not supported.\n",
+				(ccb->ccb_h.func_code == XPT_RESET_BUS)?
+				"bus" : "dev");
+		ccb->ccb_h.status = CAM_PROVIDE_FAIL;
+		xpt_done(ccb);
+		return;
+#endif	 /* notyet */
 	}
 	case XPT_SCSI_IO:
 	case XPT_IMMED_NOTIFY: {
@@ -468,19 +586,40 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		reqp = LIST_FIRST(&sc->free_list);
 		LIST_REMOVE(reqp, link);
 		mtx_unlock(&sc->hs_lock);
+
 		ASSERT(reqp);
 		bzero(reqp, sizeof(struct hv_storvsc_request));
 		reqp->softc = sc;
 
-		ccb->ccb_h.status = CAM_SIM_QUEUED;	    
-
+		ccb->ccb_h.status |= CAM_SIM_QUEUED;	    
 		create_storvsc_request(ccb, reqp);
+
+		if (ccb->ccb_h.timeout != CAM_TIME_INFINITY) {
+			callout_init(&reqp->callout, CALLOUT_MPSAFE);
+			callout_reset(&reqp->callout,
+					(ccb->ccb_h.timeout * hz) / 1000,
+					storvsc_timeout, reqp);
+		}
+
+#if HVS_TIMEOUT_TEST
+		cv_init(&reqp->event.cv, "storvsc timeout cv");
+		mtx_init(&reqp->event.mtx, "storvsc timeout mutex", NULL, MTX_DEF);
+		switch (reqp->vstor_packet.vm_srb.cdb[0]) {
+			case MODE_SELECT_10:
+			case SEND_DIAGNOSTIC:
+				/* To have timer send the request. */
+				return;
+			default:
+				break;
+		}
+#endif /* HVS_TIMEOUT_TEST */
+
 		if ((res = hv_storvsc_io_request(sc->storvsc_dev, reqp)) == -1) {
 			printf("hv_storvsc_io_request failed with %d\n", res);
 			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
 			mtx_lock(&sc->hs_lock);
-			xpt_done(ccb);
 			storvsc_free_request(sc, reqp);
+			xpt_done(ccb);
 			mtx_unlock(&sc->hs_lock);
 			return;
 		}
@@ -574,12 +713,39 @@ storvsc_io_done(struct hv_storvsc_request *reqp)
 	struct storvsc_softc *sc = reqp->softc;
 	struct vmscsi_req *vm_srb = &reqp->vstor_packet.vm_srb;
 	
+	if (reqp->retries) {
+#if HVS_TIMEOUT_TEST
+		xpt_print(ccb->ccb_h.path,
+			"%u: IO returned after timeout, "
+			"waking up timer handler if any.\n", ticks);
+		mtx_lock(&reqp->event.mtx);
+		cv_signal(&reqp->event.cv);
+		mtx_unlock(&reqp->event.mtx);
+#endif
+		reqp->retries = 0;
+		xpt_print(ccb->ccb_h.path,
+			"%u: IO returned after timeout, "
+			"stopping timer if any.\n", ticks);
+	}
+
+	/* callout_drain() will wait for the timer handler to finish
+	 * if it is running. So we don't need any lock to synchronize
+	 * between this routine and the timer handler.
+	 * Note that we need to make sure reqp is not freed when timer
+	 * handler is using or will use it.
+	 */
+	if (ccb->ccb_h.timeout != CAM_TIME_INFINITY) {
+		callout_drain(&reqp->callout);
+	}
+
 	ccb->ccb_h.status &= ~CAM_SIM_QUEUED;
 	ccb->ccb_h.status &= ~CAM_STATUS_MASK;
 	if (vm_srb->scsi_status == SCSI_STATUS_OK) {
 		ccb->ccb_h.status |= CAM_REQ_CMP;
 	 } else {
-		printf("srovsc scsi_status = %d\n", vm_srb->scsi_status);
+		xpt_print(ccb->ccb_h.path,
+			"srovsc scsi_status = %d\n",
+			vm_srb->scsi_status);
 		ccb->ccb_h.status |= CAM_SCSI_STATUS_ERROR;
 	}
 
@@ -594,11 +760,12 @@ storvsc_io_done(struct hv_storvsc_request *reqp)
 
 	mtx_lock(&sc->hs_lock);
 	if (reqp->softc->hs_frozen == 1) {
-		printf("storvsc unfreezing softc 0x%p\n", reqp->softc);
+		xpt_print(ccb->ccb_h.path,
+			"%u: storvsc unfreezing softc 0x%p.\n",
+			ticks, reqp->softc);
 		ccb->ccb_h.status |= CAM_RELEASE_SIMQ;
 		reqp->softc->hs_frozen = 0;
 	}
-
 	storvsc_free_request(sc, reqp);
 	xpt_done(ccb);
 	mtx_unlock(&sc->hs_lock);

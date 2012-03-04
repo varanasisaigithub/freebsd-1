@@ -2,6 +2,7 @@
 #define __HV_STORVSC_API_H__
 
 #include <sys/param.h>
+#include <sys/systm.h>
 #include <sys/proc.h>
 #include <sys/condvar.h>
 
@@ -30,10 +31,12 @@ struct hv_storvsc_request {
 	LIST_ENTRY(hv_storvsc_request) link;
 	struct vstor_packet	vstor_packet;
 	MULTIPAGE_BUFFER data_buf;
-	uint8_t sense_info_len;
 	void *sense_data;
+	uint8_t sense_info_len;
+	uint8_t retries;
 	union ccb *ccb;
 	struct storvsc_softc *softc;
+	struct callout callout;
 
 	// Synchronize the request/response if needed
 	struct {
@@ -41,6 +44,7 @@ struct hv_storvsc_request {
 		struct mtx mtx;
 	} event;
 };
+
 struct storvsc_driver_object {
 	DRIVER_OBJECT Base;
 	uint32_t ringbuffer_size;

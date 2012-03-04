@@ -143,7 +143,7 @@ struct vmscsi_req {
 
         uint8_t reserved_array[MAX_DATA_BUFFER_LENGTH_WITH_PADDING];
     };
-
+ 
 };
 
 
@@ -243,10 +243,21 @@ struct vstor_packet {
 
 };
 
+
 /*
- * SRB (SCSI Request Block) Status Bits (http://support.microsoft.com/kb/244780)
+ * SRB (SCSI Request Block) Status Codes
  */
+#define SRB_STATUS_PENDING		0x00
 #define SRB_STATUS_SUCCESS		0x01
+#define SRB_STATUS_ABORTED		0x02
+#define SRB_STATUS_ABORT_FAILED		0x03
+#define SRB_STATUS_ERROR 		0x04
+#define SRB_STATUS_BUSY			0x05
+
+/*
+ * SRB Status Masks (can be combined with above status codes)
+ */
+#define SRB_STATUS_QUEUE_FROZEN		0x40
 #define SRB_STATUS_AUTOSENSE_VALID	0x80
 
 

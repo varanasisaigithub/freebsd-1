@@ -660,21 +660,20 @@ hv_storvsc_on_iocompletion(DEVICE_OBJECT *device,
 	}
 
 	request->sense_info_len = 0;
-	if ((vm_srb->scsi_status & 0xFF) == SCSI_STATUS_CHECK_COND) {
-		if (vm_srb->srb_status & SRB_STATUS_AUTOSENSE_VALID) {
-			/* autosense data available */
-			DPRINT_DBG(STORVSC, "storvsc pkt %p autosense data valid - len %d\n",
-					request, vm_srb->sense_info_len);
-			
-			KASSERT(vm_srb->sense_info_len <= request->sense_info_len,
-					("vm_srb->sense_info_len <= "
-					 "request->sense_info_len"));
-	
-			memcpy(request->sense_data, vm_srb->sense_data,
-					vm_srb->sense_info_len);
+	if (((vm_srb->scsi_status & 0xFF) == SCSI_STATUS_CHECK_COND) &&
+			(vm_srb->srb_status & SRB_STATUS_AUTOSENSE_VALID)) {
+		/* Autosense data available */
+		DPRINT_DBG(STORVSC, "storvsc pkt %p autosense data valid - len %d\n",
+				request, vm_srb->sense_info_len);
 
-			request->sense_info_len = vm_srb->sense_info_len;
-		}
+		KASSERT(vm_srb->sense_info_len <= request->sense_info_len,
+				("vm_srb->sense_info_len <= "
+				 "request->sense_info_len"));
+
+		memcpy(request->sense_data, vm_srb->sense_data,
+				vm_srb->sense_info_len);
+
+		request->sense_info_len = vm_srb->sense_info_len;
 	}
 
 	/* Complete request by passing to the CAM layer */
