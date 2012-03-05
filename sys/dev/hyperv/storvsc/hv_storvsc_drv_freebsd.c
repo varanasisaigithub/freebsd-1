@@ -31,7 +31,8 @@
 
 #include "hv_stor_vsc_api.h"
 
-/* HyperV storvsc timeout testing cases:
+/*
+ * HyperV storvsc timeout testing cases:
  * a. IO returned after first timeout;
  * b. IO returned after second timeout and queue freeze;
  * c. IO returned while timer handler is running
@@ -402,7 +403,8 @@ storvsc_timeout_test(struct hv_storvsc_request *reqp,
 				ticks, __func__, (ret == 0)?
 				"IO return detected" :
 				"IO return not detected");
-		/* Now both the timer handler and io done are running simultaneously.
+		/* 
+		 * Now both the timer handler and io done are running simultaneously.
 		 * We want to confirm the io done always finishes after the timer
 		 * handler exits. So reqp used by timer handler is not freed or stale.
 		 * Do busy loop for another 1/10 second to make sure io done does
@@ -553,14 +555,14 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		xpt_done(ccb);
 		mtx_unlock(&sc->hs_lock);
 		return;
-#else	/* !notyet */
+#else
 		printf("hv_storvsc: %s reset not supported.\n",
 				(ccb->ccb_h.func_code == XPT_RESET_BUS)?
 				"bus" : "dev");
 		ccb->ccb_h.status = CAM_PROVIDE_FAIL;
 		xpt_done(ccb);
 		return;
-#endif	 /* notyet */
+#endif
 	}
 	case XPT_SCSI_IO:
 	case XPT_IMMED_NOTIFY: {
@@ -599,20 +601,20 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 			callout_reset(&reqp->callout,
 					(ccb->ccb_h.timeout * hz) / 1000,
 					storvsc_timeout, reqp);
-		}
-
 #if HVS_TIMEOUT_TEST
-		cv_init(&reqp->event.cv, "storvsc timeout cv");
-		mtx_init(&reqp->event.mtx, "storvsc timeout mutex", NULL, MTX_DEF);
-		switch (reqp->vstor_packet.vm_srb.cdb[0]) {
-			case MODE_SELECT_10:
-			case SEND_DIAGNOSTIC:
-				/* To have timer send the request. */
-				return;
-			default:
-				break;
+			cv_init(&reqp->event.cv, "storvsc timeout cv");
+			mtx_init(&reqp->event.mtx, "storvsc timeout mutex",
+					NULL, MTX_DEF);
+			switch (reqp->vstor_packet.vm_srb.cdb[0]) {
+				case MODE_SELECT_10:
+				case SEND_DIAGNOSTIC:
+					/* To have timer send the request. */
+					return;
+				default:
+					break;
+			}
+#endif
 		}
-#endif /* HVS_TIMEOUT_TEST */
 
 		if ((res = hv_storvsc_io_request(sc->storvsc_dev, reqp)) == -1) {
 			printf("hv_storvsc_io_request failed with %d\n", res);
@@ -728,7 +730,8 @@ storvsc_io_done(struct hv_storvsc_request *reqp)
 			"stopping timer if any.\n", ticks);
 	}
 
-	/* callout_drain() will wait for the timer handler to finish
+	/* 
+	 * callout_drain() will wait for the timer handler to finish
 	 * if it is running. So we don't need any lock to synchronize
 	 * between this routine and the timer handler.
 	 * Note that we need to make sure reqp is not freed when timer
