@@ -97,10 +97,21 @@ extern int hv_blkvsc_init(PDRIVER_OBJECT);
 
 extern void shutdown_onchannelcallback(void *); // drivers/closed/vmbus/ChannelMgmt.c
 
-typedef struct _XFERPAGE {
+/*
+ * Fixme:  This looks like it should be moved to hv_net_vsc_api.h
+ */
+typedef struct xfer_page_packet_ {
 	DLIST_ENTRY ListEntry;
-	uint32_t Count;
-} XFERPAGE_PACKET;
+	/* Fixme:  list */
+	/*
+	 * This needs to be here due to an issue in the network RX
+	 * code, an unfortunate cast to netvsc_packet.
+	 * Fixme:  Keep this when DLIST_ENTRY is removed later.
+	 */
+	STAILQ_ENTRY(netvsc_packet_) mylist_entry;
+
+	uint32_t count;
+} xfer_page_packet;
 
 typedef int (*PFN_DRIVERINITIALIZE)(DRIVER_OBJECT*);
 typedef int (*PFN_DRIVEREXIT)(DRIVER_OBJECT*);

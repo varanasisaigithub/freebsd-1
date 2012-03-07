@@ -92,30 +92,11 @@ typedef enum {
 	RNDIS_DEV_DATAINITIALIZED,
 } rndis_device_state;
 
-typedef struct rndis_device_ {
-	netvsc_dev			*net_dev;
-
-	rndis_device_state		state;
-	uint32_t			link_status;
-	uint32_t			new_request_id;
-
-	/*
-	 * Fixme:  Need to switch over from the pointer to the actual lock.
-	 * Fixme:  Remove the pointer when done.
-	 * Fixme:  Move to the end of the struct due to alignment issues.
-	 * Fixme:  Lock
-	 */
-	//void				*request_lock;
-	struct mtx			req_lock;
-
-	LIST_ENTRY			request_list;
-
-	uint8_t				hw_mac_addr[HW_MACADDR_LEN];
-} rndis_device;
-
-
 typedef struct rndis_request_ {
-	LIST_ENTRY			list_entry;
+	/* Fixme:  list */
+	//LIST_ENTRY			list_entry;
+	/* Fixme:  list */
+	STAILQ_ENTRY(rndis_request_)	mylist_entry;
 	void				*wait_event;	
 
 	/*
@@ -132,6 +113,22 @@ typedef struct rndis_request_ {
 	rndis_msg			request_msg;
 } rndis_request;
 
+typedef struct rndis_device_ {
+	netvsc_dev			*net_dev;
+
+	rndis_device_state		state;
+	uint32_t			link_status;
+	uint32_t			new_request_id;
+
+	struct mtx			req_lock;
+
+	/* Fixme:  list */
+	//LIST_ENTRY			request_list;
+	/* Fixme:  list */
+	STAILQ_HEAD(RQ, rndis_request_)	myrequest_list;
+
+	uint8_t				hw_mac_addr[HW_MACADDR_LEN];
+} rndis_device;
 
 /* Fixme:  not used */
 typedef struct rndis_filter_packet_ {
@@ -179,6 +176,44 @@ static void hv_rf_on_send_request_completion(void *context);
 /* The one and only */
 rndis_filter_driver_object g_rndis_filter;
 
+#ifdef REMOVED
+
+	/* Fixme:  list */
+	STAILQ_ENTRY(rndis_device_)	myrequest_list;
+	STAILQ_HEAD(FOO, rndis_device_)	myhead;
+
+/*
+ * Singly-linked Tail queue declarations.
+ */
+#define STAILQ_HEAD(name, type)                                         \
+struct name {                                                           \
+        struct type *stqh_first;/* first element */                     \
+        struct type **stqh_last;/* addr of last next element */         \
+}
+
+#define STAILQ_HEAD_INITIALIZER(head)                                   \
+        { NULL, &(head).stqh_first }
+
+// Fixme
+//	STAILQ_ENTRY(rndis_device_)	myrequest_list;
+//	STAILQ_HEAD(FOO, rndis_device_)	myhead;
+
+
+#define STAILQ_ENTRY(type)                                              \
+struct {                                                                \
+        struct type *stqe_next; /* next element */                      \
+}
+
+#define STAILQ_FIRST(head)      ((head)->stqh_first)
+
+#define STAILQ_INIT(head) do {                                          \
+        STAILQ_FIRST((head)) = NULL;                                    \
+        (head)->stqh_last = &STAILQ_FIRST((head));                      \
+} while (0)
+
+#endif
+
+
 /*
  * Allow module_param to work and override to switch to promiscuous mode.
  */
@@ -192,21 +227,13 @@ hv_get_rndis_device(void)
 		return (NULL);
 	}
 
-	/* Fixme:  Lock */
-	//device->request_lock = SpinlockCreate();
-	/* Fixme:  Lock */
 	mtx_init(&device->req_lock, "HV-FRL", NULL, MTX_SPIN | MTX_RECURSE);
 
-#ifdef REMOVED
-	/* Fixme:  Lock */
-	if (!device->request_lock) {
-		free(device, M_DEVBUF);
-
-		return (NULL);
-	}
-#endif
-
-	INITIALIZE_LIST_HEAD(&device->request_list);
+	/* Fixme:  list */
+	//INITIALIZE_LIST_HEAD(&device->request_list);
+	/* Fixme:  list */
+	/* Same effect as STAILQ_HEAD_INITIALIZER() static initializer */
+	STAILQ_INIT(&device->myrequest_list);
 
 	device->state = RNDIS_DEV_UNINITIALIZED;
 
@@ -219,9 +246,6 @@ hv_get_rndis_device(void)
 static inline void
 hv_put_rndis_device(rndis_device *device)
 {
-	/* Fixme:  Lock */
-	//SpinlockClose(device->request_lock);
-	/* Fixme:  Lock */
 	mtx_destroy(&device->req_lock);
 	free(device, M_DEVBUF);
 }
@@ -262,14 +286,11 @@ hv_rndis_request(rndis_device *device, uint32_t message_type,
 	set->request_id = InterlockedIncrement((int *)&device->new_request_id);
 
 	/* Add to the request list */
-	/* Fixme:  Lock */
-	//SpinlockAcquire(device->request_lock);
-	/* Fixme:  Lock */
 	mtx_lock(&device->req_lock);
-	INSERT_TAIL_LIST(&device->request_list, &request->list_entry);
-	/* Fixme:  Lock */
-	//SpinlockRelease(device->request_lock);
-	/* Fixme:  Lock */
+	/* Fixme:  list */
+	//INSERT_TAIL_LIST(&device->request_list, &request->list_entry);
+	/* Fixme:  list */
+	STAILQ_INSERT_TAIL(&device->myrequest_list, request, mylist_entry);
 	mtx_unlock(&device->req_lock);
 
 	return (request);
@@ -281,14 +302,13 @@ hv_rndis_request(rndis_device *device, uint32_t message_type,
 static inline void
 hv_put_rndis_request(rndis_device *device, rndis_request *request)
 {
-	/* Fixme:  Lock */
-	//SpinlockAcquire(device->request_lock);
-	/* Fixme:  Lock */
 	mtx_lock(&device->req_lock);
-	REMOVE_ENTRY_LIST(&request->list_entry);
-	/* Fixme:  Lock */
-	//SpinlockRelease(device->request_lock);
-	/* Fixme:  Lock */
+	/* Fixme:  list */
+	//REMOVE_ENTRY_LIST(&request->list_entry);
+	/* Fixme:  list */
+	/* Fixme:  Has O(n) performance */
+	STAILQ_REMOVE(&device->myrequest_list, request, rndis_request_,
+	    mylist_entry);
 	mtx_unlock(&device->req_lock);
 
 	WaitEventClose(request->wait_event);
@@ -406,19 +426,23 @@ hv_rf_send_request(rndis_device *device, rndis_request *request)
 static void 
 hv_rf_receive_response(rndis_device *device, rndis_msg *response)
 {
-	LIST_ENTRY *anchor;
-	LIST_ENTRY *curr;
+	/* Fixme:  list */
+	//LIST_ENTRY *anchor;
+	//LIST_ENTRY *curr;
 	rndis_request *request = NULL;
+	rndis_request *next_request;
 	BOOL found = FALSE;
 
 	DPRINT_ENTER(NETVSC);
 
-	/* Fixme:  Lock */
-	//SpinlockAcquire(device->request_lock);
-	/* Fixme:  Lock */
 	mtx_lock(&device->req_lock);
-	ITERATE_LIST_ENTRIES(anchor, curr, &device->request_list) {		
-		request = CONTAINING_RECORD(curr, rndis_request, list_entry);
+	/* Fixme:  list */
+	//ITERATE_LIST_ENTRIES(anchor, curr, &device->request_list) {		
+	/* Fixme:  list */
+	request = STAILQ_FIRST(&device->myrequest_list);
+	while (request != NULL) {
+
+		//request = CONTAINING_RECORD(curr, rndis_request, list_entry);
 
 		/*
 		 * All request/response message contains RequestId as the
@@ -435,10 +459,10 @@ hv_rf_receive_response(rndis_device *device, rndis_msg *response)
 			found = TRUE;
 			break;
 		}
+		next_request = STAILQ_NEXT(request, mylist_entry);
+		request = next_request;
 	}
-	/* Fixme:  Lock */
-	//SpinlockRelease(device->request_lock);
-	/* Fixme:  Lock */
+	//}
 	mtx_unlock(&device->req_lock);
 
 	if (found) {

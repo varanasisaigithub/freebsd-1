@@ -34,10 +34,16 @@ typedef void (*pfn_on_send_rx_completion)(void *);
 #define NETVSC_PACKET_MAXPAGE            4
 
 typedef struct netvsc_packet_ {
+	/* Fixme:  list */
+	/* Used when enqueued on &net_dev->rx_packet_list */
 	DLIST_ENTRY             list_entry;
+	/* Fixme:  list */
+	/* Used when enqueued within the netvsc code */
+	//TAILQ_ENTRY(netvsc_packet_) mylist_entry;
+	STAILQ_ENTRY(netvsc_packet_) mylist_entry;
 	DEVICE_OBJECT           *device;
 	bool                    is_data_pkt;      /* One byte */
-	XFERPAGE_PACKET         *xfer_page_pkt;
+	xfer_page_packet        *xfer_page_pkt;
 
 	/* Completion */
 	union {
