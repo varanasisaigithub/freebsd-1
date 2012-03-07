@@ -52,7 +52,7 @@ struct storvsc_driver_object {
 
 extern void storvsc_io_done(struct hv_storvsc_request *reqp);
 
-extern int hv_storvsc_on_deviceadd(DEVICE_OBJECT *device, struct mtx *lockp);
+extern int hv_storvsc_on_deviceadd(DEVICE_OBJECT *device);
 extern int hv_storvsc_on_deviceremove(DEVICE_OBJECT *device);
 extern void hv_storvsc_on_cleanup(DRIVER_OBJECT *driver);
 extern int hv_storvsc_host_reset(DEVICE_OBJECT *device);

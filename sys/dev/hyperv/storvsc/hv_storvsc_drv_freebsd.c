@@ -260,7 +260,7 @@ storvsc_attach(device_t dev)
 	device_set_desc(dev, g_drv_props_table[stor_type].drv_desc);
 
 	LIST_INIT(&sc->free_list);
-	mtx_init(&sc->hs_lock, "hvslck", NULL, MTX_DEF|MTX_RECURSE);
+	mtx_init(&sc->hs_lock, "hvslck", NULL, MTX_DEF);
 
 	for (i = 0; i < sc->drv_props->drv_max_ios_per_target; ++i) {
 		reqp = malloc(sizeof(struct hv_storvsc_request), M_DEVBUF, M_WAITOK|M_ZERO);
@@ -274,7 +274,7 @@ storvsc_attach(device_t dev)
 		LIST_INSERT_HEAD(&sc->free_list, reqp, link);
 	}
 
-	ret = hv_storvsc_on_deviceadd(&device_ctx->device_obj, &sc->hs_lock);
+	ret = hv_storvsc_on_deviceadd(&device_ctx->device_obj);
 
 	if (ret != 0) {
 		DPRINT_ERR(STORVSC_DRV, "unable to add storvsc device (ret %d)", ret);
@@ -292,7 +292,6 @@ storvsc_attach(device_t dev)
 		return (ENOMEM);
 	}
 
-	/* XXX avoid Giant? */
 	sc->hs_sim = cam_sim_alloc(storvsc_action,
 				storvsc_poll,
 				sc->drv_props->drv_name,
@@ -431,10 +430,12 @@ storvsc_timeout(void *arg)
 	union ccb *ccb = reqp->ccb;
 
 	if (reqp->retries == 0) {
+		mtx_lock(&sc->hs_lock);
 		xpt_print(ccb->ccb_h.path,
-				"%u: IO timed out, wait for another %u seconds.\n",
-				ticks, ccb->ccb_h.timeout / 1000);
+				"%u: IO timed out (req = 0x%p), wait for another %u seconds.\n",
+				ticks, reqp, ccb->ccb_h.timeout / 1000);
 		cam_error_print(ccb, CAM_ESF_ALL, CAM_EPF_ALL);
+		mtx_unlock(&sc->hs_lock);
 
 		reqp->retries++;
 		callout_reset(&reqp->callout,
@@ -448,8 +449,8 @@ storvsc_timeout(void *arg)
 
 	mtx_lock(&sc->hs_lock);
 	xpt_print(ccb->ccb_h.path,
-			"%u: IO did not return for %u seconds, %s.\n",
-			ticks, ccb->ccb_h.timeout * (reqp->retries+1) / 1000,
+			"%u: IO (reqp = 0x%p) did not return for %u seconds, %s.\n",
+			ticks, reqp, ccb->ccb_h.timeout * (reqp->retries+1) / 1000,
 			(sc->hs_frozen == 0)?
 			"freezing the queue" : "the queue is already frozen");
 	if (sc->hs_frozen == 0) {
@@ -472,6 +473,7 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 	struct storvsc_softc *sc = cam_sim_softc(sim);
 	int res;
 
+	mtx_assert(&sc->hs_lock, MA_OWNED);
 	switch (ccb->ccb_h.func_code) {
 	case XPT_PATH_INQ: {
 		struct ccb_pathinq *cpi = &ccb->cpi;
@@ -499,9 +501,7 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		cpi->unit_number = cam_sim_unit(sim);
 
 		ccb->ccb_h.status = CAM_REQ_CMP;
-		mtx_lock(&sc->hs_lock);
 		xpt_done(ccb);
-		mtx_unlock(&sc->hs_lock);
 		return;
 	}
 	case XPT_GET_TRAN_SETTINGS: {
@@ -520,23 +520,17 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		cts->xport_specific.spi.flags = CTS_SPI_FLAGS_DISC_ENB;
 			
 		ccb->ccb_h.status = CAM_REQ_CMP;
-		mtx_lock(&sc->hs_lock);
 		xpt_done(ccb);
-		mtx_unlock(&sc->hs_lock);
 		return;
 	}
 	case XPT_SET_TRAN_SETTINGS:	{
 		ccb->ccb_h.status = CAM_REQ_CMP;
-		mtx_lock(&sc->hs_lock);
 		xpt_done(ccb);
-		mtx_unlock(&sc->hs_lock);
 		return;
 	}
 	case XPT_CALC_GEOMETRY:{
 		cam_calc_geometry(&ccb->ccg, 1);
-		mtx_lock(&sc->hs_lock);
 		xpt_done(ccb);
-		mtx_unlock(&sc->hs_lock);
 		return;
 	}
 	case  XPT_RESET_BUS:
@@ -545,15 +539,11 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		if ((res = hv_storvsc_host_reset(sc->storvsc_dev)) != 0) {
 			printf("hv_storvsc_host_reset failed with %d\n", res);
 			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
-			mtx_lock(&sc->hs_lock);
 			xpt_done(ccb);
-			mtx_unlock(&sc->hs_lock);
 			return;
 		}
 		ccb->ccb_h.status = CAM_REQ_CMP;
-		mtx_lock(&sc->hs_lock);
 		xpt_done(ccb);
-		mtx_unlock(&sc->hs_lock);
 		return;
 #else
 		printf("hv_storvsc: %s reset not supported.\n",
@@ -572,7 +562,6 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 			panic("cdl_len is 0\n");
 		}
 
-		mtx_lock(&sc->hs_lock);
 		if (LIST_EMPTY(&sc->free_list)) {
 			ccb->ccb_h.status = CAM_REQUEUE_REQ;
 			if (sc->hs_frozen == 0) {
@@ -581,13 +570,11 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 			}
 			printf("no free requests on sc 0x%p\n", sc);
 			xpt_done(ccb);
-			mtx_unlock(&sc->hs_lock);
 			return;
 		}
 
 		reqp = LIST_FIRST(&sc->free_list);
 		LIST_REMOVE(reqp, link);
-		mtx_unlock(&sc->hs_lock);
 
 		ASSERT(reqp);
 		bzero(reqp, sizeof(struct hv_storvsc_request));
@@ -613,16 +600,14 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 				default:
 					break;
 			}
-#endif
+#endif /* HVS_TIMEOUT_TEST */
 		}
 
 		if ((res = hv_storvsc_io_request(sc->storvsc_dev, reqp)) == -1) {
 			printf("hv_storvsc_io_request failed with %d\n", res);
 			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
-			mtx_lock(&sc->hs_lock);
 			storvsc_free_request(sc, reqp);
 			xpt_done(ccb);
-			mtx_unlock(&sc->hs_lock);
 			return;
 		}
 		return;
@@ -630,9 +615,7 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 
 	default:
 		ccb->ccb_h.status = CAM_REQ_INVALID;
-		mtx_lock(&sc->hs_lock);
 		xpt_done(ccb);
-		mtx_unlock(&sc->hs_lock);
 		return;
 	}
 }

@@ -50,7 +50,6 @@
 /* Storvsc device context structure */
 struct hv_storvsc_dev_ctx {
 	DEVICE_OBJECT				*device;
-	struct mtx			*hs_lockp;
 	uint8_t						reset;
 	uint32_t					ref_cnt;
 	uint32_t					num_out_reqs;
@@ -67,8 +66,7 @@ static void hv_storvsc_on_iocompletion(DEVICE_OBJECT *device, struct vstor_packe
 static int hv_storvsc_connect_vsp(DEVICE_OBJECT *device);
 
 static inline struct hv_storvsc_dev_ctx* hv_alloc_storvsc_dev_ctx(
-			DEVICE_OBJECT *device,
-			struct mtx *lockp)
+			DEVICE_OBJECT *device)
 {
 	struct hv_storvsc_dev_ctx *stordev_ctx;
 
@@ -79,7 +77,6 @@ static inline struct hv_storvsc_dev_ctx* hv_alloc_storvsc_dev_ctx(
 
 	stordev_ctx->device = device;
 	stordev_ctx->reset = 0;
-	stordev_ctx->hs_lockp = lockp;
 	device->Extension = stordev_ctx;
 
 	return stordev_ctx;
@@ -101,10 +98,8 @@ static inline struct hv_storvsc_dev_ctx* hv_get_storvsc_dev_ctx(DEVICE_OBJECT *d
 		return NULL;
 	}
 
-	mtx_lock(stordev_ctx->hs_lockp);
 
 	if (stordev_ctx->reset == 1) {
-		mtx_unlock(stordev_ctx->hs_lockp);
 		return NULL;
 	} 
 
@@ -112,7 +107,6 @@ static inline struct hv_storvsc_dev_ctx* hv_get_storvsc_dev_ctx(DEVICE_OBJECT *d
 		atomic_add_int(&stordev_ctx->ref_cnt, 1);
 	}
 
-	mtx_unlock(stordev_ctx->hs_lockp);
 	return stordev_ctx;
 }
 
@@ -125,13 +119,10 @@ static inline struct hv_storvsc_dev_ctx* hv_must_get_storvsc_dev_ctx(DEVICE_OBJE
 	if (stordev_ctx == NULL) {
 		return NULL;
 	}
-	mtx_lock(stordev_ctx->hs_lockp);
 
 	if (stordev_ctx->ref_cnt) {
 		atomic_add_int(&stordev_ctx->ref_cnt, 1);
 	}
-
-	mtx_unlock(stordev_ctx->hs_lockp);
 
 	return stordev_ctx;
 }
@@ -190,14 +181,14 @@ Description:
 
 --*/
 int
-hv_storvsc_on_deviceadd(DEVICE_OBJECT *device, struct mtx *lockp)
+hv_storvsc_on_deviceadd(DEVICE_OBJECT *device)
 {
 	int ret = 0;
 	struct hv_storvsc_dev_ctx *stordev_ctx;
 
 	DPRINT_ENTER(STORVSC);
 
-	stordev_ctx = hv_alloc_storvsc_dev_ctx(device, lockp);
+	stordev_ctx = hv_alloc_storvsc_dev_ctx(device);
 	if (stordev_ctx == NULL) {
 		ret = -1;
 		goto Cleanup;
@@ -472,9 +463,7 @@ hv_storvsc_host_reset(DEVICE_OBJECT *device)
 		return -1;
 	}
 
-	mtx_lock(stordev_ctx->hs_lockp);
 	stordev_ctx->reset = 1;
-	mtx_unlock(stordev_ctx->hs_lockp);
 
 	/*
 	 * Wait for traffic in transit to complete
@@ -516,9 +505,7 @@ Cleanup:
 	mtx_destroy(&request->event.mtx);
 	cv_destroy(&request->event.cv);
 
-	mtx_lock(stordev_ctx->hs_lockp);
 	stordev_ctx->reset = 0;
-	mtx_unlock(stordev_ctx->hs_lockp);
 
 	hv_put_storvsc_dev_ctx(device);
 	DPRINT_EXIT(STORVSC);
