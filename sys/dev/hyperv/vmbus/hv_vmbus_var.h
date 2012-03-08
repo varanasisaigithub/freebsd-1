@@ -101,12 +101,9 @@ extern void shutdown_onchannelcallback(void *); // drivers/closed/vmbus/ChannelM
  * Fixme:  This looks like it should be moved to hv_net_vsc_api.h
  */
 typedef struct xfer_page_packet_ {
-	DLIST_ENTRY ListEntry;
-	/* Fixme:  list */
 	/*
-	 * This needs to be here due to an issue in the network RX
-	 * code, an unfortunate cast to netvsc_packet.
-	 * Fixme:  Keep this when DLIST_ENTRY is removed later.
+	 * This needs to be here because the network RX code casts
+	 * an instantiation of this structure to a netvsc_packet.
 	 */
 	STAILQ_ENTRY(netvsc_packet_) mylist_entry;
 

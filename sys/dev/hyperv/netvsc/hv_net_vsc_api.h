@@ -34,12 +34,10 @@ typedef void (*pfn_on_send_rx_completion)(void *);
 #define NETVSC_PACKET_MAXPAGE            4
 
 typedef struct netvsc_packet_ {
-	/* Fixme:  list */
-	/* Used when enqueued on &net_dev->rx_packet_list */
-	DLIST_ENTRY             list_entry;
-	/* Fixme:  list */
-	/* Used when enqueued within the netvsc code */
-	//TAILQ_ENTRY(netvsc_packet_) mylist_entry;
+	/*
+	 * List used when enqueued on &net_dev->rx_packet_list,
+	 * and when enqueued within the netvsc code
+	 */
 	STAILQ_ENTRY(netvsc_packet_) mylist_entry;
 	DEVICE_OBJECT           *device;
 	bool                    is_data_pkt;      /* One byte */
@@ -50,11 +48,13 @@ typedef struct netvsc_packet_ {
 		struct {
 			uint64_t rx_completion_tid;
 			void	*rx_completion_context;
+			/* This is no longer used */
 			pfn_on_send_rx_completion   on_rx_completion;
 		} rx;
 		struct {
 			uint64_t send_completion_tid;
 			void	*send_completion_context;
+			/* Still used in netvsc and filter code */
 			pfn_on_send_rx_completion   on_send_completion;
 		} send;
 	} compl;
@@ -71,11 +71,12 @@ typedef struct netvsc_driver_object_ {
 	uint32_t	ring_buf_size;
 	uint32_t	request_ext_size;
 	uint32_t	additional_request_page_buf_cnt;
-	int32_t		(*on_rx_callback)(DEVICE_OBJECT *, netvsc_packet *);
-	void		(*on_link_stat_changed)(DEVICE_OBJECT *, uint32_t);
-	int32_t		(*on_open)(DEVICE_OBJECT *);
-	int32_t		(*on_close)(DEVICE_OBJECT *);
-	int32_t		(*on_send)(DEVICE_OBJECT *, netvsc_packet *);
+	// Fixme:  No longer used
+	//int32_t	(*on_rx_callback)(DEVICE_OBJECT *, netvsc_packet *);
+	//void		(*on_link_stat_changed)(DEVICE_OBJECT *, uint32_t);
+	//int32_t	(*on_open)(DEVICE_OBJECT *);
+	//int32_t	(*on_close)(DEVICE_OBJECT *);
+	//int32_t	(*on_send)(DEVICE_OBJECT *, netvsc_packet *);
 	void		*context;
 } netvsc_driver_object;
 

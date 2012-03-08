@@ -93,10 +93,6 @@ static const GUID g_net_vsc_device_type = {
 /*
  * Forward declarations
  */
-/* Fixme:  Function pointer removal */
-//static int  hv_nv_on_device_add(DEVICE_OBJECT *device, void *additional_info);
-//static int  hv_nv_on_device_remove(DEVICE_OBJECT *device);
-//static void hv_nv_on_cleanup(DRIVER_OBJECT *driver);
 static void hv_nv_on_channel_callback(void *context);
 static int  hv_nv_init_send_buffer_with_net_vsp(DEVICE_OBJECT *device);
 static int  hv_nv_init_rx_buffer_with_net_vsp(DEVICE_OBJECT *device);
@@ -105,8 +101,6 @@ static int  hv_nv_destroy_rx_buffer(netvsc_dev *net_dev);
 static int  hv_nv_connect_to_vsp(DEVICE_OBJECT *device);
 static void hv_nv_on_send_completion(DEVICE_OBJECT *device,
 				     VMPACKET_DESCRIPTOR *pkt);
-/* Fixme:  Function pointer removal */
-//static int  hv_nv_on_send(DEVICE_OBJECT *device, netvsc_packet *pkt);
 // Fixme
 extern void hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt);
 //static void hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt);
@@ -264,15 +258,19 @@ hv_net_vsc_initialize(DRIVER_OBJECT *drv)
 	memcpy(&drv->deviceType, &g_net_vsc_device_type, sizeof(GUID));
 
 	/* Make sure it is set by the caller */
-	ASSERT(driver->on_rx_callback);
-	ASSERT(driver->on_link_stat_changed);
+	// Fixme:  No longer used
+	//ASSERT(driver->on_rx_callback);
+	// Fixme:  No longer used
+	//ASSERT(driver->on_link_stat_changed);
 
-	/* Setup the dispatch table */
-	driver->base.OnDeviceAdd		= hv_nv_on_device_add;
-	driver->base.OnDeviceRemove		= hv_nv_on_device_remove;
-	driver->base.OnCleanup			= hv_nv_on_cleanup;
+	/* Set up the dispatch table */
+	// Fixme:  Not used by network code
+	//driver->base.OnDeviceAdd		= hv_nv_on_device_add;
+	//driver->base.OnDeviceRemove		= hv_nv_on_device_remove;
+	//driver->base.OnCleanup		= hv_nv_on_cleanup;
 
-	driver->on_send				= hv_nv_on_send;
+	// Fixme:  No longer used
+	//driver->on_send			= hv_nv_on_send;
 
 	hv_rndis_filter_init(driver);
 
@@ -844,19 +842,14 @@ hv_nv_on_device_add(DEVICE_OBJECT *device, void *additional_info)
 {
 	netvsc_dev *net_dev;
 	netvsc_packet *packet;
-	/* Fixme:  list */
 	netvsc_packet *next_packet;
-	/* Fixme:  list */
-#ifdef REMOVED
-	LIST_ENTRY *entry;
-#endif
+	netvsc_driver_object *netDriver;
 	int ret = 0;
 	int i;
 
-	netvsc_driver_object *netDriver =
-	    (netvsc_driver_object *)device->Driver;
-
 	DPRINT_ENTER(NETVSC);
+
+	netDriver = (netvsc_driver_object *)device->Driver;
 
 	net_dev = hv_nv_alloc_net_device(device);
 	if (!net_dev) {
@@ -873,18 +866,6 @@ hv_nv_on_device_add(DEVICE_OBJECT *device, void *additional_info)
 
 	net_dev->send_buf_size = NETVSC_SEND_BUFFER_SIZE;
 
-	/* Fixme:  list */
-#ifdef REMOVED
-	/*
-	 * Fixme:  This must be in place at this time, or the kernel
-	 * crashes during boot.
-	 * Fixme:  Other queue inserts and deletes must be in place
-	 * at this time, or the channel hangs during the "Root mount"
-	 * phase of boot.
-	 */
-	INITIALIZE_LIST_HEAD(&net_dev->rx_packet_list);
-#endif
-	/* Fixme:  list */
 	/* Same effect as STAILQ_HEAD_INITIALIZER() static initializer */
 	STAILQ_INIT(&net_dev->myrx_packet_list);
 
@@ -892,7 +873,6 @@ hv_nv_on_device_add(DEVICE_OBJECT *device, void *additional_info)
 	 * malloc a sufficient number of netvsc_packet buffers to hold
 	 * a packet list.  Add them to the netvsc device packet queue.
 	 */
-	/* Fixme:  list? */
 	for (i=0; i < NETVSC_RECEIVE_PACKETLIST_COUNT; i++) {
 		packet = malloc(sizeof(netvsc_packet) +
 		    (NETVSC_RECEIVE_SG_COUNT * sizeof(PAGE_BUFFER)),
@@ -903,16 +883,8 @@ hv_nv_on_device_add(DEVICE_OBJECT *device, void *additional_info)
 			    NETVSC_RECEIVE_PACKETLIST_COUNT, i);
 			break;
 		}
-
-		/* Fixme:  list */
-#ifdef REMOVED
-		INSERT_TAIL_LIST(&net_dev->rx_packet_list,
-		    &packet->list_entry);
-#endif
-//#ifdef REMOVED
 		STAILQ_INSERT_TAIL(&net_dev->myrx_packet_list, packet,
 		    mylist_entry);
-//#endif
 	}
 	net_dev->channel_init_event = WaitEventCreate();
 
@@ -961,32 +933,14 @@ cleanup:
 	if (net_dev) {
 		WaitEventClose(net_dev->channel_init_event);
 
-#ifdef REMOVED
-		while (!IsListEmpty(&net_dev->rx_packet_list)) {	
-			/* Fixme:  list */
-			entry = REMOVE_HEAD_LIST(&net_dev->rx_packet_list);
-			packet = CONTAINING_RECORD(entry, netvsc_packet,
-			    list_entry);
-			//free(packet, M_DEVBUF);
-		}
-#endif
-
-//#ifdef REMOVED
 		packet = STAILQ_FIRST(&net_dev->myrx_packet_list);
 		while (packet != NULL) {
-			/* Fixme:  list */
-			/* Fixme:  should not be necessary */
-			STAILQ_REMOVE_HEAD(&net_dev->myrx_packet_list,
-			    mylist_entry);
-			/* Fixme:  Extra variable may not be necessary */
+			next_packet = STAILQ_NEXT(packet, mylist_entry);
 			free(packet, M_DEVBUF);
-			//next_packet = STAILQ_NEXT(packet, mylist_entry);
-			next_packet = STAILQ_FIRST(&net_dev->myrx_packet_list);
 			packet = next_packet;
 		}
-		// Fixme:  This should not be necessary
+		/* Reset the list to initial state */
 		STAILQ_INIT(&net_dev->myrx_packet_list);
-//#endif
 
 		mtx_destroy(&net_dev->rx_pkt_list_lock);
 
@@ -1011,13 +965,7 @@ hv_nv_on_device_remove(DEVICE_OBJECT *device)
 {
 	netvsc_dev *net_dev;
 	netvsc_packet *net_vsc_pkt;
-	/* Fixme:  list */
 	netvsc_packet *next_net_vsc_pkt;
-	/* Fixme:  list */
-#ifdef REMOVED
-	LIST_ENTRY *entry;
-#endif
-	int ret = 0;
 
 	DPRINT_ENTER(NETVSC);
 	
@@ -1058,36 +1006,14 @@ hv_nv_on_device_remove(DEVICE_OBJECT *device)
 	hv_vmbus_channel_close((VMBUS_CHANNEL *)device->context);
 
 	/* Release all resources */
-	/* Fixme:  list */
-#ifdef REMOVED
-	while (!IsListEmpty(&net_dev->rx_packet_list)) {	
-		/* Fixme:  list */
-		entry = REMOVE_HEAD_LIST(&net_dev->rx_packet_list);
-		net_vsc_pkt =
-		    CONTAINING_RECORD(entry, netvsc_packet, list_entry);
-
-		//free(net_vsc_pkt, M_DEVBUF);
-	}
-#endif
-
-	/* Release all resources */
-	/* Fixme:  list */
-//#ifdef REMOVED
 	net_vsc_pkt = STAILQ_FIRST(&net_dev->myrx_packet_list);
 	while (net_vsc_pkt != NULL) {
-		// Fixme:  Should not be necessary
-		STAILQ_REMOVE_HEAD(&net_dev->myrx_packet_list,
-		    mylist_entry);
-		/* Fixme:  list */
-		//next_net_vsc_pkt = STAILQ_NEXT(net_vsc_pkt, mylist_entry);
-		/* Fixme:  Extra variable may not be necessary */
+		next_net_vsc_pkt = STAILQ_NEXT(net_vsc_pkt, mylist_entry);
 		free(net_vsc_pkt, M_DEVBUF);
-		next_net_vsc_pkt = STAILQ_FIRST(&net_dev->myrx_packet_list);
 		net_vsc_pkt = next_net_vsc_pkt;
 	}
-	// Fixme:  This is probably necessary for removing all from list
+	/* Reset the list to initial state */
 	STAILQ_INIT(&net_dev->myrx_packet_list);
-//#endif
 
 	mtx_destroy(&net_dev->rx_pkt_list_lock);
 
@@ -1096,7 +1022,7 @@ hv_nv_on_device_remove(DEVICE_OBJECT *device)
 
 	DPRINT_EXIT(NETVSC);
 
-	return (ret);
+	return (0);
 }
 
 /*
@@ -1244,15 +1170,8 @@ hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt)
 	VMTRANSFER_PAGE_PACKET_HEADER *vm_xfer_page_pkt;
 	nvsp_msg *nvsp_msg_pkt;
 	netvsc_packet *net_vsc_pkt = NULL;
-	/* Fixme:  list */
-	netvsc_packet *old_net_vsc_pkt;
-	/* Fixme:  list */
-#ifdef REMOVED
-	LIST_ENTRY *entry;
-#endif
 	unsigned long start;
 	xfer_page_packet *xfer_page_pkt = NULL;
-	/* Fixme:  list */
 	STAILQ_HEAD(PKT_LIST, netvsc_packet_) mylist_head =
 	    STAILQ_HEAD_INITIALIZER(mylist_head);
 	int count = 0;
@@ -1310,10 +1229,6 @@ hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt)
 	DPRINT_DBG(NETVSC, "xfer page - range count %d",
 	    vm_xfer_page_pkt->RangeCount);
 
-	/* Fixme:  list */
-	//INITIALIZE_LIST_HEAD(&list_head);
-	/* Fixme:  list */
-	//TAILQ_INIT(&mylist_head);
 	STAILQ_INIT(&mylist_head);
 
 	/*
@@ -1322,108 +1237,37 @@ hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt)
 	 * here so that we know exactly how many we can fulfill.
 	 */
 	mtx_lock(&net_dev->rx_pkt_list_lock);
-	/* Fixme:  list */
-#ifdef REMOVED
-	while (!IsListEmpty(&net_dev->rx_packet_list)) {	
-		/* Fixme:  list */
-		entry = REMOVE_HEAD_LIST(&net_dev->rx_packet_list);
-		net_vsc_pkt = CONTAINING_RECORD(entry, netvsc_packet,
-		    list_entry);
-
-		/* Fixme:  list */
-		//TAILQ_INSERT_TAIL(&mylist_head, net_vsc_pkt, mylist_entry);
-		STAILQ_INSERT_TAIL(&mylist_head, net_vsc_pkt, mylist_entry);
-
-		if (++count == vm_xfer_page_pkt->RangeCount + 1) {
-			break;
-		}
-	}
-#endif
-//#ifdef REMOVED
 	while (!STAILQ_EMPTY(&net_dev->myrx_packet_list)) {	
-
-		/* Fixme:  list */
 		net_vsc_pkt = STAILQ_FIRST(&net_dev->myrx_packet_list);
 		STAILQ_REMOVE_HEAD(&net_dev->myrx_packet_list, mylist_entry);
 
-		/* Fixme:  list */
-		//TAILQ_INSERT_TAIL(&mylist_head, net_vsc_pkt, mylist_entry);
 		STAILQ_INSERT_TAIL(&mylist_head, net_vsc_pkt, mylist_entry);
 
 		if (++count == vm_xfer_page_pkt->RangeCount + 1) {
 			break;
 		}
 	}
-//#endif
-#ifdef REMOVED
-	while (!IsListEmpty(&net_dev->rx_packet_list)) {	
-		/* Fixme:  list */
-		entry = REMOVE_HEAD_LIST(&net_dev->rx_packet_list);
-		net_vsc_pkt = CONTAINING_RECORD(entry, netvsc_packet,
-		    list_entry);
-
-	/* Fixme:  list */
-	netvsc_packet *mynet_vsc_pkt;
-
-		/* Fixme:  list */
-		mynet_vsc_pkt = STAILQ_FIRST(&net_dev->myrx_packet_list);
-		STAILQ_REMOVE_HEAD(&net_dev->myrx_packet_list, mylist_entry);
-		if (net_vsc_pkt != mynet_vsc_pkt) {
-			printf("3:  net_vsc_pkt = %p, mynet_vsc_pkt = %p!!!\n",
-			    net_vsc_pkt, mynet_vsc_pkt);
-		}
-
-
-		/* Fixme:  list */
-		//TAILQ_INSERT_TAIL(&mylist_head, net_vsc_pkt, mylist_entry);
-		STAILQ_INSERT_TAIL(&mylist_head, net_vsc_pkt, mylist_entry);
-
-		if (++count == vm_xfer_page_pkt->RangeCount + 1) {
-			break;
-		}
-	}
-#endif
 
 	mtx_unlock(&net_dev->rx_pkt_list_lock);
 
 	/*
 	 * We need at least 2 netvsc pkts (1 to represent the xfer page
-	 * and at least 1 for the range) i.e. we can handled some of the
+	 * and at least 1 for the range) i.e. we can handle some of the
 	 * xfer page packet ranges...
-	 *
-	 * Fixme:  This would be far simpler if a count of netvsc packets
-	 * was maintained in the queue or the net_dev.
 	 */
 	if (count < 2) {
 		DPRINT_ERR(NETVSC, "Got only %d netvsc pkt...needed %d pkts. "
 		    "Dropping this xfer page packet completely!", count,
 		    vm_xfer_page_pkt->RangeCount + 1);
 
-		/* Return it to the freelist */
+		/* Return netvsc packet to the freelist */
 		mtx_lock(&net_dev->rx_pkt_list_lock);
 		for (i=count; i != 0; i--) {
-			/* Fixme:  list */
-			//entry = REMOVE_HEAD_LIST(&list_head);
-			/* Fixme:  list */
-			//net_vsc_pkt = CONTAINING_RECORD(entry, netvsc_packet,
-			//    list_entry);
-			/* Fixme:  list */
-			/* count is 1, so taking head only is OK */
-			//net_vsc_pkt = TAILQ_FIRST(&mylist_head);
 			net_vsc_pkt = STAILQ_FIRST(&mylist_head);
-			// Fixme:  May not be necessary
 			STAILQ_REMOVE_HEAD(&mylist_head, mylist_entry);
 
-#ifdef REMOVED
-			/* Fixme:  list */
-			INSERT_TAIL_LIST(&net_dev->rx_packet_list,
-			    &net_vsc_pkt->list_entry);
-#endif
-//#ifdef REMOVED
-			/* Fixme:  list */
 			STAILQ_INSERT_TAIL(&net_dev->myrx_packet_list,
 			    net_vsc_pkt, mylist_entry);
-//#endif
 		}
 		mtx_unlock(&net_dev->rx_pkt_list_lock);
 
@@ -1435,23 +1279,11 @@ hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt)
 		return;
 	}
 
-	/* Remove the 1st packet to represent the xfer page packet itself */
-	/* Fixme:  list */
-	//entry = REMOVE_HEAD_LIST(&list_head);
-	/* Fixme:  list */
-	//xfer_page_pkt = CONTAINING_RECORD(entry, xfer_page_packet, ListEntry);
-
-	/* Fixme:  Check for NULL? */
-	/* Fixme:  list */
 	/* Take the first packet in the list */
-	//old_net_vsc_pkt = TAILQ_FIRST(&mylist_head);
-	old_net_vsc_pkt = STAILQ_FIRST(&mylist_head);
-	// Fixme:  May not be necessary
+	xfer_page_pkt = (xfer_page_packet *)STAILQ_FIRST(&mylist_head);
 	STAILQ_REMOVE_HEAD(&mylist_head, mylist_entry);
-	/* Fixme:  list */
-	xfer_page_pkt = (xfer_page_packet *)old_net_vsc_pkt;
 
-	/* This is how much we can satisfy */
+	/* This is how many data packets we can supply */
 	xfer_page_pkt->count = count - 1;
 
 	ASSERT(xfer_page_pkt->count > 0 &&
@@ -1465,25 +1297,13 @@ hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt)
 
 	/* Each range represents 1 RNDIS pkt that contains 1 Ethernet frame */
 	for (i=0; i < (count - 1); i++) {
-		/* Fixme:  list */
-		//entry = REMOVE_HEAD_LIST(&list_head);
-		/* Fixme:  list */
-		//net_vsc_pkt = CONTAINING_RECORD(entry, netvsc_packet,
-		//    list_entry);
-
-		/* Fixme:  list */
-		//net_vsc_pkt = TAILQ_NEXT(old_net_vsc_pkt, mylist_entry);
-		//net_vsc_pkt = STAILQ_NEXT(old_net_vsc_pkt, mylist_entry);
-		// Fixme
 		net_vsc_pkt = STAILQ_FIRST(&mylist_head);
-		// Fixme:  May not be necessary
 		STAILQ_REMOVE_HEAD(&mylist_head, mylist_entry);
 
-		/* Initialize the netvsc packet */
+		/*
+		 * Initialize the netvsc packet
+		 */
 		net_vsc_pkt->xfer_page_pkt = xfer_page_pkt;
-		/* Fixme:  Function pointer */
-		net_vsc_pkt->compl.rx.on_rx_completion =
-		    hv_nv_on_receive_completion;
 		net_vsc_pkt->compl.rx.rx_completion_context =
 		    net_vsc_pkt;
 		net_vsc_pkt->device = device;
@@ -1531,25 +1351,14 @@ hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt)
 		    net_vsc_pkt->page_buffers[0].Offset,
 		    net_vsc_pkt->page_buffers[0].Length);
 
-		/* Pass it to the upper layer */
-		/* Fixme  Function pointer removal */
-		//((netvsc_driver_object *)device->Driver)->on_rx_callback(device,
-		//    net_vsc_pkt);
-		hv_rf_on_receive(device, net_vsc_pkt);
-
 		/*
-		 * The receive completion call has been moved into the
-		 * callback function above.
+		 * Pass it to the upper layer.  The receive completion call
+		 * has been moved into this function.
 		 */
-		// hv_nv_on_receive_completion(
-		//     net_vsc_pkt->compl.Recv.ReceiveCompletionContext);
-
-		/* Fixme:  list */
-		old_net_vsc_pkt = net_vsc_pkt;
+		hv_rf_on_receive(device, net_vsc_pkt);
 	}
 
-/* Fixme:  list */
-//ASSERT(IsListEmpty(&list_head));
+	ASSERT(STAILQ_EMPTY(&mylist_head));
 	
 	hv_nv_put_net_device(device);
 	DPRINT_EXIT(NETVSC);
@@ -1576,7 +1385,6 @@ hv_nv_send_receive_completion(DEVICE_OBJECT *device, uint64_t tid)
 
 retry_send_cmplt:
 	/* Send the completion */
-
 	ret = hv_vmbus_channel_send_packet(
 		(VMBUS_CHANNEL *)device->context,
 		&rx_comp_msg, sizeof(nvsp_msg), tid,
@@ -1614,7 +1422,7 @@ hv_nv_on_receive_completion(void *context)
 {
 	netvsc_packet *packet = (netvsc_packet *)context;
 	DEVICE_OBJECT *device = (DEVICE_OBJECT *)packet->device;
-	netvsc_dev *net_dev;
+	netvsc_dev    *net_dev;
 	uint64_t       tid = 0;
 	BOOL send_rx_completion = FALSE;
 
@@ -1646,43 +1454,22 @@ hv_nv_on_receive_completion(void *context)
 		// Fixme:  This error handling code does not look to be correct
 		printf("hv_nv_on_receive_completion():  count == 0!\n");
 	}
-	// Fixme
-	if (packet->xfer_page_pkt->count > 1000) {
-		printf("hv_nv_on_receive_completion():  count == %d!\n",
-		    packet->xfer_page_pkt->count);
-	}
 
 	packet->xfer_page_pkt->count--;
 
-	/* Last one in the line that represent 1 xfer page packet. */
-	/* Return the xfer page packet itself to the freelist */
+	/*
+	 * Last one in the line that represent 1 xfer page packet.
+	 * Return the xfer page packet itself to the free list.
+	 */
 	if (packet->xfer_page_pkt->count == 0) {
 		send_rx_completion = TRUE;
 		tid = packet->compl.rx.rx_completion_tid;
-
-#ifdef REMOVED
-		/* Fixme:  list */
-		INSERT_TAIL_LIST(&net_dev->rx_packet_list,
-		    &packet->xfer_page_pkt->ListEntry);
-#endif
-//#ifdef REMOVED
-		// Fixme:  Changed from &
-		// Fixme:  This does not look to be correct?
 		STAILQ_INSERT_TAIL(&net_dev->myrx_packet_list,
 		    (netvsc_packet *)(packet->xfer_page_pkt), mylist_entry);
-//#endif
 	}
 
-	/* Put the packet back */
-#ifdef REMOVED
-	/* Fixme:  list */
-	INSERT_TAIL_LIST(&net_dev->rx_packet_list, &packet->list_entry);
-#endif
-//#ifdef REMOVED
-	// Fixme:  Causes NULL pointer crash at line 1421
-	// Fixme:  Crash seen recently when copying kernel only
+	/* Put the packet back on the free list */
 	STAILQ_INSERT_TAIL(&net_dev->myrx_packet_list, packet, mylist_entry);
-//#endif
 	mtx_unlock(&net_dev->rx_pkt_list_lock);
 
 	/* Send a receive completion for the xfer page packet */

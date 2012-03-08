@@ -154,12 +154,6 @@ static int  hn_start_locked(struct ifnet *ifp);
 static void hn_start(struct ifnet *ifp);
 
 static void netvsc_xmit_completion(void *context);
-/* Fixme:  Function pointer removal */
-//static int  netvsc_recv_callback(DEVICE_OBJECT *device_obj,
-//				 netvsc_packet *packet);
-//static void netvsc_linkstatus_callback(DEVICE_OBJECT *, uint32_t);
-/* Fixme:  Function pointer removal */
-//static int  netvsc_drv_init(PFN_DRIVERINITIALIZE pfn_drv_init);
 static int  netvsc_drv_init(void);
 
 
@@ -167,8 +161,6 @@ static int  netvsc_drv_init(void);
  * NetVsc driver initialization
  */
 static int
-/* Fixme:  Function pointer removal */
-//netvsc_drv_init(PFN_DRIVERINITIALIZE pfn_drv_init)
 netvsc_drv_init(void)
 {
 	int ret = 0;
@@ -177,16 +169,12 @@ netvsc_drv_init(void)
 
 	DPRINT_ENTER(NETVSC_DRV);
 
-// Fixme:  Removed by Larry's changes
-//	vmbus_get_interface(&net_drv_obj->base.VmbusChannelInterface);
-
 	net_drv_obj->ring_buf_size = netvsc_ringbuffer_size;
-	net_drv_obj->on_rx_callback = netvsc_recv_callback;
-	net_drv_obj->on_link_stat_changed = netvsc_linkstatus_callback;
 
-	/* Callback to client driver to complete the initialization */
-	/* Fixme:  Function pointer removal */
-	//pfn_drv_init(&net_drv_obj->base);
+	/*
+	 * Complete initialization.  Formerly this was a callback to
+	 * the client driver.
+	 */
 	hv_net_vsc_initialize(&net_drv_obj->base);
 
 	memcpy(&drv_ctx->class_id, &net_drv_obj->base.deviceType, sizeof(GUID));
@@ -209,8 +197,6 @@ netvsc_init(void)
 	printf("Netvsc initializing....");
 
 	if (!g_netvsc_drv.drv_inited) {
-		/* Fixme:  Function pointer removal */
-		//netvsc_drv_init(hv_net_vsc_initialize);
 		netvsc_drv_init();
 		atomic_set_int(&g_netvsc_drv.drv_inited, 1);
 	}
@@ -268,6 +254,7 @@ netvsc_attach(device_t dev)
 		return (ENOMEM);
 	}
 
+#ifdef REMOVED
 // Fixme:  Remove
 // Fixme:  Remove
 // Fixme:  Remove
@@ -276,6 +263,7 @@ netvsc_attach(device_t dev)
 
 		return (-1);
 	}
+#endif
 
 	bzero(sc, sizeof(hn_softc_t));
 	sc->hn_unit = unit;
@@ -286,10 +274,7 @@ netvsc_attach(device_t dev)
 	sc->hn_dev_obj = &device_ctx->device_obj;
 
 	device_ctx->device_obj.Driver = &g_netvsc_drv.drv_obj.base;
-	/* Fixme:  Function pointer removal */
-	//ret = net_drv_obj->base.OnDeviceAdd(&device_ctx->device_obj,
-	ret = hv_rf_on_device_add(&device_ctx->device_obj,
-	    (void*)&device_info);
+	ret = hv_rf_on_device_add(&device_ctx->device_obj, &device_info);
 
 	if (ret != 0) {
 		DPRINT_ERR(NETVSC_DRV, "unable to add netvsc device (ret %d)",
@@ -482,14 +467,11 @@ hn_start_locked(struct ifnet *ifp)
 		}
 
 		/* Set the completion routine */
-		packet->compl.send.on_send_completion =
-		    netvsc_xmit_completion;
+		packet->compl.send.on_send_completion = netvsc_xmit_completion;
 		packet->compl.send.send_completion_context = packet;
 		packet->compl.send.send_completion_tid = (uint64_t)m_head;
 retry_send:
 		critical_enter();
-		/* Fixme:  Function pointer removal */
-		//ret = net_drv_obj->on_send(&device_ctx->device_obj, packet);
 		ret = hv_rf_on_send(&device_ctx->device_obj, packet);
 		critical_exit();
 
@@ -748,8 +730,6 @@ hn_stop(hn_softc_t *sc)
 {
 	struct ifnet *ifp;
 	int ret;
-	/* Fixme:  Function pointer removal */
-	//netvsc_driver_object *net_drv_obj = &g_netvsc_drv.drv_obj;
 	struct device_context *device_ctx = vmbus_get_devctx(sc->hn_dev);
 
 	SN_LOCK_ASSERT(sc);
@@ -760,11 +740,9 @@ hn_stop(hn_softc_t *sc)
 	ifp->if_drv_flags &= ~(IFF_DRV_RUNNING | IFF_DRV_OACTIVE);
 	sc->hn_initdone = 0;
 
-	/* Fixme:  Function pointer removal */
-	//ret = net_drv_obj->on_close(&device_ctx->device_obj);
 	ret = hv_rf_on_close(&device_ctx->device_obj);
 	if (ret != 0) {
-		DPRINT_ERR(NETVSC_DRV, "unable to close device (ret %d).", ret);
+		DPRINT_ERR(NETVSC_DRV, "Unable to close device (ret %d).", ret);
 	}
 }
 
@@ -789,8 +767,6 @@ static void
 hn_ifinit_locked(hn_softc_t *sc)
 {
 	struct ifnet *ifp;
-	/* Fixme:  Function pointer removal */
-	//netvsc_driver_object *net_drv_obj = &g_netvsc_drv.drv_obj;
 	struct device_context *device_ctx = vmbus_get_devctx(sc->hn_dev);
 	int ret;
 
@@ -804,8 +780,6 @@ hn_ifinit_locked(hn_softc_t *sc)
 
 	promisc_mode = 1;
 
-	/* Fixme:  Function pointer removal */
-	//ret = net_drv_obj->on_open(&device_ctx->device_obj);
 	ret = hv_rf_on_open(&device_ctx->device_obj);
 	if (ret != 0) {
 		DPRINT_ERR(NETVSC_DRV, "unable to open device (ret %d).", ret);
