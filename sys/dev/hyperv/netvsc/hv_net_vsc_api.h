@@ -33,6 +33,20 @@ typedef void (*pfn_on_send_rx_completion)(void *);
 #define NETVSC_DEVICE_RING_BUFFER_SIZE   (64 * PAGE_SIZE)
 #define NETVSC_PACKET_MAXPAGE            4
 
+
+/*
+ * Moved from vmbus/hv_vmbus_var.h
+ */
+typedef struct xfer_page_packet_ {
+	/*
+	 * This needs to be here because the network RX code casts
+	 * an instantiation of this structure to a netvsc_packet.
+	 */
+	STAILQ_ENTRY(netvsc_packet_) mylist_entry;
+
+	uint32_t count;
+} xfer_page_packet;
+
 typedef struct netvsc_packet_ {
 	/*
 	 * List used when enqueued on &net_dev->rx_packet_list,
