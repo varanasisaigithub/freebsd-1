@@ -92,18 +92,6 @@ typedef struct _DRIVER_OBJECT {        //BlkVsc.c : 56
 
 extern void shutdown_onchannelcallback(void *); // drivers/closed/vmbus/ChannelMgmt.c
 
-/*
- * Fixme:  This looks like it should be moved to hv_net_vsc_api.h
- */
-typedef struct xfer_page_packet_ {
-	/*
-	 * This needs to be here because the network RX code casts
-	 * an instantiation of this structure to a netvsc_packet.
-	 */
-	STAILQ_ENTRY(netvsc_packet_) mylist_entry;
-
-	uint32_t count;
-} xfer_page_packet;
 
 typedef int (*PFN_DRIVERINITIALIZE)(DRIVER_OBJECT*);
 typedef int (*PFN_DRIVEREXIT)(DRIVER_OBJECT*);
