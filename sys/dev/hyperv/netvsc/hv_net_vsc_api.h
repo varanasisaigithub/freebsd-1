@@ -71,12 +71,6 @@ typedef struct netvsc_driver_object_ {
 	uint32_t	ring_buf_size;
 	uint32_t	request_ext_size;
 	uint32_t	additional_request_page_buf_cnt;
-	// Fixme:  No longer used
-	//int32_t	(*on_rx_callback)(DEVICE_OBJECT *, netvsc_packet *);
-	//void		(*on_link_stat_changed)(DEVICE_OBJECT *, uint32_t);
-	//int32_t	(*on_open)(DEVICE_OBJECT *);
-	//int32_t	(*on_close)(DEVICE_OBJECT *);
-	//int32_t	(*on_send)(DEVICE_OBJECT *, netvsc_packet *);
 	void		*context;
 } netvsc_driver_object;
 
@@ -85,12 +79,9 @@ typedef struct {
 	bool            link_state;
 } netvsc_device_info;
 
-
 /*
- * ported from sys/nic/ns_hn.h (NetScaler-only file)
- * Fixme:  May need some pruning.
+ * Device-specific softc structure
  */
-
 typedef struct hn_softc {
 	struct ifnet    *hn_ifp;
 	struct arpcom   arpcom;
@@ -99,14 +90,14 @@ typedef struct hn_softc {
 	int             hn_carrier;
 	int             hn_if_flags;
 	struct mtx      hn_lock;
-	vm_offset_t     hn_vaddr;
+//	vm_offset_t     hn_vaddr;
 	int             hn_initdone;
-	int             hn_xc;
+//	int             hn_xc;
 	DEVICE_OBJECT   *hn_dev_obj;
-	int             hn_cb_status;
-	uint64_t        hn_sts_err_tx_nobufs;
-	uint64_t        hn_sts_err_tx_enxio; /* device not ready to xmit */
-	uint64_t        hn_sts_err_tx_eio;   /* device not ready to xmit */
+//	int             hn_cb_status;
+//	uint64_t        hn_sts_err_tx_nobufs;
+//	uint64_t        hn_sts_err_tx_enxio; /* device not ready to xmit */
+//	uint64_t        hn_sts_err_tx_eio;   /* device not ready to xmit */
 } hn_softc_t;
 
 
@@ -116,18 +107,14 @@ typedef struct hn_softc {
 extern int promisc_mode;
 
 extern void hv_nv_on_receive_completion(void *context);
-
 extern int  hv_net_vsc_initialize(DRIVER_OBJECT *drv);
-
 extern void netvsc_linkstatus_callback(DEVICE_OBJECT *device_obj,
 				       uint32_t status);
 extern int  netvsc_recv_callback(DEVICE_OBJECT *device_obj,
 				 netvsc_packet *packet);
-
 extern int  hv_nv_on_device_add(DEVICE_OBJECT *device, void *additional_info);
 extern int  hv_nv_on_device_remove(DEVICE_OBJECT *device);
 extern void hv_nv_on_cleanup(DRIVER_OBJECT *driver);
-
 extern int  hv_nv_on_send(DEVICE_OBJECT *device, netvsc_packet *pkt);
 
 

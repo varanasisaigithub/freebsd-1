@@ -76,11 +76,11 @@
 #define NULL  (void *)0
 #endif
 
-#ifndef INTERNAL
+//#ifndef INTERNAL
 // Fixme:  This is a real kludge.
 //#define INTERNAL static
-#define INTERNAL extern
-#endif
+//#define INTERNAL extern
+//#endif
 
 typedef struct _DLIST_ENTRY {
 	struct _DLIST_ENTRY *Flink;

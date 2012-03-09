@@ -80,6 +80,7 @@
  * Data types
  */
 
+/* Fixme:  No longer used */
 typedef struct rndis_filter_driver_object_ {
 	/* From the original driver, now called the inner driver */
 	netvsc_driver_object		inner_drv;
@@ -124,7 +125,6 @@ typedef struct rndis_device_ {
 	uint8_t				hw_mac_addr[HW_MACADDR_LEN];
 } rndis_device;
 
-/* Fixme:  not used */
 typedef struct rndis_filter_packet_ {
 	void				*completion_context;
 	pfn_on_send_rx_completion	on_completion;
@@ -139,10 +139,8 @@ static int  hv_rf_send_request(rndis_device *device, rndis_request *request);
 static void hv_rf_receive_response(rndis_device *device, rndis_msg *response);
 static void hv_rf_receive_indicate_status(rndis_device *device,
 					  rndis_msg *response);
-// Fixme
-extern void hv_rf_receive_data(rndis_device *device, rndis_msg *message,
-//static void hv_rf_receive_data(rndis_device *device, rndis_msg *message,
-				   netvsc_packet *pkt);
+static void hv_rf_receive_data(rndis_device *device, rndis_msg *message,
+			       netvsc_packet *pkt);
 static int  hv_rf_query_device(rndis_device *device, uint32_t oid,
 				   void *result, uint32_t *result_size);
 static inline int hv_rf_query_device_mac(rndis_device *device);
@@ -159,7 +157,8 @@ static void hv_rf_on_send_request_completion(void *context);
  */
 
 /* The one and only */
-rndis_filter_driver_object g_rndis_filter;
+/* Fixme:  No longer used */
+//rndis_filter_driver_object g_rndis_filter;
 
 
 /*
@@ -442,9 +441,7 @@ hv_rf_receive_indicate_status(rndis_device *device, rndis_msg *response)
 /*
  * RNDIS filter receive data
  */
-// Fixme:  Hacked to make function name visible to debugger
-//static void
-void
+static void
 hv_rf_receive_data(rndis_device *device, rndis_msg *message, netvsc_packet *pkt)
 {
 	rndis_packet *rndis_pkt;
@@ -748,43 +745,8 @@ hv_rndis_filter_init(netvsc_driver_object *driver)
 	driver->request_ext_size = sizeof(rndis_filter_packet);
 	driver->additional_request_page_buf_cnt = 1; /* For rndis header */
 
-	//driver->Context = rndis_driver;
-
-	memset(&g_rndis_filter, 0, sizeof(rndis_filter_driver_object));
-
-#ifdef REMOVED
-	/* Fixme:  Don't know why this code was commented out */
-	rndis_driver->Driver = driver;
-#endif
-
-	/* Save the original dispatch handlers before we override it */
-	// Fixme:  Not used by network code
-	//g_rndis_filter.inner_drv.base.OnDeviceAdd = driver->base.OnDeviceAdd;
-	//g_rndis_filter.inner_drv.base.OnDeviceRemove =
-	//    driver->base.OnDeviceRemove;
-	//g_rndis_filter.inner_drv.base.OnCleanup = driver->base.OnCleanup;
-
-	// Fixme:  No longer used
-	//ASSERT(driver->on_send);
-	//ASSERT(driver->on_rx_callback);
-	// Fixme:  No longer used
-	//g_rndis_filter.inner_drv.on_send = driver->on_send;
-	//g_rndis_filter.inner_drv.on_rx_callback = driver->on_rx_callback;
-	//g_rndis_filter.inner_drv.on_link_stat_changed =
-	//    driver->on_link_stat_changed;
-
-	/* Override */
-	// Fixme:  Not used by network code
-	//driver->base.OnDeviceAdd = hv_rf_on_device_add;
-	//driver->base.OnDeviceRemove = hv_rf_on_device_remove;
-	//driver->base.OnCleanup = hv_rf_on_cleanup;
-
-	// Fixme:  No longer used
-	//driver->on_send = hv_rf_on_send;
-	//driver->on_open = hv_rf_on_open;
-	//driver->on_close = hv_rf_on_close;
-	//driver->Querylink_status = hv_rf_query_device_link_status;
-	//driver->on_rx_callback = hv_rf_on_receive;
+	/* Fixme:  No longer used */
+//	memset(&g_rndis_filter, 0, sizeof(rndis_filter_driver_object));
 
 	DPRINT_EXIT(NETVSC);
 

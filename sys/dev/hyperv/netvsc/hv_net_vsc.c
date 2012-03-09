@@ -101,9 +101,7 @@ static int  hv_nv_destroy_rx_buffer(netvsc_dev *net_dev);
 static int  hv_nv_connect_to_vsp(DEVICE_OBJECT *device);
 static void hv_nv_on_send_completion(DEVICE_OBJECT *device,
 				     VMPACKET_DESCRIPTOR *pkt);
-// Fixme
-extern void hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt);
-//static void hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt);
+static void hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt);
 static void hv_nv_send_receive_completion(DEVICE_OBJECT *device, uint64_t tid);
 
 
@@ -256,21 +254,6 @@ hv_net_vsc_initialize(DRIVER_OBJECT *drv)
 
 	drv->name = g_net_vsc_driver_name;
 	memcpy(&drv->deviceType, &g_net_vsc_device_type, sizeof(GUID));
-
-	/* Make sure it is set by the caller */
-	// Fixme:  No longer used
-	//ASSERT(driver->on_rx_callback);
-	// Fixme:  No longer used
-	//ASSERT(driver->on_link_stat_changed);
-
-	/* Set up the dispatch table */
-	// Fixme:  Not used by network code
-	//driver->base.OnDeviceAdd		= hv_nv_on_device_add;
-	//driver->base.OnDeviceRemove		= hv_nv_on_device_remove;
-	//driver->base.OnCleanup		= hv_nv_on_cleanup;
-
-	// Fixme:  No longer used
-	//driver->on_send			= hv_nv_on_send;
 
 	hv_rndis_filter_init(driver);
 
@@ -1161,9 +1144,7 @@ hv_nv_on_send(DEVICE_OBJECT *device, netvsc_packet *pkt)
  * In the FreeBSD Hyper-V virtual world, this function deals exclusively
  * with virtual addresses.
  */
-// Fixme:  Done so function name would be visible to debugger
-//static void 
-void 
+static void 
 hv_nv_on_receive(DEVICE_OBJECT *device, VMPACKET_DESCRIPTOR *pkt)
 {
 	netvsc_dev *net_dev;
@@ -1379,7 +1360,7 @@ hv_nv_send_receive_completion(DEVICE_OBJECT *device, uint64_t tid)
 	rx_comp_msg.hdr.msg_type =
 	    nvsp_msg_1_type_send_rndis_pkt_complete;
 
-	/* Fixme:  Pass in the status */
+	/* Pass in the status */
 	rx_comp_msg.msgs.vers_1_msgs.send_rndis_pkt_complete.status =
 	    nvsp_status_success;
 
