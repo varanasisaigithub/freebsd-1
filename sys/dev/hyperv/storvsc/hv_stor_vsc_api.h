@@ -50,9 +50,22 @@ struct storvsc_driver_object {
 	uint32_t ringbuffer_size;
 };
 
-extern void storvsc_io_done(struct hv_storvsc_request *reqp);
+struct storvsc_softc {
+        DEVICE_OBJECT *storvsc_dev;
+        LIST_HEAD(, hv_storvsc_request) free_list;
+        struct mtx       hs_lock;
+        struct storvsc_driver_object  drv_obj;
+        struct storvsc_driver_props      *drv_props;
+        int unit;
+        uint32_t         hs_frozen;
+        struct cam_sim  *hs_sim;
+        struct cam_path *hs_path;
+};
 
-extern int hv_storvsc_on_deviceadd(DEVICE_OBJECT *device);
+
+extern void storvsc_io_done(struct hv_storvsc_request *reqp);
+extern int hv_storvsc_on_deviceadd(DEVICE_OBJECT *device,
+				   struct storvsc_softc *sc);
 extern int hv_storvsc_on_deviceremove(DEVICE_OBJECT *device);
 extern void hv_storvsc_on_cleanup(DRIVER_OBJECT *driver);
 extern int hv_storvsc_host_reset(DEVICE_OBJECT *device);

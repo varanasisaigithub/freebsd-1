@@ -79,19 +79,6 @@ static struct storvsc_driver_props g_drv_props_table[] = {
 
 static struct storvsc_softc *hs_softc[HS_MAX_ADAPTERS];
 
-struct storvsc_softc {
-	DEVICE_OBJECT *storvsc_dev;
-	LIST_HEAD(, hv_storvsc_request) free_list;
-	struct mtx	 hs_lock;
-	struct storvsc_driver_object  drv_obj;
-	struct storvsc_driver_props	 *drv_props;
-	int unit;
-	uint32_t	 hs_frozen;
-	struct cam_sim	*hs_sim;
-	struct cam_path *hs_path;
-
-};
-
 /* static functions */
 static int storvsc_probe(device_t dev);
 static int storvsc_attach(device_t dev);
@@ -274,7 +261,7 @@ storvsc_attach(device_t dev)
 		LIST_INSERT_HEAD(&sc->free_list, reqp, link);
 	}
 
-	ret = hv_storvsc_on_deviceadd(&device_ctx->device_obj);
+	ret = hv_storvsc_on_deviceadd(&device_ctx->device_obj, sc);
 
 	if (ret != 0) {
 		DPRINT_ERR(STORVSC_DRV, "unable to add storvsc device (ret %d)", ret);
@@ -698,7 +685,8 @@ storvsc_io_done(struct hv_storvsc_request *reqp)
 	struct storvsc_softc *sc = reqp->softc;
 	struct vmscsi_req *vm_srb = &reqp->vstor_packet.vm_srb;
 	
-	if (reqp->retries) {
+	if (reqp->retries > 0) {
+		mtx_lock(&sc->hs_lock);
 #if HVS_TIMEOUT_TEST
 		xpt_print(ccb->ccb_h.path,
 			"%u: IO returned after timeout, "
@@ -711,6 +699,7 @@ storvsc_io_done(struct hv_storvsc_request *reqp)
 		xpt_print(ccb->ccb_h.path,
 			"%u: IO returned after timeout, "
 			"stopping timer if any.\n", ticks);
+		mtx_unlock(&sc->hs_lock);
 	}
 
 	/* 
@@ -729,9 +718,11 @@ storvsc_io_done(struct hv_storvsc_request *reqp)
 	if (vm_srb->scsi_status == SCSI_STATUS_OK) {
 		ccb->ccb_h.status |= CAM_REQ_CMP;
 	 } else {
+		mtx_lock(&sc->hs_lock);
 		xpt_print(ccb->ccb_h.path,
 			"srovsc scsi_status = %d\n",
 			vm_srb->scsi_status);
+		mtx_unlock(&sc->hs_lock);
 		ccb->ccb_h.status |= CAM_SCSI_STATUS_ERROR;
 	}
 
