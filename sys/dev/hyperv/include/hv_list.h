@@ -58,10 +58,6 @@
 #ifndef __HV_LIST_H__
 #define __HV_LIST_H__
 
-#ifdef REMOVED
-/* Fixme:  Removed */
-#include "osd.h"
-#endif
 
 /*
  *

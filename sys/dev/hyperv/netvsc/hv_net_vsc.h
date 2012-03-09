@@ -93,9 +93,12 @@ typedef struct netvsc_dev_ {
 	int					ref_cnt;
 
 	int					num_outstanding_sends;
+
 	/* List of free preallocated NETVSC_PACKET to represent RX packet */
-	LIST_ENTRY				rx_packet_list;
-	void					*rx_packet_list_lock;
+	/* Fixme:  list */
+	//LIST_ENTRY				rx_packet_list;
+	STAILQ_HEAD(PQ, netvsc_packet_)		myrx_packet_list;
+	struct mtx				rx_pkt_list_lock;
 
 	/* Send buffer allocated by us but manages by NetVSP */
 	void					*send_buf;

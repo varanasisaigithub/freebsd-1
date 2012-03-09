@@ -79,7 +79,17 @@
 /*
  * Externs
  */
-extern int hv_rndis_filter_init(netvsc_driver_object *driver);
+extern int  hv_rndis_filter_init(netvsc_driver_object *driver);
+
+extern int  hv_rf_on_receive(DEVICE_OBJECT *device, netvsc_packet *pkt);
+
+extern int  hv_rf_on_device_add(DEVICE_OBJECT *device, void *additl_info);
+extern int  hv_rf_on_device_remove(DEVICE_OBJECT *device);
+extern void hv_rf_on_cleanup(DRIVER_OBJECT *driver);
+
+extern int  hv_rf_on_open(DEVICE_OBJECT *device);
+extern int  hv_rf_on_close(DEVICE_OBJECT *device);
+extern int  hv_rf_on_send(DEVICE_OBJECT *device, netvsc_packet *pkt);
 
 
 #endif  /* __HV_RNDIS_FILTER_H__ */
