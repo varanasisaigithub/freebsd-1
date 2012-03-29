@@ -45,6 +45,7 @@
 #include <sys/sx.h>
 #include <sys/taskqueue.h>
 #include <sys/mutex.h>
+#include <sys/smp.h>
 
 #include <machine/resource.h>
 #include <sys/rman.h>
@@ -53,59 +54,108 @@
 #include <machine/intr_machdep.h>
 #include <sys/pcpu.h>
 
-#include <dev/hyperv/include/hv_osd.h>
-#include <dev/hyperv/include/hv_logging.h>
-#include "hv_hv.h"
-#include "hv_vmbus_var.h"
-#include "hv_vmbus_api.h"
-#include "hv_vmbus.h"
-//#include <sys/timetc.h>
-//#include <sys/mutex.h>
+#include "../include/hyperv.h"
+#include "vmbus_priv.h"
+
 
 #define VMBUS_IRQ				0x5
 
-struct vmbus_softc {
-	device_t vmbus_dev;
-};
-
-#if 0
-struct vmbus_device_vars {
-	GUID vd_type;
-	GUID vd_instance;
-	struct device_context *vd_dev_ctx;
-	device_t vd_dev;
-};
-#endif
-
-struct vmbus_driver_context {
-	struct driver_context drv_ctx;
-	VMBUS_DRIVER_OBJECT drv_obj;
-	uint32_t drv_inited;
-	struct device_context device_ctx;
-	device_t vmb_dev;
-	struct resource *intr_res;
-	void *msg_dpc;
-	void *event_dpc;
-	struct intr_event *hv_message_intr_event;
-	struct intr_event *hv_event_intr_event;
-};
-
-static void vmbus_init(void);
-static void vmbus_exit(void);
-static void vmbus_bus_exit(void);
-static int vmbus_bus_init(PFN_DRIVERINITIALIZE pfn_drv_init);
-static int vmbus_modevent(module_t mod, int what, void *arg);
-static void vmbus_registration_mutex_init(void);
-static void vmbus_registration_mutex_get(void);
-static void vmbus_registration_mutex_release(void);
-static int vmbus_irq = VMBUS_IRQ;
-static struct vmbus_driver_context g_vmbus_drv;
+static struct intr_event *hv_message_intr_event;
+static struct intr_event *hv_event_intr_event;
+static void *msg_dpc;
+static void *event_dpc;
+static device_t vmbus_devp;
 static void *vmbus_cookiep;
-static int vmbus_rid = 0;
+static int vmbus_rid;
+struct resource *intr_res;
+static int vmbus_irq = VMBUS_IRQ;
+static int vmbus_inited;
+
+
+/*++
+
+ Name:
+ vmbus_msg_dpc()
+
+ Description:
+ DPC routine to handle messages from the hypervisior
+
+ --*/
+
+static void vmbus_msg_dpc(void *arg)
+{
+	int cpu;
+	void *page_addr;
+	HV_MESSAGE *msg;
+	HV_MESSAGE *copied;
+
+	cpu = PCPU_GET(cpuid);
+	page_addr = gHvContext.synICMessagePage[cpu];
+	msg = (HV_MESSAGE*) page_addr + VMBUS_MESSAGE_SINT;
+	while (1) {
+		if (msg->Header.MessageType == HvMessageTypeNone) // no msg
+			{
+			break;
+		} else {
+			copied = malloc(sizeof(HV_MESSAGE), M_DEVBUF, M_NOWAIT);
+			if (copied == NULL) {
+				continue;
+			}
+
+			memcpy(copied, msg, sizeof(HV_MESSAGE));
+			queue_work_item(gVmbusConnection.WorkQueue,
+				VmbusOnChannelMessage, copied);
+		}
+
+		msg->Header.MessageType = HvMessageTypeNone;
+
+		// Make sure the write to MessageType (ie set to HvMessageTypeNone) happens
+		// before we read the MessagePending and EOMing. Otherwise, the EOMing will not deliver
+		// any more messages since there is no empty slot
+		wmb();
+
+		if (msg->Header.MessageFlags.MessagePending) {
+			// This will cause message queue rescan to possibly deliver another msg from the hypervisor
+			WriteMsr(HV_X64_MSR_EOM, 0);
+		}
+	}
+}
+
+static int hv_vmbus_isr(void *unused) 
+{
+	int cpu;
+	void *page_addr;
+	HV_MESSAGE* msg;
+	HV_SYNIC_EVENT_FLAGS* event;
+
+	cpu = PCPU_GET(cpuid);
+
+	/*
+	 * Check for events before checking for messages. This is the order
+	 * in which events and messages are checked in Windows guests on Hyper-V
+	 * and the Windows team suggested we do the same here.
+	 */
+
+	page_addr = gHvContext.synICEventPage[cpu];
+	event = (HV_SYNIC_EVENT_FLAGS*) page_addr + VMBUS_MESSAGE_SINT;
+
+	// Since we are a child, we only need to check bit 0
+	if (synch_test_and_clear_bit(0, &event->Flags32[0]))
+		swi_sched(event_dpc, 0);
+
+	// Check if there are actual msgs to be process
+	page_addr = gHvContext.synICMessagePage[cpu];
+	msg = (HV_MESSAGE*) page_addr + VMBUS_MESSAGE_SINT;
+
+	if (msg->Header.MessageType != HvMessageTypeNone)
+		swi_sched(msg_dpc, 0);
+
+	return 0x2; //KYS
+}
 
 static int vmbus_read_ivar(device_t dev, device_t child, int index,
 	uintptr_t *result) {
-	struct device_context *child_dev_ctx = device_get_ivars(child);
+	struct hv_device *child_dev_ctx = device_get_ivars(child);
 
 	switch (index) {
 
@@ -139,181 +189,61 @@ static int vmbus_write_ivar(device_t dev, device_t child, int index,
 	return (ENOENT);
 }
 
-/*++
-
- Name:   vmbus_msg_dpc()
-
- Desc:   Tasklet routine to handle hypervisor messages
-
- --*/
-static void vmbus_msg_dpc(void *data) {
-	VMBUS_DRIVER_OBJECT* vmbus_drv_obj = (VMBUS_DRIVER_OBJECT*) data;
-
-	DPRINT_ENTER(VMBUS_DRV);
-
-	ASSERT(vmbus_drv_obj->OnMsgDpc != NULL);
-
-	// Call to bus driver to handle interrupt
-	vmbus_drv_obj->OnMsgDpc(&vmbus_drv_obj->Base);
-
-	DPRINT_EXIT(VMBUS_DRV);
-}
-
-static void vmbus_event_dpc(void *data) {
-	VMBUS_DRIVER_OBJECT* vmbus_drv_obj = (VMBUS_DRIVER_OBJECT*) data;
-
-	DPRINT_ENTER(VMBUS_DRV);
-
-	ASSERT(vmbus_drv_obj->OnEventDpc != NULL);
-
-	// Call to bus driver to handle interrupt
-	vmbus_drv_obj->OnEventDpc(&vmbus_drv_obj->Base);
-
-	DPRINT_EXIT(VMBUS_DRV);
-}
-
-/*
- * Fixme -- this rather dubious technique inspired by the igb driver
- */
-#if __FreeBSD_version < 700000
-#define INTR_STRAY
-#define INTR_HANDLED
-#else
-#define INTR_STRAY      1
-#define INTR_HANDLED    1
-#endif
-
-#if __FreeBSD_version < 700000
-static void
-#else
-static int
-#endif
-hv_vmbus_isr(void *p) {
-	int ret = 0;
-	VMBUS_DRIVER_OBJECT* vmbus_driver_obj = &g_vmbus_drv.drv_obj;
-
-	DPRINT_ENTER(VMBUS_DRV);
-
-	ASSERT(vmbus_driver_obj->OnIsr != NULL);
-
-	// Call to bus driver to handle interrupt
-	ret = vmbus_driver_obj->OnIsr(&vmbus_driver_obj->Base);
-
-	// Schedules a dpc if necessary
-	if (ret > 0) {
-		if (BitTest(&ret, 0)) {
-			swi_sched(g_vmbus_drv.msg_dpc, 0);
-		}
-		if (BitTest(&ret, 1)) {
-			swi_sched(g_vmbus_drv.event_dpc, 0);
-		}
-
-		DPRINT_EXIT(VMBUS_DRV);
-		return INTR_HANDLED;
-	} else {
-		DPRINT_EXIT(VMBUS_DRV);
-		return INTR_STRAY;
-	}
-}
-
-static DEVICE_OBJECT* vmbus_child_device_create(GUID type,
+struct hv_device *vmbus_child_device_create(GUID type,
 						GUID instance,
-						void* context) {
-	struct device_context *child_device_ctx;
-	DEVICE_OBJECT* child_device_obj;
-
-	DPRINT_ENTER(VMBUS_DRV);
+						VMBUS_CHANNEL *channel ) 
+{
+	struct hv_device *child_dev;
 
 	// Allocate the new child device
-	child_device_ctx = malloc(sizeof(struct device_context), M_DEVBUF,
-		M_WAITOK|M_ZERO);
-	if (!child_device_ctx) {
-		DPRINT_ERR(VMBUS_DRV,
-			"unable to allocate device_context for child device");
-		DPRINT_EXIT(VMBUS_DRV);
-
+	child_dev = malloc(sizeof(struct hv_device), M_DEVBUF,
+			M_NOWAIT |  M_ZERO);
+	if (!child_dev) 
 		return NULL;
-	}
 
-	DPRINT_DBG(
-		VMBUS_DRV,
-		"child device (%p) allocated - "
-		"type {%02x%02x%02x%02x-%02x%02x-%02x%02x-"
-		"%02x%02x%02x%02x%02x%02x%02x%02x},"
-		"id {%02x%02x%02x%02x-%02x%02x-%02x%02x-"
-		"%02x%02x%02x%02x%02x%02x%02x%02x}",
-		&child_device_ctx->device, type.Data[3], type.Data[2], type.Data[1], type.Data[0], type.Data[5], type.Data[4], type.Data[7], type.Data[6], type.Data[8], type.Data[9], type.Data[10], type.Data[11], type.Data[12], type.Data[13], type.Data[14], type.Data[15], instance.Data[3], instance.Data[2], instance.Data[1], instance.Data[0], instance.Data[5], instance.Data[4], instance.Data[7], instance.Data[6], instance.Data[8], instance.Data[9], instance.Data[10], instance.Data[11], instance.Data[12], instance.Data[13], instance.Data[14], instance.Data[15]);
+	child_dev->channel = channel;
+	memcpy(&child_dev->class_id, &type, sizeof(GUID));
+	memcpy(&child_dev->device_id, &instance, sizeof(GUID));
 
-	child_device_obj = &child_device_ctx->device_obj;
-	child_device_obj->context = context;
-	memcpy(&child_device_obj->deviceType, &type, sizeof(GUID));
-	memcpy(&child_device_obj->deviceInstance, &instance, sizeof(GUID));
-
-	memcpy(&child_device_ctx->class_id, &type, sizeof(GUID));
-	memcpy(&child_device_ctx->device_id, &instance, sizeof(GUID));
-
-	DPRINT_INFO(VMBUS_DRV, "Create Device: thr: %p, ctx: %p, obj: %p",
-		curthread, child_device_ctx, child_device_obj);
-
-	DPRINT_EXIT(VMBUS_DRV);
-
-	return child_device_obj;
-	// Fixme
-	return NULL;
+	return child_dev;
 }
 
-static void vmbus_child_device_destroy(DEVICE_OBJECT* device_obj) {
-	DPRINT_INFO(VMBUS_DRV, "Destroy Device: obj: %p", device_obj);
+static void print_dev_guid(struct hv_device *hv_dev)
+{
+        int i;
+	unsigned char guid_name[100];
+        for (i = 0; i < 32; i += 2)
+                sprintf(&guid_name[i], "%02x", hv_dev->class_id.Data[i/2]);
+	printf("Class ID: %s\n", guid_name);
 }
 
-static int
-vmbus_child_device_register(DEVICE_OBJECT* root_device_obj,
-		DEVICE_OBJECT* child_device_obj) {
-	struct device_context *root_device_ctx =
-		to_device_context(root_device_obj);
-	struct device_context *child_device_ctx =
-		to_device_context(child_device_obj);
+
+int vmbus_child_device_register(struct hv_device *child_dev)
+{
 	device_t child;
 	int ret = 0;
-	struct root_hold_token *root_mount_token;
 
-	DPRINT_INFO(VMBUS_DRV, "Register Device: thr: %p, obj: %p\n",
-		curthread, child_device_obj);
+	print_dev_guid(child_dev);
 
-	//	ivars = malloc(sizeof(struct vmbus_device_ivars),
-	//				M_DEVBUS, M_ZERO|M_WAITOK);
 
-	//	memcpy(&ivars->vd_type, &child_device_ctx->classid, sizeof(GUID));
-	//	memcpy(&ivars->vd_instance, &child_device_ctx->device_id, sizeof(GUID));
-	//	ivars->vd_dev_ctx = child_device_ctx;
+	child = device_add_child(vmbus_devp, NULL, -1);
+	child_dev->device = child;
+	device_set_ivars(child, child_dev);
 
-	/*
-	 * Grab a root hold to synchronize with mountroot.
-	 */
-	root_mount_token = root_mount_hold("vmbus_channel");
-
-	/*
-	 * Serialize device additions.
-	 */
-	vmbus_registration_mutex_get();
-
-	child = device_add_child(root_device_ctx->device, NULL, -1);
-	child_device_ctx->device = child;
-	device_set_ivars(child, child_device_ctx);
-
+	mtx_lock(&Giant);
 	ret = device_probe_and_attach(child);
+	mtx_unlock(&Giant);
 
-	vmbus_registration_mutex_release();
-	root_mount_rel(root_mount_token);
 	return 0;
 }
 
-static void vmbus_child_device_unregister(DEVICE_OBJECT* device_obj) {
-	DPRINT_INFO(VMBUS_DRV, "Unregister Device: thr: %p, obj: %p\n",
-		curthread, device_obj);
-}
-
-void vmbus_child_driver_register(struct driver_context* driver_ctx) {
+int vmbus_child_device_unregister(struct hv_device *child_dev)
+{
+	/*
+	 * XXXKYS: Ensure that this is the opposite of
+	 * device_add_child()
+	 */
+	return(device_delete_child(vmbus_devp, child_dev->device));
 }
 
 static int vmbus_print_child(device_t dev, device_t child) {
@@ -323,57 +253,6 @@ static int vmbus_print_child(device_t dev, device_t child) {
 	retval += bus_print_child_footer(dev, child);
 
 	return (retval);
-}
-
-/*
- * MUTEX for serializing device registration.
- */
-static struct vmbus_register_mutex {
-	struct mtx	vmb_lock;
-	char		vmb_name[16];
-        struct thread	*vmb_owner;
-        int		vmb_waiters;
-} vmbus_reg_mutex;
-
-static void
-vmbus_registration_mutex_init(void)
-{
-	mtx_init(&vmbus_reg_mutex.vmb_lock, "vmb_lock", NULL, MTX_DEF);
-}
-
-static void
-vmbus_registration_mutex_get(void)
-{
-	int error;
-
-	mtx_lock(&vmbus_reg_mutex.vmb_lock);
-	if (vmbus_reg_mutex.vmb_owner != NULL) {
-		KASSERT((vmbus_reg_mutex.vmb_owner != curthread), 
-			("vmbus_registration_mutex already owned"));
-		vmbus_reg_mutex.vmb_waiters++;
-		error = mtx_sleep(&vmbus_reg_mutex, &vmbus_reg_mutex.vmb_lock, 0, "vmbus_reg", 0);
-		KASSERT( (error == 0), ("vmbus_registration_mutex unexpected error"));
-		if (--vmbus_reg_mutex.vmb_waiters == 0) {
-			printf("Woken up vmbus device add: %d thr: 0x%p\n",
-				vmbus_reg_mutex.vmb_waiters, curthread);
-		}
-	}
-	vmbus_reg_mutex.vmb_owner = curthread;
-	mtx_unlock(&vmbus_reg_mutex.vmb_lock);
-	mtx_lock(&Giant); /* Compulsory when adding devices */
-}
-static void
-vmbus_registration_mutex_release(void)
-{
-	mtx_unlock(&Giant); /* Compulsory when adding devices */
-	mtx_lock(&vmbus_reg_mutex.vmb_lock);
-	KASSERT((vmbus_reg_mutex.vmb_owner == curthread),
-		("vmbus_registration_mutex_release not owner"));
-	vmbus_reg_mutex.vmb_owner = NULL;
-	if (vmbus_reg_mutex.vmb_waiters > 0) {
-		wakeup_one(&vmbus_reg_mutex);
-	}
-	mtx_unlock(&vmbus_reg_mutex.vmb_lock);
 }
 
 static void vmbus_identify(driver_t *driver, device_t parent) {
@@ -391,24 +270,6 @@ static int vmbus_probe(device_t dev) {
 	return (0);
 }
 
-static int vmbus_attach(device_t dev) {
-	struct vmbus_softc *sc = device_get_softc(dev);
-	printf("vmbus_attach: dev: %p\n", dev);
-	sc->vmbus_dev = dev;
-	g_vmbus_drv.vmb_dev = dev;
-
-	/* 
-	 * If the system has already booted and thread
-	 * scheduling is possible indicated by the global
-	 * cold set to zero, we just call the driver
-	 * initialization directly.
-	 */
-	if (!cold && !g_vmbus_drv.drv_inited) {
-		vmbus_init();
-	}
-
-	return 0;
-}
 
 /*++
 
@@ -424,219 +285,202 @@ static int vmbus_attach(device_t dev) {
  - retrieve the channel offers
  --*/
 
-static int vmbus_bus_init(PFN_DRIVERINITIALIZE pfn_drv_init) {
-	int ret = -1;
+static int vmbus_bus_init(void) 
+{
+	int ret;
 	unsigned int vector = 0;
 	struct intsrc *isrc;
 
-	struct vmbus_driver_context *vmbus_drv_ctx = &g_vmbus_drv;
-	VMBUS_DRIVER_OBJECT *vmbus_drv_obj = &g_vmbus_drv.drv_obj;
+	if (vmbus_inited)
+		return 0;
 
-	struct device_context *dev_ctx = &g_vmbus_drv.device_ctx;
+	vmbus_inited = 1;
 
-	DPRINT_INFO(VMBUS_DRV, "vmbus_bus_init");
+	ret = HvInit();
 
-	DPRINT_ENTER(VMBUS_DRV);
-
-	// Set this up to allow lower layer to callback to add/remove
-	// child devices on the bus
-	vmbus_drv_obj->OnChildDeviceCreate = vmbus_child_device_create;
-	vmbus_drv_obj->OnChildDeviceDestroy = vmbus_child_device_destroy;
-	vmbus_drv_obj->OnChildDeviceAdd = vmbus_child_device_register;
-	vmbus_drv_obj->OnChildDeviceRemove = vmbus_child_device_unregister;
-
-	// Call to bus driver to initialize
-	ret = pfn_drv_init(&vmbus_drv_obj->Base);
-	if (ret != 0) {
-		DPRINT_ERR(VMBUS_DRV, "Unable to initialize vmbus (%d)", ret);
-		goto cleanup;
+	if (ret) {
+		printf("Hypervisor Initialization Failed\n");
+		return ret;
 	}
 
-	// Sanity checks
-	if (!vmbus_drv_obj->Base.OnDeviceAdd) {
-		DPRINT_ERR(VMBUS_DRV, "OnDeviceAdd() routine not set");
-		goto cleanup;
-	}
+	ret = swi_add(&hv_message_intr_event, "hv_msg", vmbus_msg_dpc,
+		NULL, SWI_CLOCK, 0, &msg_dpc);
 
-	if (swi_add(&g_vmbus_drv.hv_message_intr_event, "hv_msg", vmbus_msg_dpc,
-		vmbus_drv_obj, SWI_CLOCK, 0, &vmbus_drv_ctx->msg_dpc)) {
+	if (ret)
 		goto cleanup;
-	}
 
-	if (intr_event_bind(g_vmbus_drv.hv_message_intr_event, 0)) {
+	ret = intr_event_bind(hv_message_intr_event, 0);
+
+	if (ret)
 		goto cleanup1;
-	}
 
-	if (swi_add(&g_vmbus_drv.hv_event_intr_event, "hv_event",
-		vmbus_event_dpc, vmbus_drv_obj, SWI_CLOCK, 0,
-		&vmbus_drv_ctx->event_dpc)) {
+	ret = swi_add(&hv_event_intr_event, "hv_event", vmbus_on_events,
+		NULL, SWI_CLOCK, 0, &event_dpc);
+
+	if (ret)
 		goto cleanup1;
-	}
 
-	if (intr_event_bind(g_vmbus_drv.hv_event_intr_event, 0)) {
+	ret = intr_event_bind(hv_event_intr_event, 0);
+
+	if (ret)
 		goto cleanup2;
-	}
 
-	g_vmbus_drv.intr_res = bus_alloc_resource(g_vmbus_drv.vmb_dev,
+	intr_res = bus_alloc_resource(vmbus_devp,
 		SYS_RES_IRQ, &vmbus_rid, vmbus_irq, vmbus_irq, 1, RF_ACTIVE);
 
-	if (g_vmbus_drv.intr_res == NULL) {
-		DPRINT_ERR(VMBUS_DRV, "ERROR - Unable to request IRQ %d",
-			vmbus_irq);
+	if (intr_res == NULL) {
+		ret = -ENOMEM; /* XXXKYS: Need a better errno */
 		goto cleanup2;
 	}
 
 	/*
 	 * Fixme:  Changed for port to FreeBSD 8.2.  Make sure this works.
 	 */
-	ret = bus_setup_intr(g_vmbus_drv.vmb_dev, g_vmbus_drv.intr_res,
+	ret = bus_setup_intr(vmbus_devp, intr_res,
 		INTR_TYPE_NET | INTR_FAST, hv_vmbus_isr,
 #if __FreeBSD_version >= 700000
 		NULL,
 #endif
 		NULL, &vmbus_cookiep);
 
-	if (ret != 0) {
-		/* Fixme:  Probably not appropriate */
-		DPRINT_ERR(VMBUS_DRV, "ERROR - Unable to setup intr handler");
+	if (ret != 0)
 		goto cleanup3;
-	}
 
-	ret = bus_bind_intr(g_vmbus_drv.vmb_dev, g_vmbus_drv.intr_res, 0);
-	if (ret != 0) {
-		DPRINT_ERR(VMBUS_DRV, "ERROR - Unable to bind intr to cpu(0) ");
+	ret = bus_bind_intr(vmbus_devp, intr_res, 0);
+	if (ret != 0) 
 		goto cleanup4;
-	}
 
 	isrc = intr_lookup_source(vmbus_irq);
 	if ((isrc == NULL) || (isrc->is_event == NULL)) {
-		if (isrc) {
-			DPRINT_ERR(VMBUS_DRV,
-				"ERROR - Unable to find intr event");
-		} else {
-			DPRINT_ERR(VMBUS_DRV,
-				"ERROR - Unable to find intr src");
-		}
+		ret = -EINVAL;
 		goto cleanup4;
 	}
 
 	vector = isrc->is_event->ie_vector;
 	printf("VMBUS: irq 0x%x vector 0x%x\n", vmbus_irq, vector);
 
-	// Call to bus driver to add the root device
-	memset(dev_ctx, 0, sizeof(struct device_context));
+	/*
+	 * Notify the hypervisor of our irq.
+	 */
 
-	dev_ctx->device = g_vmbus_drv.vmb_dev;
-	ret = vmbus_drv_obj->Base.OnDeviceAdd(&dev_ctx->device_obj, &vector);
-	if (ret != 0) {
-		DPRINT_ERR(VMBUS_DRV, "ERROR: Unable to add vmbus root device");
+	smp_rendezvous(NULL, HvSynicInit, NULL, &vector);
+
+	// Connect to VMBus in the root partition
+	ret = VmbusConnect();
+
+	if (ret)
 		goto cleanup4;
-	}
 
-	//	sprintf(dev_ctx->device.bus_id, "vmbus_0_0");
-	memcpy(&dev_ctx->class_id, &dev_ctx->device_obj.deviceType,
-		sizeof(GUID));
-	memcpy(&dev_ctx->device_id, &dev_ctx->device_obj.deviceInstance,
-		sizeof(GUID));
+	VmbusChannelRequestOffers();
+	return ret;
 
-	vmbus_drv_obj->GetChannelOffers();
+cleanup4:
 
-	ret = 0;
-	goto cleanup;
-
-	cleanup4:
 	/* remove swi, bus and intr resource */
-	bus_teardown_intr(g_vmbus_drv.vmb_dev, g_vmbus_drv.intr_res,
+	bus_teardown_intr(vmbus_devp, intr_res,
 		vmbus_cookiep);
 
-	cleanup3: bus_release_resource(g_vmbus_drv.vmb_dev, SYS_RES_IRQ,
-		vmbus_rid, g_vmbus_drv.intr_res);
+cleanup3:
 
-	cleanup2: swi_remove(vmbus_drv_ctx->event_dpc);
+	bus_release_resource(vmbus_devp, SYS_RES_IRQ,
+		vmbus_rid, intr_res);
 
-	cleanup1: swi_remove(vmbus_drv_ctx->msg_dpc);
+cleanup2: 
+	swi_remove(event_dpc);
 
-	cleanup: DPRINT_EXIT(VMBUS_DRV);
+cleanup1:
+	swi_remove(msg_dpc);
+
+cleanup:
+	HvCleanup();
 
 	return ret;
 }
 
-static void vmbus_init(void) {
-	DPRINT_ENTER(VMBUS_DRV);
+static int vmbus_attach(device_t dev) {
+	printf("vmbus_attach: dev: %p\n", dev);
+	vmbus_devp = dev;
 
-	DPRINT_INFO(VMBUS_DRV,
-		"Vmbus initializing.... current log level 0x%x (%x,%x)",
-		vmbus_loglevel, HIWORD(vmbus_loglevel), LOWORD(vmbus_loglevel));
+	/* 
+	 * If the system has already booted and thread
+	 * scheduling is possible indicated by the global
+	 * cold set to zero, we just call the driver
+	 * initialization directly.
+	 *
+	 * XXXKYS: Need to cleanup this initialization!!
+	 * What comes first: attach or SYSINIT call
+	 * How does this playout when vmbus is a module.
+	 */
 
-	if (!g_vmbus_drv.drv_inited) {
-		vmbus_registration_mutex_init();
-		(void) vmbus_bus_init(VmbusInitialize);
-		atomic_set_int(&g_vmbus_drv.drv_inited,1);
+	if (!cold) {
+		vmbus_bus_init();
 	}
 
-	DPRINT_EXIT(VMBUS_DRV);
+	return 0;
 }
 
-static int vmbus_detach(device_t dev) {
+static void vmbus_init(void) 
+{
+	/* 
+	 * If the system has already booted and thread
+	 * scheduling is possible indicated by the global
+	 * cold set to zero, we just call the driver
+	 * initialization directly.
+	 *
+	 * XXXKYS: Need to cleanup this initialization!!
+	 */
+	if (!cold) {
+		vmbus_bus_init();
+	}
+}
+
+static void vmbus_bus_exit(void) 
+{
+
+	VmbusChannelReleaseUnattachedChannels();
+	VmbusDisconnect();
+
+	smp_rendezvous(NULL, HvSynicCleanup, NULL, NULL);
+
+	HvCleanup();
+
+	/* remove swi, bus and intr resource */
+	bus_teardown_intr(vmbus_devp, intr_res, vmbus_cookiep);
+
+	bus_release_resource(vmbus_devp, SYS_RES_IRQ, vmbus_rid, intr_res);
+
+	swi_remove(msg_dpc);
+	swi_remove(event_dpc);
+
+	return;
+}
+
+static void vmbus_exit(void) 
+{
+	vmbus_bus_exit();
+
+}
+
+static int vmbus_detach(device_t dev) 
+{
 	vmbus_exit();
 	return 0;
 }
 
-static void vmbus_bus_exit(void) {
-	struct vmbus_driver_context *vmbus_drv_ctx = &g_vmbus_drv;
-	VMBUS_DRIVER_OBJECT *vmbus_drv_obj = &g_vmbus_drv.drv_obj;
-	struct device_context *dev_ctx = &g_vmbus_drv.device_ctx;
-
-	DPRINT_ENTER(VMBUS_DRV);
-
-	// Remove the root device
-	if (vmbus_drv_obj->Base.OnDeviceRemove)
-		vmbus_drv_obj->Base.OnDeviceRemove(&dev_ctx->device_obj);
-
-	if (vmbus_drv_obj->Base.OnCleanup)
-		vmbus_drv_obj->Base.OnCleanup(&vmbus_drv_obj->Base);
-
-	// Unregister the root bus device
-	// device_unregister(&dev_ctx->device);
-
-	// bus_unregister(&vmbus_drv_ctx->bus);
-
-	/* remove swi, bus and intr resource */
-	bus_teardown_intr(g_vmbus_drv.vmb_dev, g_vmbus_drv.intr_res,
-		vmbus_cookiep);
-
-	bus_release_resource(g_vmbus_drv.vmb_dev, SYS_RES_IRQ, vmbus_rid,
-		g_vmbus_drv.intr_res);
-
-	swi_remove(vmbus_drv_ctx->msg_dpc);
-	swi_remove(vmbus_drv_ctx->event_dpc);
-
-	DPRINT_EXIT(VMBUS_DRV);
-
-	return;
-}
-
-static void vmbus_exit(void) {
-	DPRINT_ENTER(VMBUS_DRV);
-
-	DPRINT_INFO(VMBUS_DRV, "Vmbus exit");
-	vmbus_bus_exit();
-
-	DPRINT_EXIT(VMBUS_DRV);
-
-	return;
-}
-
-static void vmbus_mod_load(void) {
+static void vmbus_mod_load(void) 
+{
 	printf("Vmbus load\n");
+	vmbus_init();
 }
 
-static void vmbus_mod_unload(void) {
+static void vmbus_mod_unload(void) 
+{
 	printf("Vmbus unload\n");
-	//	vmbus_exit();
+	vmbus_exit();
 }
 
-static int vmbus_modevent(module_t mod, int what, void *arg) {
+static int vmbus_modevent(module_t mod, int what, void *arg) 
+{
 	switch (what) {
 
 	case MOD_LOAD:
@@ -668,10 +512,8 @@ static device_method_t vmbus_methods[] = {
 
 static char driver_name[] = "vmbus";
 static driver_t vmbus_driver = { driver_name, vmbus_methods,
-	sizeof(struct vmbus_softc), };
+	0, };
 
-unsigned int vmbus_loglevel = (ALL_MODULES << 16 | INFO_LVL);
-//unsigned int vmbus_loglevel = (ALL_MODULES << 16 | DEBUG_LVL);
 
 devclass_t vmbus_devclass;
 
@@ -680,5 +522,4 @@ MODULE_VERSION(vmbus,1);
 
 // TODO: We want to be earlier than SI_SUB_VFS
 SYSINIT(vmb_init, SI_SUB_VFS, SI_ORDER_MIDDLE, vmbus_init, NULL);
-
 

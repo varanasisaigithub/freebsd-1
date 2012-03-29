@@ -837,5 +837,37 @@ typedef struct _rndis_msg {
 #define RNDIS_MESSAGE_RAW_PTR_TO_MESSAGE_PTR(rndis_message)     \
     ((void *) rndis_message)
 
+
+
+#define RNDIS_HEADER_SIZE (sizeof(rndis_msg) - sizeof(rndis_msg_container))
+
+#define NDIS_PACKET_TYPE_DIRECTED	0x00000001
+#define NDIS_PACKET_TYPE_MULTICAST	0x00000002
+#define NDIS_PACKET_TYPE_ALL_MULTICAST	0x00000004
+#define NDIS_PACKET_TYPE_BROADCAST	0x00000008
+#define NDIS_PACKET_TYPE_SOURCE_ROUTING	0x00000010
+#define NDIS_PACKET_TYPE_PROMISCUOUS	0x00000020
+#define NDIS_PACKET_TYPE_SMT		0x00000040
+#define NDIS_PACKET_TYPE_ALL_LOCAL	0x00000080
+#define NDIS_PACKET_TYPE_GROUP		0x00000100
+#define NDIS_PACKET_TYPE_ALL_FUNCTIONAL	0x00000200
+#define NDIS_PACKET_TYPE_FUNCTIONAL	0x00000400
+#define NDIS_PACKET_TYPE_MAC_FRAME	0x00000800
+
+
+/*
+ * Externs
+ */
+extern int  hv_rndis_filter_init(netvsc_driver_object *driver);
+
+extern int  hv_rf_on_receive(struct hv_device *device, netvsc_packet *pkt);
+
+extern int  hv_rf_on_device_add(struct hv_device *device, void *additl_info);
+extern int  hv_rf_on_device_remove(struct hv_device *device);
+
+extern int  hv_rf_on_open(struct hv_device *device);
+extern int  hv_rf_on_close(struct hv_device *device);
+extern int  hv_rf_on_send(struct hv_device *device, netvsc_packet *pkt);
+
 #endif  /* __HV_RNDIS_H__ */
 

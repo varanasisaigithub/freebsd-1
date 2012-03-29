@@ -4,8 +4,8 @@
 
 KMOD=	hv_timesync
 
-SRCS =  hv_timesync_ic.c \
-	hv_timesync_drv_freebsd.c
+#SRCS =  hv_timesync_ic.c \
+#	hv_timesync_drv_freebsd.c
 	 
 
 CFLAGS+= -I${.CURDIR}/../../../dev/hyperv/include \

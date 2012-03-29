@@ -59,6 +59,273 @@
 #ifndef __HV_NET_VSC_H__
 #define __HV_NET_VSC_H__
 
+#include <sys/types.h>
+#include <sys/param.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
+#include <sys/sema.h>
+
+#include "../include/hyperv.h"
+
+
+#define NVSP_INVALID_PROTOCOL_VERSION           ((uint32_t)0xFFFFFFFF)
+
+#define NVSP_PROTOCOL_VERSION_1                 2
+#define NVSP_MIN_PROTOCOL_VERSION               (NVSP_PROTOCOL_VERSION_1)
+#define NVSP_MAX_PROTOCOL_VERSION               (NVSP_PROTOCOL_VERSION_1)
+
+typedef enum nvsp_msg_type_ {
+	nvsp_msg_type_none                      = 0,
+
+	/*
+	 * Init Messages
+	 */
+	nvsp_msg_type_init                      = 1,
+	nvsp_msg_type_init_complete             = 2,
+
+	nvsp_version_msg_start                  = 100,
+
+	/*
+	 * Version 1 Messages
+	 */
+	nvsp_msg_1_type_send_ndis_vers          = nvsp_version_msg_start,
+
+	nvsp_msg_1_type_send_rx_buf,
+	nvsp_msg_1_type_send_rx_buf_complete,
+	nvsp_msg_1_type_revoke_rx_buf,
+
+	nvsp_msg_1_type_send_send_buf,
+	nvsp_msg_1_type_send_send_buf_complete,
+	nvsp_msg_1_type_revoke_send_buf,
+
+	nvsp_msg_1_type_send_rndis_pkt,
+	nvsp_msg_1_type_send_rndis_pkt_complete,
+    
+	/*
+	 * This should be set to the number of messages for the version
+	 * with the maximum number of messages.
+	 */
+	nvsp_num_msg_per_version                = 9,
+} nvsp_msg_type;
+
+typedef enum nvsp_status_ {
+	nvsp_status_none = 0,
+	nvsp_status_success,
+	nvsp_status_failure,
+	nvsp_status_prot_vers_range_too_new,
+	nvsp_status_prot_vers_range_too_old,
+	nvsp_status_invalid_rndis_pkt,
+	nvsp_status_busy,
+	nvsp_status_max,
+} nvsp_status;
+
+#pragma pack(push, 1)
+
+typedef struct nvsp_msg_hdr_ {
+	uint32_t                                msg_type;
+} __attribute__((packed)) nvsp_msg_hdr;
+
+/*
+ * Init Messages
+ */
+
+/*
+ * This message is used by the VSC to initialize the channel
+ * after the channels has been opened. This message should 
+ * never include anything other then versioning (i.e. this
+ * message will be the same for ever).
+ */
+typedef struct nvsp_msg_init_ {
+	uint32_t                                min_protocol_version;
+	uint32_t                                max_protocol_version;
+} __attribute__((packed))  nvsp_msg_init;
+
+/*
+ * This message is used by the VSP to complete the initialization
+ * of the channel. This message should never include anything other 
+ * then versioning (i.e. this message will be the same for ever).
+ */
+typedef struct nvsp_msg_init_complete_ {
+	uint32_t                                negotiated_prot_vers;
+	uint32_t                                max_mdl_chain_len;
+	uint32_t                                status;
+} __attribute__((packed)) nvsp_msg_init_complete;
+
+typedef union nvsp_msg_init_uber_ {
+	nvsp_msg_init                           init;
+	nvsp_msg_init_complete                  init_compl;
+} __attribute__((packed)) nvsp_msg_init_uber;
+
+/*
+ * Version 1 Messages
+ */
+
+/*
+ * This message is used by the VSC to send the NDIS version
+ * to the VSP. The VSP can use this information when handling
+ * OIDs sent by the VSC.
+ */
+typedef struct nvsp_1_msg_send_ndis_version_ {
+	uint32_t                                ndis_major_vers;
+	uint32_t                                ndis_minor_vers;
+} __attribute__((packed)) nvsp_1_msg_send_ndis_version;
+
+/*
+ * This message is used by the VSC to send a receive buffer
+ * to the VSP. The VSP can then use the receive buffer to
+ * send data to the VSC.
+ */
+typedef struct nvsp_1_msg_send_rx_buf_ {
+	uint32_t                                gpadl_handle;
+	uint16_t                                id;
+} __attribute__((packed)) nvsp_1_msg_send_rx_buf;
+
+typedef struct nvsp_1_rx_buf_section_ {
+	uint32_t                                offset;
+	uint32_t                                sub_allocation_size;
+	uint32_t                                num_sub_allocations;
+	uint32_t                                end_offset;
+} __attribute__((packed)) nvsp_1_rx_buf_section;
+
+/*
+ * This message is used by the VSP to acknowledge a receive 
+ * buffer send by the VSC. This message must be sent by the 
+ * VSP before the VSP uses the receive buffer.
+ */
+typedef struct nvsp_1_msg_send_rx_buf_complete_ {
+	uint32_t                                status;
+	uint32_t                                num_sections;
+
+	/*
+	 * The receive buffer is split into two parts, a large
+	 * suballocation section and a small suballocation
+	 * section. These sections are then suballocated by a 
+	 * certain size.
+	 *
+	 * For example, the following break up of the receive
+	 * buffer has 6 large suballocations and 10 small
+	 * suballocations.
+	 *
+	 * |            Large Section          |  |   Small Section   |
+	 * ------------------------------------------------------------
+	 * |     |     |     |     |     |     |  | | | | | | | | | | |
+	 * |                                      |  
+	 * LargeOffset                            SmallOffset
+	 */
+	nvsp_1_rx_buf_section                   sections[1];
+
+} __attribute__((packed)) nvsp_1_msg_send_rx_buf_complete;
+
+/*
+ * This message is sent by the VSC to revoke the receive buffer.
+ * After the VSP completes this transaction, the vsp should never
+ * use the receive buffer again.
+ */
+typedef struct nvsp_1_msg_revoke_rx_buf_ {
+	uint16_t                                id;
+} __attribute__((packed)) nvsp_1_msg_revoke_rx_buf;
+
+/*
+ * This message is used by the VSC to send a send buffer
+ * to the VSP. The VSC can then use the send buffer to
+ * send data to the VSP.
+ */
+typedef struct nvsp_1_msg_send_send_buf_ {
+	uint32_t                                gpadl_handle;
+	uint16_t                                id;
+} __attribute__((packed)) nvsp_1_msg_send_send_buf;
+
+/*
+ * This message is used by the VSP to acknowledge a send 
+ * buffer sent by the VSC. This message must be sent by the 
+ * VSP before the VSP uses the sent buffer.
+ */
+typedef struct nvsp_1_msg_send_send_buf_complete_ {
+	uint32_t                                status;
+
+	/*
+	 * The VSC gets to choose the size of the send buffer and
+	 * the VSP gets to choose the sections size of the buffer.
+	 * This was done to enable dynamic reconfigurations when
+	 * the cost of GPA-direct buffers decreases.
+	 */
+	uint32_t                                section_size;
+} __attribute__((packed)) nvsp_1_msg_send_send_buf_complete;
+
+/*
+ * This message is sent by the VSC to revoke the send buffer.
+ * After the VSP completes this transaction, the vsp should never
+ * use the send buffer again.
+ */
+typedef struct nvsp_1_msg_revoke_send_buf_ {
+	uint16_t                                id;
+} __attribute__((packed)) nvsp_1_msg_revoke_send_buf;
+
+/*
+ * This message is used by both the VSP and the VSC to send
+ * a RNDIS message to the opposite channel endpoint.
+ */
+typedef struct nvsp_1_msg_send_rndis_pkt_ {
+	/*
+	 * This field is specified by RNIDS.  They assume there's
+	 * two different channels of communication. However, 
+	 * the Network VSP only has one.  Therefore, the channel
+	 * travels with the RNDIS packet.
+	 */
+	uint32_t                                chan_type;
+
+	/*
+	 * This field is used to send part or all of the data
+	 * through a send buffer. This values specifies an 
+	 * index into the send buffer.  If the index is 
+	 * 0xFFFFFFFF, then the send buffer is not being used
+	 * and all of the data was sent through other VMBus
+	 * mechanisms.
+	 */
+	uint32_t                                send_buf_section_idx;
+	uint32_t                                send_buf_section_size;
+} __attribute__((packed)) nvsp_1_msg_send_rndis_pkt;
+
+/*
+ * This message is used by both the VSP and the VSC to complete
+ * a RNDIS message to the opposite channel endpoint.  At this
+ * point, the initiator of this message cannot use any resources
+ * associated with the original RNDIS packet.
+ */
+typedef struct nvsp_1_msg_send_rndis_pkt_complete_ {
+	uint32_t                                status;
+} __attribute__((packed)) nvsp_1_msg_send_rndis_pkt_complete;
+
+typedef union nvsp_1_msg_uber_ {
+	nvsp_1_msg_send_ndis_version            send_ndis_vers;
+
+	nvsp_1_msg_send_rx_buf                  send_rx_buf;
+	nvsp_1_msg_send_rx_buf_complete         send_rx_buf_complete;
+	nvsp_1_msg_revoke_rx_buf                revoke_rx_buf;
+
+	nvsp_1_msg_send_send_buf                send_send_buf;
+	nvsp_1_msg_send_send_buf_complete       send_send_buf_complete;
+	nvsp_1_msg_revoke_send_buf              revoke_send_buf;
+
+	nvsp_1_msg_send_rndis_pkt               send_rndis_pkt;
+	nvsp_1_msg_send_rndis_pkt_complete      send_rndis_pkt_complete;
+} __attribute__((packed)) nvsp_1_msg_uber;
+
+typedef union nvsp_all_msgs_ {
+	nvsp_msg_init_uber                      init_msgs;
+	nvsp_1_msg_uber                         vers_1_msgs;
+} __attribute__((packed)) nvsp_all_msgs;
+
+/*
+ * ALL Messages
+ */
+typedef struct nvsp_msg_ {
+	nvsp_msg_hdr                            hdr; 
+	nvsp_all_msgs                           msgs;
+} __attribute__((packed)) nvsp_msg;
+
+#pragma pack(pop)
+
 
 /*
  * Defines
@@ -88,10 +355,7 @@
  * Per netvsc channel-specific
  */
 typedef struct netvsc_dev_ {
-	DEVICE_OBJECT				*dev;
-
-	int					ref_cnt;
-
+	struct hv_device			*dev;
 	int					num_outstanding_sends;
 
 	/* List of free preallocated NETVSC_PACKET to represent RX packet */
@@ -112,7 +376,7 @@ typedef struct netvsc_dev_ {
 	nvsp_1_rx_buf_section			*rx_sections;
 
 	/* Used for NetVSP initialization protocol */
-	void					*channel_init_event;
+	struct sema				channel_init_sema;
 	nvsp_msg				channel_init_packet;
 
 	nvsp_msg				revoke_packet;
@@ -120,7 +384,107 @@ typedef struct netvsc_dev_ {
 
 	/* Holds rndis device info */
 	void					*extension;
+	bool					destroy;
 } netvsc_dev;
+
+
+typedef void (*pfn_on_send_rx_completion)(void *);
+
+#define NETVSC_DEVICE_RING_BUFFER_SIZE   (64 * PAGE_SIZE)
+#define NETVSC_PACKET_MAXPAGE            4
+
+
+typedef struct xfer_page_packet_ {
+	/*
+	 * This needs to be here because the network RX code casts
+	 * an instantiation of this structure to a netvsc_packet.
+	 */
+	STAILQ_ENTRY(netvsc_packet_) mylist_entry;
+
+	uint32_t count;
+} xfer_page_packet;
+
+typedef struct netvsc_packet_ {
+	/*
+	 * List used when enqueued on &net_dev->rx_packet_list,
+	 * and when enqueued within the netvsc code
+	 */
+	STAILQ_ENTRY(netvsc_packet_) mylist_entry;
+	struct hv_device           *device;
+	bool                    is_data_pkt;      /* One byte */
+	xfer_page_packet        *xfer_page_pkt;
+
+	/* Completion */
+	union {
+		struct {
+			uint64_t rx_completion_tid;
+			void	*rx_completion_context;
+			/* This is no longer used */
+			pfn_on_send_rx_completion   on_rx_completion;
+		} rx;
+		struct {
+			uint64_t send_completion_tid;
+			void	*send_completion_context;
+			/* Still used in netvsc and filter code */
+			pfn_on_send_rx_completion   on_send_completion;
+		} send;
+	} compl;
+
+	void		*extension;
+	uint32_t	tot_data_buf_len;
+	uint32_t	page_buf_count;
+	PAGE_BUFFER	page_buffers[NETVSC_PACKET_MAXPAGE];
+} netvsc_packet;
+
+
+typedef struct netvsc_driver_object_ {
+	uint32_t	ring_buf_size;
+	uint32_t	request_ext_size;
+	uint32_t	additional_request_page_buf_cnt;
+	void		*context;
+} netvsc_driver_object;
+
+typedef struct {
+	uint8_t         mac_addr[6];  /* Assumption unsigned long */
+	bool            link_state;
+} netvsc_device_info;
+
+/*
+ * Device-specific softc structure
+ */
+typedef struct hn_softc {
+	struct ifnet    *hn_ifp;
+	struct arpcom   arpcom;
+	device_t        hn_dev;
+	uint8_t         hn_unit;
+	int             hn_carrier;
+	int             hn_if_flags;
+	struct mtx      hn_lock;
+//	vm_offset_t     hn_vaddr;
+	int             hn_initdone;
+//	int             hn_xc;
+	struct hv_device   *hn_dev_obj;
+	netvsc_dev  	*net_dev;
+//	int             hn_cb_status;
+//	uint64_t        hn_sts_err_tx_nobufs;
+//	uint64_t        hn_sts_err_tx_enxio; /* device not ready to xmit */
+//	uint64_t        hn_sts_err_tx_eio;   /* device not ready to xmit */
+} hn_softc_t;
+
+
+/*
+ * Externs
+ */
+extern int promisc_mode;
+
+void hv_nv_on_receive_completion(void *context);
+void netvsc_linkstatus_callback(struct hv_device *device_obj,
+				       uint32_t status);
+int  netvsc_recv_callback(struct hv_device *device_obj,
+				 netvsc_packet *packet);
+netvsc_dev *hv_nv_on_device_add(struct hv_device *device, void *additional_info);
+int  hv_nv_on_device_remove(struct hv_device *device);
+int  hv_nv_on_send(struct hv_device *device, netvsc_packet *pkt);
 
 #endif  /* __HV_NET_VSC_H__ */
 

@@ -1,5 +1,5 @@
 # $FreeBSD$
 
-SUBDIR = vmbus netvsc storvsc heartbeat timesync
+SUBDIR = vmbus netvsc storvsc  utilities
 
 .include <bsd.subdir.mk>

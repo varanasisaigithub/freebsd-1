@@ -1,4 +1,6 @@
 #include <sys/param.h>
+#include <sys/proc.h>
+#include <sys/condvar.h>
 #include <sys/systm.h>
 #include <sys/sockio.h>
 #include <sys/mbuf.h>
@@ -14,6 +16,9 @@
 #include <sys/callout.h>
 #include <vm/vm.h>
 #include <vm/pmap.h>
+#include <sys/types.h>
+#include <sys/lock.h>
+#include <sys/sema.h>
 
 #include <cam/cam.h>
 #include <cam/cam_ccb.h>
@@ -25,11 +30,53 @@
 #include <cam/scsi/scsi_all.h>
 #include <cam/scsi/scsi_message.h>
 
-#include <hv_vmbus_var.h>
-#include <hv_vmbus.h>
-#include <hv_logging.h>
 
-#include "hv_stor_vsc_api.h"
+#include "../include/hyperv.h"
+#include "hv_vstorage.h"
+
+#define MAX_MULTIPAGE_BUFFER_PACKET (4096)
+#define STORVSC_RINGBUFFER_SIZE		(20*PAGE_SIZE)
+#define STORVSC_MAX_LUNS_PER_TARGET	(64)
+#define STORVSC_MAX_IO_REQUESTS		(STORVSC_MAX_LUNS_PER_TARGET * 2)
+#define BLKVSC_MAX_IDE_DISKS_PER_TARGET	(1)
+#define BLKVSC_MAX_IO_REQUESTS		STORVSC_MAX_IO_REQUESTS
+#define STORVSC_MAX_TARGETS		(1)
+
+struct storvsc_softc;
+
+enum storvsc_request_type {
+	WRITE_TYPE,
+	READ_TYPE,
+	UNKNOWN_TYPE
+};
+
+struct hv_storvsc_request {
+	LIST_ENTRY(hv_storvsc_request) link;
+	struct vstor_packet	vstor_packet;
+	MULTIPAGE_BUFFER data_buf;
+	void *sense_data;
+	uint8_t sense_info_len;
+	uint8_t retries;
+	union ccb *ccb;
+	struct storvsc_softc *softc;
+	struct callout callout;
+
+	// Synchronize the request/response if needed
+	struct sema synch_sema;
+};
+
+struct storvsc_softc {
+	struct hv_device *storvsc_dev;
+        struct hv_storvsc_dev_ctx *stor_ctx;
+        LIST_HEAD(, hv_storvsc_request) free_list;
+        struct mtx       hs_lock;
+        struct storvsc_driver_props      *drv_props;
+        int unit;
+        uint32_t         hs_frozen;
+        struct cam_sim  *hs_sim;
+        struct cam_path *hs_path;
+};
+
 
 /*
  * HyperV storvsc timeout testing cases:
@@ -46,7 +93,7 @@ struct storvsc_driver_props {
 	char		*drv_name;
 	char		*drv_desc;
 	uint8_t		drv_max_luns_per_target;
-	uint8_t		drv_max_ios_per_target;
+	uint8_t		drv_max_ios_per_target; 
 	uint32_t	drv_ringbuffer_size;
 };
 
@@ -57,6 +104,495 @@ enum hv_storage_type {
 };
 
 #define HS_MAX_ADAPTERS 10
+
+
+/*
+ * Copyright (c) 2009, Microsoft Corporation - All rights reserved.
+ *
+ *     Redistribution and use in source and binary forms, with or
+ *     without modification, are permitted provided that the following
+ *     conditions are met:
+ *
+ *      - Redistributions of source code must retain the above
+ *        copyright notice, this list of conditions and the following
+ *        disclaimer.
+ *
+ *      - Redistributions in binary form must reproduce the above
+ *        copyright notice, this list of conditions and the following
+ *        disclaimer in the documentation and/or other materials
+ *        provided with the distribution.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+ * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ *
+ * Authors:
+ *   Haiyang Zhang <haiyangz@microsoft.com>
+ *   Hank Janssen  <hjanssen@microsoft.com>
+ *   K. Y. Srinivasan <kys@microsoft.com>
+ */
+
+/* Storvsc device context structure */
+struct hv_storvsc_dev_ctx {
+	struct hv_device		*device;
+	struct storvsc_softc		*softc;
+	uint32_t			num_out_reqs;
+	bool				destroy;
+	bool				drain_notify;
+	struct sema 			drain_sema;	
+	struct hv_storvsc_request	init_req;
+	struct hv_storvsc_request	reset_req;
+};
+
+/*
+ * Internal routines
+ */
+static void hv_storvsc_on_channel_callback(void *context);
+static void hv_storvsc_on_iocompletion( struct hv_storvsc_dev_ctx* stordev_ctx,
+					struct vstor_packet *vstor_packet,
+				 	struct hv_storvsc_request *request);
+static int hv_storvsc_connect_vsp(struct hv_device *device);
+static void storvsc_io_done(struct hv_storvsc_request *reqp);
+
+/*
+ * The host is capable of sending messages to us that are 
+ * completely unsolicited. So, we need to address the race
+ * condition where we may be in the process of unloading the
+ * driver when the host may send us an unsolicited message.
+ * We address this issue by implementing a sequentially
+ * consistent protocol:
+ *
+ * 1. Channel callback is invoked while holding the the channel lock
+ *    and an unloading driver will reset the channel callback under
+ *    the protection of this channel lock.
+ *
+ * 2. To ensure bounded wait time for unloading a driver, we don't
+ *    permit outgoing traffic once the device is marked as being
+ *    destroyed.
+ *
+ * 3. Once the device is marked as being destroyed, we only
+ *    permit incoming traffic to properly account for 
+ *    packets already sent out.
+ */
+
+static inline struct hv_storvsc_dev_ctx *get_stor_device(
+                                        struct hv_device *device,
+					bool outbound)
+{
+	struct storvsc_softc *sc;
+	struct hv_storvsc_dev_ctx *stordev_ctx;
+
+	sc = device_get_softc(device->device);
+	if (!sc)
+		return NULL;
+
+	stordev_ctx = sc->stor_ctx;
+
+	if (!stordev_ctx)
+		return NULL;
+
+	if (outbound) {
+		/*
+		 * Here we permit outgoing I/O only
+		 * if the device is not being destroyed.
+		 */
+
+		if (stordev_ctx->destroy)
+			stordev_ctx = NULL;
+	} else {
+		/*
+		 * Inbound case; if being destroyed
+		 * only permit to account for
+		 * messages already sent out.
+		 */
+		if (stordev_ctx->destroy && 
+			(stordev_ctx->num_out_reqs == 0)) {
+			stordev_ctx = NULL;
+		}
+	}
+
+	return stordev_ctx;
+
+}
+
+static int hv_storvsc_channel_init(struct hv_device *dev)
+{
+	int ret = 0;
+	struct hv_storvsc_dev_ctx *stordev_ctx;
+	struct hv_storvsc_request *request;
+	struct vstor_packet *vstor_packet;
+
+	stordev_ctx = get_stor_device(dev, true);
+	if (stordev_ctx == NULL)
+		return -ENODEV;
+
+	request = &stordev_ctx->init_req;
+	memset(request, 0, sizeof(struct hv_storvsc_request));
+	vstor_packet = &request->vstor_packet;
+	request->softc = stordev_ctx->softc;
+
+	// Now, initiate the vsc/vsp initialization protocol on the open channel
+
+
+	sema_init(&request->synch_sema, 0, ("stor_synch_sema"));
+
+	vstor_packet->operation = VSTOR_OPERATION_BEGININITIALIZATION;
+	vstor_packet->flags = REQUEST_COMPLETION_FLAG;
+
+
+	ret = hv_vmbus_channel_send_packet(
+			dev->channel,
+			vstor_packet,
+			sizeof(struct vstor_packet),
+			(uint64_t)request,
+			VmbusPacketTypeDataInBand,
+			VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+
+	if (ret != 0) 
+		goto Cleanup;
+
+	ret = sema_timedwait(&request->synch_sema, 500); //KYS 5 seconds
+
+	if (ret)
+		goto Cleanup;
+
+	if (vstor_packet->operation != VSTOR_OPERATION_COMPLETEIO ||
+		vstor_packet->status != 0)
+		goto Cleanup;
+
+	// reuse the packet for version range supported
+	memset(vstor_packet, 0, sizeof(struct vstor_packet));
+	vstor_packet->operation = VSTOR_OPERATION_QUERYPROTOCOLVERSION;
+	vstor_packet->flags = REQUEST_COMPLETION_FLAG;
+
+	vstor_packet->version.major_minor = VMSTOR_PROTOCOL_VERSION_CURRENT;
+	FILL_VMSTOR_REVISION(vstor_packet->version.revision);
+
+	ret = hv_vmbus_channel_send_packet(
+			dev->channel,
+			vstor_packet,
+			sizeof(struct vstor_packet),
+			(uint64_t)request,
+			VmbusPacketTypeDataInBand,
+			VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+
+	if (ret != 0)
+		goto Cleanup;
+	
+	ret = sema_timedwait(&request->synch_sema, 500); //KYS 5 seconds
+
+	if (ret)
+		goto Cleanup;
+
+	// TODO: Check returned version 
+	if (vstor_packet->operation != VSTOR_OPERATION_COMPLETEIO ||
+		vstor_packet->status != 0)
+		goto Cleanup;
+
+	// Query channel properties
+	memset(vstor_packet, 0, sizeof(struct vstor_packet));
+	vstor_packet->operation = VSTOR_OPERATION_QUERYPROPERTIES;
+	vstor_packet->flags = REQUEST_COMPLETION_FLAG;
+
+	ret = hv_vmbus_channel_send_packet(
+				dev->channel,
+				vstor_packet,
+				sizeof(struct vstor_packet),
+				(uint64_t)request,
+				VmbusPacketTypeDataInBand,
+				VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+
+	if ( ret != 0)
+		goto Cleanup;
+
+	ret = sema_timedwait(&request->synch_sema, 500); //KYS 5 seconds
+
+	if (ret)
+		goto Cleanup;
+
+	// TODO: Check returned version 
+	if (vstor_packet->operation != VSTOR_OPERATION_COMPLETEIO ||
+		vstor_packet->status != 0)
+		goto Cleanup;
+
+	memset(vstor_packet, 0, sizeof(struct vstor_packet));
+	vstor_packet->operation = VSTOR_OPERATION_ENDINITIALIZATION;
+	vstor_packet->flags = REQUEST_COMPLETION_FLAG;
+
+	ret = hv_vmbus_channel_send_packet(
+				dev->channel,
+				vstor_packet,
+				sizeof(struct vstor_packet),
+				(uint64_t)request,
+				VmbusPacketTypeDataInBand,
+				VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+
+	if (ret != 0)
+		goto Cleanup;
+
+	ret = sema_timedwait(&request->synch_sema, 500); //KYS 5 seconds
+
+	if (ret)
+		goto Cleanup;
+
+	if (vstor_packet->operation != VSTOR_OPERATION_COMPLETEIO ||
+		vstor_packet->status != 0)
+		goto Cleanup;
+
+Cleanup:
+	sema_destroy(&request->synch_sema);
+	return ret;
+}
+
+
+int
+hv_storvsc_connect_vsp(struct hv_device *dev)
+{	
+	int ret = 0;
+	struct vmstor_chan_props props;
+	struct storvsc_softc *sc;
+
+	sc = device_get_softc(dev->device);
+		
+	memset(&props, 0, sizeof(struct vmstor_chan_props));
+
+	// Open the channel
+
+	ret = hv_vmbus_channel_open(
+		dev->channel,
+		sc->drv_props->drv_ringbuffer_size,
+		sc->drv_props->drv_ringbuffer_size,
+		(void *)&props,
+		sizeof(struct vmstor_chan_props),
+		hv_storvsc_on_channel_callback,
+		dev);
+
+
+	if (ret != 0)
+		return -1;
+
+	ret = hv_storvsc_channel_init(dev);
+
+	return ret;
+}
+
+
+static int hv_storvsc_host_reset(struct hv_device *dev)
+{
+	int ret = 0;
+
+	struct hv_storvsc_dev_ctx *stordev_ctx;
+	struct hv_storvsc_request *request;
+	struct vstor_packet *vstor_packet;
+
+	stordev_ctx = get_stor_device(dev, true);
+	if (stordev_ctx == NULL)
+		return -ENODEV;
+
+	request = &stordev_ctx->reset_req;
+	request->softc = stordev_ctx->softc;
+	vstor_packet = &request->vstor_packet;
+
+	sema_init(&request->synch_sema, 0, "stor synch sema");
+
+	vstor_packet->operation = VSTOR_OPERATION_RESETBUS;
+	vstor_packet->flags = REQUEST_COMPLETION_FLAG;
+
+	ret = hv_vmbus_channel_send_packet(dev->channel,
+			vstor_packet,
+			sizeof(struct vstor_packet),
+			(uint64_t)&stordev_ctx->reset_req,
+			VmbusPacketTypeDataInBand,
+			VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+
+	if (ret != 0)
+		goto Cleanup;
+
+	// XXX add timeout
+	ret = sema_timedwait(&request->synch_sema, 500); //KYS 5 seconds
+
+	if (ret)
+		goto Cleanup;
+
+
+	/*
+	 * At this point, all outstanding requests in the adapter 
+	 * should have been flushed out and return to us
+	 */
+
+Cleanup:
+	sema_destroy(&request->synch_sema);
+	return ret;
+}
+
+/*++
+
+Name: 
+	hv_storvsc_io_request()
+
+Description:
+	Function to initiate an I/O request
+
+--*/
+static int hv_storvsc_io_request(struct hv_device *device,
+					  struct hv_storvsc_request *request)
+{
+	struct hv_storvsc_dev_ctx *stordev_ctx;
+	struct vstor_packet *vstor_packet = &request->vstor_packet;
+	int ret = 0;
+
+	stordev_ctx = get_stor_device(device, true);
+
+	if (stordev_ctx == NULL) {
+		printf("unable to get stor device context...device being destroyed?");
+		return -2;
+	}
+
+	vstor_packet->flags |= REQUEST_COMPLETION_FLAG;
+
+	vstor_packet->vm_srb.length = sizeof(struct vmscsi_req);
+	
+	vstor_packet->vm_srb.sense_info_len = SENSE_BUFFER_SIZE;
+
+	vstor_packet->vm_srb.transfer_len = request->data_buf.Length;
+
+	vstor_packet->operation = VSTOR_OPERATION_EXECUTESRB;
+
+
+	mtx_unlock(&request->softc->hs_lock);
+	if (request->data_buf.Length) {
+		ret = hv_vmbus_channel_send_packet_multipagebuffer(
+				device->channel,
+				&request->data_buf,
+				vstor_packet, 
+				sizeof(struct vstor_packet), 
+				(uint64_t)request);
+
+	} else {
+		ret = hv_vmbus_channel_send_packet(
+				device->channel,
+				vstor_packet,
+				sizeof(struct vstor_packet),
+				(uint64_t)request,
+				VmbusPacketTypeDataInBand,
+				VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+	}
+	mtx_lock(&request->softc->hs_lock);
+
+	if (ret != 0) {
+		printf("Unable to send packet %p ret %d", vstor_packet, ret);
+	}
+
+	atomic_add_int(&stordev_ctx->num_out_reqs, 1);
+
+	return ret;
+}
+
+
+/*
+ * hv_storvsc_on_iocompletion
+ *
+ * Process IO_COMPLETION_OPERATION and ready
+ * the result to be completed for upper layer
+ * processing by the CAM layer.
+ */
+static void
+hv_storvsc_on_iocompletion(struct hv_storvsc_dev_ctx* stordev_ctx,
+			   struct vstor_packet *vstor_packet,
+			   struct hv_storvsc_request *request)
+{
+	struct vmscsi_req *vm_srb;
+
+	KASSERT(stordev_ctx != NULL, ("stordev_ctx != NULL"));
+	KASSERT(request != NULL, ("request != NULL"));
+
+	vm_srb = &vstor_packet->vm_srb;
+
+	request->sense_info_len = 0;
+	if (((vm_srb->scsi_status & 0xFF) == SCSI_STATUS_CHECK_COND) &&
+			(vm_srb->srb_status & SRB_STATUS_AUTOSENSE_VALID)) {
+		/* Autosense data available */
+
+		KASSERT(vm_srb->sense_info_len <= request->sense_info_len,
+				("vm_srb->sense_info_len <= "
+				 "request->sense_info_len"));
+
+		memcpy(request->sense_data, vm_srb->sense_data,
+				vm_srb->sense_info_len);
+
+		request->sense_info_len = vm_srb->sense_info_len;
+	}
+
+	/* Complete request by passing to the CAM layer */
+	storvsc_io_done(request);
+	atomic_subtract_int(&stordev_ctx->num_out_reqs, 1);
+	if (stordev_ctx->drain_notify
+		 && (stordev_ctx->num_out_reqs == 0))
+		sema_post(&stordev_ctx->drain_sema);
+}
+
+static void
+hv_storvsc_on_channel_callback(void *context)
+{
+	int ret = 0;
+	struct hv_device *device = (struct hv_device *)context;
+	struct hv_storvsc_dev_ctx *stordev_ctx = NULL;
+	uint32_t bytes_recvd;
+	uint64_t request_id;
+	uint8_t packet[roundup2(sizeof(struct vstor_packet), 8)];
+	struct hv_storvsc_request *request;
+	struct vstor_packet *vstor_packet;
+
+	stordev_ctx = get_stor_device(device, false);
+	if (!stordev_ctx)
+		return;
+
+	KASSERT(device, ("device"));
+
+	do {
+		ret = hv_vmbus_channel_recv_packet(
+				device->channel,
+				packet,
+				roundup2(sizeof(struct vstor_packet), 8),
+				&bytes_recvd,
+				&request_id);
+
+		if (ret == 0 && bytes_recvd > 0) {
+
+			request = (struct hv_storvsc_request *)
+					(uint64_t)request_id;
+			KASSERT(request, ("request"));
+
+			if ((request == &stordev_ctx->init_req) ||
+				(request == &stordev_ctx->reset_req)) {
+				memcpy(&request->vstor_packet, packet,
+					 sizeof(struct vstor_packet));
+				sema_post(&request->synch_sema); 
+			} else {
+				vstor_packet = (struct vstor_packet *)packet;
+				switch(vstor_packet->operation) {
+				case VSTOR_OPERATION_COMPLETEIO:
+					hv_storvsc_on_iocompletion(stordev_ctx,
+						 vstor_packet, request);
+					break;
+				case VSTOR_OPERATION_REMOVEDEVICE:
+					// TODO:
+					break;
+				default:
+					break;
+				}			
+			}
+		} else {
+			break;
+		}
+	} while (1);
+
+}
 
 /* {ba6163d9-04a1-4d29-b605-72e2ffb1dc7f} */
 static const GUID gStorVscDeviceType={
@@ -193,8 +729,9 @@ storvsc_probe(device_t dev)
 	switch (storvsc_get_storage_type(dev)) {
 	case DRIVER_BLKVSC:
 		if (ata_disk_enable == 0) {
-			ret = 0;
+			ret = 0; 
 		}
+		ret = 0;
 		break;
 	case DRIVER_STORVSC:
 		ret = 0;
@@ -202,56 +739,57 @@ storvsc_probe(device_t dev)
 	default:
 		ret = ENXIO;
 	}
-
 	return (ret);
 }
 
 static int
 storvsc_attach(device_t dev)
 {
-	struct device_context *device_ctx = vmbus_get_devctx(dev);
+	struct hv_device *hv_dev = vmbus_get_devctx(dev);
 	enum hv_storage_type stor_type;
 	struct storvsc_softc *sc;
 	struct cam_devq *devq;
 	int ret, i;
 	struct hv_storvsc_request *reqp;
+	struct hv_storvsc_dev_ctx *stordev_ctx;
+	struct root_hold_token *root_mount_token;
 
-	DPRINT_ENTER(STORVSC_DRV);
+	root_mount_token = root_mount_hold("storvsc");
+	/*
+	 * We need to serialize storvec attach calls.
+	 */
 
 	sc = device_get_softc(dev);
 	if (sc == NULL) {
-		DPRINT_ERR(STORVSC_DRV, "softc not configured");
-		ret = ENOMEM;
-		return ret;
+		ret = -ENOMEM;
+		goto cleanup;
 	}
 
 	stor_type = storvsc_get_storage_type(dev);
+
 	if (stor_type == DRIVER_UNKNOWN) {
-		DPRINT_ERR(STORVSC_DRV, "Not a storage device");
-		return (-1);
+		return -ENODEV;
+		goto cleanup;
 	}
 
 	bzero(sc, sizeof(struct storvsc_softc));
 
 	/* fill in driver specific properties */
-	sc->drv_obj.Base.name = g_drv_props_table[stor_type].drv_name;
 	sc->drv_props = &g_drv_props_table[stor_type];
-	sc->drv_obj.ringbuffer_size =
-		g_drv_props_table[stor_type].drv_ringbuffer_size;
-
-	device_ctx->device_obj.Driver = &sc->drv_obj.Base;
 
 	/* fill in device specific properties */
 	sc->unit	= device_get_unit(dev);
-	sc->storvsc_dev = &device_ctx->device_obj;
+	sc->storvsc_dev = hv_dev;
 	device_set_desc(dev, g_drv_props_table[stor_type].drv_desc);
 
 	LIST_INIT(&sc->free_list);
 	mtx_init(&sc->hs_lock, "hvslck", NULL, MTX_DEF);
 
 	for (i = 0; i < sc->drv_props->drv_max_ios_per_target; ++i) {
-		reqp = malloc(sizeof(struct hv_storvsc_request), M_DEVBUF, M_WAITOK|M_ZERO);
+		reqp = malloc(sizeof(struct hv_storvsc_request),
+				 M_DEVBUF, M_WAITOK|M_ZERO);
 		if (reqp == NULL) {
+			ret = -ENOMEM;
 			printf("cannot alloc struct hv_storvsc_request\n");
 			goto cleanup;
 		}
@@ -261,13 +799,25 @@ storvsc_attach(device_t dev)
 		LIST_INSERT_HEAD(&sc->free_list, reqp, link);
 	}
 
-	ret = hv_storvsc_on_deviceadd(&device_ctx->device_obj, sc);
+	stordev_ctx =
+		malloc(sizeof(struct hv_storvsc_dev_ctx),
+				 M_DEVBUF, M_WAITOK|M_ZERO);
 
-	if (ret != 0) {
-		DPRINT_ERR(STORVSC_DRV, "unable to add storvsc device (ret %d)", ret);
-		
-		return ret;
+	if (stordev_ctx == NULL) {
+		ret = -ENOMEM;
+		goto cleanup;
 	}
+	stordev_ctx->device = hv_dev;
+	stordev_ctx->softc = sc;
+	stordev_ctx->destroy = false;
+	stordev_ctx->drain_notify = false;
+	sema_init(&stordev_ctx->drain_sema, 0, "Store Drain Sema");
+	sc->stor_ctx = stordev_ctx;
+
+
+	ret = hv_storvsc_connect_vsp(hv_dev);
+	if (ret)
+		goto cleanup;
 
 	/*
 	 *  Create the device queue.
@@ -276,7 +826,8 @@ storvsc_attach(device_t dev)
 	devq = cam_simq_alloc(sc->drv_props->drv_max_ios_per_target);
 	if (devq == NULL) {
 		printf("Failed to alloc device queue\n");
-		return (ENOMEM);
+		ret = -ENOMEM;
+		goto cleanup;
 	}
 
 	sc->hs_sim = cam_sim_alloc(storvsc_action,
@@ -291,24 +842,28 @@ storvsc_attach(device_t dev)
 	if (sc->hs_sim == NULL) {
 		printf("Failed to alloc sim\n");
 		cam_simq_free(devq);
-		return (ENOMEM);
+		ret = -ENOMEM;
+		goto cleanup;
 	}
 
 	mtx_lock(&sc->hs_lock);
 	if (xpt_bus_register(sc->hs_sim, dev, 0) != CAM_SUCCESS) {
-		cam_sim_free(sc->hs_sim, /*free_devq*/TRUE);
+		cam_sim_free(sc->hs_sim, /*free_devq*/true);
 		mtx_unlock(&sc->hs_lock);
 		printf("Unable to register SCSI bus\n");
-		return (ENXIO);
+		ret = -ENXIO;
+		goto cleanup;
 	}
 
-	if (xpt_create_path(&sc->hs_path, /*periph*/NULL, cam_sim_path(sc->hs_sim),
-						CAM_TARGET_WILDCARD, CAM_LUN_WILDCARD) != CAM_REQ_CMP) {
+	if (xpt_create_path(&sc->hs_path, /*periph*/NULL,
+		 cam_sim_path(sc->hs_sim),
+		CAM_TARGET_WILDCARD, CAM_LUN_WILDCARD) != CAM_REQ_CMP) {
 		xpt_bus_deregister(cam_sim_path(sc->hs_sim));
-		cam_sim_free(sc->hs_sim, /*free_devq*/TRUE);
+		cam_sim_free(sc->hs_sim, /*free_devq*/true);
 		mtx_unlock(&sc->hs_lock);
 		printf("Unable to create path\n");
-		return (ENXIO);
+		ret = -ENXIO;
+		goto cleanup;
 	}
 
 	mtx_unlock(&sc->hs_lock);
@@ -317,25 +872,51 @@ storvsc_attach(device_t dev)
 	KASSERT(i < HS_MAX_ADAPTERS, ("storvsc_attach: hs_softc full\n"));
 	hs_softc[i] = sc;
 
-	DPRINT_EXIT(STORVSC_DRV);
+	root_mount_rel(root_mount_token);
 	return 0;
 
- cleanup:
 
+cleanup:
+	root_mount_rel(root_mount_token);
 	while (!LIST_EMPTY(&sc->free_list)) {
 		reqp = LIST_FIRST(&sc->free_list);
 		LIST_REMOVE(reqp, link);
 		free(reqp, M_DEVBUF);
 	}
-	return -1;
+	return ret;
 }
 
 static int storvsc_detach(device_t dev)
 {
 	struct storvsc_softc *sc = device_get_softc(dev);
 	struct hv_storvsc_request *reqp = NULL;
+	struct hv_storvsc_dev_ctx *stordev_ctx;
+	struct hv_device *hv_device = vmbus_get_devctx(dev);
 
-	/* XXX call hv_storvsc_on_deviceremove? */
+	stordev_ctx = sc->stor_ctx;
+
+	mtx_lock_spin(&hv_device->channel->InboundLock);
+	stordev_ctx->destroy = true;
+	mtx_unlock_spin(&hv_device->channel->InboundLock);
+
+	/*
+	 * At this point, all outbound traffic should be disable. We
+	 * only allow inbound traffic (responses) to proceed so that
+	 * outstanding requests can be completed.
+	 */
+
+	stordev_ctx->drain_notify = true;
+	sema_wait(&stordev_ctx->drain_sema);
+	stordev_ctx->drain_notify = false;
+
+	/*
+	 * Since we have already drained, we don't need to busy wait
+	 * as was done in final_release_stor_device().
+	 * The call to close the channel will reset the callback
+	 * under the protection of the incoming channel lock.
+	 */
+
+	hv_vmbus_channel_close(hv_device->channel);
 
 	mtx_lock(&sc->hs_lock);
 	while (!LIST_EMPTY(&sc->free_list)) {
@@ -345,6 +926,7 @@ static int storvsc_detach(device_t dev)
 		free(reqp, M_DEVBUF);
 	}
 	mtx_unlock(&sc->hs_lock);
+	free(stordev_ctx, M_DEVBUF);
 	return 0;
 }
 
@@ -464,9 +1046,6 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 	switch (ccb->ccb_h.func_code) {
 	case XPT_PATH_INQ: {
 		struct ccb_pathinq *cpi = &ccb->cpi;
-		DPRINT_INFO(STORVSC, "XPT_PATH_INQ %d:%d:%d %s\n", cam_sim_bus(sim),
-					ccb->ccb_h.target_id, ccb->ccb_h.target_lun,
-					cam_sim_name(sim));
 
 		cpi->version_num = 1;
 		cpi->hba_inquiry = PI_TAG_ABLE|PI_SDTR_ABLE;
@@ -522,7 +1101,7 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 	}
 	case  XPT_RESET_BUS:
 	case  XPT_RESET_DEV:{
-#ifdef notyet
+
 		if ((res = hv_storvsc_host_reset(sc->storvsc_dev)) != 0) {
 			printf("hv_storvsc_host_reset failed with %d\n", res);
 			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
@@ -532,14 +1111,13 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		ccb->ccb_h.status = CAM_REQ_CMP;
 		xpt_done(ccb);
 		return;
-#else
+
 		printf("hv_storvsc: %s reset not supported.\n",
 				(ccb->ccb_h.func_code == XPT_RESET_BUS)?
 				"bus" : "dev");
 		ccb->ccb_h.status = CAM_PROVIDE_FAIL;
 		xpt_done(ccb);
 		return;
-#endif
 	}
 	case XPT_SCSI_IO:
 	case XPT_IMMED_NOTIFY: {
@@ -563,7 +1141,6 @@ static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		reqp = LIST_FIRST(&sc->free_list);
 		LIST_REMOVE(reqp, link);
 
-		ASSERT(reqp);
 		bzero(reqp, sizeof(struct hv_storvsc_request));
 		reqp->softc = sc;
 
@@ -677,8 +1254,7 @@ create_storvsc_request(union ccb *ccb, struct hv_storvsc_request *reqp)
  * to be passed to the CAM layer.
  * Free resources related to this request.
  */
-void
-storvsc_io_done(struct hv_storvsc_request *reqp)
+static void storvsc_io_done(struct hv_storvsc_request *reqp)
 {
 	union ccb *ccb = reqp->ccb;
 	struct ccb_scsiio *csio = &ccb->csio;
@@ -730,7 +1306,6 @@ storvsc_io_done(struct hv_storvsc_request *reqp)
 	ccb->csio.resid = ccb->csio.dxfer_len - vm_srb->transfer_len;
 
 	if (reqp->sense_info_len != 0) {
-		ASSERT(reqp->sense_info_len <= csio->sense_len);
 		csio->sense_resid = csio->sense_len - reqp->sense_info_len;
 		ccb->ccb_h.status |= CAM_AUTOSNS_VALID;
 	}
@@ -751,7 +1326,6 @@ storvsc_io_done(struct hv_storvsc_request *reqp)
 static void
 storvsc_free_request(struct storvsc_softc *sc, struct hv_storvsc_request *reqp)
 {
-	ASSERT(reqp->softc == sc);
 
 	LIST_INSERT_HEAD(&sc->free_list, reqp, link);
 }
