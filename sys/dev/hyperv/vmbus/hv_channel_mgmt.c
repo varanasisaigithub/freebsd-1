@@ -337,7 +337,7 @@ VmbusChannelProcessOffer(void *context) {
 	int ret = 0;
 	VMBUS_CHANNEL* newChannel = (VMBUS_CHANNEL*) context;
 	bool fNew = true;
-	VMBUS_CHANNEL* channel;
+	VMBUS_CHANNEL* channel = NULL;
 
 	// Make sure this is a new offer
 	mtx_lock_spin(&gVmbusConnection.ChannelLock);
@@ -355,7 +355,13 @@ VmbusChannelProcessOffer(void *context) {
 	}
 
 	if (fNew) {
-		LIST_INSERT_HEAD(&gVmbusConnection.channel_anchor, newChannel, ListEntry);
+		if (channel != NULL) {
+			/* Insert at tail */
+			LIST_INSERT_AFTER(channel, newChannel, ListEntry);
+		} else {
+			/* New head */
+			LIST_INSERT_HEAD(&gVmbusConnection.channel_anchor, newChannel, ListEntry);
+		}
 	}
 	mtx_unlock_spin(&gVmbusConnection.ChannelLock);
 
