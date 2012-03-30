@@ -382,7 +382,7 @@ hn_start_locked(struct ifnet *ifp)
 		    sizeof(netvsc_packet) + (num_frags * sizeof(PAGE_BUFFER)) + 
 		    net_drv_obj->request_ext_size, M_DEVBUF, M_ZERO | M_WAITOK);
 		if (buf == NULL) {
-			return -ENOMEM;
+			return ENOMEM;
 		}
 
 		packet = (netvsc_packet *)(buf + HV_NV_PACKET_OFFSET_IN_BUF);
@@ -661,7 +661,7 @@ hn_start(struct ifnet *ifp)
 
 	sc = ifp->if_softc;
 	SN_LOCK(sc);
-	hn_start_locked(ifp);
+	(void)hn_start_locked(ifp);
 	SN_UNLOCK(sc);
 }
 

@@ -337,12 +337,12 @@ VmbusChannelProcessOffer(void *context) {
 	int ret = 0;
 	VMBUS_CHANNEL* newChannel = (VMBUS_CHANNEL*) context;
 	bool fNew = true;
-	VMBUS_CHANNEL* channel;
+	VMBUS_CHANNEL* channel = NULL;
 
 	// Make sure this is a new offer
 	mtx_lock_spin(&gVmbusConnection.ChannelLock);
 
-	LIST_FOREACH(channel, &gVmbusConnection.channel_anchor, ListEntry) {
+	TAILQ_FOREACH(channel, &gVmbusConnection.channel_anchor, ListEntry) {
 
 		if (!memcmp(&channel->OfferMsg.Offer.InterfaceType,
 			&newChannel->OfferMsg.Offer.InterfaceType, sizeof(GUID))
@@ -355,7 +355,9 @@ VmbusChannelProcessOffer(void *context) {
 	}
 
 	if (fNew) {
-		LIST_INSERT_HEAD(&gVmbusConnection.channel_anchor, newChannel, ListEntry);
+		/* Insert at tail */
+		TAILQ_INSERT_TAIL(&gVmbusConnection.channel_anchor, newChannel, ListEntry);
+
 	}
 	mtx_unlock_spin(&gVmbusConnection.ChannelLock);
 
@@ -379,7 +381,7 @@ VmbusChannelProcessOffer(void *context) {
 	ret = vmbus_child_device_register(newChannel->device);
 	if (ret != 0) {
 		mtx_lock_spin(&gVmbusConnection.ChannelLock);
-		LIST_REMOVE(newChannel, ListEntry);
+		TAILQ_REMOVE(&gVmbusConnection.channel_anchor, newChannel, ListEntry);
 		mtx_unlock_spin(&gVmbusConnection.ChannelLock);
 
 		FreeVmbusChannel(newChannel);
@@ -494,7 +496,7 @@ VmbusChannelOnOpenResult(PVMBUS_CHANNEL_MESSAGE_HEADER hdr) {
 	// Find the open msg, copy the result and signal/unblock the wait event
 	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
 
-	LIST_FOREACH(msgInfo, &gVmbusConnection.channel_msg_anchor, MsgListEntry) {
+	TAILQ_FOREACH(msgInfo, &gVmbusConnection.channel_msg_anchor, MsgListEntry) {
 		requestHeader = (VMBUS_CHANNEL_MESSAGE_HEADER*) msgInfo->Msg;
 
 		if (requestHeader->MessageType == ChannelMessageOpenChannel) {
@@ -535,7 +537,7 @@ VmbusChannelOnGpadlCreated(PVMBUS_CHANNEL_MESSAGE_HEADER hdr) {
 	// Find the establish msg, copy the result and signal/unblock the wait event
 	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
 
-	LIST_FOREACH(msgInfo, &gVmbusConnection.channel_msg_anchor, MsgListEntry) {
+	TAILQ_FOREACH(msgInfo, &gVmbusConnection.channel_msg_anchor, MsgListEntry) {
 		requestHeader = (VMBUS_CHANNEL_MESSAGE_HEADER*) msgInfo->Msg;
 
 		if (requestHeader->MessageType == ChannelMessageGpadlHeader) {
@@ -579,7 +581,7 @@ VmbusChannelOnGpadlTorndown(PVMBUS_CHANNEL_MESSAGE_HEADER hdr) {
 	// Find the open msg, copy the result and signal/unblock the wait event
 	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
 
-	LIST_FOREACH(msgInfo, &gVmbusConnection.channel_msg_anchor, MsgListEntry) {
+	TAILQ_FOREACH(msgInfo, &gVmbusConnection.channel_msg_anchor, MsgListEntry) {
 		requestHeader = (VMBUS_CHANNEL_MESSAGE_HEADER*) msgInfo->Msg;
 
 		if (requestHeader->MessageType == ChannelMessageGpadlTeardown) {
@@ -621,7 +623,7 @@ VmbusChannelOnVersionResponse(PVMBUS_CHANNEL_MESSAGE_HEADER hdr) {
 
 	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
 
-	LIST_FOREACH(msgInfo, &gVmbusConnection.channel_msg_anchor, MsgListEntry) {
+	TAILQ_FOREACH(msgInfo, &gVmbusConnection.channel_msg_anchor, MsgListEntry) {
 		requestHeader = (VMBUS_CHANNEL_MESSAGE_HEADER*) msgInfo->Msg;
 
 		if (requestHeader->MessageType
@@ -725,9 +727,9 @@ VmbusChannelReleaseUnattachedChannels(void)
 
 	mtx_lock_spin(&gVmbusConnection.ChannelLock);
 
-	while (!LIST_EMPTY(&gVmbusConnection.channel_anchor)) {
-		channel = LIST_FIRST(&gVmbusConnection.channel_anchor);
-		LIST_REMOVE(channel, ListEntry);
+	while (!TAILQ_EMPTY(&gVmbusConnection.channel_anchor)) {
+		channel = TAILQ_FIRST(&gVmbusConnection.channel_anchor);
+		TAILQ_REMOVE(&gVmbusConnection.channel_anchor, channel, ListEntry);
 
 		vmbus_child_device_unregister(channel->device);
 		FreeVmbusChannel(channel);

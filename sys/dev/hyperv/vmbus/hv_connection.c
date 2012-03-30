@@ -106,11 +106,11 @@ VmbusConnect(void) {
 	gVmbusConnection.ConnectState = Connecting;
 	gVmbusConnection.WorkQueue = work_queue_create("vmbusQ");
 
-	LIST_INIT(&gVmbusConnection.channel_msg_anchor);
+	TAILQ_INIT(&gVmbusConnection.channel_msg_anchor);
 	mtx_init(&gVmbusConnection.ChannelMsgLock, "vmbus channel msg",
 		NULL, MTX_SPIN);
 
-	LIST_INIT(&gVmbusConnection.channel_anchor);
+	TAILQ_INIT(&gVmbusConnection.channel_anchor);
 	mtx_init(&gVmbusConnection.ChannelLock, "vmbus channel",
 		NULL, MTX_SPIN);
 
@@ -165,14 +165,14 @@ VmbusConnect(void) {
 	// Add to list before we send the request since we may receive the
 	// response before returning from this routine
 	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
-	LIST_INSERT_HEAD(&gVmbusConnection.channel_msg_anchor, msgInfo, MsgListEntry);
+	TAILQ_INSERT_TAIL(&gVmbusConnection.channel_msg_anchor, msgInfo, MsgListEntry);
 	mtx_unlock_spin(&gVmbusConnection.ChannelMsgLock);
 
 
 	ret = VmbusPostMessage(msg, sizeof(VMBUS_CHANNEL_INITIATE_CONTACT));
 	if (ret != 0) {
 		mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
-		LIST_REMOVE(msgInfo, MsgListEntry);
+		TAILQ_REMOVE(&gVmbusConnection.channel_msg_anchor, msgInfo, MsgListEntry);
 		mtx_unlock_spin(&gVmbusConnection.ChannelMsgLock);
 		goto Cleanup;
 	}
@@ -182,7 +182,7 @@ VmbusConnect(void) {
 
 
 	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
-	LIST_REMOVE(msgInfo, MsgListEntry);
+	TAILQ_REMOVE(&gVmbusConnection.channel_msg_anchor, msgInfo, MsgListEntry);
 	mtx_unlock_spin(&gVmbusConnection.ChannelMsgLock);
 
 	// Check if successful
@@ -272,6 +272,8 @@ VmbusDisconnect(void) {
  Description:
  Get the channel object given its child relative id (ie channel id)
 
+ XXX Consider optimization where relids are stored in a fixed size array
+ and channels are accessed without the need to take this lock or search the list.
  --*/
 VMBUS_CHANNEL*
 GetChannelFromRelId(uint32_t relId) {
@@ -279,7 +281,7 @@ GetChannelFromRelId(uint32_t relId) {
 	VMBUS_CHANNEL* foundChannel = NULL;
 
 	mtx_lock_spin(&gVmbusConnection.ChannelLock);
-	LIST_FOREACH(channel, &gVmbusConnection.channel_anchor, ListEntry) {
+	TAILQ_FOREACH(channel, &gVmbusConnection.channel_anchor, ListEntry) {
 
 		if (channel->OfferMsg.ChildRelId == relId) {
 			foundChannel = channel;

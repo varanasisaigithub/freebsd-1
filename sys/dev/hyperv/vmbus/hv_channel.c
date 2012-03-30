@@ -275,7 +275,7 @@ hv_vmbus_channel_open(VMBUS_CHANNEL *NewChannel, uint32_t SendRingBufferSize,
 	}
 
 	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
-	LIST_INSERT_HEAD(&gVmbusConnection.channel_msg_anchor, openInfo, MsgListEntry);
+	TAILQ_INSERT_TAIL(&gVmbusConnection.channel_msg_anchor, openInfo, MsgListEntry);
 	mtx_unlock_spin(&gVmbusConnection.ChannelMsgLock);
 
 
@@ -298,7 +298,7 @@ hv_vmbus_channel_open(VMBUS_CHANNEL *NewChannel, uint32_t SendRingBufferSize,
 
 Cleanup:
 	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
-	LIST_REMOVE(openInfo, MsgListEntry);
+	TAILQ_REMOVE(&gVmbusConnection.channel_msg_anchor, openInfo, MsgListEntry);
 	mtx_unlock_spin(&gVmbusConnection.ChannelMsgLock);
 	sema_destroy(&openInfo->wait_sema);
 	free(openInfo, M_DEVBUF);
@@ -347,7 +347,7 @@ VmbusChannelCreateGpadlHeader(void *Kbuffer,
 			+ sizeof(VMBUS_CHANNEL_GPADL_HEADER) + sizeof(GPA_RANGE)
 			+ pfnCount * sizeof(uint64_t);
 		msgHeader = malloc(msgSize, M_DEVBUF, M_NOWAIT | M_ZERO);
-		LIST_INIT(&msgHeader->sub_msg_list_anchor);
+		TAILQ_INIT(&msgHeader->sub_msg_list_anchor);
 		msgHeader->MessageSize = msgSize;
 
 		gpaHeader = (VMBUS_CHANNEL_GPADL_HEADER*) msgHeader->Msg;
@@ -392,41 +392,7 @@ VmbusChannelCreateGpadlHeader(void *Kbuffer,
 				gpadlBody->Pfn[i] = pfn + pfnSum + i;
 			}
 
-			/*
-			 * Add to the message header.
-			 * We will need to add this to the tail of the
-			 * list. Unfortunately, the FreeBsd LIST primitives
-			 * don't support adding to the tail. Here is an add to
-			 * the tail implementation. We may want to clean
-			 * this up and submit this for inclusion in the
-			 * LIST primitives. XXXKYS.
-			 */	
-
-			if (LIST_EMPTY(&msgHeader->sub_msg_list_anchor)) {
-				LIST_INSERT_HEAD(
-					&msgHeader->sub_msg_list_anchor,
-					msgBody, MsgListEntry);
-			} else {
-				/*
-				 * Need to add at the tail.
-				 */
-				VMBUS_CHANNEL_MSGINFO* cur_msg;
-				VMBUS_CHANNEL_MSGINFO* next_msg;
-				cur_msg =
-				LIST_FIRST(&msgHeader->sub_msg_list_anchor);
-
-				while (1) {
-					next_msg = LIST_NEXT(cur_msg,
-							MsgListEntry);
-					if (!next_msg)
-						break;
-					cur_msg = next_msg;
-
-				}
-				LIST_INSERT_AFTER(cur_msg, msgBody,
-					MsgListEntry);
-			}
-
+			TAILQ_INSERT_TAIL(&msgHeader->sub_msg_list_anchor, msgBody, MsgListEntry);
 			pfnSum += pfnCurr;
 			pfnLeft -= pfnCurr;
 		}
@@ -505,7 +471,7 @@ hv_vmbus_channel_establish_gpadl(VMBUS_CHANNEL *Channel, void *Kbuffer,
 
 
 	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
-	LIST_INSERT_HEAD(&gVmbusConnection.channel_msg_anchor, msgInfo, MsgListEntry);
+	TAILQ_INSERT_TAIL(&gVmbusConnection.channel_msg_anchor, msgInfo, MsgListEntry);
 	mtx_unlock_spin(&gVmbusConnection.ChannelMsgLock);
 
 
@@ -517,7 +483,7 @@ hv_vmbus_channel_establish_gpadl(VMBUS_CHANNEL *Channel, void *Kbuffer,
 
 	mcnt = 1;
 	if (msgCount > 1) {
-		LIST_FOREACH(curr, &msgInfo->sub_msg_list_anchor, MsgListEntry)
+		TAILQ_FOREACH(curr, &msgInfo->sub_msg_list_anchor, MsgListEntry)
 		{
 			mcnt++;
 			subMsgInfo = curr;
@@ -557,7 +523,7 @@ hv_vmbus_channel_establish_gpadl(VMBUS_CHANNEL *Channel, void *Kbuffer,
 Cleanup:
 
 	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
-	LIST_REMOVE(msgInfo, MsgListEntry);
+	TAILQ_REMOVE(&gVmbusConnection.channel_msg_anchor, msgInfo, MsgListEntry);
 	mtx_unlock_spin(&gVmbusConnection.ChannelMsgLock);
 
 	sema_destroy(&msgInfo->wait_sema);
@@ -602,7 +568,7 @@ hv_vmbus_channel_teardown_gpdal(VMBUS_CHANNEL *Channel, uint32_t GpadlHandle)
 	msg->Gpadl = GpadlHandle;
 
 	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
-	LIST_INSERT_HEAD(&gVmbusConnection.channel_msg_anchor, info, MsgListEntry);
+	TAILQ_INSERT_TAIL(&gVmbusConnection.channel_msg_anchor, info, MsgListEntry);
 	mtx_unlock_spin(&gVmbusConnection.ChannelMsgLock);
 
 	ret = VmbusPostMessage(msg, sizeof(VMBUS_CHANNEL_GPADL_TEARDOWN));
@@ -616,7 +582,7 @@ cleanup:
 
 	// Received a torndown response
 	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
-	LIST_REMOVE(info, MsgListEntry);
+	TAILQ_REMOVE(&gVmbusConnection.channel_msg_anchor, info, MsgListEntry);
 	mtx_unlock_spin(&gVmbusConnection.ChannelMsgLock);
 	sema_destroy(&info->wait_sema);
 	free(info, M_DEVBUF);
@@ -681,7 +647,7 @@ hv_vmbus_channel_close(VMBUS_CHANNEL *Channel)
 	// since the caller will free the channel
 	if (Channel->State == CHANNEL_OPEN_STATE) {
 		mtx_lock_spin(&gVmbusConnection.ChannelLock);
-		LIST_REMOVE(Channel, ListEntry);
+		TAILQ_REMOVE(&gVmbusConnection.channel_anchor, Channel, ListEntry);
 		mtx_unlock_spin(&gVmbusConnection.ChannelLock);
 
 		FreeVmbusChannel(Channel);

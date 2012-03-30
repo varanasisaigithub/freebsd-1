@@ -329,7 +329,7 @@ static int vmbus_bus_init(void)
 		SYS_RES_IRQ, &vmbus_rid, vmbus_irq, vmbus_irq, 1, RF_ACTIVE);
 
 	if (intr_res == NULL) {
-		ret = -ENOMEM; /* XXXKYS: Need a better errno */
+		ret = ENOMEM; /* XXXKYS: Need a better errno */
 		goto cleanup2;
 	}
 
@@ -352,7 +352,7 @@ static int vmbus_bus_init(void)
 
 	isrc = intr_lookup_source(vmbus_irq);
 	if ((isrc == NULL) || (isrc->is_event == NULL)) {
-		ret = -EINVAL;
+		ret = EINVAL;
 		goto cleanup4;
 	}
 

@@ -73,7 +73,7 @@ typedef enum {
 } VMBUS_CHANNEL_STATE;
 
 typedef struct _VMBUS_CHANNEL {
-	LIST_ENTRY ListEntry;
+	TAILQ_ENTRY ListEntry;
 
 	DEVICE_OBJECT* DeviceObject;
 
@@ -134,10 +134,10 @@ typedef union {
 // the msg type itself
 typedef struct _VMBUS_CHANNEL_MSGINFO {
 	// Bookkeeping stuff
-	LIST_ENTRY MsgListEntry;
+	TAILQ_ENTRY MsgListEntry;
 
 	// So far, this is only used to handle gpadl body message
-	LIST_ENTRY SubMsgList;
+	TAILQ_ENTRY SubMsgList;
 
 	// Synchronize the request/response if needed
 	HANDLE WaitEvent;
