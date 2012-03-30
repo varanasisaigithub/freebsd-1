@@ -182,10 +182,10 @@ typedef union {
 // the msg type itself
 typedef struct _VMBUS_CHANNEL_MSGINFO {
 	// Bookkeeping stuff
-	LIST_ENTRY(_VMBUS_CHANNEL_MSGINFO)  MsgListEntry;
+	TAILQ_ENTRY(_VMBUS_CHANNEL_MSGINFO)  MsgListEntry;
 
 	// So far, this is only used to handle gpadl body message
-	LIST_HEAD(, _VMBUS_CHANNEL_MSGINFO) sub_msg_list_anchor; 
+	TAILQ_HEAD(, _VMBUS_CHANNEL_MSGINFO) sub_msg_list_anchor; 
 
 	// Synchronize the request/response if needed
 	// KYS: Use a semaphore for now. Not perf critical.
@@ -525,11 +525,11 @@ typedef struct _VMBUS_CONNECTION {
 
 	// 2 pages - 1st page for parent->child notification and 2nd is child->parent notification
 	void* MonitorPages;
-	LIST_HEAD(, _VMBUS_CHANNEL_MSGINFO)  channel_msg_anchor;
+	TAILQ_HEAD(, _VMBUS_CHANNEL_MSGINFO)  channel_msg_anchor;
 	struct mtx ChannelMsgLock;
 
 	// List of channels
-	LIST_HEAD(, _VMBUS_CHANNEL)  channel_anchor;
+	TAILQ_HEAD(, _VMBUS_CHANNEL)  channel_anchor;
 	struct mtx ChannelLock;
 
 	HANDLE WorkQueue;

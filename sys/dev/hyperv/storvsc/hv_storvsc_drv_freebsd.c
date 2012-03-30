@@ -244,10 +244,13 @@ hv_storvsc_channel_init(struct hv_device *dev)
 	struct hv_storvsc_dev_ctx *stordev_ctx;
 	struct hv_storvsc_request *request;
 	struct vstor_packet *vstor_packet;
+	struct storvsc_softc *sc;
+
+	sc = device_get_softc(dev->device);
 
 	stordev_ctx = get_stor_device(dev, true);
 	if (stordev_ctx == NULL) {
-		return -ENODEV;
+		return ENODEV;
 	}
 
 	request = &stordev_ctx->init_req;
@@ -306,7 +309,7 @@ hv_storvsc_channel_init(struct hv_device *dev)
 	if (ret != 0) {
 		goto Cleanup;
 	}
-	
+
 	ret = sema_timedwait(&request->synch_sema, 500); //KYS 5 seconds
 
 	if (ret) {
@@ -424,7 +427,7 @@ static int hv_storvsc_host_reset(struct hv_device *dev)
 
 	stordev_ctx = get_stor_device(dev, true);
 	if (stordev_ctx == NULL) {
-		return -ENODEV;
+		return ENODEV;
 	}
 
 	request = &stordev_ctx->reset_req;
@@ -733,23 +736,23 @@ storvsc_attach(device_t dev)
 	int ret, i;
 	struct hv_storvsc_request *reqp;
 	struct hv_storvsc_dev_ctx *stordev_ctx;
-	struct root_hold_token *root_mount_token;
+	struct root_hold_token *root_mount_token = NULL;
 
-	root_mount_token = root_mount_hold("storvsc");
 	/*
-	 * We need to serialize storvec attach calls.
+	 * We need to serialize storvsc attach calls.
 	 */
+	root_mount_token = root_mount_hold("storvsc");
 
 	sc = device_get_softc(dev);
 	if (sc == NULL) {
-		ret = -ENOMEM;
+		ret = ENOMEM;
 		goto cleanup;
 	}
 
 	stor_type = storvsc_get_storage_type(dev);
 
 	if (stor_type == DRIVER_UNKNOWN) {
-		return -ENODEV;
+		return ENODEV;
 		goto cleanup;
 	}
 
@@ -770,7 +773,7 @@ storvsc_attach(device_t dev)
 		reqp = malloc(sizeof(struct hv_storvsc_request),
 				 M_DEVBUF, M_WAITOK|M_ZERO);
 		if (reqp == NULL) {
-			ret = -ENOMEM;
+			ret = ENOMEM;
 			printf("cannot alloc struct hv_storvsc_request\n");
 			goto cleanup;
 		}
@@ -785,7 +788,7 @@ storvsc_attach(device_t dev)
 				 M_DEVBUF, M_WAITOK|M_ZERO);
 
 	if (stordev_ctx == NULL) {
-		ret = -ENOMEM;
+		ret = ENOMEM;
 		goto cleanup;
 	}
 	stordev_ctx->device = hv_dev;
@@ -808,7 +811,7 @@ storvsc_attach(device_t dev)
 	devq = cam_simq_alloc(sc->drv_props->drv_max_ios_per_target);
 	if (devq == NULL) {
 		printf("Failed to alloc device queue\n");
-		ret = -ENOMEM;
+		ret = ENOMEM;
 		goto cleanup;
 	}
 
@@ -824,7 +827,7 @@ storvsc_attach(device_t dev)
 	if (sc->hs_sim == NULL) {
 		printf("Failed to alloc sim\n");
 		cam_simq_free(devq);
-		ret = -ENOMEM;
+		ret = ENOMEM;
 		goto cleanup;
 	}
 
@@ -833,7 +836,7 @@ storvsc_attach(device_t dev)
 		cam_sim_free(sc->hs_sim, /*free_devq*/true);
 		mtx_unlock(&sc->hs_lock);
 		printf("Unable to register SCSI bus\n");
-		ret = -ENXIO;
+		ret = ENXIO;
 		goto cleanup;
 	}
 
@@ -844,7 +847,7 @@ storvsc_attach(device_t dev)
 		cam_sim_free(sc->hs_sim, /*free_devq*/true);
 		mtx_unlock(&sc->hs_lock);
 		printf("Unable to create path\n");
-		ret = -ENXIO;
+		ret = ENXIO;
 		goto cleanup;
 	}
 

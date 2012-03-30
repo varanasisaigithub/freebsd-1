@@ -813,7 +813,7 @@ typedef enum {
 } VMBUS_CHANNEL_STATE;
 
 typedef struct _VMBUS_CHANNEL {
-	LIST_ENTRY(_VMBUS_CHANNEL) ListEntry;
+	TAILQ_ENTRY(_VMBUS_CHANNEL) ListEntry;
 	struct hv_device *device;
 	VMBUS_CHANNEL_STATE State;
 	VMBUS_CHANNEL_OFFER_CHANNEL OfferMsg;
