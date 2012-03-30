@@ -715,7 +715,6 @@ storvsc_probe(device_t dev)
 		if (ata_disk_enable == 0) {
 			ret = 0; 
 		}
-		ret = 0;
 		break;
 	case DRIVER_STORVSC:
 		ret = 0;
