@@ -533,6 +533,7 @@ typedef struct _VMBUS_CONNECTION {
 	struct mtx ChannelLock;
 
 	HANDLE WorkQueue;
+	struct sema control_sema;
 } VMBUS_CONNECTION;
 
 

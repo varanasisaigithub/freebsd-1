@@ -105,6 +105,7 @@ VmbusConnect(void) {
 	// Initialize the vmbus connection
 	gVmbusConnection.ConnectState = Connecting;
 	gVmbusConnection.WorkQueue = work_queue_create("vmbusQ");
+	sema_init(&gVmbusConnection.control_sema, 1, "control_sema");
 
 	TAILQ_INIT(&gVmbusConnection.channel_msg_anchor);
 	mtx_init(&gVmbusConnection.ChannelMsgLock, "vmbus channel msg",
@@ -203,6 +204,7 @@ Cleanup:
 	gVmbusConnection.ConnectState = Disconnected;
 
 	work_queue_close(gVmbusConnection.WorkQueue);
+	sema_destroy(&gVmbusConnection.control_sema);
 	mtx_destroy(&gVmbusConnection.ChannelLock);
 	mtx_destroy(&gVmbusConnection.ChannelMsgLock);
 
@@ -255,6 +257,7 @@ VmbusDisconnect(void) {
 	mtx_destroy(&gVmbusConnection.ChannelMsgLock);
 
 	work_queue_close(gVmbusConnection.WorkQueue);
+	sema_destroy(&gVmbusConnection.control_sema);
 
 	gVmbusConnection.ConnectState = Disconnected;
 
