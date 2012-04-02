@@ -922,7 +922,7 @@ hv_vmbus_channel_teardown_gpdal(VMBUS_CHANNEL *Channel, uint32_t GpadlHandle);
 struct work_queue {
 	struct taskqueue *queue;
 	struct proc *proc;
-	struct sema work_sema;
+	struct sema *work_sema;
 };
 
 struct work_item{

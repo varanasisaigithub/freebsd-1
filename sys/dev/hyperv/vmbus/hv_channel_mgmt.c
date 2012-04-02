@@ -88,12 +88,15 @@ static void work_item_callback(void *work, int pending)
 	/*
 	 * Serialize work execution.
 	 */
-
-	sema_wait(&w->wq->work_sema);
+	if (w->wq->work_sema != NULL) {
+		sema_wait(w->wq->work_sema);
+	}
 
 	w->callback(w->context);
 
-	sema_post(&w->wq->work_sema);
+	if (w->wq->work_sema != NULL) {
+		sema_post(w->wq->work_sema);
+	} 
 
 	free(w, M_DEVBUF);
 }
@@ -112,7 +115,7 @@ struct work_queue *work_queue_create(char* name)
 	}
 
 	/*
-	 * XXXKYS: We use work abstraction to handle messages
+	 * We use work abstraction to handle messages
 	 * coming from the host and these are typically offers.
 	 * Some FreeBsd drivers appear to have a concurrency issue
 	 * where probe/attach needs to be serialized. We ensure that
@@ -120,11 +123,16 @@ struct work_queue *work_queue_create(char* name)
 	 * specific queue by serializing work execution.
 	 *
 	 */
-	sema_init(&wq->work_sema, 1, "work_sema");
 	if (strcmp(name, "vmbusQ") == 0) {
 		pri = PI_DISK;
-	} else {
+	} else {					/* control */
 		pri = PI_NET;
+		/*
+		 * Initialize semaphore for this queue by pointing
+		 * to the globale semaphore used for synchronizing all
+		 * control messages.
+		 */
+		wq->work_sema = &gVmbusConnection.control_sema;
 	}
 
 	sprintf(qname, "hv_%s_%u", name, qid);
@@ -143,14 +151,12 @@ struct work_queue *work_queue_create(char* name)
 		);
 
 	if (wq->queue == NULL) {
-		sema_destroy(&wq->work_sema);
 		free(wq, M_DEVBUF);
 		return (NULL);
 	}
 
 	if (taskqueue_start_threads(&wq->queue, 1, pri, "%s taskq", qname)) {
 		taskqueue_free(wq->queue);
-		sema_destroy(&wq->work_sema);
 		free(wq, M_DEVBUF);
 		return (NULL);
 	}
@@ -168,7 +174,6 @@ void work_queue_close(struct work_queue *wq)
 	 */
 //KYS	taskqueue_drain(wq->tq, );
 	taskqueue_free(wq->queue);
-	sema_destroy(&wq->work_sema);
 	free(wq, M_DEVBUF);
 }
 
