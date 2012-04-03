@@ -348,9 +348,9 @@ util_attach(device_t dev)
 	service = device_get_softc(dev);
 
 	printf("Hyper-V Service attaching: %s\n", service->name);
-	service->recv_buffer = malloc(PAGE_SIZE,  M_DEVBUF, M_ZERO);
+	service->recv_buffer = malloc(PAGE_SIZE,  M_DEVBUF, M_WAITOK | M_ZERO);
 	if (!service->recv_buffer)
-		return -ENOMEM;
+		return ENOMEM;
 
 	if (service->init) {
 		ret = service->init(service);

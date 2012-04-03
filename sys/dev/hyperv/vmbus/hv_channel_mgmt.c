@@ -61,7 +61,7 @@
 #include <sys/param.h>
 #include <sys/mbuf.h>
 
-#include "../include/hyperv.h"
+#include <dev/hyperv/include/hyperv.h>
 #include "vmbus_priv.h"
 
 //
@@ -279,7 +279,7 @@ AllocVmbusChannel(void) {
 		return NULL;
 	}
 
-	mtx_init(&channel->InboundLock, "channel inbound", NULL, MTX_SPIN);
+	mtx_init(&channel->InboundLock, "channel inbound", NULL, MTX_DEF);
 
 	channel->ControlWQ = work_queue_create("control");
 	if (!channel->ControlWQ) {

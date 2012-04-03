@@ -30,7 +30,7 @@
 #include <cam/scsi/scsi_message.h>
 
 
-#include "../include/hyperv.h"
+#include "hyperv.h"
 #include "hv_vstorage.h"
 
 #define MAX_MULTIPAGE_BUFFER_PACKET (4096)
@@ -870,7 +870,8 @@ cleanup:
 	return ret;
 }
 
-static int storvsc_detach(device_t dev)
+static int
+storvsc_detach(device_t dev)
 {
 	struct storvsc_softc *sc = device_get_softc(dev);
 	struct hv_storvsc_request *reqp = NULL;
@@ -879,9 +880,9 @@ static int storvsc_detach(device_t dev)
 
 	stordev_ctx = sc->stor_ctx;
 
-	mtx_lock_spin(&hv_device->channel->InboundLock);
+	mtx_lock(&hv_device->channel->InboundLock);
 	stordev_ctx->destroy = true;
-	mtx_unlock_spin(&hv_device->channel->InboundLock);
+	mtx_unlock(&hv_device->channel->InboundLock);
 
 	/*
 	 * At this point, all outbound traffic should be disable. We

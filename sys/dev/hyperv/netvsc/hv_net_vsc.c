@@ -68,7 +68,7 @@
 #include <machine/bus.h>
 #include <machine/atomic.h>
 
-#include "../include/hyperv.h"
+#include <dev/hyperv/include/hyperv.h>
 
 #include <dev/hyperv/netvsc/hv_net_vsc.h>
 #include <dev/hyperv/netvsc/hv_rndis.h>
@@ -662,13 +662,14 @@ hv_nv_on_device_remove(struct hv_device *device)
 	netvsc_dev *net_dev = sc->net_dev;;
 	
 	/* Stop outbound traffic ie sends and receives completions */
-	mtx_lock_spin(&device->channel->InboundLock);
+	mtx_lock(&device->channel->InboundLock);
 	net_dev->destroy = true;
-	mtx_unlock_spin(&device->channel->InboundLock);
+	mtx_unlock(&device->channel->InboundLock);
 
 	/* Wait for all send completions */
-	while (net_dev->num_outstanding_sends)
+	while (net_dev->num_outstanding_sends) {
 		DELAY(100);
+	}
 
 	hv_nv_disconnect_from_vsp(net_dev);
 
@@ -837,7 +838,7 @@ hv_nv_on_receive(struct hv_device *device, VMPACKET_DESCRIPTOR *pkt)
 	 * packet.  +1 to represent the xfer page packet itself.  We grab it
 	 * here so that we know exactly how many we can fulfill.
 	 */
-	mtx_lock(&net_dev->rx_pkt_list_lock);
+	mtx_lock_spin(&net_dev->rx_pkt_list_lock);
 	while (!STAILQ_EMPTY(&net_dev->myrx_packet_list)) {	
 		net_vsc_pkt = STAILQ_FIRST(&net_dev->myrx_packet_list);
 		STAILQ_REMOVE_HEAD(&net_dev->myrx_packet_list, mylist_entry);
@@ -849,7 +850,7 @@ hv_nv_on_receive(struct hv_device *device, VMPACKET_DESCRIPTOR *pkt)
 		}
 	}
 
-	mtx_unlock(&net_dev->rx_pkt_list_lock);
+	mtx_unlock_spin(&net_dev->rx_pkt_list_lock);
 
 	/*
 	 * We need at least 2 netvsc pkts (1 to represent the xfer page
@@ -859,7 +860,7 @@ hv_nv_on_receive(struct hv_device *device, VMPACKET_DESCRIPTOR *pkt)
 	if (count < 2) {
 
 		/* Return netvsc packet to the freelist */
-		mtx_lock(&net_dev->rx_pkt_list_lock);
+		mtx_lock_spin(&net_dev->rx_pkt_list_lock);
 		for (i=count; i != 0; i--) {
 			net_vsc_pkt = STAILQ_FIRST(&mylist_head);
 			STAILQ_REMOVE_HEAD(&mylist_head, mylist_entry);
@@ -867,7 +868,7 @@ hv_nv_on_receive(struct hv_device *device, VMPACKET_DESCRIPTOR *pkt)
 			STAILQ_INSERT_TAIL(&net_dev->myrx_packet_list,
 			    net_vsc_pkt, mylist_entry);
 		}
-		mtx_unlock(&net_dev->rx_pkt_list_lock);
+		mtx_unlock_spin(&net_dev->rx_pkt_list_lock);
 
 		hv_nv_send_receive_completion(device,
 		    vm_xfer_page_pkt->d.TransactionId);
@@ -998,7 +999,7 @@ hv_nv_on_receive_completion(void *context)
 		return;
 	
 	/* Overloading use of the lock. */
-	mtx_lock(&net_dev->rx_pkt_list_lock);
+	mtx_lock_spin(&net_dev->rx_pkt_list_lock);
 
 	packet->xfer_page_pkt->count--;
 
@@ -1015,7 +1016,7 @@ hv_nv_on_receive_completion(void *context)
 
 	/* Put the packet back on the free list */
 	STAILQ_INSERT_TAIL(&net_dev->myrx_packet_list, packet, mylist_entry);
-	mtx_unlock(&net_dev->rx_pkt_list_lock);
+	mtx_unlock_spin(&net_dev->rx_pkt_list_lock);
 
 	/* Send a receive completion for the xfer page packet */
 	if (send_rx_completion) {
