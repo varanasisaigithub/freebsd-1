@@ -216,9 +216,9 @@ hv_rndis_request(rndis_device *device, uint32_t message_type,
 	set->request_id += 1; //KYS need to add 1! 
 
 	/* Add to the request list */
-	mtx_lock(&device->req_lock);
+	mtx_lock_spin(&device->req_lock);
 	STAILQ_INSERT_TAIL(&device->myrequest_list, request, mylist_entry);
-	mtx_unlock(&device->req_lock);
+	mtx_unlock_spin(&device->req_lock);
 
 	return (request);
 }
@@ -229,14 +229,14 @@ hv_rndis_request(rndis_device *device, uint32_t message_type,
 static inline void
 hv_put_rndis_request(rndis_device *device, rndis_request *request)
 {
-	mtx_lock(&device->req_lock);
+	mtx_lock_spin(&device->req_lock);
 	/* Fixme:  Has O(n) performance */
 	/*
 	 * XXXKYS: Use Doubly linked lists.
 	 */
 	STAILQ_REMOVE(&device->myrequest_list, request, rndis_request_,
 	    mylist_entry);
-	mtx_unlock(&device->req_lock);
+	mtx_unlock_spin(&device->req_lock);
 
 	sema_destroy(&request->wait_sema);
 	free(request, M_DEVBUF);
@@ -284,7 +284,7 @@ hv_rf_receive_response(rndis_device *device, rndis_msg *response)
 	rndis_request *next_request;
 	bool found = false;
 
-	mtx_lock(&device->req_lock);
+	mtx_lock_spin(&device->req_lock);
 	request = STAILQ_FIRST(&device->myrequest_list);
 	while (request != NULL) {
 		/*
@@ -299,7 +299,7 @@ hv_rf_receive_response(rndis_device *device, rndis_msg *response)
 		next_request = STAILQ_NEXT(request, mylist_entry);
 		request = next_request;
 	}
-	mtx_unlock(&device->req_lock);
+	mtx_unlock_spin(&device->req_lock);
 
 	if (found) {
 		if (response->msg_len <= sizeof(rndis_msg)) {

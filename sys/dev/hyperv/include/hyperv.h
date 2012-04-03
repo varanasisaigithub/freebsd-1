@@ -782,6 +782,8 @@ struct heartbeat_msg_data {
 	uint32_t reserved[8];
 }__attribute__((packed));
 
+#pragma pack(pop)
+
 typedef struct _RING_BUFFER {
 	volatile uint32_t       WriteIndex;     // Offset in bytes from the start of ring data below
 	volatile uint32_t       ReadIndex;      // Offset in bytes from the start of ring data below
@@ -835,6 +837,8 @@ typedef struct _VMBUS_CHANNEL {
 	void *ChannelCallbackContext;
 
 } VMBUS_CHANNEL;
+
+#pragma pack(push,1)
 
 struct hv_device {
 	GUID			class_id;
