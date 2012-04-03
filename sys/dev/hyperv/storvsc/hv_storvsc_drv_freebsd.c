@@ -1019,6 +1019,9 @@ storvsc_timeout(void *arg)
 
 static void storvsc_poll(struct cam_sim *sim)
 {
+	struct storvsc_softc *sc = cam_sim_softc(sim);
+
+	hv_storvsc_on_channel_callback((void *)sc->storvsc_dev);
 }
 
 static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
