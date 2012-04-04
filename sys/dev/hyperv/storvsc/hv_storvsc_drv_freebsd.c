@@ -417,7 +417,8 @@ hv_storvsc_connect_vsp(struct hv_device *dev)
 }
 
 
-static int hv_storvsc_host_reset(struct hv_device *dev)
+static int
+hv_storvsc_host_reset(struct hv_device *dev)
 {
 	int ret = 0;
 
@@ -476,7 +477,8 @@ Description:
 	Function to initiate an I/O request
 
 --*/
-static int hv_storvsc_io_request(struct hv_device *device,
+static int
+hv_storvsc_io_request(struct hv_device *device,
 					  struct hv_storvsc_request *request)
 {
 	struct hv_storvsc_dev_ctx *stordev_ctx;
@@ -1018,7 +1020,8 @@ storvsc_timeout(void *arg)
 #endif
 }
 
-static void storvsc_poll(struct cam_sim *sim)
+static void
+storvsc_poll(struct cam_sim *sim)
 {
 	struct storvsc_softc *sc = cam_sim_softc(sim);
 
@@ -1028,7 +1031,8 @@ static void storvsc_poll(struct cam_sim *sim)
 	mtx_lock(&sc->hs_lock);
 }
 
-static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
+static void
+storvsc_action(struct cam_sim *sim, union ccb *ccb)
 {
 	struct storvsc_softc *sc = cam_sim_softc(sim);
 	int res;
@@ -1245,7 +1249,8 @@ create_storvsc_request(union ccb *ccb, struct hv_storvsc_request *reqp)
  * to be passed to the CAM layer.
  * Free resources related to this request.
  */
-static void storvsc_io_done(struct hv_storvsc_request *reqp)
+static void
+storvsc_io_done(struct hv_storvsc_request *reqp)
 {
 	union ccb *ccb = reqp->ccb;
 	struct ccb_scsiio *csio = &ccb->csio;
@@ -1320,6 +1325,7 @@ storvsc_free_request(struct storvsc_softc *sc, struct hv_storvsc_request *reqp)
 
 	LIST_INSERT_HEAD(&sc->free_list, reqp, link);
 }
+
 static enum hv_storage_type
 storvsc_get_storage_type(device_t dev)
 {
