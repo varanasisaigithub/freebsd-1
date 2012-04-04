@@ -121,7 +121,24 @@ static void vmbus_msg_dpc(void *arg)
 	}
 }
 
-static int hv_vmbus_isr(void *unused) 
+/*
+ * hv_vmbus_isr()
+ *
+ * Interrupt filter routine for VMBUS.
+ * The purpose of this routine is to determine the type of VMBUS protocol
+ * message to process - an event or a channel message.
+ * As this is an interrupt filter routine, the function runs in a very
+ * restricted envinronment.  From the manpage for bus_setup_intr(9)
+ *
+ *   In this restricted environment, care must be taken to account for all
+ *   races.  A careful analysis of races should be done as well.  It is gener-
+ *   ally cheaper to take an extra interrupt, for example, than to protect
+ *   variables with spinlocks.	Read, modify, write cycles of hardware regis-
+ *   ters need to be carefully analyzed if other threads are accessing the
+ *   same registers.
+ */
+static int
+hv_vmbus_isr(void *unused) 
 {
 	int cpu;
 	void *page_addr;
@@ -129,6 +146,8 @@ static int hv_vmbus_isr(void *unused)
 	HV_SYNIC_EVENT_FLAGS* event;
 
 	cpu = PCPU_GET(cpuid);
+
+	KASSERT(cpu == 0, ("hv_vmbus_isr: Interrupt on CPU other than zero"));
 
 	/*
 	 * Check for events before checking for messages. This is the order
@@ -140,17 +159,19 @@ static int hv_vmbus_isr(void *unused)
 	event = (HV_SYNIC_EVENT_FLAGS*) page_addr + VMBUS_MESSAGE_SINT;
 
 	// Since we are a child, we only need to check bit 0
-	if (synch_test_and_clear_bit(0, &event->Flags32[0]))
+	if (synch_test_and_clear_bit(0, &event->Flags32[0])) {
 		swi_sched(event_dpc, 0);
+	}
 
 	// Check if there are actual msgs to be process
 	page_addr = gHvContext.synICMessagePage[cpu];
 	msg = (HV_MESSAGE*) page_addr + VMBUS_MESSAGE_SINT;
 
-	if (msg->Header.MessageType != HvMessageTypeNone)
+	if (msg->Header.MessageType != HvMessageTypeNone) {
 		swi_sched(msg_dpc, 0);
+	}
 
-	return 0x2; //KYS
+	return FILTER_HANDLED;
 }
 
 static int vmbus_read_ivar(device_t dev, device_t child, int index,
@@ -309,6 +330,11 @@ static int vmbus_bus_init(void)
 	if (ret)
 		goto cleanup;
 
+	/*
+	 * Message SW interrupt handler checks a per-CPU page and
+	 * thus the thread needs to be bound to CPU-0 - which is where
+	 * all interrupts are processed.
+	 */
 	ret = intr_event_bind(hv_message_intr_event, 0);
 
 	if (ret)
@@ -320,11 +346,6 @@ static int vmbus_bus_init(void)
 	if (ret)
 		goto cleanup1;
 
-	ret = intr_event_bind(hv_event_intr_event, 0);
-
-	if (ret)
-		goto cleanup2;
-
 	intr_res = bus_alloc_resource(vmbus_devp,
 		SYS_RES_IRQ, &vmbus_rid, vmbus_irq, vmbus_irq, 1, RF_ACTIVE);
 
@@ -333,15 +354,10 @@ static int vmbus_bus_init(void)
 		goto cleanup2;
 	}
 
-	/*
-	 * Fixme:  Changed for port to FreeBSD 8.2.  Make sure this works.
-	 */
+	/* Setup interrupt filter handler */
 	ret = bus_setup_intr(vmbus_devp, intr_res,
-		INTR_TYPE_NET | INTR_FAST, hv_vmbus_isr,
-#if __FreeBSD_version >= 700000
-		NULL,
-#endif
-		NULL, &vmbus_cookiep);
+						 INTR_TYPE_NET | INTR_FAST | INTR_MPSAFE, hv_vmbus_isr, NULL,
+						 NULL, &vmbus_cookiep);
 
 	if (ret != 0)
 		goto cleanup3;
