@@ -1022,7 +1022,10 @@ static void storvsc_poll(struct cam_sim *sim)
 {
 	struct storvsc_softc *sc = cam_sim_softc(sim);
 
+	mtx_assert(&sc->hs_lock, MA_OWNED);
+	mtx_unlock(&sc->hs_lock);
 	hv_storvsc_on_channel_callback((void *)sc->storvsc_dev);
+	mtx_lock(&sc->hs_lock);
 }
 
 static void storvsc_action(struct cam_sim *sim, union ccb *ccb)
