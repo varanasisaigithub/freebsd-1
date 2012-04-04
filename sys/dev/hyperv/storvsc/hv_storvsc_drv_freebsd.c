@@ -65,15 +65,20 @@ struct hv_storvsc_request {
 };
 
 struct storvsc_softc {
-	struct hv_device *storvsc_dev;
-        struct hv_storvsc_dev_ctx *stor_ctx;
-        LIST_HEAD(, hv_storvsc_request) free_list;
-        struct mtx       hs_lock;
-        struct storvsc_driver_props      *drv_props;
-        int unit;
-        uint32_t         hs_frozen;
-        struct cam_sim  *hs_sim;
-        struct cam_path *hs_path;
+	struct hv_device		*hs_dev;
+        LIST_HEAD(, hv_storvsc_request) hs_free_list;
+        struct mtx      		hs_lock;
+        struct storvsc_driver_props     *hs_drv_props;
+        int 				hs_unit;
+        uint32_t         		hs_frozen;
+        struct cam_sim  		*hs_sim;
+        struct cam_path 		*hs_path;
+	uint32_t			hs_num_out_reqs;
+	boolean_t			hs_destroy;
+	boolean_t			hs_drain_notify;
+	struct sema 			hs_drain_sema;	
+	struct hv_storvsc_request	hs_init_req;
+	struct hv_storvsc_request	hs_reset_req;
 };
 
 
@@ -104,18 +109,6 @@ enum hv_storage_type {
 
 #define HS_MAX_ADAPTERS 10
 
-/* Storvsc device context structure */
-struct hv_storvsc_dev_ctx {
-	struct hv_device		*device;
-	struct storvsc_softc		*softc;
-	uint32_t			num_out_reqs;
-	boolean_t				destroy;
-	boolean_t				drain_notify;
-	struct sema 			drain_sema;	
-	struct hv_storvsc_request	init_req;
-	struct hv_storvsc_request	reset_req;
-};
-
 /* {ba6163d9-04a1-4d29-b605-72e2ffb1dc7f} */
 static const GUID gStorVscDeviceType={
 	.Data = {0xd9, 0x63, 0x61, 0xba, 0xa1, 0x04, 0x29, 0x4d, 0xb6, 0x05, 0x72, 0xe2, 0xff, 0xb1, 0xdc, 0x7f}
@@ -143,14 +136,14 @@ static int storvsc_attach(device_t dev);
 static int storvsc_detach(device_t dev);
 static void storvsc_poll(struct cam_sim * sim);
 static void storvsc_action(struct cam_sim * sim, union ccb * ccb);
-static void scan_for_luns(struct storvsc_softc * storvsc_softc);
+static void scan_for_luns(struct storvsc_softc * sc);
 static void create_storvsc_request(union ccb *ccb, struct hv_storvsc_request *reqp);
 static void storvsc_free_request(struct storvsc_softc *sc, struct hv_storvsc_request *reqp);
 static enum hv_storage_type storvsc_get_storage_type(device_t dev);
 static void hv_storvsc_on_channel_callback(void *context);
-static void hv_storvsc_on_iocompletion( struct hv_storvsc_dev_ctx* stordev_ctx,
-										struct vstor_packet *vstor_packet,
-										struct hv_storvsc_request *request);
+static void hv_storvsc_on_iocompletion( struct storvsc_softc *sc,
+					struct vstor_packet *vstor_packet,
+					struct hv_storvsc_request *request);
 static int hv_storvsc_connect_vsp(struct hv_device *device);
 static void storvsc_io_done(struct hv_storvsc_request *reqp);
 
@@ -194,21 +187,14 @@ extern int ata_disk_enable;
  *    permit incoming traffic to properly account for 
  *    packets already sent out.
  */
-static inline struct hv_storvsc_dev_ctx *
+static inline struct storvsc_softc *
 get_stor_device(struct hv_device *device,
 				boolean_t outbound)
 {
 	struct storvsc_softc *sc;
-	struct hv_storvsc_dev_ctx *stordev_ctx;
 
 	sc = device_get_softc(device->device);
 	if (sc == NULL) {
-		return NULL;
-	}
-
-	stordev_ctx = sc->stor_ctx;
-
-	if (stordev_ctx == NULL) {
 		return NULL;
 	}
 
@@ -218,8 +204,8 @@ get_stor_device(struct hv_device *device,
 		 * if the device is not being destroyed.
 		 */
 
-		if (stordev_ctx->destroy) {
-			stordev_ctx = NULL;
+		if (sc->hs_destroy) {
+			sc = NULL;
 		}
 	} else {
 		/*
@@ -227,36 +213,30 @@ get_stor_device(struct hv_device *device,
 		 * only permit to account for
 		 * messages already sent out.
 		 */
-		if (stordev_ctx->destroy && 
-			(stordev_ctx->num_out_reqs == 0)) {
-			stordev_ctx = NULL;
+		if (sc->hs_destroy && (sc->hs_num_out_reqs == 0)) {
+			sc = NULL;
 		}
 	}
-
-	return stordev_ctx;
-
+	return sc;
 }
 
 static int
 hv_storvsc_channel_init(struct hv_device *dev)
 {
 	int ret = 0;
-	struct hv_storvsc_dev_ctx *stordev_ctx;
 	struct hv_storvsc_request *request;
 	struct vstor_packet *vstor_packet;
 	struct storvsc_softc *sc;
 
-	sc = device_get_softc(dev->device);
-
-	stordev_ctx = get_stor_device(dev, true);
-	if (stordev_ctx == NULL) {
+	sc = get_stor_device(dev, true);
+	if (sc == NULL) {
 		return ENODEV;
 	}
 
-	request = &stordev_ctx->init_req;
+	request = &sc->hs_init_req;
 	memset(request, 0, sizeof(struct hv_storvsc_request));
 	vstor_packet = &request->vstor_packet;
-	request->softc = stordev_ctx->softc;
+	request->softc = sc;
 
 	// Now, initiate the vsc/vsp initialization protocol on the open channel
 
@@ -399,8 +379,8 @@ hv_storvsc_connect_vsp(struct hv_device *dev)
 
 	ret = hv_vmbus_channel_open(
 		dev->channel,
-		sc->drv_props->drv_ringbuffer_size,
-		sc->drv_props->drv_ringbuffer_size,
+		sc->hs_drv_props->drv_ringbuffer_size,
+		sc->hs_drv_props->drv_ringbuffer_size,
 		(void *)&props,
 		sizeof(struct vmstor_chan_props),
 		hv_storvsc_on_channel_callback,
@@ -421,18 +401,18 @@ static int
 hv_storvsc_host_reset(struct hv_device *dev)
 {
 	int ret = 0;
+	struct storvsc_softc *sc;
 
-	struct hv_storvsc_dev_ctx *stordev_ctx;
 	struct hv_storvsc_request *request;
 	struct vstor_packet *vstor_packet;
 
-	stordev_ctx = get_stor_device(dev, true);
-	if (stordev_ctx == NULL) {
+	sc = get_stor_device(dev, true);
+	if (sc == NULL) {
 		return ENODEV;
 	}
 
-	request = &stordev_ctx->reset_req;
-	request->softc = stordev_ctx->softc;
+	request = &sc->hs_reset_req;
+	request->softc = sc;
 	vstor_packet = &request->vstor_packet;
 
 	sema_init(&request->synch_sema, 0, "stor synch sema");
@@ -443,7 +423,7 @@ hv_storvsc_host_reset(struct hv_device *dev)
 	ret = hv_vmbus_channel_send_packet(dev->channel,
 			vstor_packet,
 			sizeof(struct vstor_packet),
-			(uint64_t)&stordev_ctx->reset_req,
+			(uint64_t)&sc->hs_reset_req,
 			VmbusPacketTypeDataInBand,
 			VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
@@ -481,13 +461,13 @@ static int
 hv_storvsc_io_request(struct hv_device *device,
 					  struct hv_storvsc_request *request)
 {
-	struct hv_storvsc_dev_ctx *stordev_ctx;
+	struct storvsc_softc *sc;
 	struct vstor_packet *vstor_packet = &request->vstor_packet;
 	int ret = 0;
 
-	stordev_ctx = get_stor_device(device, true);
+	sc = get_stor_device(device, true);
 
-	if (stordev_ctx == NULL) {
+	if (sc == NULL) {
 		printf("unable to get stor device context...device being destroyed?");
 		return -2;
 	}
@@ -527,7 +507,7 @@ hv_storvsc_io_request(struct hv_device *device,
 		printf("Unable to send packet %p ret %d", vstor_packet, ret);
 	}
 
-	atomic_add_int(&stordev_ctx->num_out_reqs, 1);
+	atomic_add_int(&sc->hs_num_out_reqs, 1);
 
 	return ret;
 }
@@ -541,13 +521,13 @@ hv_storvsc_io_request(struct hv_device *device,
  * processing by the CAM layer.
  */
 static void
-hv_storvsc_on_iocompletion(struct hv_storvsc_dev_ctx* stordev_ctx,
+hv_storvsc_on_iocompletion(struct storvsc_softc* sc,
 			   struct vstor_packet *vstor_packet,
 			   struct hv_storvsc_request *request)
 {
 	struct vmscsi_req *vm_srb;
 
-	KASSERT(stordev_ctx != NULL, ("stordev_ctx != NULL"));
+	KASSERT(sc != NULL, ("softc != NULL"));
 	KASSERT(request != NULL, ("request != NULL"));
 
 	vm_srb = &vstor_packet->vm_srb;
@@ -562,17 +542,16 @@ hv_storvsc_on_iocompletion(struct hv_storvsc_dev_ctx* stordev_ctx,
 				 "request->sense_info_len"));
 
 		memcpy(request->sense_data, vm_srb->sense_data,
-				vm_srb->sense_info_len);
+			vm_srb->sense_info_len);
 
 		request->sense_info_len = vm_srb->sense_info_len;
 	}
 
 	/* Complete request by passing to the CAM layer */
 	storvsc_io_done(request);
-	atomic_subtract_int(&stordev_ctx->num_out_reqs, 1);
-	if (stordev_ctx->drain_notify
-		&& (stordev_ctx->num_out_reqs == 0)) {
-		sema_post(&stordev_ctx->drain_sema);
+	atomic_subtract_int(&sc->hs_num_out_reqs, 1);
+	if (sc->hs_drain_notify && (sc->hs_num_out_reqs == 0)) {
+		sema_post(&sc->hs_drain_sema);
 	}
 }
 
@@ -581,32 +560,32 @@ hv_storvsc_on_channel_callback(void *context)
 {
 	int ret = 0;
 	struct hv_device *device = (struct hv_device *)context;
-	struct hv_storvsc_dev_ctx *stordev_ctx = NULL;
+	struct storvsc_softc *sc;
 	uint32_t bytes_recvd;
 	uint64_t request_id;
 	uint8_t packet[roundup2(sizeof(struct vstor_packet), 8)];
 	struct hv_storvsc_request *request;
 	struct vstor_packet *vstor_packet;
 
-	stordev_ctx = get_stor_device(device, false);
-	if (stordev_ctx == NULL) {
+	sc = get_stor_device(device, false);
+	if (sc == NULL) {
 		return;
 	}
 
 	KASSERT(device, ("device"));
 
 	ret = hv_vmbus_channel_recv_packet(device->channel,
-									   packet,
-									   roundup2(sizeof(struct vstor_packet), 8),
-									   &bytes_recvd,
-									   &request_id);
+					   packet,
+					   roundup2(sizeof(struct vstor_packet), 8),
+					   &bytes_recvd,
+					   &request_id);
 
 	while ((ret == 0) && (bytes_recvd > 0)) {
-		request = (struct hv_storvsc_request *)(uint64_t)request_id;
+		request = (struct hv_storvsc_request *)request_id;
 		KASSERT(request, ("request"));
 
-		if ((request == &stordev_ctx->init_req) ||
-			(request == &stordev_ctx->reset_req)) {
+		if ((request == &sc->hs_init_req) ||
+			(request == &sc->hs_reset_req)) {
 			memcpy(&request->vstor_packet, packet,
 				   sizeof(struct vstor_packet));
 			sema_post(&request->synch_sema); 
@@ -614,8 +593,8 @@ hv_storvsc_on_channel_callback(void *context)
 			vstor_packet = (struct vstor_packet *)packet;
 			switch(vstor_packet->operation) {
 			case VSTOR_OPERATION_COMPLETEIO:
-				hv_storvsc_on_iocompletion(stordev_ctx,
-										   vstor_packet, request);
+				hv_storvsc_on_iocompletion(sc,
+							   vstor_packet, request);
 				break;
 			case VSTOR_OPERATION_REMOVEDEVICE:
 				// TODO:
@@ -625,10 +604,10 @@ hv_storvsc_on_channel_callback(void *context)
 			}			
 		}
 		ret = hv_vmbus_channel_recv_packet(device->channel,
-										   packet,
-										   roundup2(sizeof(struct vstor_packet), 8),
-										   &bytes_recvd,
-										   &request_id);
+						   packet,
+						   roundup2(sizeof(struct vstor_packet), 8),
+						   &bytes_recvd,
+						   &request_id);
 	}
 }
 
@@ -701,7 +680,7 @@ scan_for_luns(struct storvsc_softc *sc)
 		error = cam_periph_runccb(request_ccb, NULL, CAM_FLAG_NONE, 0, NULL);
 		KASSERT(error == 0, ("cam_periph_runccb failed %d\n", error));
 		xpt_release_path(my_path);
-	} while ( ++lun_nb < sc->drv_props->drv_max_luns_per_target);
+	} while ( ++lun_nb < sc->hs_drv_props->drv_max_luns_per_target);
 	mtx_unlock(&sc->hs_lock);
 	free(request_ccb, M_CAMXPT);
 	free(my_path, M_CAMXPT);
@@ -736,7 +715,6 @@ storvsc_attach(device_t dev)
 	struct cam_devq *devq;
 	int ret, i;
 	struct hv_storvsc_request *reqp;
-	struct hv_storvsc_dev_ctx *stordev_ctx;
 	struct root_hold_token *root_mount_token = NULL;
 
 	/*
@@ -760,17 +738,17 @@ storvsc_attach(device_t dev)
 	bzero(sc, sizeof(struct storvsc_softc));
 
 	/* fill in driver specific properties */
-	sc->drv_props = &g_drv_props_table[stor_type];
+	sc->hs_drv_props = &g_drv_props_table[stor_type];
 
 	/* fill in device specific properties */
-	sc->unit	= device_get_unit(dev);
-	sc->storvsc_dev = hv_dev;
+	sc->hs_unit	= device_get_unit(dev);
+	sc->hs_dev	= hv_dev;
 	device_set_desc(dev, g_drv_props_table[stor_type].drv_desc);
 
-	LIST_INIT(&sc->free_list);
+	LIST_INIT(&sc->hs_free_list);
 	mtx_init(&sc->hs_lock, "hvslck", NULL, MTX_DEF);
 
-	for (i = 0; i < sc->drv_props->drv_max_ios_per_target; ++i) {
+	for (i = 0; i < sc->hs_drv_props->drv_max_ios_per_target; ++i) {
 		reqp = malloc(sizeof(struct hv_storvsc_request),
 				 M_DEVBUF, M_WAITOK|M_ZERO);
 		if (reqp == NULL) {
@@ -781,24 +759,12 @@ storvsc_attach(device_t dev)
 
 		reqp->softc = sc;
 
-		LIST_INSERT_HEAD(&sc->free_list, reqp, link);
+		LIST_INSERT_HEAD(&sc->hs_free_list, reqp, link);
 	}
 
-	stordev_ctx =
-		malloc(sizeof(struct hv_storvsc_dev_ctx),
-				 M_DEVBUF, M_WAITOK|M_ZERO);
-
-	if (stordev_ctx == NULL) {
-		ret = ENOMEM;
-		goto cleanup;
-	}
-	stordev_ctx->device = hv_dev;
-	stordev_ctx->softc = sc;
-	stordev_ctx->destroy = false;
-	stordev_ctx->drain_notify = false;
-	sema_init(&stordev_ctx->drain_sema, 0, "Store Drain Sema");
-	sc->stor_ctx = stordev_ctx;
-
+	sc->hs_destroy = false;
+	sc->hs_drain_notify = false;
+	sema_init(&sc->hs_drain_sema, 0, "Store Drain Sema");
 
 	ret = hv_storvsc_connect_vsp(hv_dev);
 	if (ret != 0) {
@@ -809,7 +775,7 @@ storvsc_attach(device_t dev)
 	 *  Create the device queue.
 	 * Hyper-V maps each target to one SCSI HBA
 	 */
-	devq = cam_simq_alloc(sc->drv_props->drv_max_ios_per_target);
+	devq = cam_simq_alloc(sc->hs_drv_props->drv_max_ios_per_target);
 	if (devq == NULL) {
 		printf("Failed to alloc device queue\n");
 		ret = ENOMEM;
@@ -818,11 +784,11 @@ storvsc_attach(device_t dev)
 
 	sc->hs_sim = cam_sim_alloc(storvsc_action,
 				storvsc_poll,
-				sc->drv_props->drv_name,
+				sc->hs_drv_props->drv_name,
 				sc,
-				sc->unit,
+				sc->hs_unit,
 				&sc->hs_lock, 1,
-				sc->drv_props->drv_max_ios_per_target,
+				sc->hs_drv_props->drv_max_ios_per_target,
 				devq);
 
 	if (sc->hs_sim == NULL) {
@@ -864,8 +830,8 @@ storvsc_attach(device_t dev)
 
 cleanup:
 	root_mount_rel(root_mount_token);
-	while (!LIST_EMPTY(&sc->free_list)) {
-		reqp = LIST_FIRST(&sc->free_list);
+	while (!LIST_EMPTY(&sc->hs_free_list)) {
+		reqp = LIST_FIRST(&sc->hs_free_list);
 		LIST_REMOVE(reqp, link);
 		free(reqp, M_DEVBUF);
 	}
@@ -877,13 +843,10 @@ storvsc_detach(device_t dev)
 {
 	struct storvsc_softc *sc = device_get_softc(dev);
 	struct hv_storvsc_request *reqp = NULL;
-	struct hv_storvsc_dev_ctx *stordev_ctx;
 	struct hv_device *hv_device = vmbus_get_devctx(dev);
 
-	stordev_ctx = sc->stor_ctx;
-
 	mtx_lock(&hv_device->channel->InboundLock);
-	stordev_ctx->destroy = true;
+	sc->hs_destroy = true;
 	mtx_unlock(&hv_device->channel->InboundLock);
 
 	/*
@@ -892,9 +855,9 @@ storvsc_detach(device_t dev)
 	 * outstanding requests can be completed.
 	 */
 
-	stordev_ctx->drain_notify = true;
-	sema_wait(&stordev_ctx->drain_sema);
-	stordev_ctx->drain_notify = false;
+	sc->hs_drain_notify = true;
+	sema_wait(&sc->hs_drain_sema);
+	sc->hs_drain_notify = false;
 
 	/*
 	 * Since we have already drained, we don't need to busy wait
@@ -906,14 +869,13 @@ storvsc_detach(device_t dev)
 	hv_vmbus_channel_close(hv_device->channel);
 
 	mtx_lock(&sc->hs_lock);
-	while (!LIST_EMPTY(&sc->free_list)) {
-		reqp = LIST_FIRST(&sc->free_list);
+	while (!LIST_EMPTY(&sc->hs_free_list)) {
+		reqp = LIST_FIRST(&sc->hs_free_list);
 		LIST_REMOVE(reqp, link);
 
 		free(reqp, M_DEVBUF);
 	}
 	mtx_unlock(&sc->hs_lock);
-	free(stordev_ctx, M_DEVBUF);
 	return 0;
 }
 
@@ -933,7 +895,7 @@ storvsc_timeout_test(struct hv_storvsc_request *reqp,
 	if (wait) {
 		mtx_lock(&reqp->event.mtx);
 	}
-	ret = hv_storvsc_io_request(sc->storvsc_dev, reqp);
+	ret = hv_storvsc_io_request(sc->hs_dev, reqp);
 	if (ret == -1) {
 		if (wait) {
 			mtx_unlock(&reqp->event.mtx);
@@ -1027,7 +989,7 @@ storvsc_poll(struct cam_sim *sim)
 
 	mtx_assert(&sc->hs_lock, MA_OWNED);
 	mtx_unlock(&sc->hs_lock);
-	hv_storvsc_on_channel_callback((void *)sc->storvsc_dev);
+	hv_storvsc_on_channel_callback(sc->hs_dev);
 	mtx_lock(&sc->hs_lock);
 }
 
@@ -1048,7 +1010,7 @@ storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		cpi->hba_misc = PIM_NOBUSRESET;
 		cpi->hba_eng_cnt = 0;
 		cpi->max_target = STORVSC_MAX_TARGETS;
-		cpi->max_lun = sc->drv_props->drv_max_luns_per_target;
+		cpi->max_lun = sc->hs_drv_props->drv_max_luns_per_target;
 		cpi->initiator_id = 0;
 		cpi->bus_id = cam_sim_bus(sim);
 		cpi->base_transfer_speed = 300000;
@@ -1057,7 +1019,7 @@ storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		cpi->protocol = PROTO_SCSI;
 		cpi->protocol_version = SCSI_REV_SPC2;
 		strncpy(cpi->sim_vid, "FreeBSD", SIM_IDLEN);
-		strncpy(cpi->hba_vid, sc->drv_props->drv_name, HBA_IDLEN);
+		strncpy(cpi->hba_vid, sc->hs_drv_props->drv_name, HBA_IDLEN);
 		strncpy(cpi->dev_name, cam_sim_name(sim), DEV_IDLEN);
 		cpi->unit_number = cam_sim_unit(sim);
 
@@ -1097,7 +1059,7 @@ storvsc_action(struct cam_sim *sim, union ccb *ccb)
 	case  XPT_RESET_BUS:
 	case  XPT_RESET_DEV:{
 
-		if ((res = hv_storvsc_host_reset(sc->storvsc_dev)) != 0) {
+		if ((res = hv_storvsc_host_reset(sc->hs_dev)) != 0) {
 			printf("hv_storvsc_host_reset failed with %d\n", res);
 			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
 			xpt_done(ccb);
@@ -1122,7 +1084,7 @@ storvsc_action(struct cam_sim *sim, union ccb *ccb)
 			panic("cdl_len is 0\n");
 		}
 
-		if (LIST_EMPTY(&sc->free_list)) {
+		if (LIST_EMPTY(&sc->hs_free_list)) {
 			ccb->ccb_h.status = CAM_REQUEUE_REQ;
 			if (sc->hs_frozen == 0) {
 				sc->hs_frozen = 1;
@@ -1133,7 +1095,7 @@ storvsc_action(struct cam_sim *sim, union ccb *ccb)
 			return;
 		}
 
-		reqp = LIST_FIRST(&sc->free_list);
+		reqp = LIST_FIRST(&sc->hs_free_list);
 		LIST_REMOVE(reqp, link);
 
 		bzero(reqp, sizeof(struct hv_storvsc_request));
@@ -1162,7 +1124,7 @@ storvsc_action(struct cam_sim *sim, union ccb *ccb)
 #endif /* HVS_TIMEOUT_TEST */
 		}
 
-		if ((res = hv_storvsc_io_request(sc->storvsc_dev, reqp)) == -1) {
+		if ((res = hv_storvsc_io_request(sc->hs_dev, reqp)) == -1) {
 			printf("hv_storvsc_io_request failed with %d\n", res);
 			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
 			storvsc_free_request(sc, reqp);
@@ -1323,7 +1285,7 @@ static void
 storvsc_free_request(struct storvsc_softc *sc, struct hv_storvsc_request *reqp)
 {
 
-	LIST_INSERT_HEAD(&sc->free_list, reqp, link);
+	LIST_INSERT_HEAD(&sc->hs_free_list, reqp, link);
 }
 
 static enum hv_storage_type
