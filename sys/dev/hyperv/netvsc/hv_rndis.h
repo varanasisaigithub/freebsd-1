@@ -22,7 +22,8 @@
  *
  * Ported from lis21 code drop
  *
- * HyperV remote NDIS message structures
+ * HyperV remote NDIS (network driver interface specification)
+ * message structures
  *
  */
 
