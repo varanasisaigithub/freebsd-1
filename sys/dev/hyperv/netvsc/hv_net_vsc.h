@@ -22,7 +22,8 @@
  *
  * Ported from lis21 code drop
  *
- * HyperV vmbus network vsc header file
+ * HyperV vmbus (virtual machine bus) network VSC (virtual services client)
+ * header file
  *
  */
 
@@ -68,7 +69,7 @@
 #include "../include/hyperv.h"
 
 
-#define NVSP_INVALID_PROTOCOL_VERSION           ((uint32_t)0xFFFFFFFF)
+#define NVSP_INVALID_PROTOCOL_VERSION           (0xFFFFFFFF)
 
 #define NVSP_PROTOCOL_VERSION_1                 2
 #define NVSP_MIN_PROTOCOL_VERSION               (NVSP_PROTOCOL_VERSION_1)
@@ -119,7 +120,8 @@ typedef enum nvsp_status_ {
 	nvsp_status_max,
 } nvsp_status;
 
-#pragma pack(push, 1)
+// Fixme:  No longer needed, all structures correctly annotated
+//#pragma pack(push, 1)
 
 typedef struct nvsp_msg_hdr_ {
 	uint32_t                                msg_type;
@@ -138,7 +140,7 @@ typedef struct nvsp_msg_hdr_ {
 typedef struct nvsp_msg_init_ {
 	uint32_t                                min_protocol_version;
 	uint32_t                                max_protocol_version;
-} __attribute__((packed))  nvsp_msg_init;
+} __attribute__((packed)) nvsp_msg_init;
 
 /*
  * This message is used by the VSP to complete the initialization
@@ -263,7 +265,7 @@ typedef struct nvsp_1_msg_revoke_send_buf_ {
 
 /*
  * This message is used by both the VSP and the VSC to send
- * a RNDIS message to the opposite channel endpoint.
+ * an RNDIS message to the opposite channel endpoint.
  */
 typedef struct nvsp_1_msg_send_rndis_pkt_ {
 	/*
@@ -324,7 +326,7 @@ typedef struct nvsp_msg_ {
 	nvsp_all_msgs                           msgs;
 } __attribute__((packed)) nvsp_msg;
 
-#pragma pack(pop)
+//#pragma pack(pop)
 
 
 /*
@@ -411,20 +413,20 @@ typedef struct netvsc_packet_ {
 	 */
 	STAILQ_ENTRY(netvsc_packet_) mylist_entry;
 	struct hv_device           *device;
-	bool                    is_data_pkt;      /* One byte */
-	xfer_page_packet        *xfer_page_pkt;
+	bool                       is_data_pkt;      /* One byte */
+	xfer_page_packet           *xfer_page_pkt;
 
 	/* Completion */
 	union {
 		struct {
-			uint64_t rx_completion_tid;
-			void	*rx_completion_context;
+			uint64_t   rx_completion_tid;
+			void	   *rx_completion_context;
 			/* This is no longer used */
 			pfn_on_send_rx_completion   on_rx_completion;
 		} rx;
 		struct {
-			uint64_t send_completion_tid;
-			void	*send_completion_context;
+			uint64_t    send_completion_tid;
+			void	    *send_completion_context;
 			/* Still used in netvsc and filter code */
 			pfn_on_send_rx_completion   on_send_completion;
 		} send;

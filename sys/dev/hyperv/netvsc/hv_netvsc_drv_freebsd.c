@@ -176,7 +176,7 @@ netvsc_drv_init(void)
 
         hv_rndis_filter_init(driver);
 
-	return 0;
+	return (0);
 }
 
 /*
@@ -196,7 +196,6 @@ netvsc_init(void)
 	} else {
 		printf("Already inited!!\n");
 	}
-
 }
 
 /* {F8615163-DF3E-46c5-913F-F2D2F965ED0E} */
@@ -217,6 +216,7 @@ netvsc_probe(device_t dev)
 	if (!memcmp(p, &g_net_vsc_device_type.Data, sizeof(GUID))) {
 		device_set_desc(dev, "Synthetic Network Interface");
 		printf("Netvsc probe... DONE \n");
+
 		return (0);
 	}
 
@@ -239,8 +239,9 @@ netvsc_attach(device_t dev)
 	netvsc_init();
 
 	sc = device_get_softc(dev);
-	if (sc == NULL)
-		return ENOMEM;
+	if (sc == NULL) {
+		return (ENOMEM);
+	}
 
 	bzero(sc, sizeof(hn_softc_t));
 	sc->hn_unit = unit;
@@ -251,12 +252,13 @@ netvsc_attach(device_t dev)
 	sc->hn_dev_obj = device_ctx;
 
 	ret = hv_rf_on_device_add(device_ctx, &device_info);
+	if (ret != 0) {
+		return (ret);
+	}
 
-	if (ret != 0)
-		return ret;
-
-	if (device_info.link_state == 0)
+	if (device_info.link_state == 0) {
 		sc->hn_carrier = 1;
+	}
 
 	ifp = sc->hn_ifp = sc->arpcom.ac_ifp = if_alloc(IFT_ETHER);
 	ifp->if_softc = sc;
@@ -277,7 +279,7 @@ netvsc_attach(device_t dev)
 
 	ether_ifattach(ifp, device_info.mac_addr);
 
-	return 0;
+	return (0);
 }
 
 /*
@@ -288,19 +290,21 @@ netvsc_detach(device_t dev)
 {
 	struct hv_device *hv_device = vmbus_get_devctx(dev); 
 	printf("netvsc_detach\n");
+
 	/*
-	 * XXXKYS: Need to cleanup all our
+	 * XXXKYS:  Need to clean up all our
 	 * driver state; this is the driver
 	 * unloading.
 	 */
 
 	/*
-	 * XXXKYS: need to stop outgoing traffic an unregister
+	 * XXXKYS:  Need to stop outgoing traffic and unregister
 	 * the netdevice.
 	 */
 
 	hv_rf_on_device_remove(hv_device);
-	return 0;
+
+	return (0);
 }
 
 /*
@@ -334,7 +338,6 @@ netvsc_xmit_completion(void *context)
 	if (mb) {
 		m_freem(mb);
 	}
-
 }
 
 /*
@@ -343,21 +346,20 @@ netvsc_xmit_completion(void *context)
 static int
 hn_start_locked(struct ifnet *ifp)
 {
-	int ret = 0;
 	hn_softc_t *sc = ifp->if_softc;
 	netvsc_driver_object *net_drv_obj = &g_netvsc_drv.drv_obj;
 	struct hv_device *device_ctx = vmbus_get_devctx(sc->hn_dev);
-	int i;
 	uint8_t *buf;
 	netvsc_packet *packet;
+	struct mbuf *m_head, *m;
+	int i;
 	int num_frags = 0;
 	int retries = 0;
-	struct mbuf *m_head, *m;
 	int len = 0;
 	int xlen = 0;
+	int ret = 0;
 
 	while (!IFQ_DRV_IS_EMPTY(&sc->hn_ifp->if_snd)) {
-
 		IFQ_DRV_DEQUEUE(&sc->hn_ifp->if_snd, m_head);
 		if (m_head == NULL) {
 			break;
@@ -367,6 +369,7 @@ hn_start_locked(struct ifnet *ifp)
 		num_frags = 0;
 		xlen = 0;
 
+		/* Walk the mbuf list computing total length and num frags */
 		for (m = m_head; m != NULL; m = m->m_next) {
 			if (m->m_len != 0) {
 				num_frags++;
@@ -382,7 +385,7 @@ hn_start_locked(struct ifnet *ifp)
 		    sizeof(netvsc_packet) + (num_frags * sizeof(PAGE_BUFFER)) + 
 		    net_drv_obj->request_ext_size, M_DEVBUF, M_ZERO | M_WAITOK);
 		if (buf == NULL) {
-			return ENOMEM;
+			return (ENOMEM);
 		}
 
 		packet = (netvsc_packet *)(buf + HV_NV_PACKET_OFFSET_IN_BUF);
@@ -427,8 +430,9 @@ retry_send:
 
 		if (ret == 0) {
 			ifp->if_opackets++;
-			if (ifp->if_bpf)
+			if (ifp->if_bpf) {
 				bpf_mtap(ifp->if_bpf, m_head);
+			}
 		} else {
 			retries++;
 			if (retries < 4) {
@@ -463,8 +467,9 @@ netvsc_linkstatus_callback(struct hv_device *device_obj, uint32_t status)
 {
 	hn_softc_t *sc = device_get_softc(device_obj->device);
 
-	if (!sc)
+	if (!sc) {
 		return;
+	}
 
 	if (status == 1) {
 		sc->hn_carrier = 1;
@@ -486,25 +491,27 @@ netvsc_recv_callback(struct hv_device *device_ctx, netvsc_packet *packet)
 	struct ifnet *ifp = sc->hn_ifp;
 	int i;
 
-	if (!sc)
+	if (!sc) {
 		return (0); //KYS how can this be!
-
+	}
 	
 	ifp = sc->arpcom.ac_ifp;
 
-	if (!(ifp->if_drv_flags & IFF_DRV_RUNNING))
+	if (!(ifp->if_drv_flags & IFF_DRV_RUNNING)) {
 		return (0);
-
-	if (packet->tot_data_buf_len > MCLBYTES)
-		return 0;
+	}
+	if (packet->tot_data_buf_len > MCLBYTES) {
+		return (0);
+	}
 
 	MGETHDR(m_new, M_DONTWAIT, MT_DATA);
-	if (m_new == NULL)
-		return 0;
+	if (m_new == NULL) {
+		return (0);
+	}
 	MCLGET(m_new, M_DONTWAIT);
 	if ((m_new->m_flags & M_EXT) == 0) {
 		m_freem(m_new);
-		return 0;
+		return (0);
 	}
 
 	/*
@@ -599,10 +606,11 @@ hn_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 	case SIOCSIFCAP:
 		mask = ifr->ifr_reqcap ^ ifp->if_capenable;
 		if (mask & IFCAP_HWCSUM) {
-			if (IFCAP_HWCSUM & ifp->if_capenable)
+			if (IFCAP_HWCSUM & ifp->if_capenable) {
 				ifp->if_capenable &= ~IFCAP_HWCSUM;
-			else
+			} else {
 				ifp->if_capenable |= IFCAP_HWCSUM;
+			}
 		}
 		error = 0;
 		break;
