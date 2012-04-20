@@ -84,8 +84,8 @@ static int  hv_nv_destroy_send_buffer(netvsc_dev *net_dev);
 static int  hv_nv_destroy_rx_buffer(netvsc_dev *net_dev);
 static int  hv_nv_connect_to_vsp(struct hv_device *device);
 static void hv_nv_on_send_completion(struct hv_device *device,
-				     VMPACKET_DESCRIPTOR *pkt);
-static void hv_nv_on_receive(struct hv_device *device, VMPACKET_DESCRIPTOR *pkt);
+				     hv_vm_packet_descriptor *pkt);
+static void hv_nv_on_receive(struct hv_device *device, hv_vm_packet_descriptor *pkt);
 static void hv_nv_send_receive_completion(struct hv_device *device, uint64_t tid);
 
 
@@ -195,8 +195,8 @@ hv_nv_init_rx_buffer_with_net_vsp(struct hv_device *device)
 		device->channel,
 		init_pkt, sizeof(nvsp_msg),
 		(uint64_t)init_pkt,
-		VmbusPacketTypeDataInBand,
-		VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+		HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
+		HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	if (ret != 0)
 		goto cleanup;
@@ -296,8 +296,8 @@ hv_nv_init_send_buffer_with_net_vsp(struct hv_device *device)
 	ret = hv_vmbus_channel_send_packet(
 		device->channel,
 		 init_pkt, sizeof(nvsp_msg), (uint64_t)init_pkt,
-		 VmbusPacketTypeDataInBand,
-		 VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+		 HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
+		 HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	if (ret != 0)
 		goto cleanup;
@@ -352,7 +352,7 @@ hv_nv_destroy_rx_buffer(netvsc_dev *net_dev)
 		ret = hv_vmbus_channel_send_packet(
 			net_dev->dev->channel,
 			revoke_pkt, sizeof(nvsp_msg),
-			(uint64_t)revoke_pkt, VmbusPacketTypeDataInBand, 0);
+			(uint64_t)revoke_pkt, HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
 
 		/*
 		 * If we failed here, we might as well return and have a leak 
@@ -423,7 +423,7 @@ hv_nv_destroy_send_buffer(netvsc_dev *net_dev)
 		ret = hv_vmbus_channel_send_packet(
 			net_dev->dev->channel,
 			revoke_pkt, sizeof(nvsp_msg),
-			(uint64_t)revoke_pkt, VmbusPacketTypeDataInBand, 0);
+			(uint64_t)revoke_pkt, HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
 
 		/*
 		 * If we failed here, we might as well return and have a leak 
@@ -491,8 +491,8 @@ hv_nv_connect_to_vsp(struct hv_device *device)
 	ret = hv_vmbus_channel_send_packet(
 			device->channel,
 			init_pkt, sizeof(nvsp_msg),
-			(uint64_t)init_pkt, VmbusPacketTypeDataInBand,
-			VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+			(uint64_t)init_pkt, HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
+			HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	if (ret != 0)
 		goto cleanup;
@@ -528,7 +528,7 @@ hv_nv_connect_to_vsp(struct hv_device *device)
 	ret = hv_vmbus_channel_send_packet(
 			device->channel,
 			init_pkt, sizeof(nvsp_msg),
-			(uint64_t)init_pkt, VmbusPacketTypeDataInBand, 0);
+			(uint64_t)init_pkt, HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
 
 	if (ret != 0)
 		goto cleanup;
@@ -536,7 +536,7 @@ hv_nv_connect_to_vsp(struct hv_device *device)
 	 * BUGBUG - We have to wait for the above msg since the netvsp uses
 	 * KMCL which acknowledges packet (completion packet) 
 	 * since our Vmbus always set the
-	 * VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED flag
+	 * HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED flag
 	 */
 	//sema_wait(&NetVscChannel->channel_init_sema);
 
@@ -701,7 +701,7 @@ hv_nv_on_device_remove(struct hv_device *device)
  * Net VSC on send completion
  */
 static void 
-hv_nv_on_send_completion(struct hv_device *device, VMPACKET_DESCRIPTOR *pkt)
+hv_nv_on_send_completion(struct hv_device *device, hv_vm_packet_descriptor *pkt)
 {
 	netvsc_dev *net_dev;
 	nvsp_msg *nvsp_msg_pkt;
@@ -712,7 +712,7 @@ hv_nv_on_send_completion(struct hv_device *device, VMPACKET_DESCRIPTOR *pkt)
 		return;
 
 	nvsp_msg_pkt =
-	    (nvsp_msg *)((unsigned long)pkt + (pkt->DataOffset8 << 3));
+	    (nvsp_msg *)((unsigned long)pkt + (pkt->data_offset8 << 3));
 
 
 	if (nvsp_msg_pkt->hdr.msg_type == nvsp_msg_type_init_complete ||
@@ -728,7 +728,7 @@ hv_nv_on_send_completion(struct hv_device *device, VMPACKET_DESCRIPTOR *pkt)
 				    nvsp_msg_1_type_send_rndis_pkt_complete) {
 		/* Get the send context */
 		net_vsc_pkt =
-		    (netvsc_packet *)(unsigned long)pkt->TransactionId;
+		    (netvsc_packet *)(unsigned long)pkt->transaction_id;
 
 		/* Notify the layer above us */
 		net_vsc_pkt->compl.send.on_send_completion(
@@ -776,8 +776,8 @@ hv_nv_on_send(struct hv_device *device, netvsc_packet *pkt)
 		ret = hv_vmbus_channel_send_packet(
 			device->channel,
 			&send_msg, sizeof(nvsp_msg), (uint64_t)pkt,
-			VmbusPacketTypeDataInBand,
-			VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+			HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
+			HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	}
 
 	atomic_add_int(&net_dev->num_outstanding_sends, 1);
@@ -792,10 +792,10 @@ hv_nv_on_send(struct hv_device *device, netvsc_packet *pkt)
  * with virtual addresses.
  */
 static void 
-hv_nv_on_receive(struct hv_device *device, VMPACKET_DESCRIPTOR *pkt)
+hv_nv_on_receive(struct hv_device *device, hv_vm_packet_descriptor *pkt)
 {
 	netvsc_dev *net_dev;
-	VMTRANSFER_PAGE_PACKET_HEADER *vm_xfer_page_pkt;
+	hv_vm_transfer_page_packet_header *vm_xfer_page_pkt;
 	nvsp_msg *nvsp_msg_pkt;
 	netvsc_packet *net_vsc_pkt = NULL;
 	unsigned long start;
@@ -813,20 +813,20 @@ hv_nv_on_receive(struct hv_device *device, VMPACKET_DESCRIPTOR *pkt)
 	 * All inbound packets other than send completion should be
 	 * xfer page packet.
 	 */
-	if (pkt->Type != VmbusPacketTypeDataUsingTransferPages)
+	if (pkt->type != HV_VMBUS_PACKET_TYPE_DATA_USING_TRANSFER_PAGES)
 		return;
 
 	nvsp_msg_pkt = (nvsp_msg *)((unsigned long)pkt +
-	    (pkt->DataOffset8 << 3));
+	    (pkt->data_offset8 << 3));
 
 	/* Make sure this is a valid nvsp packet */
 	if (nvsp_msg_pkt->hdr.msg_type != nvsp_msg_1_type_send_rndis_pkt) {
 		return;
 	}
 	
-	vm_xfer_page_pkt = (VMTRANSFER_PAGE_PACKET_HEADER *)pkt;
+	vm_xfer_page_pkt = (hv_vm_transfer_page_packet_header *)pkt;
 
-	if (vm_xfer_page_pkt->TransferPageSetId != NETVSC_RECEIVE_BUFFER_ID) {
+	if (vm_xfer_page_pkt->transfer_page_set_id != NETVSC_RECEIVE_BUFFER_ID) {
 		return;
 	}
 
@@ -844,7 +844,7 @@ hv_nv_on_receive(struct hv_device *device, VMPACKET_DESCRIPTOR *pkt)
 
 		STAILQ_INSERT_TAIL(&mylist_head, net_vsc_pkt, mylist_entry);
 
-		if (++count == vm_xfer_page_pkt->RangeCount + 1) {
+		if (++count == vm_xfer_page_pkt->range_count + 1) {
 			break;
 		}
 	}
@@ -870,7 +870,7 @@ hv_nv_on_receive(struct hv_device *device, VMPACKET_DESCRIPTOR *pkt)
 		mtx_unlock(&net_dev->rx_pkt_list_lock);
 
 		hv_nv_send_receive_completion(device,
-		    vm_xfer_page_pkt->d.TransactionId);
+		    vm_xfer_page_pkt->d.transaction_id);
 
 		return;
 	}
@@ -896,26 +896,26 @@ hv_nv_on_receive(struct hv_device *device, VMPACKET_DESCRIPTOR *pkt)
 		net_vsc_pkt->device = device;
 		/* Save this so that we can send it back */
 		net_vsc_pkt->compl.rx.rx_completion_tid =
-		    vm_xfer_page_pkt->d.TransactionId;
+		    vm_xfer_page_pkt->d.transaction_id;
 
 		net_vsc_pkt->tot_data_buf_len =
-		    vm_xfer_page_pkt->Ranges[i].ByteCount;
+		    vm_xfer_page_pkt->ranges[i].byte_count;
 		net_vsc_pkt->page_buf_count = 1;
 
-		net_vsc_pkt->page_buffers[0].Length =
-		    vm_xfer_page_pkt->Ranges[i].ByteCount;
+		net_vsc_pkt->page_buffers[0].length =
+		    vm_xfer_page_pkt->ranges[i].byte_count;
 
 		/* The virtual address of the packet in the receive buffer */
 		start = ((unsigned long)net_dev->rx_buf +
-		    vm_xfer_page_pkt->Ranges[i].ByteOffset);
+		    vm_xfer_page_pkt->ranges[i].byte_offset);
 		start = ((unsigned long)start) & ~(PAGE_SIZE - 1);
 
 		/* Page number of the virtual page containing packet start */
-		net_vsc_pkt->page_buffers[0].Pfn = start >> PAGE_SHIFT;
+		net_vsc_pkt->page_buffers[0].pfn = start >> PAGE_SHIFT;
 
 		/* Calculate the page relative offset */
-		net_vsc_pkt->page_buffers[0].Offset =
-		    vm_xfer_page_pkt->Ranges[i].ByteOffset & (PAGE_SIZE - 1);
+		net_vsc_pkt->page_buffers[0].offset =
+		    vm_xfer_page_pkt->ranges[i].byte_offset & (PAGE_SIZE - 1);
 
 		/*
 		 * In this implementation, we are dealing with virtual
@@ -957,7 +957,7 @@ retry_send_cmplt:
 	ret = hv_vmbus_channel_send_packet(
 		device->channel,
 		&rx_comp_msg, sizeof(nvsp_msg), tid,
-		VmbusPacketTypeCompletion, 0);
+		HV_VMBUS_PACKET_TYPE_COMPLETION, 0);
 
 	if (ret == 0) {
 		/* success */
@@ -1037,7 +1037,7 @@ hv_nv_on_channel_callback(void *context)
 	uint32_t bytes_rxed;
 	uint64_t request_id;
 	uint8_t  *packet;
-	VMPACKET_DESCRIPTOR *desc;
+	hv_vm_packet_descriptor *desc;
 	uint8_t *buffer;
 	int     bufferlen = net_pkt_size;
 	int ret = 0;
@@ -1060,13 +1060,13 @@ hv_nv_on_channel_callback(void *context)
 
 		if (ret == 0) {
 			if (bytes_rxed > 0) {
-				desc = (VMPACKET_DESCRIPTOR *)buffer;
-				switch (desc->Type) {
-				case VmbusPacketTypeCompletion:
+				desc = (hv_vm_packet_descriptor *)buffer;
+				switch (desc->type) {
+				case HV_VMBUS_PACKET_TYPE_COMPLETION:
 					hv_nv_on_send_completion(device, desc);
 					break;
 
-				case VmbusPacketTypeDataUsingTransferPages:
+				case HV_VMBUS_PACKET_TYPE_DATA_USING_TRANSFER_PAGES:
 					hv_nv_on_receive(device, desc);
 					break;
 

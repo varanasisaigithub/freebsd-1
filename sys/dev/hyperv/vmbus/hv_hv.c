@@ -191,8 +191,8 @@ HvDoHypercall(uint64_t Control, void* Input, void* Output)
 {
 #ifdef __x86_64__
 	uint64_t hvStatus = 0;
-	uint64_t inputAddress = (Input) ? get_phys_addr(Input) : 0;
-	uint64_t outputAddress = (Output) ? get_phys_addr(Output) : 0;
+	uint64_t inputAddress = (Input) ? hv_get_phys_addr(Input) : 0;
+	uint64_t outputAddress = (Output) ? hv_get_phys_addr(Output) : 0;
 	volatile void* hypercallPage = gHvContext.HypercallPage;
 
 	__asm__ __volatile__ ("mov %0, %%r8" : : "r" (outputAddress): "r8");
@@ -208,10 +208,10 @@ HvDoHypercall(uint64_t Control, void* Input, void* Output)
 	uint32_t controlLo = Control & 0xFFFFFFFF;
 	uint32_t hvStatusHi = 1;
 	uint32_t hvStatusLo = 1;
-	uint64_t inputAddress = (Input) ? get_phys_addr(Input) : 0;
+	uint64_t inputAddress = (Input) ? hv_get_phys_addr(Input) : 0;
 	uint32_t inputAddressHi = inputAddress >> 32;
 	uint32_t inputAddressLo = inputAddress & 0xFFFFFFFF;
-	uint64_t outputAddress = (Output) ? get_phys_addr(Output) : 0;
+	uint64_t outputAddress = (Output) ? hv_get_phys_addr(Output) : 0;
 	uint32_t outputAddressHi = outputAddress >> 32;
 	uint32_t outputAddressLo = outputAddress & 0xFFFFFFFF;
 	volatile void* hypercallPage = gHvContext.HypercallPage;
@@ -245,8 +245,8 @@ HvInit(void)
 	HV_X64_MSR_HYPERCALL_CONTENTS hypercallMsr;
 	void* virtAddr = 0;
 
-	memset(gHvContext.synICEventPage, 0, sizeof(HANDLE) * MAXCPU);
-	memset(gHvContext.synICMessagePage, 0, sizeof(HANDLE) * MAXCPU);
+	memset(gHvContext.synICEventPage, 0, sizeof(hv_vmbus_handle) * MAXCPU);
+	memset(gHvContext.synICMessagePage, 0, sizeof(hv_vmbus_handle) * MAXCPU);
 
 	if (!HvQueryHypervisorPresence())
 		goto Cleanup;
@@ -266,7 +266,7 @@ HvInit(void)
 
 	hypercallMsr.Enable = 1;
 	hypercallMsr.GuestPhysicalAddress =
-		(get_phys_addr(virtAddr) >> PAGE_SHIFT);
+		(hv_get_phys_addr(virtAddr) >> PAGE_SHIFT);
 	WriteMsr(HV_X64_MSR_HYPERCALL, hypercallMsr.Asuint64_t);
 
 	// Confirm that hypercall page did get set up.
@@ -289,7 +289,7 @@ HvInit(void)
 
 	gHvContext.SignalEventParam =
 		(PHV_INPUT_SIGNAL_EVENT)
-		 (ALIGN_UP((unsigned long)
+		 (HV_ALIGN_UP((unsigned long)
 			gHvContext.SignalEventBuffer,
 			 HV_HYPERCALL_PARAM_ALIGN));
 	gHvContext.SignalEventParam->ConnectionId.Asuint32_t = 0;
@@ -378,7 +378,7 @@ HvPostMessage(HV_CONNECTION_ID	connectionId,
 		return -ENOMEM;
 
 	alignedMsg = (PHV_INPUT_POST_MESSAGE)
-			(ALIGN_UP(addr, HV_HYPERCALL_PARAM_ALIGN));
+			(HV_ALIGN_UP(addr, HV_HYPERCALL_PARAM_ALIGN));
 
 	alignedMsg->ConnectionId = connectionId;
 	alignedMsg->MessageType = messageType;
@@ -461,7 +461,7 @@ HvSynicInit(void *irqArg)
 
 	simp.Asuint64_t = ReadMsr(HV_X64_MSR_SIMP);
 	simp.SimpEnabled = 1;
-	simp.BaseSimpGpa = ((get_phys_addr(
+	simp.BaseSimpGpa = ((hv_get_phys_addr(
 			gHvContext.synICMessagePage[cpu])) >> PAGE_SHIFT);
 
 	WriteMsr(HV_X64_MSR_SIMP, simp.Asuint64_t);
@@ -471,7 +471,7 @@ HvSynicInit(void *irqArg)
 	//
 	siefp.Asuint64_t = ReadMsr(HV_X64_MSR_SIEFP);
 	siefp.SiefpEnabled = 1;
-	siefp.BaseSiefpGpa = ((get_phys_addr(
+	siefp.BaseSiefpGpa = ((hv_get_phys_addr(
 			gHvContext.synICEventPage[cpu])) >> PAGE_SHIFT);
 
 	WriteMsr(HV_X64_MSR_SIEFP, siefp.Asuint64_t);

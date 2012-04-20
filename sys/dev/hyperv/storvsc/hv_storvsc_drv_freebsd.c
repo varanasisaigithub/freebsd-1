@@ -52,7 +52,7 @@ enum storvsc_request_type {
 struct hv_storvsc_request {
 	LIST_ENTRY(hv_storvsc_request) link;
 	struct vstor_packet	vstor_packet;
-	MULTIPAGE_BUFFER data_buf;
+	hv_vmbus_multipage_buffer data_buf;
 	void *sense_data;
 	uint8_t sense_info_len;
 	uint8_t retries;
@@ -117,13 +117,13 @@ struct hv_storvsc_dev_ctx {
 };
 
 /* {ba6163d9-04a1-4d29-b605-72e2ffb1dc7f} */
-static const GUID gStorVscDeviceType={
-	.Data = {0xd9, 0x63, 0x61, 0xba, 0xa1, 0x04, 0x29, 0x4d, 0xb6, 0x05, 0x72, 0xe2, 0xff, 0xb1, 0xdc, 0x7f}
+static const hv_guid gStorVscDeviceType={
+	.data = {0xd9, 0x63, 0x61, 0xba, 0xa1, 0x04, 0x29, 0x4d, 0xb6, 0x05, 0x72, 0xe2, 0xff, 0xb1, 0xdc, 0x7f}
 };
 
 /* {32412632-86cb-44a2-9b5c-50d1417354f5} */
-static const GUID gBlkVscDeviceType={
-	.Data = {0x32, 0x26, 0x41, 0x32, 0xcb, 0x86, 0xa2, 0x44, 0x9b, 0x5c, 0x50, 0xd1, 0x41, 0x73, 0x54, 0xf5}
+static const hv_guid gBlkVscDeviceType={
+	.data = {0x32, 0x26, 0x41, 0x32, 0xcb, 0x86, 0xa2, 0x44, 0x9b, 0x5c, 0x50, 0xd1, 0x41, 0x73, 0x54, 0xf5}
 };
 
 static struct storvsc_driver_props g_drv_props_table[] = {
@@ -272,8 +272,8 @@ hv_storvsc_channel_init(struct hv_device *dev)
 			vstor_packet,
 			sizeof(struct vstor_packet),
 			(uint64_t)request,
-			VmbusPacketTypeDataInBand,
-			VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+			HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
+			HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	if (ret != 0) {
 		goto Cleanup;
@@ -303,8 +303,8 @@ hv_storvsc_channel_init(struct hv_device *dev)
 			vstor_packet,
 			sizeof(struct vstor_packet),
 			(uint64_t)request,
-			VmbusPacketTypeDataInBand,
-			VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+			HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
+			HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	if (ret != 0) {
 		goto Cleanup;
@@ -332,8 +332,8 @@ hv_storvsc_channel_init(struct hv_device *dev)
 				vstor_packet,
 				sizeof(struct vstor_packet),
 				(uint64_t)request,
-				VmbusPacketTypeDataInBand,
-				VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+				HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
+				HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	if ( ret != 0) {
 		goto Cleanup;
@@ -360,8 +360,8 @@ hv_storvsc_channel_init(struct hv_device *dev)
 				vstor_packet,
 				sizeof(struct vstor_packet),
 				(uint64_t)request,
-				VmbusPacketTypeDataInBand,
-				VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+				HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
+				HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	if (ret != 0) {
 		goto Cleanup;
@@ -443,8 +443,8 @@ static int hv_storvsc_host_reset(struct hv_device *dev)
 			vstor_packet,
 			sizeof(struct vstor_packet),
 			(uint64_t)&stordev_ctx->reset_req,
-			VmbusPacketTypeDataInBand,
-			VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+			HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
+			HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	if (ret != 0) {
 		goto Cleanup;
@@ -496,13 +496,13 @@ static int hv_storvsc_io_request(struct hv_device *device,
 	
 	vstor_packet->vm_srb.sense_info_len = SENSE_BUFFER_SIZE;
 
-	vstor_packet->vm_srb.transfer_len = request->data_buf.Length;
+	vstor_packet->vm_srb.transfer_len = request->data_buf.length;
 
 	vstor_packet->operation = VSTOR_OPERATION_EXECUTESRB;
 
 
 	mtx_unlock(&request->softc->hs_lock);
-	if (request->data_buf.Length) {
+	if (request->data_buf.length) {
 		ret = hv_vmbus_channel_send_packet_multipagebuffer(
 				device->channel,
 				&request->data_buf,
@@ -516,8 +516,8 @@ static int hv_storvsc_io_request(struct hv_device *device,
 				vstor_packet,
 				sizeof(struct vstor_packet),
 				(uint64_t)request,
-				VmbusPacketTypeDataInBand,
-				VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+				HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
+				HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	}
 	mtx_lock(&request->softc->hs_lock);
 
@@ -1211,17 +1211,17 @@ create_storvsc_request(union ccb *ccb, struct hv_storvsc_request *reqp)
 	KASSERT((ccb->ccb_h.flags & CAM_SCATTER_VALID) == 0, ("ccb is scatter gather valid\n"));
 
 	if (csio->dxfer_len != 0) {
-		reqp->data_buf.Length = csio->dxfer_len;
+		reqp->data_buf.length = csio->dxfer_len;
 		bytes_to_copy = csio->dxfer_len;
 		phys_addr = vtophys(csio->data_ptr);
-		reqp->data_buf.Offset = phys_addr - trunc_page(phys_addr);
+		reqp->data_buf.offset = phys_addr - trunc_page(phys_addr);
 	}
 
 	while (bytes_to_copy != 0) {
 		int bytes, page_offset;
-		phys_addr = vtophys(&csio->data_ptr[reqp->data_buf.Length - bytes_to_copy]);
+		phys_addr = vtophys(&csio->data_ptr[reqp->data_buf.length - bytes_to_copy]);
 		pfn = phys_addr >> PAGE_SHIFT;
-		reqp->data_buf.PfnArray[pfn_num] = pfn;
+		reqp->data_buf.pfn_array[pfn_num] = pfn;
 		page_offset = phys_addr - trunc_page(phys_addr);
 
 		bytes = min(PAGE_SIZE - page_offset, bytes_to_copy);
@@ -1318,9 +1318,9 @@ storvsc_get_storage_type(device_t dev)
 {
 	const char *p = vmbus_get_type(dev);
 
-	if (!memcmp(p, &gBlkVscDeviceType, sizeof(GUID))) {
+	if (!memcmp(p, &gBlkVscDeviceType, sizeof(hv_guid))) {
 		return DRIVER_BLKVSC;
-	} else if (!memcmp(p, &gStorVscDeviceType, sizeof(GUID))) {
+	} else if (!memcmp(p, &gStorVscDeviceType, sizeof(hv_guid))) {
 		return DRIVER_STORVSC;
 	}
 	return (DRIVER_UNKNOWN);

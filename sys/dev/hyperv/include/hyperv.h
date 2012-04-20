@@ -83,7 +83,7 @@
 #include <amd64/include/atomic.h>
 
 
-typedef unsigned char		bool;
+typedef unsigned char bool;
 
 #ifndef false
 #define false  0
@@ -93,552 +93,540 @@ typedef unsigned char		bool;
 #define true  1
 #endif
 
+#define HV_S_OK			0x00000000
+#define HV_E_FAIL		0x80004005
+#define HV_ERROR_NOT_SUPPORTED	0x80070032
+#define HV_ERROR_MACHINE_LOCKED	0x800704F7
 
-#define HV_S_OK		0x00000000
-#define HV_E_FAIL	0x80004005
-#define HV_ERROR_NOT_SUPPORTED    0x80070032
-#define HV_ERROR_MACHINE_LOCKED   0x800704F7
+/*
+ * A revision number of vmbus that is used for ensuring both ends on a
+ * partition are using compatible versions.
+ */
+#define HV_VMBUS_REVISION_NUMBER	13
 
+/*
+ * Make maximum size of pipe payload of 16K
+ */
+#define HV_MAX_PIPE_DATA_PAYLOAD	(sizeof(BYTE) * 16384)
 
-// A revision number of vmbus that is used for ensuring both ends on a
-// partition are using compatible versions.
-//
-#define VMBUS_REVISION_NUMBER       13
+/*
+ * Define pipe_mode values
+ */
+#define HV_VMBUS_PIPE_TYPE_BYTE		0x00000000
+#define HV_VMBUS_PIPE_TYPE_MESSAGE	0x00000004
 
-//
-// Make maximum size of pipe payload of 16K
-//
-#define MAX_PIPE_DATA_PAYLOAD 		(sizeof(BYTE) * 16384)
+/*
+ * The size of the user defined data buffer for non-pipe offers
+ */
+#define HV_MAX_USER_DEFINED_BYTES	120
 
-//
-// Define PipeMode values.
-//
-#define VMBUS_PIPE_TYPE_BYTE                    0x00000000
-#define VMBUS_PIPE_TYPE_MESSAGE                 0x00000004
-
-//
-// The size of the user defined data buffer for non-pipe offers.
-//
-#define MAX_USER_DEFINED_BYTES                  120
-
-//
-// The size of the user defined data buffer for pipe offers.
-//
-#define MAX_PIPE_USER_DEFINED_BYTES             116
+/*
+ *  The size of the user defined data buffer for pipe offers
+ */
+#define HV_MAX_PIPE_USER_DEFINED_BYTES	116
 
 #pragma pack(push,1)
 
-typedef struct {
-	unsigned char		Data[16];
-} GUID;
+typedef struct hv_guid {
+	 unsigned char data[16];
+} hv_guid;
 
-typedef struct {
-	int InterruptMask;
-	int ReadIndex;
-	int WriteIndex;
-	int BytesAvailToRead;
-	int BytesAvailToWrite;
-} BOUND;
+typedef struct hv_guid hv_guid;
 
-struct hv_devinfo {
-	int ChannelId;
-	int ChannelState;
-	int ChannelType;
-	int ChannelInstance;
-	int MonitorId;
-	int ServerMonitorPending;
-	int ServerMonitorLatency;
-	int ServerMonitorConnectionId;
-	int ClientMonitorPending;
-	int ClientMonitorLatency;
-	int ClientMonitorConnectionId;
-	BOUND Inbound, Outbound;
-};
+typedef struct hv_bound {
+	int interrupt_mask;
+	int read_index;
+	int write_index;
+	int bytes_avail_to_read;
+	int bytes_avail_to_write;
+} hv_bound;
 
-//
-// At the center of the Channel Management library is
-// the Channel Offer. This struct contains the
-// fundamental information about an offer.
-//
+typedef struct hv_devinfo {
+	int channel_id;
+	int channel_state;
+	int channel_type;
+	int channel_instance;
+	int monitor_id;
+	int server_monitor_pending;
+	int server_monitor_latency;
+	int server_monitor_connection_id;
+	int client_monitor_pending;
+	int client_monitor_latency;
+	int client_monitor_connection_id;
+	hv_bound in_bound, out_bound;
+} hv_devinfo;
 
-typedef struct
-{
-    GUID	InterfaceType;
-    GUID	InterfaceInstance;
-    uint64_t	InterruptLatencyIn100nsUnits;
-    uint32_t	InterfaceRevision;
-    uint32_t	ServerContextAreaSize;  /* in bytes */
-    uint16_t	ChannelFlags;
-    uint16_t	MmioMegabytes;          /* in bytes * 1024 * 1024 */
+/*
+ * At the center of the Channel Management library is
+ * the Channel Offer. This struct contains the
+ * fundamental information about an offer.
+ */
 
-    union
-    {
+typedef struct hv_vmbus_channel_offer {
+	hv_guid		interface_type;
+	hv_guid		interface_instance;
+	uint64_t	interrupt_latency_in_100ns_units;
+	uint32_t	interface_revision;
+	uint32_t	server_context_area_size; /* in bytes */
+	uint16_t	channel_flags;
+	uint16_t	mmio_megabytes;		  /* in bytes * 1024 * 1024 */
+	union
+	{
         /*
-         * Non-pipes: The user has MAX_USER_DEFINED_BYTES bytes.
+         * Non-pipes: The user has HV_MAX_USER_DEFINED_BYTES bytes.
          */
-        struct
-        {
-            uint8_t	UserDefined[MAX_USER_DEFINED_BYTES];
-        } Standard;
+		struct {
+			uint8_t	user_defined[HV_MAX_USER_DEFINED_BYTES];
+		} standard;
 
         /*
          * Pipes: The following structure is an integrated pipe protocol, which
-         *        is implemented on top of standard user-defined data. Pipe clients
-         *        have MAX_PIPE_USER_DEFINED_BYTES left for their own use.
+         *        is implemented on top of standard user-defined data. pipe clients
+         *        have HV_MAX_PIPE_USER_DEFINED_BYTES left for their own use.
          */
-        struct
-        {
-            uint32_t	PipeMode;
-            uint8_t	UserDefined[MAX_PIPE_USER_DEFINED_BYTES];
-        } Pipe;
-    } u;
+		struct {
+			uint32_t	pipe_mode;
+			uint8_t	user_defined[HV_MAX_PIPE_USER_DEFINED_BYTES];
+		} pipe;
+	} u;
 
-    uint32_t	Padding;
+	uint32_t	padding;
 
-} VMBUS_CHANNEL_OFFER, *PVMBUS_CHANNEL_OFFER;
+} hv_vmbus_channel_offer;
 
-typedef uint32_t GPADL_HANDLE;
-
+typedef uint32_t hv_gpadl_handle;
 
 typedef struct {
-    union {
-        struct {
-            volatile uint32_t  In;        // Offset in bytes from the ring base
-            volatile uint32_t  Out;       // Offset in bytes from the ring base
-        } io;
-        volatile int64_t    InOut;
-    } rio;
+	union {
+		struct {
+			volatile uint32_t  in;  /* offset in bytes from the ring base */
+			volatile uint32_t  out; /* offset in bytes from the ring base */
+		} io;
+		volatile int64_t	in_out;
+	} rio;
 
-    //
-    // If the receiving endpoint sets this to some non-zero value, the sending 
-    // endpoint should not send any interrupts.
-    //
-
-    volatile uint32_t InterruptMask;
-} VMRCB, *PVMRCB;
-
-typedef struct {
-    union {
-        struct {
-            VMRCB Control;
-        } ctl;
-        uint8_t Reserved[PAGE_SIZE];
-    } rctl;
-    
-    //
-    // Beginning of the ring data.  Note: It must be guaranteed that
-    // this data does not share a page with the control structure.
-    //
-    uint8_t Data[1];
-} VMRING, *PVMRING;
-
+	/*
+	 * If the receiving endpoint sets this to some non-zero
+	 * value, the sending endpoint should not send any interrupts.
+	 */
+	volatile uint32_t interrupt_mask;
+} hv_vm_rcb;
 
 typedef struct {
-	uint16_t Type;
-	uint16_t DataOffset8;
-	uint16_t Length8;
-	uint16_t Flags;
-	uint64_t TransactionId;
-} VMPACKET_DESCRIPTOR, *PVMPACKET_DESCRIPTOR;
+	union {
+		struct {
+			hv_vm_rcb control;
+		} ctl;
+		uint8_t reserved[PAGE_SIZE];
+	} rctl;
 
-typedef uint32_t PREVIOUS_PACKET_OFFSET, *PPREVIOUS_PACKET_OFFSET;
+	/*
+	 * Beginning of the ring data.  Note: It must be guaranteed that
+	 * this data does not share a page with the control structure.
+	 */
+	uint8_t data[1];
+} hv_vm_ring;
 
 typedef struct {
-	PREVIOUS_PACKET_OFFSET  PreviousPacketStartOffset;
-	VMPACKET_DESCRIPTOR     Descriptor;
-} VMPACKET_HEADER, *PVMPACKET_HEADER;
+	uint16_t type;
+	uint16_t data_offset8;
+	uint16_t length8;
+	uint16_t flags;
+	uint64_t transaction_id;
+} hv_vm_packet_descriptor;
+
+typedef uint32_t hv_previous_packet_offset;
 
 typedef struct {
-	uint32_t ByteCount;
-	uint32_t ByteOffset;
-} VMTRANSFER_PAGE_RANGE, *PVMTRANSFER_PAGE_RANGE;
+	hv_previous_packet_offset	previous_packet_start_offset;
+	hv_vm_packet_descriptor		descriptor;
+} hv_vm_packet_header;
 
-typedef struct VMTRANSFER_PAGE_PACKET_HEADER {
-	VMPACKET_DESCRIPTOR d;
-	uint16_t	TransferPageSetId;
-	bool	SenderOwnsSet;
-	uint8_t	Reserved;
-	uint32_t	RangeCount;
-	VMTRANSFER_PAGE_RANGE   Ranges[1];
-} VMTRANSFER_PAGE_PACKET_HEADER, *PVMTRANSFER_PAGE_PACKET_HEADER;
+typedef struct {
+	uint32_t byte_count;
+	uint32_t byte_offset;
+} hv_vm_transfer_page;
 
-typedef struct _VMGPADL_PACKET_HEADER {
-	VMPACKET_DESCRIPTOR d;
-	uint32_t  Gpadl;
-	uint32_t  Reserved;
-} VMGPADL_PACKET_HEADER, *PVMGPADL_PACKET_HEADER;
+typedef struct {
+	hv_vm_packet_descriptor	d;
+	uint16_t		transfer_page_set_id;
+	bool			sender_owns_set;
+	uint8_t			reserved;
+	uint32_t		range_count;
+	hv_vm_transfer_page	ranges[1];
+} hv_vm_transfer_page_packet_header;
 
-typedef struct _VMADD_REMOVE_TRANSFER_PAGE_SET {
-	VMPACKET_DESCRIPTOR d;
-	uint32_t  Gpadl;
-	uint16_t  TransferPageSetId;
-	uint16_t  Reserved;
-} VMADD_REMOVE_TRANSFER_PAGE_SET, *PVMADD_REMOVE_TRANSFER_PAGE_SET;
+typedef struct {
+	hv_vm_packet_descriptor	d;
+	uint32_t		gpadl;
+	uint32_t		reserved;
+} hv_vm_gpadl_packet_header;
 
+typedef struct {
+	hv_vm_packet_descriptor	d;
+	uint32_t		gpadl;
+	uint16_t		transfer_page_set_id;
+	uint16_t		reserved;
+} hv_vm_add_remove_transfer_page_set;
 
-//
-// This structure defines a range in guest physical space that can be made
-// to look virtually contiguous.
-// 
+/*
+ * This structure defines a range in guest
+ * physical space that can be made
+ * to look virtually contiguous.
+ */
 
-typedef struct _GPA_RANGE {
-	uint32_t  ByteCount;
-	uint32_t  ByteOffset;
-	uint64_t  PfnArray[0];
-} GPA_RANGE, *PGPA_RANGE;
+typedef struct {
+	uint32_t  byte_count;
+	uint32_t  byte_offset;
+	uint64_t  pfn_array[0];
+} hv_gpa_range;
 
+/*
+ * This is the format for an Establish Gpadl packet, which contains a handle
+ * by which this GPADL will be known and a set of GPA ranges associated with
+ * it.  This can be converted to a MDL by the guest OS.  If there are multiple
+ * GPA ranges, then the resulting MDL will be "chained," representing multiple
+ * VA ranges.
+ */
 
+typedef struct {
+	hv_vm_packet_descriptor	d;
+	uint32_t		gpadl;
+	uint32_t		range_count;
+	hv_gpa_range		range[1];
+} hv_vm_establish_gpadl;
 
-//
-// This is the format for an Establish Gpadl packet, which contains a handle
-// by which this GPADL will be known and a set of GPA ranges associated with
-// it.  This can be converted to a MDL by the guest OS.  If there are multiple
-// GPA ranges, then the resulting MDL will be "chained," representing multiple
-// VA ranges.
-// 
+/*
+ * This is the format for a Teardown Gpadl packet, which indicates that the
+ * GPADL handle in the Establish Gpadl packet will never be referenced again.
+ */
 
-typedef struct _VMESTABLISH_GPADL {
-	VMPACKET_DESCRIPTOR d;
-	uint32_t  Gpadl;
-	uint32_t  RangeCount;
-	GPA_RANGE Range[1];
-} VMESTABLISH_GPADL, *PVMESTABLISH_GPADL;
+typedef struct {
+	hv_vm_packet_descriptor	d;
+	uint32_t		gpadl;
+	uint32_t		reserved; // for alignment to a 8-byte boundary
+} hv_vm_teardown_gpadl;
 
+/*
+ * This is the format for a GPA-Direct packet, which contains a set of GPA
+ * ranges, in addition to commands and/or data.
+ */
 
-//
-// This is the format for a Teardown Gpadl packet, which indicates that the
-// GPADL handle in the Establish Gpadl packet will never be referenced again.
-//
+typedef struct {
+	hv_vm_packet_descriptor	d;
+	uint32_t		reserved;
+	uint32_t		range_count;
+	hv_gpa_range		range[1];
+} hv_vm_data_gpa_direct;
 
-typedef struct _VMTEARDOWN_GPADL {
-	VMPACKET_DESCRIPTOR d;
-	uint32_t  Gpadl;
-	uint32_t  Reserved; // for alignment to a 8-byte boundary
-} VMTEARDOWN_GPADL, *PVMTEARDOWN_GPADL;
+/*
+ * This is the format for a Additional data Packet.
+ */
 
-
-//
-// This is the format for a GPA-Direct packet, which contains a set of GPA
-// ranges, in addition to commands and/or data.
-// 
-
-typedef struct _VMDATA_GPA_DIRECT {
-	VMPACKET_DESCRIPTOR d;
-	uint32_t      Reserved;
-	uint32_t      RangeCount;
-	GPA_RANGE   Range[1];
-} VMDATA_GPA_DIRECT, *PVMDATA_GPA_DIRECT;
-
-
-//
-// This is the format for a Additional Data Packet.
-// 
-
-typedef struct _VMADDITIONAL_DATA {
-	VMPACKET_DESCRIPTOR d;
-	uint64_t  TotalBytes;
-	uint32_t  ByteOffset;
-	uint32_t  ByteCount;
-	uint8_t   Data[1];
-} VMADDITIONAL_DATA, *PVMADDITIONAL_DATA;
-
-
+typedef struct {
+	hv_vm_packet_descriptor	d;
+	uint64_t		total_bytes;
+	uint32_t		byte_offset;
+	uint32_t		byte_count;
+	uint8_t			data[1];
+} hv_vm_additional_data;
 
 typedef union {
-	VMPACKET_DESCRIPTOR             SimpleHeader;
-	VMTRANSFER_PAGE_PACKET_HEADER   TransferPageHeader;
-	VMGPADL_PACKET_HEADER           GpadlHeader;
-	VMADD_REMOVE_TRANSFER_PAGE_SET  AddRemoveTransferPageHeader;
-	VMESTABLISH_GPADL               EstablishGpadlHeader;
-	VMTEARDOWN_GPADL                TeardownGpadlHeader;
-	VMDATA_GPA_DIRECT               DataGpaDirectHeader;
-} VMPACKET_LARGEST_POSSIBLE_HEADER, *PVMPACKET_LARGEST_POSSIBLE_HEADER;
+	hv_vm_packet_descriptor             simple_header;
+	hv_vm_transfer_page_packet_header   transfer_page_header;
+	hv_vm_gpadl_packet_header           gpadl_header;
+	hv_vm_add_remove_transfer_page_set  add_remove_transfer_page_header;
+	hv_vm_establish_gpadl               establish_gpadl_header;
+	hv_vm_teardown_gpadl                teardown_gpadl_header;
+	hv_vm_data_gpa_direct               data_gpa_direct_header;
+} hv_vm_packet_largest_possible_header;
 
-#define VMPACKET_DATA_START_ADDRESS(__packet)                           \
-    (void *)(((PUCHAR)__packet) + ((PVMPACKET_DESCRIPTOR)__packet)->DataOffset8 * 8)
+#define HV_VMPACKET_DATA_START_ADDRESS(__packet)                           \
+    (void *)(((PUCHAR)__packet) + ((hv_vm_packet_descriptor *)__packet)->data_offset8 * 8)
 
-#define VMPACKET_DATA_LENGTH(__packet)                                  \
-    ((((PVMPACKET_DESCRIPTOR)__packet)->Length8 - ((PVMPACKET_DESCRIPTOR)__packet)->DataOffset8) * 8)
+#define HV_VMPACKET_DATA_LENGTH(__packet)                                  \
+    ((((hv_vm_packet_descriptor *)__packet)->length8 - ((hv_vm_packet_descriptor *)__packet)->data_offset8) * 8)
 
-#define VMPACKET_TRANSFER_MODE(__packet) ((PVMPACKET_DESCRIPTOR)__packet)->Type
-
-typedef enum {
-    VmbusServerEndpoint = 0,
-    VmbusClientEndpoint,
-    VmbusEndpointMaximum
-} ENDPOINT_TYPE, *PENDPOINT_TYPE;
+#define HV_VMPACKET_TRANSFER_MODE(__packet) ((hv_vm_packet_descriptor *)__packet)->type
 
 typedef enum {
-    VmbusPacketTypeInvalid                      = 0x0,
-    VmbusPacketTypeSynch                        = 0x1,
-    VmbusPacketTypeAddTransferPageSet           = 0x2,
-    VmbusPacketTypeRemoveTransferPageSet        = 0x3,
-    VmbusPacketTypeEstablishGpadl               = 0x4,
-    VmbusPacketTypeTearDownGpadl                = 0x5,
-    VmbusPacketTypeDataInBand                   = 0x6,
-    VmbusPacketTypeDataUsingTransferPages       = 0x7,
-    VmbusPacketTypeDataUsingGpadl               = 0x8,
-    VmbusPacketTypeDataUsingGpaDirect           = 0x9,
-    VmbusPacketTypeCancelRequest                = 0xa,
-    VmbusPacketTypeCompletion                   = 0xb,
-    VmbusPacketTypeDataUsingAdditionalPackets   = 0xc,
-    VmbusPacketTypeAdditionalData               = 0xd
-} VMBUS_PACKET_TYPE, *PVMBUS_PACKET_TYPE;
+	HV_VMBUS_SERVER_ENDPOINT = 0,
+	HV_VMBUS_CLIENT_ENDPOINT,
+	HV_VMBUS_ENDPOINT_MAXIMUM
+} hv_endpoint_type;
 
-#define VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED    1
+typedef enum {
+	HV_VMBUS_PACKET_TYPE_INVALID				= 0x0,
+	HV_VMBUS_PACKET_TYPES_SYNCH				= 0x1,
+	HV_VMBUS_PACKET_TYPE_ADD_TRANSFER_PAGE_SET		= 0x2,
+	HV_VMBUS_PACKET_TYPE_REMOVE_TRANSFER_PAGE_SET		= 0x3,
+	HV_VMBUS_PACKET_TYPE_ESTABLISH_GPADL			= 0x4,
+	HV_VMBUS_PACKET_TYPE_TEAR_DOWN_GPADL			= 0x5,
+	HV_VMBUS_PACKET_TYPE_DATA_IN_BAND			= 0x6,
+	HV_VMBUS_PACKET_TYPE_DATA_USING_TRANSFER_PAGES		= 0x7,
+	HV_VMBUS_PACKET_TYPE_DATA_USING_GPADL			= 0x8,
+	HV_VMBUS_PACKET_TYPE_DATA_USING_GPA_DIRECT		= 0x9,
+	HV_VMBUS_PACKET_TYPE_CANCEL_REQUEST			= 0xa,
+	HV_VMBUS_PACKET_TYPE_COMPLETION				= 0xb,
+	HV_VMBUS_PACKET_TYPE_DATA_USING_ADDITIONAL_PACKETS	= 0xc,
+	HV_VMBUS_PACKET_TYPE_ADDITIONAL_DATA = 0xd
+} hv_vmbus_packet_type;
 
+#define HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED    1
 
+/*
+ * Version 1 messages
+ */
+typedef enum {
+	HV_CHANNEL_MESSAGE_INVALID			= 0,
+	HV_CHANNEL_MESSAGE_OFFER_CHANNEL		= 1,
+	HV_CHANNEL_MESSAGE_RESCIND_CHANNEL_OFFER	= 2,
+	HV_CHANNEL_MESSAGE_REQUEST_OFFERS		= 3,
+	HV_CHANNEL_MESSAGE_ALL_OFFERS_DELIVERED		= 4,
+	HV_CHANNEL_MESSAGE_OPEN_CHANNEL			= 5,
+	HV_CHANNEL_MESSAGE_OPEN_CHANNEL_RESULT		= 6,
+	HV_CHANNEL_MESSAGE_CLOSE_CHANNEL		= 7,
+	HV_CHANNEL_MESSAGEL_GPADL_HEADER		= 8,
+	HV_CHANNEL_MESSAGE_GPADL_BODY			= 9,
+	HV_CHANNEL_MESSAGE_GPADL_CREATED		= 10,
+	HV_CHANNEL_MESSAGE_GPADL_TEARDOWN		= 11,
+	HV_CHANNEL_MESSAGE_GPADL_TORNDOWN		= 12,
+	HV_CHANNEL_MESSAGE_REL_ID_RELEASED		= 13,
+	HV_CHANNEL_MESSAGE_INITIATED_CONTACT		= 14,
+	HV_CHANNEL_MESSAGE_VERSION_RESPONSE		= 15,
+	HV_CHANNEL_MESSAGE_UNLOAD			= 16,
 
-typedef uint32_t NTSTATUS; //KYS clean this
-
-
-//
-// Version 1 messages
-//
-
-typedef enum _VMBUS_CHANNEL_MESSAGE_TYPE
-{
-    ChannelMessageInvalid                   =  0,
-    ChannelMessageOfferChannel              =  1,
-    ChannelMessageRescindChannelOffer       =  2,
-    ChannelMessageRequestOffers             =  3,
-    ChannelMessageAllOffersDelivered        =  4,
-    ChannelMessageOpenChannel               =  5,
-    ChannelMessageOpenChannelResult         =  6,
-    ChannelMessageCloseChannel              =  7,
-    ChannelMessageGpadlHeader               =  8,
-    ChannelMessageGpadlBody                 =  9,
-    ChannelMessageGpadlCreated              = 10,
-    ChannelMessageGpadlTeardown             = 11,
-    ChannelMessageGpadlTorndown             = 12,
-    ChannelMessageRelIdReleased             = 13,
-    ChannelMessageInitiateContact           = 14,
-    ChannelMessageVersionResponse           = 15,
-    ChannelMessageUnload                    = 16,
-#ifdef VMBUS_FEATURE_PARENT_OR_PEER_MEMORY_MAPPED_INTO_A_CHILD
-    ChannelMessageViewRangeAdd              = 17,
-    ChannelMessageViewRangeRemove           = 18,
+#ifdef	HV_VMBUS_FEATURE_PARENT_OR_PEER_MEMORY_MAPPED_INTO_A_CHILD
+	HV_CHANNEL_MESSAGE_VIEW_RANGE_ADD		= 17,
+	HV_CHANNEL_MESSAGE_VIEW_RANGE_REMOVE		= 18,
 #endif
-    ChannelMessageCount
-} VMBUS_CHANNEL_MESSAGE_TYPE, *PVMBUS_CHANNEL_MESSAGE_TYPE;
+	HV_CHANNEL_MESSAGE_COUNT
+} hv_vmbus_channel_message_type;
 
+typedef struct {
+	hv_vmbus_channel_message_type	message_type;
+	uint32_t			padding;
+} hv_vmbus_channel_message_header;
 
-typedef struct _VMBUS_CHANNEL_MESSAGE_HEADER
+/*
+ * Query VMBus Version parameters
+ */
+typedef struct {
+	hv_vmbus_channel_message_header	header;
+	uint32_t			version;
+} hv_vmbus_channel_query_vmbus_version;
+
+/*
+ * VMBus Version Supported parameters
+ */
+typedef struct {
+	hv_vmbus_channel_message_header	header;
+	bool				version_supported;
+} hv_vmbus_channel_version_supported;
+
+/*
+ * Channel Offer parameters
+ */
+typedef struct {
+	hv_vmbus_channel_message_header	header;
+	hv_vmbus_channel_offer		offer;
+	uint32_t			child_rel_id;
+	uint8_t				monitor_id;
+	bool				monitor_allocated;
+} hv_vmbus_channel_offer_channel;
+
+/*
+ * Rescind Offer parameters
+ */
+typedef struct
 {
-    VMBUS_CHANNEL_MESSAGE_TYPE  MessageType;
-    uint32_t                      Padding;
-} VMBUS_CHANNEL_MESSAGE_HEADER, *PVMBUS_CHANNEL_MESSAGE_HEADER;
+    hv_vmbus_channel_message_header	header;
+    uint32_t				child_rel_id;
+} hv_vmbus_channel_rescind_offer;
 
-// Query VMBus Version parameters
-typedef struct _VMBUS_CHANNEL_QUERY_VMBUS_VERSION
+
+/*
+ * Request Offer -- no parameters, SynIC message contains the partition ID
+ *
+ * Set Snoop -- no parameters, SynIC message contains the partition ID
+ *
+ * Clear Snoop -- no parameters, SynIC message contains the partition ID
+ *
+ * All Offers Delivered -- no parameters, SynIC message contains the partition ID
+ *
+ * Flush Client -- no parameters, SynIC message contains the partition ID
+ */
+
+
+/*
+ * Open Channel parameters
+ */
+typedef struct
 {
-    VMBUS_CHANNEL_MESSAGE_HEADER Header;
-    uint32_t Version;
-} VMBUS_CHANNEL_QUERY_VMBUS_VERSION, *PVMBUS_CHANNEL_QUERY_VMBUS_VERSION;
+    hv_vmbus_channel_message_header header;
 
-// VMBus Version Supported parameters
-typedef struct _VMBUS_CHANNEL_VERSION_SUPPORTED
+    /*
+     * Identifies the specific VMBus channel that is being opened.
+     */
+    uint32_t		child_rel_id;
+
+    /*
+     * ID making a particular open request at a channel offer unique.
+     */
+    uint32_t		open_id;
+
+    /*
+     * GPADL for the channel's ring buffer.
+     */
+    hv_gpadl_handle	ring_buffer_gpadl_handle;
+
+    /*
+     * GPADL for the channel's server context save area.
+     */
+    hv_gpadl_handle	server_context_area_gpadl_handle;
+
+    /*
+     * The upstream ring buffer begins at offset zero in the memory described
+     * by ring_buffer_gpadl_handle. The downstream ring buffer follows it at this
+     * offset (in pages).
+     */
+    uint32_t		downstream_ring_buffer_page_offset;
+
+    /*
+     * User-specific data to be passed along to the server endpoint.
+     */
+    uint8_t		user_data[HV_MAX_USER_DEFINED_BYTES];
+
+} hv_vmbus_channel_open_channel;
+
+typedef uint32_t hv_nt_status;
+
+/*
+ * Open Channel Result parameters
+ */
+typedef struct
 {
-    VMBUS_CHANNEL_MESSAGE_HEADER Header;
-    bool VersionSupported;
-} VMBUS_CHANNEL_VERSION_SUPPORTED, *PVMBUS_CHANNEL_VERSION_SUPPORTED;
+	hv_vmbus_channel_message_header	header;
+	uint32_t			child_rel_id;
+	uint32_t			open_id;
+	hv_nt_status			status;
+} hv_vmbus_channel_open_result;
 
-// Offer Channel parameters
-typedef struct _VMBUS_CHANNEL_OFFER_CHANNEL
+/*
+ * Close channel parameters
+ */
+typedef struct
 {
-    VMBUS_CHANNEL_MESSAGE_HEADER Header;
-    VMBUS_CHANNEL_OFFER Offer;
-    uint32_t  ChildRelId;
-    uint8_t   MonitorId;
-    bool	 MonitorAllocated;
-} VMBUS_CHANNEL_OFFER_CHANNEL, *PVMBUS_CHANNEL_OFFER_CHANNEL;
+	hv_vmbus_channel_message_header	header;
+	uint32_t			child_rel_id;
+} hv_vmbus_channel_close_channel;
 
+/*
+ * Channel Message GPADL
+ */
+#define HV_GPADL_TYPE_RING_BUFFER	1
+#define HV_GPADL_TYPE_SERVER_SAVE_AREA	2
+#define HV_GPADL_TYPE_TRANSACTION	8
 
-// Rescind Offer parameters
-typedef struct _VMBUS_CHANNEL_RESCIND_OFFER
-{
-    VMBUS_CHANNEL_MESSAGE_HEADER Header;
-    uint32_t          ChildRelId;
-} VMBUS_CHANNEL_RESCIND_OFFER, *PVMBUS_CHANNEL_RESCIND_OFFER;
+/*
+ * The number of PFNs in a GPADL message is defined by the number of pages
+ * that would be spanned by byte_count and byte_offset.  If the implied number
+ * of PFNs won't fit in this packet, there will be a follow-up packet that
+ * contains more
+ */
 
-// Request Offer -- no parameters, SynIC message contains the partition ID
-// Set Snoop -- no parameters, SynIC message contains the partition ID
-// Clear Snoop -- no parameters, SynIC message contains the partition ID
-// All Offers Delivered -- no parameters, SynIC message contains the partition ID
-// Flush Client -- no parameters, SynIC message contains the partition ID
+typedef struct {
+	hv_vmbus_channel_message_header	header;
+	uint32_t	child_rel_id;
+	uint32_t	gpadl;
+	uint16_t	range_buf_len;
+	uint16_t	range_count;
+	hv_gpa_range	range[0];
+} hv_vmbus_channel_gpadl_header;
 
-// Open Channel parameters
-typedef struct _VMBUS_CHANNEL_OPEN_CHANNEL
-{
-    VMBUS_CHANNEL_MESSAGE_HEADER Header;
+/*
+ * This is the follow-up packet that contains more PFNs
+ */
+typedef struct {
+	hv_vmbus_channel_message_header	header;
+	uint32_t	message_number;
+	uint32_t 	gpadl;
+	uint64_t 	pfn[0];
+} hv_vmbus_channel_gpadl_body;
 
-    //
-    // Identifies the specific VMBus channel that is being opened.
-    //
-    uint32_t          ChildRelId;
+typedef struct {
+	hv_vmbus_channel_message_header	header;
+	uint32_t	child_rel_id;
+	uint32_t	gpadl;
+	uint32_t	creation_status;
+} hv_vmbus_channel_gpadl_created;
 
-    //
-    // ID making a particular open request at a channel offer unique.
-    //
-    uint32_t          OpenId;
+typedef struct {
+	hv_vmbus_channel_message_header	header;
+	uint32_t	child_rel_id;
+	uint32_t	gpadl;
+} hv_vmbus_channel_gpadl_teardown;
 
-    //
-    // GPADL for the channel's ring buffer.
-    //
-    GPADL_HANDLE    RingBufferGpadlHandle;
+typedef struct {
+	hv_vmbus_channel_message_header	header;
+	uint32_t	gpadl;
+} hv_vmbus_channel_gpadl_torndown;
 
-    //
-    // GPADL for the channel's server context save area.
-    //
-    GPADL_HANDLE    ServerContextAreaGpadlHandle;
+typedef struct {
+	hv_vmbus_channel_message_header	header;
+	uint32_t	child_rel_id;
+} hv_vmbus_channel_relid_released;
 
-    //
-    // The upstream ring buffer begins at offset zero in the memory described
-    // by RingBufferGpadlHandle. The downstream ring buffer follows it at this
-    // offset (in pages).
-    //
-    uint32_t          DownstreamRingBufferPageOffset;
+typedef struct {
+	hv_vmbus_channel_message_header header;
+	uint32_t	vmbus_version_requested;
+	uint32_t	padding2;
+	uint64_t	interrupt_page;
+	uint64_t	monitor_page_1;
+	uint64_t	monitor_page_2;
+} hv_vmbus_channel_initiate_contact;
 
-    //
-    // User-specific data to be passed along to the server endpoint.
-    //
-    uint8_t           UserData[MAX_USER_DEFINED_BYTES];
+typedef struct {
+	hv_vmbus_channel_message_header header;
+	bool		version_supported;
+} hv_vmbus_channel_version_response;
 
-} VMBUS_CHANNEL_OPEN_CHANNEL, *PVMBUS_CHANNEL_OPEN_CHANNEL;
+typedef hv_vmbus_channel_message_header hv_vmbus_channel_unload;
 
-// Reopen Channel parameters;
-typedef VMBUS_CHANNEL_OPEN_CHANNEL VMBUS_CHANNEL_REOPEN_CHANNEL, *PVMBUS_CHANNEL_REOPEN_CHANNEL;
+/*
+ * Kind of a table to use the preprocessor to get us the right type for a
+ * specified message ID. Used with ChAllocateSendMessage()
+ *
+ * NOTE: These are reserved for future use
+ */
+/*
+#define HV_CHANNEL_MESSAGE_QUERY_VMBUS_VERSION_TYPE	hv_vmbus_channel_message_header
+#define HV_CHANNEL_MESSAGE_VERSION_SUPPORTED_TYPE	hv_vmbus_channel_version_supported
+#define HV_CHANNEL_MESSAGE_OFFER_CHANNEL_TYPE		hv_vmbus_channel_offer_channel
+#define HV_CHANNEL_MESSAGE_RESCIND_CHANNEL_OFFER_TYPE	hv_vmbus_channel_rescind_offer
+#define HV_CHANNEL_MESSAGE_REQUEST_OFFERS_TYPE		hv_vmbus_channel_message_header
+#define HV_CHANNEL_MESSAGE_ALL_OFFERS_DELIVERED_TYPE	hv_vmbus_channel_message_header
+#define HV_CHANNEL_MESSAGE_OPEN_CHANNEL_TYPE		hv_vmbus_channel_open_channel
+#define HV_CHANNEL_MESSAGE_OPEN_CHANNEL_RESULT_TYPE	hv_vmbus_channel_open_result
+#define HV_CHANNEL_MESSAGE_CLOSE_CHANNEL_TYPE		hv_vmbus_channel_close_channel
+#define HV_CHANNEL_MESSAGE_ALL_GPDALS_UNMAPPED_TYPE	hv_vmbus_channel_close_channel
+#define HV_CHANNEL_MESSAGEL_GPADL_HEADER_TYPE		hv_vmbus_channel_gpadl_header
+#define HV_CHANNEL_MESSAGE_GPADL_BODY_TYPE		hv_vmbus_channel_gpadl_body
+#define HV_CHANNEL_MESSAGE_GPADL_CREATED_TYPE		hv_vmbus_channel_gpadl_created
+#define HV_CHANNEL_MESSAGE_GPADL_TEARDOWN_TYPE		hv_vmbus_channel_gpadl_teardown
+#define HV_CHANNEL_MESSAGE_GPADL_TORNDOWN_TYPE		hv_vmbus_channel_gpadl_torndown
+#define HV_CHANNEL_MESSAGE_VIEW_RANGE_ADD_TYPE		VMBUS_CHANNEL_VIEW_RANGE_ADD
+#define HV_CHANNEL_MESSAGE_VIEW_RANGE_REMOVE_TYPE	VMBUS_CHANNEL_VIEW_RANGE_REMOVE
+#define HV_CHANNEL_MESSAGE_REL_ID_RELEASED_TYPE		hv_vmbus_channel_relid_released
+#define HV_CHANNEL_MESSAGE_INITIATED_CONTACT_TYPE	hv_vmbus_channel_initiate_contact
+#define HV_CHANNEL_MESSAGE_VERSION_RESPONSE_TYPE	hv_vmbus_channel_version_response
+#define HV_CHANNEL_MESSAGE_UNLOAD_TYPE			hv_vmbus_channel_unload
+*/
 
-// Open Channel Result parameters
-typedef struct _VMBUS_CHANNEL_OPEN_RESULT
-{
-    VMBUS_CHANNEL_MESSAGE_HEADER Header;
-    uint32_t      ChildRelId;
-    uint32_t      OpenId;
-    NTSTATUS    Status;
-} VMBUS_CHANNEL_OPEN_RESULT, *PVMBUS_CHANNEL_OPEN_RESULT;
+#define HW_MACADDR_LEN	6
 
-// Close channel parameters;
-typedef struct _VMBUS_CHANNEL_CLOSE_CHANNEL
-{
-    VMBUS_CHANNEL_MESSAGE_HEADER Header;
-    uint32_t      ChildRelId;
-} VMBUS_CHANNEL_CLOSE_CHANNEL, *PVMBUS_CHANNEL_CLOSE_CHANNEL;
-
-// Channel Message GPADL
-#define GPADL_TYPE_RING_BUFFER          1
-#define GPADL_TYPE_SERVER_SAVE_AREA     2
-#define GPADL_TYPE_TRANSACTION          8
-
-//
-// The number of PFNs in a GPADL message is defined by the number of pages
-// that would be spanned by ByteCount and ByteOffset.  If the implied number
-// of PFNs won't fit in this packet, there will be a follow-up packet that
-// contains more.
-//
-
-typedef struct _VMBUS_CHANNEL_GPADL_HEADER
-{
-    VMBUS_CHANNEL_MESSAGE_HEADER Header;
-    uint32_t      ChildRelId;
-    uint32_t      Gpadl;
-    uint16_t      RangeBufLen;
-    uint16_t      RangeCount;
-    GPA_RANGE   Range[0];
-} VMBUS_CHANNEL_GPADL_HEADER, *PVMBUS_CHANNEL_GPADL_HEADER;
-
-
-//
-// This is the followup packet that contains more PFNs.
-//
-
-typedef struct _VMBUS_CHANNEL_GPADL_BODY
-{
-    VMBUS_CHANNEL_MESSAGE_HEADER Header;
-    uint32_t              MessageNumber;
-    uint32_t              Gpadl;
-    uint64_t              Pfn[0];
-} VMBUS_CHANNEL_GPADL_BODY, *PVMBUS_CHANNEL_GPADL_BODY;
-
-
-typedef struct _VMBUS_CHANNEL_GPADL_CREATED
-{
-    VMBUS_CHANNEL_MESSAGE_HEADER Header;
-    uint32_t              ChildRelId;
-    uint32_t              Gpadl;
-    uint32_t              CreationStatus;
-} VMBUS_CHANNEL_GPADL_CREATED, *PVMBUS_CHANNEL_GPADL_CREATED;
-
-typedef struct _VMBUS_CHANNEL_GPADL_TEARDOWN
-{
-    VMBUS_CHANNEL_MESSAGE_HEADER Header;
-    uint32_t              ChildRelId;
-    uint32_t              Gpadl;
-} VMBUS_CHANNEL_GPADL_TEARDOWN, *PVMBUS_CHANNEL_GPADL_TEARDOWN;
-
-typedef struct _VMBUS_CHANNEL_GPADL_TORNDOWN
-{
-    VMBUS_CHANNEL_MESSAGE_HEADER Header;
-    uint32_t              Gpadl;
-} VMBUS_CHANNEL_GPADL_TORNDOWN, *PVMBUS_CHANNEL_GPADL_TORNDOWN;
-
-typedef struct _VMBUS_CHANNEL_RELID_RELEASED
-{
-    VMBUS_CHANNEL_MESSAGE_HEADER Header;
-    uint32_t              ChildRelId;
-} VMBUS_CHANNEL_RELID_RELEASED, *PVMBUS_CHANNEL_RELID_RELEASED;
-
-typedef struct _VMBUS_CHANNEL_INITIATE_CONTACT
-{
-    VMBUS_CHANNEL_MESSAGE_HEADER Header;
-    uint32_t              VMBusVersionRequested;
-    uint32_t              Padding2;
-    uint64_t              InterruptPage;
-    uint64_t              MonitorPage1;
-    uint64_t              MonitorPage2;
-} VMBUS_CHANNEL_INITIATE_CONTACT, *PVMBUS_CHANNEL_INITIATE_CONTACT;
-
-typedef struct _VMBUS_CHANNEL_VERSION_RESPONSE
-{
-    VMBUS_CHANNEL_MESSAGE_HEADER Header;
-    bool     VersionSupported;
-} VMBUS_CHANNEL_VERSION_RESPONSE, *PVMBUS_CHANNEL_VERSION_RESPONSE;
-
-typedef VMBUS_CHANNEL_MESSAGE_HEADER VMBUS_CHANNEL_UNLOAD, *PVMBUS_CHANNEL_UNLOAD;
-
-//
-// Kind of a table to use the preprocessor to get us the right type for a
-// specified message ID. Used with ChAllocateSendMessage()
-//
-#define ChannelMessageQueryVmbusVersion_TYPE    VMBUS_CHANNEL_MESSAGE_HEADER
-#define ChannelMessageVmbusVersionSupported_TYPE VMBUS_CHANNEL_VERSION_SUPPORTED
-#define ChannelMessageOfferChannel_TYPE         VMBUS_CHANNEL_OFFER_CHANNEL
-#define ChannelMessageRescindChannelOffer_TYPE  VMBUS_CHANNEL_RESCIND_OFFER
-#define ChannelMessageRequestOffers_TYPE        VMBUS_CHANNEL_MESSAGE_HEADER
-#define ChannelMessageAllOffersDelivered_TYPE   VMBUS_CHANNEL_MESSAGE_HEADER
-#define ChannelMessageOpenChannel_TYPE          VMBUS_CHANNEL_OPEN_CHANNEL
-#define ChannelMessageOpenChannelResult_TYPE    VMBUS_CHANNEL_OPEN_RESULT
-#define ChannelMessageCloseChannel_TYPE         VMBUS_CHANNEL_CLOSE_CHANNEL
-#define ChannelMessageAllGpadlsUnmapped_TYPE    VMBUS_CHANNEL_CLOSE_CHANNEL
-#define ChannelMessageGpadlHeader_TYPE          VMBUS_CHANNEL_GPADL_HEADER
-#define ChannelMessageGpadlBody_TYPE            VMBUS_CHANNEL_GPADL_BODY
-#define ChannelMessageGpadlCreated_TYPE         VMBUS_CHANNEL_GPADL_CREATED
-#define ChannelMessageGpadlTeardown_TYPE        VMBUS_CHANNEL_GPADL_TEARDOWN
-#define ChannelMessageGpadlTorndown_TYPE        VMBUS_CHANNEL_GPADL_TORNDOWN
-#define ChannelMessageViewRangeAdd_TYPE         VMBUS_CHANNEL_VIEW_RANGE_ADD
-#define ChannelMessageViewRangeRemove_TYPE      VMBUS_CHANNEL_VIEW_RANGE_REMOVE
-#define ChannelMessageRelIdReleased_TYPE        VMBUS_CHANNEL_RELID_RELEASED
-#define ChannelMessageInitiateContact_TYPE      VMBUS_CHANNEL_INITIATE_CONTACT
-#define ChannelMessageVersionResponse_TYPE      VMBUS_CHANNEL_VERSION_RESPONSE
-#define ChannelMessageUnload_TYPE               VMBUS_CHANNEL_UNLOAD
-
-
-
-#define HW_MACADDR_LEN		6
-
-#define LOWORD(dw)	((unsigned short) (dw))
-#define HIWORD(dw)	((unsigned short) (((unsigned int) (dw) >> 16) & 0xFFFF))
-
+#define HV_LOWORD(dw)	((unsigned short) (dw))
+#define HV_HIWORD(dw)	((unsigned short) (((unsigned int) (dw) >> 16) & 0xFFFF))
 
 /*
  * Fixme:  Added to quiet "typeof" errors involving hv_vmbus.h when
@@ -653,259 +641,243 @@ typedef VMBUS_CHANNEL_MESSAGE_HEADER VMBUS_CHANNEL_UNLOAD, *PVMBUS_CHANNEL_UNLOA
 #endif
 
 
+typedef void *hv_vmbus_handle;
 
-typedef void*			HANDLE;
-
-
-#ifndef CONTAINING_RECORD
-#define CONTAINING_RECORD(address, type, field) ((type *)( \
+#ifndef HV_CONTAINING_RECORD
+#define HV_CONTAINING_RECORD(address, type, field) ((type *)( \
                                                   (uint8_t *)(address) - \
                                                   (uint8_t *)(&((type *)0)->field)))
-#endif /* CONTAINING_RECORD */
-
-// 
-// A revision number of vmbus that is used for ensuring both ends on a
-// partition are using compatible versions.
-//
-#define VMBUS_REVISION_NUMBER       13
-
-//
-// Make maximum size of pipe payload of 16K
-//
-#define MAX_PIPE_DATA_PAYLOAD 		(sizeof(BYTE) * 16384)
-
-//
-// Define PipeMode values.
-//
-#define VMBUS_PIPE_TYPE_BYTE                    0x00000000
-#define VMBUS_PIPE_TYPE_MESSAGE                 0x00000004
-
-//
-// The size of the user defined data buffer for non-pipe offers.
-//
-#define MAX_USER_DEFINED_BYTES                  120
-
-//
-// The size of the user defined data buffer for pipe offers.
-//
-#define MAX_PIPE_USER_DEFINED_BYTES             116
+#endif /* HV_CONTAINING_RECORD */
 
 
-#define VMPACKET_DATA_START_ADDRESS(__packet)                           \
-    (void *)(((PUCHAR)__packet) + ((PVMPACKET_DESCRIPTOR)__packet)->DataOffset8 * 8)
+#define HV_VMPACKET_DATA_START_ADDRESS(__packet)	\
+    (void *)(((PUCHAR)__packet) + ((hv_vm_packet_descriptor *)__packet)->data_offset8 * 8)
 
-#define VMPACKET_DATA_LENGTH(__packet)                                  \
-    ((((PVMPACKET_DESCRIPTOR)__packet)->Length8 - ((PVMPACKET_DESCRIPTOR)__packet)->DataOffset8) * 8)
+#define HV_VMPACKET_DATA_LENGTH(__packet)		\
+    ((((hv_vm_packet_descriptor *)__packet)->length8 - ((hv_vm_packet_descriptor *)__packet)->data_offset8) * 8)
 
-#define VMPACKET_TRANSFER_MODE(__packet) ((PVMPACKET_DESCRIPTOR)__packet)->Type
+#define HV_VMPACKET_TRANSFER_MODE(__packet) ((hv_vm_packet_descriptor *)__packet)->type
 
-
-
-#define VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED    1
+#define HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED    1
 
 
-
-#define container_of(ptr, type, member) ({		\
-        __typeof__( ((type *)0)->member ) *__mptr = (ptr);  \
+#define HV_CONTAINER_OF(ptr, type, member)	({		\
+        __typeof__( ((type *)0)->member ) *__mptr = (ptr);	\
         (type *)( (char *)__mptr - offsetof(type,member) );})
 
-
-
 enum {
-	VMBUS_IVAR_TYPE,
-	VMBUS_IVAR_INSTANCE,
-	VMBUS_IVAR_NODE,
-	VMBUS_IVAR_DEVCTX
+	HV_VMBUS_IVAR_TYPE,
+	HV_VMBUS_IVAR_INSTANCE,
+	HV_VMBUS_IVAR_NODE,
+	HV_VMBUS_IVAR_DEVCTX
 };
 
 
-#define VMBUS_ACCESSOR(var, ivar, type) \
+#define HV_VMBUS_ACCESSOR(var, ivar, type) \
 		__BUS_ACCESSOR(vmbus, var, VMBUS, ivar, type)
 
-VMBUS_ACCESSOR(type, TYPE,  const char *)
-VMBUS_ACCESSOR(devctx, DEVCTX,  struct hv_device *)
+HV_VMBUS_ACCESSOR(type, TYPE,  const char *)
+HV_VMBUS_ACCESSOR(devctx, DEVCTX,  struct hv_device *)
 
-
-
-/**
+/*
  * Common header for Hyper-V ICs
  */
+#define HV_ICMSGTYPE_NEGOTIATE		0
+#define HV_ICMSGTYPE_HEARTBEAT		1
+#define HV_ICMSGTYPE_KVPEXCHANGE	2
+#define HV_ICMSGTYPE_SHUTDOWN		3
+#define HV_ICMSGTYPE_TIMESYNC		4
+#define HV_ICMSGTYPE_VSS		5
 
-#define ICMSGTYPE_NEGOTIATE 0
-#define ICMSGTYPE_HEARTBEAT 1
-#define ICMSGTYPE_KVPEXCHANGE 2
-#define ICMSGTYPE_SHUTDOWN 3
-#define ICMSGTYPE_TIMESYNC 4
-#define ICMSGTYPE_VSS 5
+#define HV_ICMSGHDRFLAG_TRANSACTION	1
+#define HV_ICMSGHDRFLAG_REQUEST		2
+#define HV_ICMSGHDRFLAG_RESPONSE	4
 
-#define ICMSGHDRFLAG_TRANSACTION 1
-#define ICMSGHDRFLAG_REQUEST 2
-#define ICMSGHDRFLAG_RESPONSE 4
-
-struct vmbuspipe_hdr {
+typedef struct hv_vmbus_pipe_hdr {
 	uint32_t flags;
 	uint32_t msgsize;
-}__attribute__((packed));
+} hv_vmbus_pipe_hdr;
 
-struct ic_version {
+struct hv_vmbus_ic_version {
 	uint16_t major;
 	uint16_t minor;
-}__attribute__((packed));
+} hv_vmbus_ic_version;
 
-struct icmsg_hdr {
-	struct ic_version icverframe;
-	uint16_t icmsgtype;
-	struct ic_version icvermsg;
-	uint16_t icmsgsize;
-	uint32_t status;
-	uint8_t ictransaction_id;
-	uint8_t icflags;
-	uint8_t reserved[2];
-}__attribute__((packed));
+typedef struct hv_vmbus_icmsg_hdr {
+	hv_vmbus_ic_version	icverframe;
+	uint16_t		icmsgtype;
+	hv_vmbus_ic_version	icvermsg;
+	uint16_t		icmsgsize;
+	uint32_t		status;
+	uint8_t			ictransaction_id;
+	uint8_t			icflags;
+	uint8_t			reserved[2];
+} hv_vmbus_icmsg_hdr;
 
-struct icmsg_negotiate {
-	uint16_t icframe_vercnt;
-	uint16_t icmsg_vercnt;
-	uint32_t reserved;
-	struct ic_version icversion_data[1]; /* any size array */
-}__attribute__((packed));
+typedef struct hv_vmbus_icmsg_negotiate {
+	uint16_t		icframe_vercnt;
+	uint16_t		icmsg_vercnt;
+	uint32_t		reserved;
+	hv_vmbus_ic_version	icversion_data[1]; /* any size array */
+} hv_vmbus_icmsg_negotiate;
 
-struct shutdown_msg_data {
-	uint32_t reason_code;
-	uint32_t timeout_seconds;
-	uint32_t flags;
-	uint8_t display_message[2048];
-}__attribute__((packed));
+typedef struct hv_shutdown_msg_data {
+	uint32_t		reason_code;
+	uint32_t		timeout_seconds;
+	uint32_t 		flags;
+	uint8_t			display_message[2048];
+} hv_shutdown_msg_data;
 
-struct heartbeat_msg_data {
-	uint64_t seq_num;
-	uint32_t reserved[8];
-}__attribute__((packed));
+typedef struct hv_vmbus_heartbeat_msg_data {
+	uint64_t 		seq_num;
+	uint32_t 		reserved[8];
+} hv_vmbus_heartbeat_msg_data;
 
-typedef struct _RING_BUFFER {
-	volatile uint32_t       WriteIndex;     // Offset in bytes from the start of ring data below
-	volatile uint32_t       ReadIndex;      // Offset in bytes from the start of ring data below
-	volatile uint32_t       InterruptMask;
-	uint8_t                 Reserved[4084]; // Pad it to PAGE_SIZE so that data starts on a page 
+typedef struct {
+	/*
+	 * offset in bytes from the start of ring data below
+	 */
+	volatile uint32_t       write_index;
+	/*
+	 * offset in bytes from the start of ring data below
+	 */
+	volatile uint32_t       read_index;
+	/*
+	 * NOTE: The interrupt_mask field is used only for channels, but
+	 * vmbus connection also uses this data structure
+	 */
+	volatile uint32_t       interrupt_mask;
+	uint8_t                 reserved[4084];	/* pad it to PAGE_SIZE so that data starts on a page */
 
-	// NOTE: The InterruptMask field is used only for channels but since our vmbus connection
-	// also uses this data structure and its data starts here, we commented out this field.
-	// __volatile__ uint32_t InterruptMask;
-	// Ring data starts here + RingDataStartOffset !!! DO NOT place any fields below this !!!
-	uint8_t Buffer[0];
-} __attribute__((__packed__)) RING_BUFFER;
+	/*
+	 * WARNING: Ring data starts here + RingDataStartOffset
+	 *  !!! DO NOT place any fields below this !!!
+	 */
+	uint8_t			buffer[0];	/* doubles as interrupt mask */
+} hv_vmbus_ring_buffer;
 
-typedef struct _RING_BUFFER_INFO {
-	RING_BUFFER* RingBuffer;
-	uint32_t RingSize;      // Include the shared header
-	struct mtx RingLock;
-	uint32_t RingDataSize;  // < ringSize
-	uint32_t RingDataStartOffset;
-} RING_BUFFER_INFO;
+typedef struct {
+	hv_vmbus_ring_buffer	*ring_buffer;
+	uint32_t		ring_size;	/* Include the shared header */
+	struct mtx		ring_lock;
+	uint32_t		ring_data_size;	/* < ringSize */
+	uint32_t		RingDataStartOffset;
+} hv_vmbus_ring_buffer_info;
 
 
-typedef void (*PFN_CHANNEL_CALLBACK)(void *context);
+typedef void (*hv_vmbus_pfn_channel_callback)(void *context);
 
 typedef enum {
-	CHANNEL_OFFER_STATE,
-	CHANNEL_OPENING_STATE,
-	CHANNEL_OPEN_STATE,
-} VMBUS_CHANNEL_STATE;
+	HV_CHANNEL_OFFER_STATE,
+	HV_CHANNEL_OPENING_STATE,
+	HV_CHANNEL_OPEN_STATE,
+} hv_vmbus_channel_state;
 
 typedef struct _VMBUS_CHANNEL {
 	TAILQ_ENTRY(_VMBUS_CHANNEL) ListEntry;
 	struct hv_device *device;
-	VMBUS_CHANNEL_STATE State;
-	VMBUS_CHANNEL_OFFER_CHANNEL OfferMsg;
-	// These are based on the OfferMsg.MonitorId. Save it here for easy access.
+	hv_vmbus_channel_state State;
+	hv_vmbus_channel_offer_channel OfferMsg;
+	/*
+	 * These are based on the OfferMsg.monitor_id.
+	 * Save it here for easy access.
+	 */
 	uint8_t MonitorGroup;
 	uint8_t MonitorBit;
 
-	uint32_t RingBufferGpadlHandle;
+	uint32_t ring_buffer_gpadl_handle;
 
 	// Allocated memory for ring buffer
 	void *RingBufferPages;
 	uint32_t RingBufferPageCount;
-	RING_BUFFER_INFO Outbound;      // send to parent
-	RING_BUFFER_INFO Inbound;       // receive from parent
+	hv_vmbus_ring_buffer_info Outbound;      // send to parent
+	hv_vmbus_ring_buffer_info Inbound;       // receive from parent
 	struct mtx InboundLock;
-	HANDLE ControlWQ;
+	hv_vmbus_handle ControlWQ;
 
-	PFN_CHANNEL_CALLBACK OnChannelCallback;
+	hv_vmbus_pfn_channel_callback OnChannelCallback;
 	void *ChannelCallbackContext;
 
 } VMBUS_CHANNEL;
 
 struct hv_device {
-	GUID			class_id;
-	GUID			device_id;
+	hv_guid			class_id;
+	hv_guid			device_id;
 	device_t		device;
 	VMBUS_CHANNEL		*channel;
 };
 
 typedef struct {
-	int Length;
-	int Offset;
-	uint64_t Pfn;
+	int		length;
+	int		offset;
+	uint64_t	pfn;
 } PAGE_BUFFER;
 
-#define MAX_PAGE_BUFFER_COUNT   16
-#define MAX_MULTIPAGE_BUFFER_COUNT 32
+#define HV_MAX_PAGE_BUFFER_COUNT	16
+#define HV_MAX_MULTIPAGE_BUFFER_COUNT	32
 
-#define ALIGN_UP(value, align)  \
-(((value) & (align-1)) ? (((value) + (align-1)) & ~(align-1) ) : (value))
+#define HV_ALIGN_UP(value, align)		\
+		(((value) & (align-1)) ? (((value) + (align-1)) & ~(align-1) ) : (value))
 
-#define ALIGN_DOWN(value, align) ( (value) & ~(align-1) )
+#define HV_ALIGN_DOWN(value, align) ( (value) & ~(align-1) )
 
-#define NUM_PAGES_SPANNED(addr, len) \
-((ALIGN_UP(addr+len, PAGE_SIZE) - ALIGN_DOWN(addr, PAGE_SIZE)) >> PAGE_SHIFT )
+#define HV_NUM_PAGES_SPANNED(addr, len)	\
+		((HV_ALIGN_UP(addr+len, PAGE_SIZE) - HV_ALIGN_DOWN(addr, PAGE_SIZE)) >> PAGE_SHIFT )
 
 typedef struct {
-	int Length;
-	int Offset;
-	uint64_t PfnArray[MAX_MULTIPAGE_BUFFER_COUNT];
-} MULTIPAGE_BUFFER;
+	int		length;
+	int		offset;
+	uint64_t	pfn_array[HV_MAX_MULTIPAGE_BUFFER_COUNT];
+} hv_vmbus_multipage_buffer;
 
 
 #pragma pack(pop)
 
 struct hv_util_service {
-	uint8_t *recv_buffer;
-	char *serv_name;
-	struct work_queue *workq;
+	uint8_t		*recv_buffer;
+	char		*serv_name;
+	struct hv_work_queue *workq;
 	void (*util_cb)(void *);
 	int  (*util_init)(struct hv_util_service *);
 	void (*util_deinit)(void);
 };
 
-void vmbus_prep_negotiate_resp(struct icmsg_hdr *icmsghdrp,
-                               struct icmsg_negotiate *negop, uint8_t *buf);
+void
+vmbus_prep_negotiate_resp(struct hv_vmbus_icmsg_hdr *icmsghdrp,
+                               struct hv_vmbus_icmsg_negotiate *negop, uint8_t *buf);
 
-int hv_vmbus_channel_recv_packet(VMBUS_CHANNEL *Channel, void *Buffer,
+int
+hv_vmbus_channel_recv_packet(VMBUS_CHANNEL *Channel, void *Buffer,
 		uint32_t BufferLen, uint32_t* BufferActualLen,
 		uint64_t* RequestId);
 
-int hv_vmbus_channel_recv_packet_raw(VMBUS_CHANNEL *Channel, void *Buffer,
+int
+hv_vmbus_channel_recv_packet_raw(VMBUS_CHANNEL *Channel, void *Buffer,
         uint32_t BufferLen, uint32_t* BufferActualLen, uint64_t* RequestId);
 
-int hv_vmbus_channel_open(VMBUS_CHANNEL *Channel, uint32_t SendRingBufferSize,
-        uint32_t RecvRingBufferSize, void *UserData, uint32_t UserDataLen,
-        PFN_CHANNEL_CALLBACK pfnOnChannelCallback, void *Context);
+int
+hv_vmbus_channel_open(VMBUS_CHANNEL *Channel, uint32_t SendRingBufferSize,
+        uint32_t RecvRingBufferSize, void *user_data, uint32_t UserDataLen,
+        hv_vmbus_pfn_channel_callback pfnOnChannelCallback, void *Context);
 
-void hv_vmbus_channel_close(VMBUS_CHANNEL *Channel);
+void
+hv_vmbus_channel_close(VMBUS_CHANNEL *Channel);
 
 
-int hv_vmbus_channel_send_packet(VMBUS_CHANNEL *Channel, void *Buffer,
-        uint32_t BufferLen, uint64_t RequestId, VMBUS_PACKET_TYPE Type,
+int
+hv_vmbus_channel_send_packet(VMBUS_CHANNEL *Channel, void *Buffer,
+        uint32_t BufferLen, uint64_t RequestId, hv_vmbus_packet_type Type,
         uint32_t Flags);
 
 
-int hv_vmbus_channel_send_packet_pagebuffer(VMBUS_CHANNEL *Channel,
+int
+hv_vmbus_channel_send_packet_pagebuffer(VMBUS_CHANNEL *Channel,
         PAGE_BUFFER PageBuffers[], uint32_t PageCount, void *Buffer,
         uint32_t BufferLen, uint64_t RequestId);
 
-int hv_vmbus_channel_send_packet_multipagebuffer(VMBUS_CHANNEL *Channel,
-        MULTIPAGE_BUFFER *MultiPageBuffer, void *Buffer, uint32_t BufferLen,
+int
+hv_vmbus_channel_send_packet_multipagebuffer(VMBUS_CHANNEL *Channel,
+        hv_vmbus_multipage_buffer *MultiPageBuffer, void *Buffer, uint32_t BufferLen,
         uint64_t RequestId);
 
 int
@@ -919,30 +891,35 @@ hv_vmbus_channel_teardown_gpdal(VMBUS_CHANNEL *Channel, uint32_t GpadlHandle);
 /*
  * Work abstraction.
  */
-struct work_queue {
-	struct taskqueue *queue;
-	struct proc *proc;
-	struct sema *work_sema;
-};
+typedef struct hv_work_queue {
+	struct taskqueue	*queue;
+	struct proc		*proc;
+	struct sema		*work_sema;
+} hv_work_queue;
 
-struct work_item{
-	struct task work;
-	void (*callback)(void *);
-	void *context;
-	struct work_queue *wq;
-};
+typedef struct hv_work_item {
+	struct task		work;
+	void			(*callback)(void *);
+	void			*context;
+	hv_work_queue		*wq;
+} hv_work_item;
 
-struct work_queue *work_queue_create(char* name);
-void work_queue_close(struct work_queue *wq);
-int queue_work_item(struct work_queue *wq, void (*callback)(void *), void *context);
+struct hv_work_queue *
+hv_work_queue_create(char* name);
 
-static inline unsigned long get_phys_addr(void *virt)
+void
+hv_work_queue_close(struct hv_work_queue *wq);
+
+int
+hv_queue_work_item(struct hv_work_queue *wq, void (*callback)(void *), void *context);
+
+static inline unsigned long
+hv_get_phys_addr(void *virt)
 {
 	unsigned long ret;
-
 	ret = (vtophys(virt) | ((vm_offset_t) virt & PAGE_MASK));
-
 	return ret;
 }
 
 #endif  /* __HYPERV_H__ */
+

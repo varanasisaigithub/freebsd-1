@@ -26,10 +26,10 @@
 #define KVP 3
 
 struct util_service {
-	GUID guid;
+	hv_guid guid;
         uint8_t *recv_buffer;
         char *name;
-        struct work_queue *workq;
+        struct hv_work_queue *workq;
         void (*cb)(void *);
         int  (*init)(struct util_service *);
         void (*deinit)(void);
@@ -44,14 +44,14 @@ static int timesync_init(struct util_service *serv);
  
 static  struct util_service  service_table[] = {
 	/* Shutdown Service */
-	{ .guid.Data = {0x31, 0x60, 0x0B, 0X0E, 0x13, 0x52, 0x34, 0x49,
+	{ .guid.data = {0x31, 0x60, 0x0B, 0X0E, 0x13, 0x52, 0x34, 0x49,
 			0x81, 0x8B, 0x38, 0XD9, 0x0C, 0xED, 0x39, 0xDB},
 	  .cb = shutdown_cb,
 	  .name  = "Hyper-V Shutdown Service\n",
 	},
 
         /* Time Synch Service */
-        { .guid.Data = {0x30, 0xe6, 0x27, 0x95, 0xae, 0xd0, 0x7b, 0x49,
+        { .guid.data = {0x30, 0xe6, 0x27, 0x95, 0xae, 0xd0, 0x7b, 0x49,
 			0xad, 0xce, 0xe8, 0x0a, 0xb0, 0x17, 0x5c, 0xaf},
 	  .cb = timesync_cb,
 	  .name = "Hyper-V Timesynch Service\n",
@@ -59,14 +59,14 @@ static  struct util_service  service_table[] = {
 	},
 
         /* Heartbeat Service */
-        { .guid.Data = {0x39, 0x4f, 0x16, 0x57, 0x15, 0x91, 0x78, 0x4e,
+        { .guid.data = {0x39, 0x4f, 0x16, 0x57, 0x15, 0x91, 0x78, 0x4e,
 			0xab, 0x55, 0x38, 0x2f, 0x3b, 0xd5, 0x42, 0x2d},
           .cb = heartbeat_cb,
 	  .name = "Hyper-V Heartbeat Service\n",
 	},
 
         /* KVP Service */
-        { .guid.Data = {0xe7, 0xf4, 0xa0, 0xa9, 0x45, 0x5a, 0x96, 0x4d,
+        { .guid.data = {0xe7, 0xf4, 0xa0, 0xa9, 0x45, 0x5a, 0x96, 0x4d,
 			0xb8, 0x27, 0x8a, 0x84, 0x1e, 0x8c, 0x3,  0xe6},
 	  .cb = kvp_cb,
 	  .name = "Hyper-V KVP Service\n",
@@ -75,10 +75,10 @@ static  struct util_service  service_table[] = {
  
 
 struct ictimesync_data {
-	uint64_t   parenttime;
-	uint64_t   childtime;
-	uint64_t   roundtriptime;
-        uint8_t         flags;
+	uint64_t	parenttime;
+	uint64_t	childtime;
+	uint64_t	roundtriptime;
+        uint8_t		flags;
 } __packed;
 
 #define WLTIMEDELTA     116444736000000000L     /* in 100ns unit */
@@ -89,21 +89,21 @@ struct ictimesync_data {
 
 static int timesync_init(struct util_service *serv)
 {
-	serv->workq = work_queue_create("Time Synch");
+	serv->workq = hv_work_queue_create("Time Synch");
 	if (!serv->workq)
 		return -ENOMEM;
 	return 0;
 }
 
 
-static void negotiate_version(struct icmsg_hdr *icmsghdrp,
-                               struct icmsg_negotiate *negop, uint8_t *buf)
+static void negotiate_version(struct hv_vmbus_icmsg_hdr *icmsghdrp,
+                               struct hv_vmbus_icmsg_negotiate *negop, uint8_t *buf)
 {
 	icmsghdrp->icmsgsize = 0x10;
 
-	negop = (struct icmsg_negotiate *)&buf[
-		sizeof(struct vmbuspipe_hdr) +
-		sizeof(struct icmsg_hdr)];
+	negop = (struct hv_vmbus_icmsg_negotiate *)&buf[
+		sizeof(struct hv_vmbus_pipe_hdr) +
+		sizeof(struct hv_vmbus_icmsg_hdr)];
 
 	if (negop->icframe_vercnt == 2 &&
 	    negop->icversion_data[1].major == 3) {
@@ -168,14 +168,14 @@ static inline void adj_guesttime(uint64_t hosttime, uint8_t flags)
 	static int scnt = 50;
 
 	if ((flags & ICTIMESYNCFLAG_SYNC) != 0) {
-		queue_work_item(service_table[TIME_SYNCH].workq,
+		hv_queue_work_item(service_table[TIME_SYNCH].workq,
 			 hv_set_host_time, (void *)hosttime);
 		return;
 	}
 
 	if ((flags & ICTIMESYNCFLAG_SAMPLE) != 0 && scnt > 0) {
 		scnt--;
-		queue_work_item(service_table[TIME_SYNCH].workq,
+		hv_queue_work_item(service_table[TIME_SYNCH].workq,
 			 hv_set_host_time, (void *)hosttime);
 	}
 }
@@ -188,7 +188,7 @@ static void timesync_cb(void *context)
 	VMBUS_CHANNEL *channel = context;
 	uint32_t recvlen;
 	uint64_t requestid;
-	struct icmsg_hdr *icmsghdrp;
+	struct hv_vmbus_icmsg_hdr *icmsghdrp;
 	struct ictimesync_data *timedatap;
 	uint8_t *time_buf = service_table[TIME_SYNCH].recv_buffer;
 	int ret;
@@ -197,24 +197,24 @@ static void timesync_cb(void *context)
 			PAGE_SIZE, &recvlen, &requestid);
 
 	if ((ret == 0) && recvlen > 0) {
-		icmsghdrp = (struct icmsg_hdr *)&time_buf[
-				sizeof(struct vmbuspipe_hdr)];
+		icmsghdrp = (struct hv_vmbus_icmsg_hdr *)&time_buf[
+				sizeof(struct hv_vmbus_pipe_hdr)];
 
-		if (icmsghdrp->icmsgtype == ICMSGTYPE_NEGOTIATE) {
+		if (icmsghdrp->icmsgtype == HV_ICMSGTYPE_NEGOTIATE) {
 			negotiate_version(icmsghdrp, NULL, time_buf);
 		} else {
 			timedatap = (struct ictimesync_data *)&time_buf[
-				sizeof(struct vmbuspipe_hdr) +
-				sizeof(struct icmsg_hdr)];
+				sizeof(struct hv_vmbus_pipe_hdr) +
+				sizeof(struct hv_vmbus_icmsg_hdr)];
 			adj_guesttime(timedatap->parenttime, timedatap->flags);
 		}
 
-		icmsghdrp->icflags = ICMSGHDRFLAG_TRANSACTION
-				| ICMSGHDRFLAG_RESPONSE;
+		icmsghdrp->icflags = HV_ICMSGHDRFLAG_TRANSACTION
+				| HV_ICMSGHDRFLAG_RESPONSE;
 
 		hv_vmbus_channel_send_packet(channel, time_buf,
 				recvlen, requestid,
-				VmbusPacketTypeDataInBand, 0);
+				HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
 	}
 }
 
@@ -226,8 +226,8 @@ static void shutdown_cb(void *context)
 	uint32_t recvlen;
 	uint64_t  requestid;
 	uint8_t execute_shutdown = 0;
-	struct shutdown_msg_data *shutdown_msg;
-	struct icmsg_hdr *icmsghdrp;
+	struct hv_shutdown_msg_data *shutdown_msg;
+	struct hv_vmbus_icmsg_hdr *icmsghdrp;
 	buf = service_table[SHUT_DOWN].recv_buffer;
 
         ret = hv_vmbus_channel_recv_packet(channel, buf, PAGE_SIZE,
@@ -235,17 +235,17 @@ static void shutdown_cb(void *context)
 
 	if ((ret == 0) && recvlen > 0) {
 
-		icmsghdrp = (struct icmsg_hdr *)
-				&buf[sizeof(struct vmbuspipe_hdr)];
+		icmsghdrp = (struct hv_vmbus_icmsg_hdr *)
+				&buf[sizeof(struct hv_vmbus_pipe_hdr)];
 
-		if (icmsghdrp->icmsgtype == ICMSGTYPE_NEGOTIATE) {
+		if (icmsghdrp->icmsgtype == HV_ICMSGTYPE_NEGOTIATE) {
 			negotiate_version(icmsghdrp, NULL, buf);
 
 		} else {
 			shutdown_msg =
-				(struct shutdown_msg_data *)
-				 &buf[sizeof(struct vmbuspipe_hdr) +
-				sizeof(struct icmsg_hdr)];
+				(struct hv_shutdown_msg_data *)
+				 &buf[sizeof(struct hv_vmbus_pipe_hdr) +
+				sizeof(struct hv_vmbus_icmsg_hdr)];
 
 			switch (shutdown_msg->flags) {
 			case 0:
@@ -265,12 +265,12 @@ static void shutdown_cb(void *context)
 			}
 		}
 
-		icmsghdrp->icflags = ICMSGHDRFLAG_TRANSACTION
-				| ICMSGHDRFLAG_RESPONSE;
+		icmsghdrp->icflags = HV_ICMSGHDRFLAG_TRANSACTION
+				| HV_ICMSGHDRFLAG_RESPONSE;
 
 		hv_vmbus_channel_send_packet(channel, buf,
 				recvlen, requestid,
-				VmbusPacketTypeDataInBand, 0);
+				HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
 	}
 
 	if (execute_shutdown)
@@ -285,9 +285,9 @@ static void heartbeat_cb(void *context)
 	uint64_t requestid;
 	int ret;
 
-	struct heartbeat_msg_data *heartbeat_msg;
+	struct hv_vmbus_heartbeat_msg_data *heartbeat_msg;
 
-	struct icmsg_hdr *icmsghdrp;
+	struct hv_vmbus_icmsg_hdr *icmsghdrp;
 
 	buf = service_table[HEART_BEAT].recv_buffer;;
 
@@ -296,24 +296,24 @@ static void heartbeat_cb(void *context)
 
 	if ((ret == 0) && recvlen > 0) {
 
-		icmsghdrp = (struct icmsg_hdr *)
-				&buf[sizeof(struct vmbuspipe_hdr)];
+		icmsghdrp = (struct hv_vmbus_icmsg_hdr *)
+				&buf[sizeof(struct hv_vmbus_pipe_hdr)];
 
-		if (icmsghdrp->icmsgtype == ICMSGTYPE_NEGOTIATE) {
+		if (icmsghdrp->icmsgtype == HV_ICMSGTYPE_NEGOTIATE) {
 			negotiate_version(icmsghdrp, NULL, buf);
 
 		} else {
 			heartbeat_msg =
-				(struct heartbeat_msg_data *) &buf[sizeof(struct vmbuspipe_hdr)
-					+ sizeof(struct icmsg_hdr)];
+				(struct hv_vmbus_heartbeat_msg_data *) &buf[sizeof(struct hv_vmbus_pipe_hdr)
+					+ sizeof(struct hv_vmbus_icmsg_hdr)];
 
 				heartbeat_msg->seq_num += 1;
 		}
-		icmsghdrp->icflags = ICMSGHDRFLAG_TRANSACTION
-			| ICMSGHDRFLAG_RESPONSE;
+		icmsghdrp->icflags = HV_ICMSGHDRFLAG_TRANSACTION
+			| HV_ICMSGHDRFLAG_RESPONSE;
 
 		hv_vmbus_channel_send_packet(channel, buf, recvlen, requestid,
-				VmbusPacketTypeDataInBand, 0);
+				HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
 	}
 
 }
@@ -326,7 +326,7 @@ util_probe(device_t dev) {
 
 	for (i = 0; i < MAX_UTIL_SERVICES; i++) {
 		const char *p = vmbus_get_type(dev);
-		if (!memcmp(p, &service_table[i].guid, sizeof(GUID))) {
+		if (!memcmp(p, &service_table[i].guid, sizeof(hv_guid))) {
 			device_set_softc(dev, (void *)(&service_table[i])); 
 			rtn_value = 0;
 		}
@@ -391,7 +391,7 @@ static int util_detach(device_t dev)
 		service->deinit();
 
 	if (service->workq)
-		work_queue_close(service->workq);
+		hv_work_queue_close(service->workq);
 
 	free(service->recv_buffer, M_DEVBUF);
 	return 0;

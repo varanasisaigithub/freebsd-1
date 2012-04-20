@@ -258,10 +258,10 @@ hv_rf_send_request(rndis_device *device, rndis_request *request)
 	packet->tot_data_buf_len = request->request_msg.msg_len;
 	packet->page_buf_count = 1;
 
-	packet->page_buffers[0].Pfn =
-		get_phys_addr(&request->request_msg) >> PAGE_SHIFT;
-	packet->page_buffers[0].Length = request->request_msg.msg_len;
-	packet->page_buffers[0].Offset =
+	packet->page_buffers[0].pfn =
+		hv_get_phys_addr(&request->request_msg) >> PAGE_SHIFT;
+	packet->page_buffers[0].length = request->request_msg.msg_len;
+	packet->page_buffers[0].offset =
 	    (unsigned long)&request->request_msg & (PAGE_SIZE - 1);
 
 	packet->compl.send.send_completion_context = request; /* packet; */
@@ -357,8 +357,8 @@ hv_rf_receive_data(rndis_device *device, rndis_msg *message, netvsc_packet *pkt)
 	data_offset = RNDIS_HEADER_SIZE + rndis_pkt->data_offset;
 		
 	pkt->tot_data_buf_len       -= data_offset;
-	pkt->page_buffers[0].Offset += data_offset;
-	pkt->page_buffers[0].Length -= data_offset;
+	pkt->page_buffers[0].offset += data_offset;
+	pkt->page_buffers[0].length -= data_offset;
 
 	pkt->is_data_pkt = true;
 		
@@ -386,15 +386,15 @@ hv_rf_on_receive(struct hv_device *device, netvsc_packet *pkt)
 		return -EINVAL;
 
 	/* Shift virtual page number to form virtual page address */
-	rndis_hdr = (rndis_msg *)(pkt->page_buffers[0].Pfn << PAGE_SHIFT);
+	rndis_hdr = (rndis_msg *)(pkt->page_buffers[0].pfn << PAGE_SHIFT);
 
 	rndis_hdr = (void *)((unsigned long)rndis_hdr +
-	    pkt->page_buffers[0].Offset);
+	    pkt->page_buffers[0].offset);
 	
 	/*
 	 * Make sure we got a valid rndis message
 	 * Fixme:  There seems to be a bug in set completion msg where
-	 * its msg_len is 16 bytes but the ByteCount field in the
+	 * its msg_len is 16 bytes but the byte_count field in the
 	 * xfer page range shows 52 bytes
 	 */
 #if 0
@@ -862,11 +862,11 @@ hv_rf_on_send(struct hv_device *device, netvsc_packet *pkt)
 	rndis_pkt->data_length = pkt->tot_data_buf_len;
 
 	pkt->is_data_pkt = true;
-	pkt->page_buffers[0].Pfn =
-		get_phys_addr(rndis_mesg) >> PAGE_SHIFT;
-	pkt->page_buffers[0].Offset =
+	pkt->page_buffers[0].pfn =
+		hv_get_phys_addr(rndis_mesg) >> PAGE_SHIFT;
+	pkt->page_buffers[0].offset =
 	    (unsigned long)rndis_mesg & (PAGE_SIZE - 1);
-	pkt->page_buffers[0].Length = rndis_msg_size;
+	pkt->page_buffers[0].length = rndis_msg_size;
 
 	/* Save the packet send completion and context */
 	filter_pkt->on_completion = pkt->compl.send.on_send_completion;

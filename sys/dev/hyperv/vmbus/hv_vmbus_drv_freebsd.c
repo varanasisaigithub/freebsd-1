@@ -93,7 +93,7 @@ static void vmbus_msg_dpc(void *arg)
 	page_addr = gHvContext.synICMessagePage[cpu];
 	msg = (HV_MESSAGE*) page_addr + VMBUS_MESSAGE_SINT;
 	while (1) {
-		if (msg->Header.MessageType == HvMessageTypeNone) // no msg
+		if (msg->header.MessageType == HvMessageTypeNone) // no msg
 			{
 			break;
 		} else {
@@ -103,18 +103,18 @@ static void vmbus_msg_dpc(void *arg)
 			}
 
 			memcpy(copied, msg, sizeof(HV_MESSAGE));
-			queue_work_item(gVmbusConnection.WorkQueue,
+			hv_queue_work_item(gVmbusConnection.WorkQueue,
 				VmbusOnChannelMessage, copied);
 		}
 
-		msg->Header.MessageType = HvMessageTypeNone;
+		msg->header.MessageType = HvMessageTypeNone;
 
 		// Make sure the write to MessageType (ie set to HvMessageTypeNone) happens
 		// before we read the MessagePending and EOMing. Otherwise, the EOMing will not deliver
 		// any more messages since there is no empty slot
 		wmb();
 
-		if (msg->Header.MessageFlags.MessagePending) {
+		if (msg->header.MessageFlags.MessagePending) {
 			// This will cause message queue rescan to possibly deliver another msg from the hypervisor
 			WriteMsr(HV_X64_MSR_EOM, 0);
 		}
@@ -147,7 +147,7 @@ static int hv_vmbus_isr(void *unused)
 	page_addr = gHvContext.synICMessagePage[cpu];
 	msg = (HV_MESSAGE*) page_addr + VMBUS_MESSAGE_SINT;
 
-	if (msg->Header.MessageType != HvMessageTypeNone)
+	if (msg->header.MessageType != HvMessageTypeNone)
 		swi_sched(msg_dpc, 0);
 
 	return 0x2; //KYS
@@ -159,16 +159,16 @@ static int vmbus_read_ivar(device_t dev, device_t child, int index,
 
 	switch (index) {
 
-	case VMBUS_IVAR_TYPE:
+	case HV_VMBUS_IVAR_TYPE:
 		*result = (uintptr_t) &child_dev_ctx->class_id;
 		return (0);
-	case VMBUS_IVAR_INSTANCE:
+	case HV_VMBUS_IVAR_INSTANCE:
 		*result = (uintptr_t) &child_dev_ctx->device_id;
 		return (0);
-	case VMBUS_IVAR_DEVCTX:
+	case HV_VMBUS_IVAR_DEVCTX:
 		*result = (uintptr_t) child_dev_ctx;
 		return (0);
-	case VMBUS_IVAR_NODE:
+	case HV_VMBUS_IVAR_NODE:
 		*result = (uintptr_t) child_dev_ctx->device;
 		return (0);
 	}
@@ -179,18 +179,18 @@ static int vmbus_write_ivar(device_t dev, device_t child, int index,
 	uintptr_t value) {
 	switch (index) {
 
-	case VMBUS_IVAR_TYPE:
-	case VMBUS_IVAR_INSTANCE:
-	case VMBUS_IVAR_DEVCTX:
-	case VMBUS_IVAR_NODE:
+	case HV_VMBUS_IVAR_TYPE:
+	case HV_VMBUS_IVAR_INSTANCE:
+	case HV_VMBUS_IVAR_DEVCTX:
+	case HV_VMBUS_IVAR_NODE:
 		/* read-only */
 		return (EINVAL);
 	}
 	return (ENOENT);
 }
 
-struct hv_device *vmbus_child_device_create(GUID type,
-						GUID instance,
+struct hv_device *vmbus_child_device_create(hv_guid type,
+						hv_guid instance,
 						VMBUS_CHANNEL *channel ) 
 {
 	struct hv_device *child_dev;
@@ -202,18 +202,18 @@ struct hv_device *vmbus_child_device_create(GUID type,
 		return NULL;
 
 	child_dev->channel = channel;
-	memcpy(&child_dev->class_id, &type, sizeof(GUID));
-	memcpy(&child_dev->device_id, &instance, sizeof(GUID));
+	memcpy(&child_dev->class_id, &type, sizeof(hv_guid));
+	memcpy(&child_dev->device_id, &instance, sizeof(hv_guid));
 
 	return child_dev;
 }
 
-static void print_dev_guid(struct hv_device *hv_dev)
+static void print_dev_guid(struct hv_device *dev)
 {
         int i;
 	unsigned char guid_name[100];
         for (i = 0; i < 32; i += 2)
-                sprintf(&guid_name[i], "%02x", hv_dev->class_id.Data[i/2]);
+                sprintf(&guid_name[i], "%02x", dev->class_id.data[i/2]);
 	printf("Class ID: %s\n", guid_name);
 }
 

@@ -200,8 +200,8 @@ netvsc_init(void)
 }
 
 /* {F8615163-DF3E-46c5-913F-F2D2F965ED0E} */
-static const GUID g_net_vsc_device_type = {
-	.Data = {0x63, 0x51, 0x61, 0xF8, 0x3E, 0xDF, 0xc5, 0x46,
+static const hv_guid g_net_vsc_device_type = {
+	.data = {0x63, 0x51, 0x61, 0xF8, 0x3E, 0xDF, 0xc5, 0x46,
 		0x91, 0x3F, 0xF2, 0xD2, 0xF9, 0x65, 0xED, 0x0E}
 };
 
@@ -214,7 +214,7 @@ netvsc_probe(device_t dev)
 	const char *p;
 
 	p = vmbus_get_type(dev);
-	if (!memcmp(p, &g_net_vsc_device_type.Data, sizeof(GUID))) {
+	if (!memcmp(p, &g_net_vsc_device_type.data, sizeof(hv_guid))) {
 		device_set_desc(dev, "Synthetic Network Interface");
 		printf("Netvsc probe... DONE \n");
 		return (0);
@@ -406,11 +406,11 @@ hn_start_locked(struct ifnet *ifp)
 			if (m->m_len) {
 				vm_offset_t paddr =
 				    vtophys(mtod(m, vm_offset_t));
-				packet->page_buffers[i].Pfn =
+				packet->page_buffers[i].pfn =
 				    paddr >> PAGE_SHIFT;
-				packet->page_buffers[i].Offset =
+				packet->page_buffers[i].offset =
 				    paddr & (PAGE_SIZE - 1);
-				packet->page_buffers[i].Length = m->m_len;
+				packet->page_buffers[i].length = m->m_len;
 				i++;
 			}
 		}
@@ -515,10 +515,10 @@ netvsc_recv_callback(struct hv_device *device_ctx, netvsc_packet *packet)
 	for (i=0; i < packet->page_buf_count; i++) {
 		/* Shift virtual page number to form virtual page address */
 		uint8_t *vaddr = (uint8_t *)
-		    (packet->page_buffers[i].Pfn << PAGE_SHIFT);
+		    (packet->page_buffers[i].pfn << PAGE_SHIFT);
 
-		m_append(m_new, packet->page_buffers[i].Length,
-		    vaddr + packet->page_buffers[i].Offset);
+		m_append(m_new, packet->page_buffers[i].length,
+		    vaddr + packet->page_buffers[i].offset);
 	}
 
 	m_new->m_pkthdr.len = m_new->m_len = packet->tot_data_buf_len -

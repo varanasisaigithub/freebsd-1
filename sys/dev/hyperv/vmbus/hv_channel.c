@@ -95,19 +95,19 @@ VmbusChannelSetEvent(VMBUS_CHANNEL *Channel)
 	HV_MONITOR_PAGE *monitorPage;
 
 
-	if (Channel->OfferMsg.MonitorAllocated) {
+	if (Channel->OfferMsg.monitor_allocated) {
 		// Each uint32_t represents 32 channels
-		synch_set_bit((Channel->OfferMsg.ChildRelId & 31),
-			((uint32_t *)gVmbusConnection.SendInterruptPage +
-			((Channel->OfferMsg.ChildRelId >> 5))));
+		synch_set_bit((Channel->OfferMsg.child_rel_id & 31),
+			((uint32_t *)gVmbusConnection.send_interrupt_page +
+			((Channel->OfferMsg.child_rel_id >> 5))));
 
-		monitorPage = (HV_MONITOR_PAGE*) gVmbusConnection.MonitorPages;
+		monitorPage = (HV_MONITOR_PAGE *) gVmbusConnection.MonitorPages;
 		monitorPage++; // Get the child to parent monitor page
 
 		synch_set_bit(Channel->MonitorBit,
 			(uint32_t *)&monitorPage->TriggerGroup[Channel->MonitorGroup].Pending);
 	} else {
-		VmbusSetEvent(Channel->OfferMsg.ChildRelId);
+		VmbusSetEvent(Channel->OfferMsg.child_rel_id);
 	}
 
 }
@@ -127,20 +127,20 @@ hv_vmbus_channel_get_debug_info(VMBUS_CHANNEL *Channel,
 {
 
 	HV_MONITOR_PAGE *monitorPage;
-	uint8_t monitorGroup = (uint8_t) Channel->OfferMsg.MonitorId / 32;
-	uint8_t monitorOffset = (uint8_t) Channel->OfferMsg.MonitorId % 32;
+	uint8_t monitorGroup = (uint8_t) Channel->OfferMsg.monitor_id / 32;
+	uint8_t monitorOffset = (uint8_t) Channel->OfferMsg.monitor_id % 32;
 	//uint32_t monitorBit	= 1 << monitorOffset;
 
-	DebugInfo->RelId = Channel->OfferMsg.ChildRelId;
+	DebugInfo->RelId = Channel->OfferMsg.child_rel_id;
 	DebugInfo->State = Channel->State;
 	memcpy(&DebugInfo->InterfaceType,
-		&Channel->OfferMsg.Offer.InterfaceType, sizeof(GUID));
+		&Channel->OfferMsg.offer.interface_type, sizeof(hv_guid));
 	memcpy(&DebugInfo->InterfaceInstance,
-		&Channel->OfferMsg.Offer.InterfaceInstance, sizeof(GUID));
+		&Channel->OfferMsg.offer.interface_instance, sizeof(hv_guid));
 
 	monitorPage = (HV_MONITOR_PAGE*) gVmbusConnection.MonitorPages;
 
-	DebugInfo->MonitorId = Channel->OfferMsg.MonitorId;
+	DebugInfo->monitor_id = Channel->OfferMsg.monitor_id;
 
 	DebugInfo->ServerMonitorPending =
 		monitorPage->TriggerGroup[monitorGroup].Pending;
@@ -163,40 +163,40 @@ hv_vmbus_channel_get_debug_info(VMBUS_CHANNEL *Channel,
 }
 
 void
-GetChannelInfo(struct hv_device *dev, struct hv_devinfo *p) 
+GetChannelInfo(struct hv_device *dev, struct hv_devinfo *p)
 {
 	VMBUS_CHANNEL_DEBUG_INFO di;
 
 	if (dev->channel) {
 		hv_vmbus_channel_get_debug_info(dev->channel, &di);
 
-		p->ChannelId = di.RelId;
-		p->ChannelState = di.State;
-		memcpy(&p->ChannelType, &di.InterfaceType, sizeof(GUID));
-		memcpy(&p->ChannelInstance, &di.InterfaceInstance,
-			sizeof(GUID));
+		p->channel_id = di.RelId;
+		p->channel_state = di.State;
+		memcpy(&p->channel_type, &di.InterfaceType, sizeof(hv_guid));
+		memcpy(&p->channel_instance, &di.InterfaceInstance,
+			sizeof(hv_guid));
 
-		p->MonitorId = di.MonitorId;
+		p->monitor_id = di.monitor_id;
 
-		p->ServerMonitorPending = di.ServerMonitorPending;
-		p->ServerMonitorLatency = di.ServerMonitorLatency;
-		p->ServerMonitorConnectionId = di.ServerMonitorConnectionId;
+		p->server_monitor_pending = di.ServerMonitorPending;
+		p->server_monitor_latency = di.ServerMonitorLatency;
+		p->server_monitor_connection_id = di.ServerMonitorConnectionId;
 
-		p->ClientMonitorPending = di.ClientMonitorPending;
-		p->ClientMonitorLatency = di.ClientMonitorLatency;
-		p->ClientMonitorConnectionId = di.ClientMonitorConnectionId;
+		p->client_monitor_pending = di.ClientMonitorPending;
+		p->client_monitor_latency = di.ClientMonitorLatency;
+		p->client_monitor_connection_id = di.ClientMonitorConnectionId;
 
-		p->Inbound.InterruptMask = di.Inbound.CurrentInterruptMask;
-		p->Inbound.ReadIndex = di.Inbound.CurrentReadIndex;
-		p->Inbound.WriteIndex = di.Inbound.CurrentWriteIndex;
-		p->Inbound.BytesAvailToRead = di.Inbound.BytesAvailToRead;
-		p->Inbound.BytesAvailToWrite = di.Inbound.BytesAvailToWrite;
+		p->in_bound.interrupt_mask = di.Inbound.Currentinterrupt_mask;
+		p->in_bound.read_index = di.Inbound.CurrentReadIndex;
+		p->in_bound.write_index = di.Inbound.CurrentWriteIndex;
+		p->in_bound.bytes_avail_to_read = di.Inbound.BytesAvailToRead;
+		p->in_bound.bytes_avail_to_write = di.Inbound.BytesAvailToWrite;
 
-		p->Outbound.InterruptMask = di.Outbound.CurrentInterruptMask;
-		p->Outbound.ReadIndex = di.Outbound.CurrentReadIndex;
-		p->Outbound.WriteIndex = di.Outbound.CurrentWriteIndex;
-		p->Outbound.BytesAvailToRead = di.Outbound.BytesAvailToRead;
-		p->Outbound.BytesAvailToWrite = di.Outbound.BytesAvailToWrite;
+		p->out_bound.interrupt_mask = di.Outbound.Currentinterrupt_mask;
+		p->out_bound.read_index = di.Outbound.CurrentReadIndex;
+		p->out_bound.write_index = di.Outbound.CurrentWriteIndex;
+		p->out_bound.bytes_avail_to_read = di.Outbound.BytesAvailToRead;
+		p->out_bound.bytes_avail_to_write = di.Outbound.BytesAvailToWrite;
 	}
 }
 
@@ -211,12 +211,12 @@ GetChannelInfo(struct hv_device *dev, struct hv_devinfo *p)
  --*/
 int
 hv_vmbus_channel_open(VMBUS_CHANNEL *NewChannel, uint32_t SendRingBufferSize,
-	uint32_t RecvRingBufferSize, void *UserData, uint32_t UserDataLen,
-	PFN_CHANNEL_CALLBACK pfnOnChannelCallback, void *Context) 
+	uint32_t RecvRingBufferSize, void *user_data, uint32_t UserDataLen,
+	hv_vmbus_pfn_channel_callback pfnOnChannelCallback, void *Context) 
 {
 
 	int ret = 0;
-	VMBUS_CHANNEL_OPEN_CHANNEL* openMsg;
+	hv_vmbus_channel_open_channel* openMsg;
 	VMBUS_CHANNEL_MSGINFO* openInfo;
 	void *in, *out;
 
@@ -243,35 +243,35 @@ hv_vmbus_channel_open(VMBUS_CHANNEL *NewChannel, uint32_t SendRingBufferSize,
 
 	// Establish the gpadl for the ring buffer
 
-	NewChannel->RingBufferGpadlHandle = 0;
+	NewChannel->ring_buffer_gpadl_handle = 0;
 
 	ret = hv_vmbus_channel_establish_gpadl(NewChannel,
-		NewChannel->Outbound.RingBuffer,
+		NewChannel->Outbound.ring_buffer,
 		SendRingBufferSize + RecvRingBufferSize,
-		&NewChannel->RingBufferGpadlHandle);
+		&NewChannel->ring_buffer_gpadl_handle);
 
 
 	// Create and init the channel open message 
 	openInfo = (VMBUS_CHANNEL_MSGINFO*)malloc(
 		   sizeof(VMBUS_CHANNEL_MSGINFO) +
-		   sizeof(VMBUS_CHANNEL_OPEN_CHANNEL), M_DEVBUF, M_NOWAIT);
+		   sizeof(hv_vmbus_channel_open_channel), M_DEVBUF, M_NOWAIT);
 
 	if (!openInfo)
 		return -ENOMEM;
 
 	sema_init(&openInfo->wait_sema, 0, "Open Info Sema");
 
-	openMsg = (VMBUS_CHANNEL_OPEN_CHANNEL*) openInfo->Msg;
-	openMsg->Header.MessageType = ChannelMessageOpenChannel;
-	openMsg->OpenId = NewChannel->OfferMsg.ChildRelId; // FIXME
-	openMsg->ChildRelId = NewChannel->OfferMsg.ChildRelId;
-	openMsg->RingBufferGpadlHandle = NewChannel->RingBufferGpadlHandle;
-	openMsg->DownstreamRingBufferPageOffset = SendRingBufferSize
+	openMsg = (hv_vmbus_channel_open_channel*) openInfo->Msg;
+	openMsg->header.message_type = HV_CHANNEL_MESSAGE_OPEN_CHANNEL;
+	openMsg->open_id = NewChannel->OfferMsg.child_rel_id; // FIXME
+	openMsg->child_rel_id = NewChannel->OfferMsg.child_rel_id;
+	openMsg->ring_buffer_gpadl_handle = NewChannel->ring_buffer_gpadl_handle;
+	openMsg->downstream_ring_buffer_page_offset = SendRingBufferSize
 		>> PAGE_SHIFT;
-	openMsg->ServerContextAreaGpadlHandle = 0; // TODO
+	openMsg->server_context_area_gpadl_handle = 0; // TODO
 
 	if (UserDataLen) {
-		memcpy(openMsg->UserData, UserData, UserDataLen);
+		memcpy(openMsg->user_data, user_data, UserDataLen);
 	}
 
 	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
@@ -279,7 +279,7 @@ hv_vmbus_channel_open(VMBUS_CHANNEL *NewChannel, uint32_t SendRingBufferSize,
 	mtx_unlock_spin(&gVmbusConnection.ChannelMsgLock);
 
 
-	ret = VmbusPostMessage(openMsg, sizeof(VMBUS_CHANNEL_OPEN_CHANNEL));
+	ret = VmbusPostMessage(openMsg, sizeof(hv_vmbus_channel_open_channel));
 
 	if (ret != 0)
 		goto Cleanup;
@@ -289,11 +289,11 @@ hv_vmbus_channel_open(VMBUS_CHANNEL *NewChannel, uint32_t SendRingBufferSize,
 	if (ret)
 		goto Cleanup;
 
-	if (openInfo->Response.OpenResult.Status == 0) {
+	if (openInfo->Response.OpenResult.status == 0) {
 		printf("channel <%p> open success!!", NewChannel);
 	} else {
 		printf("channel <%p> open failed - %d!!",
-			NewChannel, openInfo->Response.OpenResult.Status);
+			NewChannel, openInfo->Response.OpenResult.status);
 	}
 
 Cleanup:
@@ -324,8 +324,8 @@ VmbusChannelCreateGpadlHeader(void *Kbuffer,
 	int i;
 	int pageCount;
 	unsigned long long pfn;
-	VMBUS_CHANNEL_GPADL_HEADER* gpaHeader;
-	VMBUS_CHANNEL_GPADL_BODY* gpadlBody;
+	hv_vmbus_channel_gpadl_header* gpaHeader;
+	hv_vmbus_channel_gpadl_body* gpadlBody;
 	VMBUS_CHANNEL_MSGINFO* msgHeader;
 	VMBUS_CHANNEL_MSGINFO* msgBody;
 	uint32_t msgSize;
@@ -334,30 +334,30 @@ VmbusChannelCreateGpadlHeader(void *Kbuffer,
 
 
 	pageCount = Size >> PAGE_SHIFT;
-	pfn = get_phys_addr(Kbuffer) >> PAGE_SHIFT;
+	pfn = hv_get_phys_addr(Kbuffer) >> PAGE_SHIFT;
 
 	// do we need a gpadl body msg
-	pfnSize = MAX_SIZE_CHANNEL_MESSAGE - sizeof(VMBUS_CHANNEL_GPADL_HEADER)
-		- sizeof(GPA_RANGE);
+	pfnSize = MAX_SIZE_CHANNEL_MESSAGE - sizeof(hv_vmbus_channel_gpadl_header)
+		- sizeof(hv_gpa_range);
 	pfnCount = pfnSize / sizeof(uint64_t);
 
 	if (pageCount > pfnCount) { // we need a gpadl body
 		// fill in the header
 		msgSize = sizeof(VMBUS_CHANNEL_MSGINFO)
-			+ sizeof(VMBUS_CHANNEL_GPADL_HEADER) + sizeof(GPA_RANGE)
+			+ sizeof(hv_vmbus_channel_gpadl_header) + sizeof(hv_gpa_range)
 			+ pfnCount * sizeof(uint64_t);
 		msgHeader = malloc(msgSize, M_DEVBUF, M_NOWAIT | M_ZERO);
 		TAILQ_INIT(&msgHeader->sub_msg_list_anchor);
 		msgHeader->MessageSize = msgSize;
 
-		gpaHeader = (VMBUS_CHANNEL_GPADL_HEADER*) msgHeader->Msg;
-		gpaHeader->RangeCount = 1;
-		gpaHeader->RangeBufLen = sizeof(GPA_RANGE)
+		gpaHeader = (hv_vmbus_channel_gpadl_header*) msgHeader->Msg;
+		gpaHeader->range_count = 1;
+		gpaHeader->range_buf_len = sizeof(hv_gpa_range)
 			+ pageCount * sizeof(uint64_t);
-		gpaHeader->Range[0].ByteOffset = 0;
-		gpaHeader->Range[0].ByteCount = Size;
+		gpaHeader->range[0].byte_offset = 0;
+		gpaHeader->range[0].byte_count = Size;
 		for (i = 0; i < pfnCount; i++) {
-			gpaHeader->Range[0].PfnArray[i] = pfn + i;
+			gpaHeader->range[0].pfn_array[i] = pfn + i;
 		}
 		*MsgInfo = msgHeader;
 		*MessageCount = 1;
@@ -367,7 +367,7 @@ VmbusChannelCreateGpadlHeader(void *Kbuffer,
 
 		// how many pfns can we fit
 		pfnSize = MAX_SIZE_CHANNEL_MESSAGE
-			- sizeof(VMBUS_CHANNEL_GPADL_BODY);
+			- sizeof(hv_vmbus_channel_gpadl_body);
 		pfnCount = pfnSize / sizeof(uint64_t);
 
 		// fill in the body
@@ -379,17 +379,17 @@ VmbusChannelCreateGpadlHeader(void *Kbuffer,
 			}
 
 			msgSize = sizeof(VMBUS_CHANNEL_MSGINFO)
-				+ sizeof(VMBUS_CHANNEL_GPADL_BODY)
+				+ sizeof(hv_vmbus_channel_gpadl_body)
 				+ pfnCurr * sizeof(uint64_t);
 			msgBody = malloc(msgSize, M_DEVBUF, M_NOWAIT | M_ZERO);
 			msgBody->MessageSize = msgSize;
 			(*MessageCount)++;
-			gpadlBody = (VMBUS_CHANNEL_GPADL_BODY*) msgBody->Msg;
+			gpadlBody = (hv_vmbus_channel_gpadl_body*) msgBody->Msg;
 
 			// FIXME: Gpadl is uint32_t and we are using a pointer which could be 64-bit
-			//gpadlBody->Gpadl = kbuffer;
+			//gpadlBody->gpadl = kbuffer;
 			for (i = 0; i < pfnCurr; i++) {
-				gpadlBody->Pfn[i] = pfn + pfnSum + i;
+				gpadlBody->pfn[i] = pfn + pfnSum + i;
 			}
 
 			TAILQ_INSERT_TAIL(&msgHeader->sub_msg_list_anchor, msgBody, MsgListEntry);
@@ -399,19 +399,19 @@ VmbusChannelCreateGpadlHeader(void *Kbuffer,
 	} else {
 		// everything fits in a header
 		msgSize = sizeof(VMBUS_CHANNEL_MSGINFO)
-			+ sizeof(VMBUS_CHANNEL_GPADL_HEADER) + sizeof(GPA_RANGE)
+			+ sizeof(hv_vmbus_channel_gpadl_header) + sizeof(hv_gpa_range)
 			+ pageCount * sizeof(uint64_t);
 		msgHeader = malloc(msgSize, M_DEVBUF, M_NOWAIT | M_ZERO);
 		msgHeader->MessageSize = msgSize;
 
-		gpaHeader = (VMBUS_CHANNEL_GPADL_HEADER*) msgHeader->Msg;
-		gpaHeader->RangeCount = 1;
-		gpaHeader->RangeBufLen = sizeof(GPA_RANGE)
+		gpaHeader = (hv_vmbus_channel_gpadl_header*) msgHeader->Msg;
+		gpaHeader->range_count = 1;
+		gpaHeader->range_buf_len = sizeof(hv_gpa_range)
 			+ pageCount * sizeof(uint64_t);
-		gpaHeader->Range[0].ByteOffset = 0;
-		gpaHeader->Range[0].ByteCount = Size;
+		gpaHeader->range[0].byte_offset = 0;
+		gpaHeader->range[0].byte_count = Size;
 		for (i = 0; i < pageCount; i++) {
-			gpaHeader->Range[0].PfnArray[i] = pfn + i;
+			gpaHeader->range[0].pfn_array[i] = pfn + i;
 		}
 
 		*MsgInfo = msgHeader;
@@ -437,8 +437,8 @@ hv_vmbus_channel_establish_gpadl(VMBUS_CHANNEL *Channel, void *Kbuffer,
 
 {
 	int ret = 0;
-	VMBUS_CHANNEL_GPADL_HEADER* gpadlMsg;
-	VMBUS_CHANNEL_GPADL_BODY* gpadlBody;
+	hv_vmbus_channel_gpadl_header* gpadlMsg;
+	hv_vmbus_channel_gpadl_body* gpadlBody;
 
 	VMBUS_CHANNEL_MSGINFO *msgInfo;
 	VMBUS_CHANNEL_MSGINFO *subMsgInfo;
@@ -464,10 +464,10 @@ hv_vmbus_channel_establish_gpadl(VMBUS_CHANNEL *Channel, void *Kbuffer,
 	 */
 
 	sema_init(&msgInfo->wait_sema, 0, "Open Info Sema");
-	gpadlMsg = (VMBUS_CHANNEL_GPADL_HEADER*) msgInfo->Msg;
-	gpadlMsg->Header.MessageType = ChannelMessageGpadlHeader;
-	gpadlMsg->ChildRelId = Channel->OfferMsg.ChildRelId;
-	gpadlMsg->Gpadl = nextGpadlHandle;
+	gpadlMsg = (hv_vmbus_channel_gpadl_header*) msgInfo->Msg;
+	gpadlMsg->header.message_type = HV_CHANNEL_MESSAGEL_GPADL_HEADER;
+	gpadlMsg->child_rel_id = Channel->OfferMsg.child_rel_id;
+	gpadlMsg->gpadl = nextGpadlHandle;
 
 
 	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
@@ -487,10 +487,10 @@ hv_vmbus_channel_establish_gpadl(VMBUS_CHANNEL *Channel, void *Kbuffer,
 		{
 			mcnt++;
 			subMsgInfo = curr;
-			gpadlBody = (VMBUS_CHANNEL_GPADL_BODY*) subMsgInfo->Msg;
+			gpadlBody = (hv_vmbus_channel_gpadl_body*) subMsgInfo->Msg;
 
-			gpadlBody->Header.MessageType = ChannelMessageGpadlBody;
-			gpadlBody->Gpadl = nextGpadlHandle;
+			gpadlBody->header.message_type = HV_CHANNEL_MESSAGE_GPADL_BODY;
+			gpadlBody->gpadl = nextGpadlHandle;
 
 			retry: ret =
 				VmbusPostMessage(
@@ -518,7 +518,7 @@ hv_vmbus_channel_establish_gpadl(VMBUS_CHANNEL *Channel, void *Kbuffer,
 		goto Cleanup;
 
 
-	*GpadlHandle = gpadlMsg->Gpadl;
+	*GpadlHandle = gpadlMsg->gpadl;
 
 Cleanup:
 
@@ -545,13 +545,13 @@ int
 hv_vmbus_channel_teardown_gpdal(VMBUS_CHANNEL *Channel, uint32_t GpadlHandle) 
 {
 	int ret = 0;
-	VMBUS_CHANNEL_GPADL_TEARDOWN *msg;
+	hv_vmbus_channel_gpadl_teardown *msg;
 	VMBUS_CHANNEL_MSGINFO* info;
 
 
 	info = (VMBUS_CHANNEL_MSGINFO *)
 		malloc(	sizeof(VMBUS_CHANNEL_MSGINFO) +
-			sizeof(VMBUS_CHANNEL_GPADL_TEARDOWN),
+			sizeof(hv_vmbus_channel_gpadl_teardown),
 				M_DEVBUF, M_NOWAIT);
 
 	if (!info) {
@@ -561,17 +561,17 @@ hv_vmbus_channel_teardown_gpdal(VMBUS_CHANNEL *Channel, uint32_t GpadlHandle)
 
 	sema_init(&info->wait_sema, 0, "Open Info Sema");
 
-	msg = (VMBUS_CHANNEL_GPADL_TEARDOWN*) info->Msg;
+	msg = (hv_vmbus_channel_gpadl_teardown*) info->Msg;
 
-	msg->Header.MessageType = ChannelMessageGpadlTeardown;
-	msg->ChildRelId = Channel->OfferMsg.ChildRelId;
-	msg->Gpadl = GpadlHandle;
+	msg->header.message_type = HV_CHANNEL_MESSAGE_GPADL_TEARDOWN;
+	msg->child_rel_id = Channel->OfferMsg.child_rel_id;
+	msg->gpadl = GpadlHandle;
 
 	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
 	TAILQ_INSERT_TAIL(&gVmbusConnection.channel_msg_anchor, info, MsgListEntry);
 	mtx_unlock_spin(&gVmbusConnection.ChannelMsgLock);
 
-	ret = VmbusPostMessage(msg, sizeof(VMBUS_CHANNEL_GPADL_TEARDOWN));
+	ret = VmbusPostMessage(msg, sizeof(hv_vmbus_channel_gpadl_teardown));
 	if (ret != 0) 
 		goto cleanup;
 	
@@ -603,7 +603,7 @@ void
 hv_vmbus_channel_close(VMBUS_CHANNEL *Channel) 
 {
 	int ret = 0;
-	VMBUS_CHANNEL_CLOSE_CHANNEL* msg;
+	hv_vmbus_channel_close_channel* msg;
 	VMBUS_CHANNEL_MSGINFO* info;
 
 	mtx_lock_spin(&Channel->InboundLock);
@@ -613,24 +613,24 @@ hv_vmbus_channel_close(VMBUS_CHANNEL *Channel)
 	// Send a closing message
 	info = (VMBUS_CHANNEL_MSGINFO *)
 		malloc(	sizeof(VMBUS_CHANNEL_MSGINFO) +
-			sizeof(VMBUS_CHANNEL_CLOSE_CHANNEL),
+			sizeof(hv_vmbus_channel_close_channel),
 				M_DEVBUF, M_NOWAIT);
 
 	KASSERT(info != NULL, ("malloc failed")); //KYS: eliminate this error
 
-	msg = (VMBUS_CHANNEL_CLOSE_CHANNEL*) info->Msg;
-	msg->Header.MessageType = ChannelMessageCloseChannel;
-	msg->ChildRelId = Channel->OfferMsg.ChildRelId;
+	msg = (hv_vmbus_channel_close_channel*) info->Msg;
+	msg->header.message_type = HV_CHANNEL_MESSAGE_CLOSE_CHANNEL;
+	msg->child_rel_id = Channel->OfferMsg.child_rel_id;
 
-	ret = VmbusPostMessage(msg, sizeof(VMBUS_CHANNEL_CLOSE_CHANNEL));
+	ret = VmbusPostMessage(msg, sizeof(hv_vmbus_channel_close_channel));
 	if (ret != 0) {
 		// TODO:
 	}
 
 	// Tear down the gpadl for the channel's ring buffer
-	if (Channel->RingBufferGpadlHandle) {
+	if (Channel->ring_buffer_gpadl_handle) {
 		hv_vmbus_channel_teardown_gpdal(Channel,
-			Channel->RingBufferGpadlHandle);
+			Channel->ring_buffer_gpadl_handle);
 	}
 
 	// TODO: Send a msg to release the childRelId
@@ -645,7 +645,7 @@ hv_vmbus_channel_close(VMBUS_CHANNEL *Channel)
 
 	// If we are closing the channel during an error path in opening the channel, don't free the channel
 	// since the caller will free the channel
-	if (Channel->State == CHANNEL_OPEN_STATE) {
+	if (Channel->State == HV_CHANNEL_OPEN_STATE) {
 		mtx_lock_spin(&gVmbusConnection.ChannelLock);
 		TAILQ_REMOVE(&gVmbusConnection.channel_anchor, Channel, ListEntry);
 		mtx_unlock_spin(&gVmbusConnection.ChannelLock);
@@ -666,38 +666,38 @@ hv_vmbus_channel_close(VMBUS_CHANNEL *Channel)
  --*/
 int
 hv_vmbus_channel_send_packet(VMBUS_CHANNEL *Channel, void *Buffer,
-	uint32_t BufferLen, uint64_t RequestId, VMBUS_PACKET_TYPE Type,
+	uint32_t BufferLen, uint64_t RequestId, hv_vmbus_packet_type Type,
 	uint32_t Flags) 
 {
 	
 	int ret = 0;
-	VMPACKET_DESCRIPTOR desc;
-	uint32_t packetLen = sizeof(VMPACKET_DESCRIPTOR) + BufferLen;
-	uint32_t packetLenAligned = ALIGN_UP(packetLen, sizeof(uint64_t));
+	hv_vm_packet_descriptor desc;
+	uint32_t packetLen = sizeof(hv_vm_packet_descriptor) + BufferLen;
+	uint32_t packetLenAligned = HV_ALIGN_UP(packetLen, sizeof(uint64_t));
 	SG_BUFFER_LIST bufferList[3];
 	uint64_t alignedData = 0;
 
 
 	// Setup the descriptor
-	desc.Type = Type;	//VmbusPacketTypeDataInBand;
-	desc.Flags = Flags;	//VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED;
-	desc.DataOffset8 = sizeof(VMPACKET_DESCRIPTOR) >> 3; // in 8-bytes granularity
-	desc.Length8 = (uint16_t) (packetLenAligned >> 3);
-	desc.TransactionId = RequestId;
+	desc.type = Type;	//HV_VMBUS_PACKET_TYPE_DATA_IN_BAND;
+	desc.flags = Flags;	//HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED;
+	desc.data_offset8 = sizeof(hv_vm_packet_descriptor) >> 3; // in 8-bytes granularity
+	desc.length8 = (uint16_t) (packetLenAligned >> 3);
+	desc.transaction_id = RequestId;
 
 	bufferList[0].Data = &desc;
-	bufferList[0].Length = sizeof(VMPACKET_DESCRIPTOR);
+	bufferList[0].length = sizeof(hv_vm_packet_descriptor);
 
 	bufferList[1].Data = Buffer;
-	bufferList[1].Length = BufferLen;
+	bufferList[1].length = BufferLen;
 
 	bufferList[2].Data = &alignedData;
-	bufferList[2].Length = packetLenAligned - packetLen;
+	bufferList[2].length = packetLenAligned - packetLen;
 
 	ret = RingBufferWrite(&Channel->Outbound, bufferList, 3);
 
 	// TODO: We should determine if this is optional
-	if (ret == 0 && !GetRingBufferInterruptMask(&Channel->Outbound)) {
+	if (ret == 0 && !GetRingBufferinterrupt_mask(&Channel->Outbound)) {
 		VmbusChannelSetEvent(Channel);
 	}
 
@@ -728,43 +728,43 @@ hv_vmbus_channel_send_packet_pagebuffer(VMBUS_CHANNEL *Channel,
 	SG_BUFFER_LIST bufferList[3];
 	uint64_t alignedData = 0;
 
-        if (PageCount > MAX_PAGE_BUFFER_COUNT)
+        if (PageCount > HV_MAX_PAGE_BUFFER_COUNT)
                 return -EINVAL;
 
 	// Adjust the size down since VMBUS_CHANNEL_PACKET_PAGE_BUFFER is the largest size we support
 	descSize = sizeof(VMBUS_CHANNEL_PACKET_PAGE_BUFFER)
-		- ((MAX_PAGE_BUFFER_COUNT - PageCount) * sizeof(PAGE_BUFFER));
+		- ((HV_MAX_PAGE_BUFFER_COUNT - PageCount) * sizeof(PAGE_BUFFER));
 	packetLen = descSize + BufferLen;
-	packetLenAligned = ALIGN_UP(packetLen, sizeof(uint64_t));
+	packetLenAligned = HV_ALIGN_UP(packetLen, sizeof(uint64_t));
 
 
 	// Setup the descriptor
-	desc.Type = VmbusPacketTypeDataUsingGpaDirect;
-	desc.Flags = VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED;
-	desc.DataOffset8 = descSize >> 3; // in 8-bytes grandularity
-	desc.Length8 = (uint16_t) (packetLenAligned >> 3);
-	desc.TransactionId = RequestId;
-	desc.RangeCount = PageCount;
+	desc.Type = HV_VMBUS_PACKET_TYPE_DATA_USING_GPA_DIRECT;
+	desc.Flags = HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED;
+	desc.data_offset8 = descSize >> 3; // in 8-bytes grandularity
+	desc.length8 = (uint16_t) (packetLenAligned >> 3);
+	desc.transaction_id = RequestId;
+	desc.range_count = PageCount;
 
 	for (i = 0; i < PageCount; i++) {
-		desc.Range[i].Length = PageBuffers[i].Length;
-		desc.Range[i].Offset = PageBuffers[i].Offset;
-		desc.Range[i].Pfn = PageBuffers[i].Pfn;
+		desc.range[i].length = PageBuffers[i].length;
+		desc.range[i].offset = PageBuffers[i].offset;
+		desc.range[i].pfn = PageBuffers[i].pfn;
 	}
 
 	bufferList[0].Data = &desc;
-	bufferList[0].Length = descSize;
+	bufferList[0].length = descSize;
 
 	bufferList[1].Data = Buffer;
-	bufferList[1].Length = BufferLen;
+	bufferList[1].length = BufferLen;
 
 	bufferList[2].Data = &alignedData;
-	bufferList[2].Length = packetLenAligned - packetLen;
+	bufferList[2].length = packetLenAligned - packetLen;
 
 	ret = RingBufferWrite(&Channel->Outbound, bufferList, 3);
 
 	// TODO: We should determine if this is optional
-	if (ret == 0 && !GetRingBufferInterruptMask(&Channel->Outbound)) {
+	if (ret == 0 && !GetRingBufferinterrupt_mask(&Channel->Outbound)) {
 		VmbusChannelSetEvent(Channel);
 	}
 
@@ -782,7 +782,7 @@ hv_vmbus_channel_send_packet_pagebuffer(VMBUS_CHANNEL *Channel,
  --*/
 int
 hv_vmbus_channel_send_packet_multipagebuffer(VMBUS_CHANNEL *Channel,
-	MULTIPAGE_BUFFER *MultiPageBuffer, void *Buffer, uint32_t BufferLen,
+	hv_vmbus_multipage_buffer *MultiPageBuffer, void *Buffer, uint32_t BufferLen,
 	uint64_t RequestId) 
 {
 	
@@ -793,47 +793,47 @@ hv_vmbus_channel_send_packet_multipagebuffer(VMBUS_CHANNEL *Channel,
 	uint32_t packetLenAligned;
 	SG_BUFFER_LIST bufferList[3];
 	uint64_t alignedData = 0;
-	uint32_t PfnCount =
-		NUM_PAGES_SPANNED(MultiPageBuffer->Offset, MultiPageBuffer->Length);
+	uint32_t pfnCount =
+		HV_NUM_PAGES_SPANNED(MultiPageBuffer->offset, MultiPageBuffer->length);
 
 
-	if ((PfnCount < 0) || (PfnCount > MAX_MULTIPAGE_BUFFER_COUNT))
+	if ((pfnCount < 0) || (pfnCount > HV_MAX_MULTIPAGE_BUFFER_COUNT))
 		return -EINVAL;
 
 	// Adjust the size down since VMBUS_CHANNEL_PACKET_MULITPAGE_BUFFER is the largest size we support
 	descSize = sizeof(VMBUS_CHANNEL_PACKET_MULITPAGE_BUFFER)
-		- ((MAX_MULTIPAGE_BUFFER_COUNT - PfnCount) * sizeof(uint64_t));
+		- ((HV_MAX_MULTIPAGE_BUFFER_COUNT - pfnCount) * sizeof(uint64_t));
 	packetLen = descSize + BufferLen;
-	packetLenAligned = ALIGN_UP(packetLen, sizeof(uint64_t));
+	packetLenAligned = HV_ALIGN_UP(packetLen, sizeof(uint64_t));
 
 
 	// Setup the descriptor
-	desc.Type = VmbusPacketTypeDataUsingGpaDirect;
-	desc.Flags = VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED;
-	desc.DataOffset8 = descSize >> 3; // in 8-bytes grandularity
-	desc.Length8 = (uint16_t) (packetLenAligned >> 3);
-	desc.TransactionId = RequestId;
-	desc.RangeCount = 1;
+	desc.Type = HV_VMBUS_PACKET_TYPE_DATA_USING_GPA_DIRECT;
+	desc.Flags = HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED;
+	desc.data_offset8 = descSize >> 3; // in 8-bytes grandularity
+	desc.length8 = (uint16_t) (packetLenAligned >> 3);
+	desc.transaction_id = RequestId;
+	desc.range_count = 1;
 
-	desc.Range.Length = MultiPageBuffer->Length;
-	desc.Range.Offset = MultiPageBuffer->Offset;
+	desc.range.length = MultiPageBuffer->length;
+	desc.range.offset = MultiPageBuffer->offset;
 
-	memcpy(desc.Range.PfnArray, MultiPageBuffer->PfnArray,
-		PfnCount*sizeof(uint64_t));
+	memcpy(desc.range.pfn_array, MultiPageBuffer->pfn_array,
+		pfnCount*sizeof(uint64_t));
 
 	bufferList[0].Data = &desc;
-	bufferList[0].Length = descSize;
+	bufferList[0].length = descSize;
 
 	bufferList[1].Data = Buffer;
-	bufferList[1].Length = BufferLen;
+	bufferList[1].length = BufferLen;
 
 	bufferList[2].Data = &alignedData;
-	bufferList[2].Length = packetLenAligned - packetLen;
+	bufferList[2].length = packetLenAligned - packetLen;
 
 	ret = RingBufferWrite(&Channel->Outbound, bufferList, 3);
 
 	// TODO: We should determine if this is optional
-	if (ret == 0 && !GetRingBufferInterruptMask(&Channel->Outbound)) {
+	if (ret == 0 && !GetRingBufferinterrupt_mask(&Channel->Outbound)) {
 		VmbusChannelSetEvent(Channel);
 	}
 
@@ -854,7 +854,7 @@ hv_vmbus_channel_recv_packet(VMBUS_CHANNEL *Channel, void *Buffer,
 	uint32_t BufferLen, uint32_t *BufferActualLen, uint64_t *RequestId) 
 {
 
-	VMPACKET_DESCRIPTOR desc;
+	hv_vm_packet_descriptor desc;
 	uint32_t packetLen;
 	uint32_t userLen;
 	int ret;
@@ -863,24 +863,24 @@ hv_vmbus_channel_recv_packet(VMBUS_CHANNEL *Channel, void *Buffer,
 	*RequestId = 0;
 
 	ret = RingBufferPeek(&Channel->Inbound, &desc,
-		sizeof(VMPACKET_DESCRIPTOR));
+		sizeof(hv_vm_packet_descriptor));
 	if (ret != 0) 
 		return 0;
 
 
-	packetLen = desc.Length8 << 3;
-	userLen = packetLen - (desc.DataOffset8 << 3);
+	packetLen = desc.length8 << 3;
+	userLen = packetLen - (desc.data_offset8 << 3);
 
 	*BufferActualLen = userLen;
 
 	if (userLen > BufferLen)
 		return -EINVAL;
 
-	*RequestId = desc.TransactionId;
+	*RequestId = desc.transaction_id;
 
 	// Copy over the packet to the user buffer
 	ret = RingBufferRead(&Channel->Inbound, Buffer, userLen,
-		(desc.DataOffset8 << 3));
+		(desc.data_offset8 << 3));
 	return 0;
 }
 
@@ -898,7 +898,7 @@ hv_vmbus_channel_recv_packet_raw(VMBUS_CHANNEL *Channel, void *Buffer,
 	uint32_t BufferLen, uint32_t *BufferActualLen, uint64_t *RequestId) 
 {
 	
-	VMPACKET_DESCRIPTOR desc;
+	hv_vm_packet_descriptor desc;
 	uint32_t packetLen;
 	uint32_t userLen;
 	int ret;
@@ -906,13 +906,13 @@ hv_vmbus_channel_recv_packet_raw(VMBUS_CHANNEL *Channel, void *Buffer,
 	*RequestId = 0;
 
 	ret = RingBufferPeek(&Channel->Inbound, &desc,
-		sizeof(VMPACKET_DESCRIPTOR));
+		sizeof(hv_vm_packet_descriptor));
 
 	if (ret != 0)
 		return 0;
 
-	packetLen = desc.Length8 << 3;
-	userLen = packetLen - (desc.DataOffset8 << 3);
+	packetLen = desc.length8 << 3;
+	userLen = packetLen - (desc.data_offset8 << 3);
 
 	*BufferActualLen = packetLen;
 
@@ -920,7 +920,7 @@ hv_vmbus_channel_recv_packet_raw(VMBUS_CHANNEL *Channel, void *Buffer,
 		return -ENOBUFS;
 
 
-	*RequestId = desc.TransactionId;
+	*RequestId = desc.transaction_id;
 
 	// Copy over the entire packet to the user buffer
 	ret = RingBufferRead(&Channel->Inbound, Buffer, packetLen, 0);

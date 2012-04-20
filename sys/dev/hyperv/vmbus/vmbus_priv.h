@@ -101,11 +101,11 @@ typedef void (*VMBUS_CHANNEL_CALLBACK)(void *context);
 
 typedef struct _SG_BUFFER_LIST {
 	void		*Data;
-	uint32_t	Length;
+	uint32_t	length;
 } SG_BUFFER_LIST;
 
 typedef struct _RING_BUFFER_DEBUG_INFO {
-	uint32_t CurrentInterruptMask;
+	uint32_t Currentinterrupt_mask;
 	uint32_t CurrentReadIndex;
 	uint32_t CurrentWriteIndex;
 	uint32_t BytesAvailToRead;
@@ -117,47 +117,47 @@ typedef struct _RING_BUFFER_DEBUG_INFO {
 //
 
 extern int
-RingBufferInit(RING_BUFFER_INFO *RingInfo, void *Buffer, uint32_t BufferLen);
+RingBufferInit(hv_vmbus_ring_buffer_info *RingInfo, void *Buffer, uint32_t BufferLen);
 
 extern void
-RingBufferCleanup(RING_BUFFER_INFO *RingInfo);
+RingBufferCleanup(hv_vmbus_ring_buffer_info *RingInfo);
 
 extern int
-RingBufferWrite(RING_BUFFER_INFO *RingInfo, SG_BUFFER_LIST SgBuffers[],
+RingBufferWrite(hv_vmbus_ring_buffer_info *RingInfo, SG_BUFFER_LIST SgBuffers[],
 	uint32_t SgBufferCount);
 
 extern int
-RingBufferPeek(RING_BUFFER_INFO *RingInfo, void *Buffer, uint32_t BufferLen);
+RingBufferPeek(hv_vmbus_ring_buffer_info *RingInfo, void *Buffer, uint32_t BufferLen);
 
 extern int
-RingBufferRead(RING_BUFFER_INFO *RingInfo, void *Buffer, uint32_t BufferLen,
-	uint32_t Offset);
+RingBufferRead(hv_vmbus_ring_buffer_info *RingInfo, void *Buffer, uint32_t BufferLen,
+	uint32_t offset);
 
 extern uint32_t
-GetRingBufferInterruptMask(RING_BUFFER_INFO *RingInfo);
+GetRingBufferinterrupt_mask(hv_vmbus_ring_buffer_info *RingInfo);
 
 extern void
-DumpRingInfo(RING_BUFFER_INFO* RingInfo, char *Prefix);
+DumpRingInfo(hv_vmbus_ring_buffer_info* RingInfo, char *Prefix);
 
 extern void
-RingBufferGetDebugInfo(RING_BUFFER_INFO *RingInfo,
-	RING_BUFFER_DEBUG_INFO *DebugInfo);
+RingBufferGetDebugInfo(hv_vmbus_ring_buffer_info *RingInfo,
+	hv_vmbus_ring_buffer_DEBUG_INFO *DebugInfo);
 
 /*
  * Externs
  */
-extern void SetRingBufferInterruptMask(RING_BUFFER_INFO *rbi);
-extern void ClearRingBufferInterruptMask(RING_BUFFER_INFO *rbi);
-extern int RingBufferCheck(RING_BUFFER_INFO *rbi);
+extern void SetRingBufferinterrupt_mask(hv_vmbus_ring_buffer_info *rbi);
+extern void ClearRingBufferinterrupt_mask(hv_vmbus_ring_buffer_info *rbi);
+extern int RingBufferCheck(hv_vmbus_ring_buffer_info *rbi);
 
 
 
 typedef struct _VMBUS_CHANNEL_DEBUG_INFO {
 	uint32_t RelId;
-	VMBUS_CHANNEL_STATE State;
-	GUID InterfaceType;
-	GUID InterfaceInstance;
-	uint32_t MonitorId;
+	hv_vmbus_channel_state State;
+	hv_guid InterfaceType;
+	hv_guid InterfaceInstance;
+	uint32_t monitor_id;
 	uint32_t ServerMonitorPending;
 	uint32_t ServerMonitorLatency;
 	uint32_t ServerMonitorConnectionId;
@@ -165,16 +165,16 @@ typedef struct _VMBUS_CHANNEL_DEBUG_INFO {
 	uint32_t ClientMonitorLatency;
 	uint32_t ClientMonitorConnectionId;
 
-	RING_BUFFER_DEBUG_INFO Inbound;
-	RING_BUFFER_DEBUG_INFO Outbound;
+	hv_vmbus_ring_buffer_DEBUG_INFO Inbound;
+	hv_vmbus_ring_buffer_DEBUG_INFO Outbound;
 } VMBUS_CHANNEL_DEBUG_INFO;
 
 typedef union {
-	VMBUS_CHANNEL_VERSION_SUPPORTED VersionSupported;
-	VMBUS_CHANNEL_OPEN_RESULT OpenResult;
-	VMBUS_CHANNEL_GPADL_TORNDOWN GpadlTorndown;
-	VMBUS_CHANNEL_GPADL_CREATED GpadlCreated;
-	VMBUS_CHANNEL_VERSION_RESPONSE VersionResponse;
+	hv_vmbus_channel_version_supported version_supported;
+	hv_vmbus_channel_open_result OpenResult;
+	hv_vmbus_channel_gpadl_torndown GpadlTorndown;
+	hv_vmbus_channel_gpadl_created GpadlCreated;
+	hv_vmbus_channel_version_response VersionResponse;
 } VMBUS_CHANNEL_MESSAGE_RESPONSE;
 
 // Represents each channel msg on the vmbus connection
@@ -195,7 +195,7 @@ typedef struct _VMBUS_CHANNEL_MSGINFO {
 
 	uint32_t MessageSize;
 	// The channel message that goes out on the "wire".
-	// It will contain at minimum the VMBUS_CHANNEL_MESSAGE_HEADER header
+	// It will contain at minimum the hv_vmbus_channel_message_header header
 	unsigned char Msg[0];
 } VMBUS_CHANNEL_MSGINFO;
 
@@ -217,28 +217,28 @@ VmbusChannelReleaseUnattachedChannels(void);
 
 #pragma pack(push,1)
 
-// The format must be the same as VMDATA_GPA_DIRECT
+// The format must be the same as hv_vm_data_gpa_direct
 typedef struct _VMBUS_CHANNEL_PACKET_PAGE_BUFFER {
 	uint16_t Type;
-	uint16_t DataOffset8;
-	uint16_t Length8;
+	uint16_t data_offset8;
+	uint16_t length8;
 	uint16_t Flags;
-	uint64_t TransactionId;
-	uint32_t Reserved;
-	uint32_t RangeCount;
-	PAGE_BUFFER Range[MAX_PAGE_BUFFER_COUNT];
+	uint64_t transaction_id;
+	uint32_t reserved;
+	uint32_t range_count;
+	PAGE_BUFFER range[HV_MAX_PAGE_BUFFER_COUNT];
 } VMBUS_CHANNEL_PACKET_PAGE_BUFFER;
 
-// The format must be the same as VMDATA_GPA_DIRECT
+// The format must be the same as hv_vm_data_gpa_direct
 typedef struct _VMBUS_CHANNEL_PACKET_MULITPAGE_BUFFER {
 	uint16_t Type;
-	uint16_t DataOffset8;
-	uint16_t Length8;
+	uint16_t data_offset8;
+	uint16_t length8;
 	uint16_t Flags;
-	uint64_t TransactionId;
-	uint32_t Reserved;
-	uint32_t RangeCount;		// Always 1 in this case
-	MULTIPAGE_BUFFER Range;
+	uint64_t transaction_id;
+	uint32_t reserved;
+	uint32_t range_count;		// Always 1 in this case
+	hv_vmbus_multipage_buffer range;
 } VMBUS_CHANNEL_PACKET_MULITPAGE_BUFFER;
 
 #pragma pack(pop)
@@ -283,7 +283,7 @@ typedef union _HV_CONNECTION_ID {
 
 	struct {
 		uint32_t Id:24;
-		uint32_t Reserved:8;
+		uint32_t reserved:8;
 	} u;
 
 } HV_CONNECTION_ID, *PHV_CONNECTION_ID;
@@ -312,8 +312,8 @@ typedef struct {
 	HV_INPUT_SIGNAL_EVENT_BUFFER *SignalEventBuffer;
 	HV_INPUT_SIGNAL_EVENT *SignalEventParam; // 8-bytes aligned of the buffer above
 
-	HANDLE synICMessagePage[MAXCPU];
-	HANDLE synICEventPage[MAXCPU];
+	hv_vmbus_handle synICMessagePage[MAXCPU];
+	hv_vmbus_handle synICEventPage[MAXCPU];
 } HV_CONTEXT;
 
 //
@@ -364,7 +364,7 @@ typedef union _HV_PORT_ID {
 
 	struct {
 		uint32_t Id:24;
-		uint32_t Reserved:8;
+		uint32_t reserved:8;
 	} u ;
 
 } HV_PORT_ID, *PHV_PORT_ID;
@@ -376,7 +376,7 @@ typedef union _HV_MESSAGE_FLAGS {
 	uint8_t Asuint8_t;
 	struct {
 		uint8_t MessagePending:1;
-		uint8_t Reserved:7;
+		uint8_t reserved:7;
 	};
 } HV_MESSAGE_FLAGS, *PHV_MESSAGE_FLAGS;
 
@@ -389,7 +389,7 @@ typedef struct _HV_MESSAGE_HEADER {
 	HV_MESSAGE_TYPE MessageType;
 	uint8_t PayloadSize;
 	HV_MESSAGE_FLAGS MessageFlags;
-	uint8_t Reserved[2];
+	uint8_t reserved[2];
 	union {
 		HV_PARTITION_ID Sender;
 		HV_PORT_ID      Port;
@@ -401,7 +401,7 @@ typedef struct _HV_MESSAGE_HEADER {
 //
 
 typedef struct _HV_MESSAGE {
-	HV_MESSAGE_HEADER Header;
+	HV_MESSAGE_HEADER header;
 	union {
 		uint64_t Payload[HV_MESSAGE_PAYLOAD_QWORD_COUNT];
 	} u ;
@@ -515,13 +515,13 @@ typedef struct _VMBUS_CONNECTION {
 	// Represents channel interrupts. Each bit position
 	// represents a channel.
 	// When a channel sends an interrupt via VMBUS, it 
-	// finds its bit in the sendInterruptPage, set it and 
+	// finds its bit in the send_interrupt_page, set it and 
 	// calls Hv to generate a port event. The other end
-	// receives the port event and parse the recvInterruptPage
+	// receives the port event and parse the recv_interrupt_page
 	// to see which bit is set
-	void* InterruptPage;
-	void* SendInterruptPage;
-	void* RecvInterruptPage;
+	void* interrupt_page;
+	void* send_interrupt_page;
+	void* recv_interrupt_page;
 
 	// 2 pages - 1st page for parent->child notification and 2nd is child->parent notification
 	void* MonitorPages;
@@ -532,7 +532,7 @@ typedef struct _VMBUS_CONNECTION {
 	TAILQ_HEAD(, _VMBUS_CHANNEL)  channel_anchor;
 	struct mtx ChannelLock;
 
-	HANDLE WorkQueue;
+	hv_vmbus_handle WorkQueue;
 	struct sema control_sema;
 } VMBUS_CONNECTION;
 
@@ -546,7 +546,7 @@ extern VMBUS_CONNECTION gVmbusConnection;
 //
 
 struct hv_device *
-vmbus_child_device_create(GUID deviceType, GUID deviceInstance,
+vmbus_child_device_create(hv_guid deviceType, hv_guid deviceInstance,
 			 VMBUS_CHANNEL *channel);
 
 
@@ -602,7 +602,7 @@ typedef union _HV_X64_MSR_HYPERCALL_CONTENTS {
     uint64_t Asuint64_t;
     struct {
         uint64_t Enable               : 1;
-        uint64_t Reserved             : 11;
+        uint64_t reserved             : 11;
         uint64_t GuestPhysicalAddress : 52;
     };
 } HV_X64_MSR_HYPERCALL_CONTENTS, *PHV_X64_MSR_HYPERCALL_CONTENTS;
@@ -721,10 +721,10 @@ typedef union _HV_SYNIC_SINT {
 	uint64_t Asuint64_t;
 	struct {
 		uint64_t Vector    :8;
-		uint64_t Reserved1 :8;
+		uint64_t reserved1 :8;
 		uint64_t Masked    :1;
 		uint64_t AutoEoi   :1;
-		uint64_t Reserved2 :46;
+		uint64_t reserved2 :46;
 	};
 } HV_SYNIC_SINT, *PHV_SYNIC_SINT;
 
@@ -735,7 +735,7 @@ typedef union _HV_SYNIC_SCONTROL {
     uint64_t Asuint64_t;
     struct {
         uint64_t Enable:1;
-        uint64_t Reserved:63;
+        uint64_t reserved:63;
     };
 } HV_SYNIC_SCONTROL, *PHV_SYNIC_SCONTROL;
 
@@ -744,7 +744,7 @@ typedef union _HV_SYNIC_SCONTROL {
 //
 typedef struct _HV_INPUT_POST_MESSAGE {
     HV_CONNECTION_ID    ConnectionId;
-    uint32_t              Reserved;
+    uint32_t              reserved;
     HV_MESSAGE_TYPE     MessageType;
     uint32_t              PayloadSize;
     uint64_t              Payload[HV_MESSAGE_PAYLOAD_QWORD_COUNT];

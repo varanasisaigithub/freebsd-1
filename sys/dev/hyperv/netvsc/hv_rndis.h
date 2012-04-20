@@ -518,8 +518,8 @@ typedef struct rndis_keepalive_complete_ {
 } rndis_keepalive_complete;
 
 /*
- * Data message. All Offset fields contain byte offsets from the beginning
- * of the rndis_packet structure. All Length fields are in bytes.
+ * Data message. All offset fields contain byte offsets from the beginning
+ * of the rndis_packet structure. All length fields are in bytes.
  * VcHandle is set to 0 for connectionless data, otherwise it
  * contains the VC handle.
  */
