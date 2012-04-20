@@ -1,4 +1,4 @@
-/*****************************************************************************
+/***********************************************
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -25,11 +25,11 @@
  *****************************************************************************/
 
 /*
- Name:	vmbus_drv.c
-
- Desc:	vmbus driver implementation
-
- --*/
+ * Name:	vmbus_drv.c
+ *
+ * Desc:	vmbus driver implementation
+ *
+ */
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -54,7 +54,7 @@
 #include <machine/intr_machdep.h>
 #include <sys/pcpu.h>
 
-#include "../include/hyperv.h"
+#include "hyperv.h"
 #include "vmbus_priv.h"
 
 
@@ -62,8 +62,8 @@
 
 static struct intr_event *hv_message_intr_event;
 static struct intr_event *hv_event_intr_event;
-static void *msg_dpc;
-static void *event_dpc;
+static void *msg_swintr;
+static void *event_swintr;
 static device_t vmbus_devp;
 static void *vmbus_cookiep;
 static int vmbus_rid;
@@ -72,17 +72,15 @@ static int vmbus_irq = VMBUS_IRQ;
 static int vmbus_inited;
 
 
-/*++
-
- Name:
- vmbus_msg_dpc()
-
- Description:
- DPC routine to handle messages from the hypervisior
-
- --*/
-
-static void vmbus_msg_dpc(void *arg)
+/*
+ * vmbus_msg_swintr()
+ *
+ * Description:
+ * Software interrupt thread routine to handle channel messages from
+ * the hypervisior
+ */
+static void
+vmbus_msg_swintr(void *dummy)
 {
 	int cpu;
 	void *page_addr;
@@ -93,8 +91,8 @@ static void vmbus_msg_dpc(void *arg)
 	page_addr = gHvContext.synICMessagePage[cpu];
 	msg = (HV_MESSAGE*) page_addr + VMBUS_MESSAGE_SINT;
 	while (1) {
-		if (msg->Header.MessageType == HvMessageTypeNone) // no msg
-			{
+		if (msg->Header.MessageType == HvMessageTypeNone) {
+			/* No message */
 			break;
 		} else {
 			copied = malloc(sizeof(HV_MESSAGE), M_DEVBUF, M_NOWAIT);
@@ -160,7 +158,7 @@ hv_vmbus_isr(void *unused)
 
 	// Since we are a child, we only need to check bit 0
 	if (synch_test_and_clear_bit(0, &event->Flags32[0])) {
-		swi_sched(event_dpc, 0);
+		swi_sched(event_swintr, 0);
 	}
 
 	// Check if there are actual msgs to be process
@@ -168,7 +166,7 @@ hv_vmbus_isr(void *unused)
 	msg = (HV_MESSAGE*) page_addr + VMBUS_MESSAGE_SINT;
 
 	if (msg->Header.MessageType != HvMessageTypeNone) {
-		swi_sched(msg_dpc, 0);
+		swi_sched(msg_swintr, 0);
 	}
 
 	return FILTER_HANDLED;
@@ -278,6 +276,9 @@ static int vmbus_print_child(device_t dev, device_t child) {
 
 static void vmbus_identify(driver_t *driver, device_t parent) {
 	BUS_ADD_CHILD(parent, 0, "vmbus", 0);
+	if (device_find_child(parent, "vmbus", 0) == NULL) {
+		BUS_ADD_CHILD(parent, 0, "vmbus", 0);
+	}
 }
 
 static int vmbus_probe(device_t dev) {
@@ -324,8 +325,8 @@ static int vmbus_bus_init(void)
 		return ret;
 	}
 
-	ret = swi_add(&hv_message_intr_event, "hv_msg", vmbus_msg_dpc,
-		NULL, SWI_CLOCK, 0, &msg_dpc);
+	ret = swi_add(&hv_message_intr_event, "hv_msg", vmbus_msg_swintr,
+		NULL, SWI_CLOCK, 0, &msg_swintr);
 
 	if (ret)
 		goto cleanup;
@@ -341,7 +342,7 @@ static int vmbus_bus_init(void)
 		goto cleanup1;
 
 	ret = swi_add(&hv_event_intr_event, "hv_event", vmbus_on_events,
-		NULL, SWI_CLOCK, 0, &event_dpc);
+		NULL, SWI_CLOCK, 0, &event_swintr);
 
 	if (ret)
 		goto cleanup1;
@@ -402,10 +403,10 @@ cleanup3:
 		vmbus_rid, intr_res);
 
 cleanup2: 
-	swi_remove(event_dpc);
+	swi_remove(event_swintr);
 
 cleanup1:
-	swi_remove(msg_dpc);
+	swi_remove(msg_swintr);
 
 cleanup:
 	HvCleanup();
@@ -422,12 +423,7 @@ static int vmbus_attach(device_t dev) {
 	 * scheduling is possible indicated by the global
 	 * cold set to zero, we just call the driver
 	 * initialization directly.
-	 *
-	 * XXXKYS: Need to cleanup this initialization!!
-	 * What comes first: attach or SYSINIT call
-	 * How does this playout when vmbus is a module.
 	 */
-
 	if (!cold) {
 		vmbus_bus_init();
 	}
@@ -442,8 +438,6 @@ static void vmbus_init(void)
 	 * scheduling is possible indicated by the global
 	 * cold set to zero, we just call the driver
 	 * initialization directly.
-	 *
-	 * XXXKYS: Need to cleanup this initialization!!
 	 */
 	if (!cold) {
 		vmbus_bus_init();
@@ -465,8 +459,8 @@ static void vmbus_bus_exit(void)
 
 	bus_release_resource(vmbus_devp, SYS_RES_IRQ, vmbus_rid, intr_res);
 
-	swi_remove(msg_dpc);
-	swi_remove(event_dpc);
+	swi_remove(msg_swintr);
+	swi_remove(event_swintr);
 
 	return;
 }
@@ -486,13 +480,11 @@ static int vmbus_detach(device_t dev)
 static void vmbus_mod_load(void) 
 {
 	printf("Vmbus load\n");
-	vmbus_init();
 }
 
 static void vmbus_mod_unload(void) 
 {
 	printf("Vmbus unload\n");
-	vmbus_exit();
 }
 
 static int vmbus_modevent(module_t mod, int what, void *arg) 
