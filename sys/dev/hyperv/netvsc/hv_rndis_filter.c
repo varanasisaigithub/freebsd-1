@@ -209,6 +209,7 @@ hv_rndis_request(rndis_device *device, uint32_t message_type,
 	 */
 	set = &rndis_mesg->msg.set_request;
 	set->request_id = atomic_fetchadd_int(&device->new_request_id, 1);
+	/* Increment to get the new value (call above returns old value) */
 	set->request_id += 1; //KYS need to add 1! 
 
 	/* Add to the request list */
@@ -255,7 +256,7 @@ hv_rf_send_request(rndis_device *device, rndis_request *request)
 	packet->page_buf_count = 1;
 
 	packet->page_buffers[0].Pfn =
-		get_phys_addr(&request->request_msg) >> PAGE_SHIFT;
+	    get_phys_addr(&request->request_msg) >> PAGE_SHIFT;
 	packet->page_buffers[0].Length = request->request_msg.msg_len;
 	packet->page_buffers[0].Offset =
 	    (unsigned long)&request->request_msg & (PAGE_SIZE - 1);
@@ -420,8 +421,10 @@ hv_rf_on_receive(struct hv_device *device, netvsc_packet *pkt)
 	case REMOTE_NDIS_INITIALIZE_CMPLT:
 	case REMOTE_NDIS_QUERY_CMPLT:
 	case REMOTE_NDIS_SET_CMPLT:
-	//case REMOTE_NDIS_RESET_CMPLT:
-	//case REMOTE_NDIS_KEEPALIVE_CMPLT:
+	/* Fixme:  Restored this case */
+	case REMOTE_NDIS_RESET_CMPLT:
+	/* Fixme:  Restored this case */
+	case REMOTE_NDIS_KEEPALIVE_CMPLT:
 		hv_rf_receive_response(rndis_dev, &rndis_mesg);
 		break;
 	/* notification message */
@@ -429,6 +432,8 @@ hv_rf_on_receive(struct hv_device *device, netvsc_packet *pkt)
 		hv_rf_receive_indicate_status(rndis_dev, &rndis_mesg);
 		break;
 	default:
+		printf("hv_rf_on_receive():  Unknown msg_type 0x%x\n",
+		    rndis_mesg.ndis_msg_type);
 		break;
 	}
 
@@ -553,10 +558,19 @@ hv_rf_set_packet_filter(rndis_device *device, uint32_t new_filter)
 	}
 
 	/*
-	 * XXXKYS: For some reason timedwaits don't appear to work;
+	 * XXXKYS: For some reason timed waits don't appear to work;
 	 * need to check this.
+	 *
+	 * Fixme:  Replaced with correct sema_wait() call
+	 * Address filter hang fixed elsewhere
+	 * Fixme:  Remove the unnecessary return checking code
 	 */
-	ret = sema_timedwait(&request->wait_sema, 500); /* KYS 5 seconds */
+	//ret = sema_timedwait(&request->wait_sema, 500); /* KYS 5 seconds */
+
+	sema_wait(&request->wait_sema);
+	/* Fixme:  Kludge */
+	ret = 1;
+
 	if (!ret) {
 		/*
 		 * We cannot deallocate the request since we may still
@@ -664,8 +678,7 @@ hv_rf_halt_device(rndis_device *device)
 
 	/* Set up the rndis set */
 	halt = &request->request_msg.msg.halt_request;
-	halt->request_id =
-	    atomic_fetchadd_int(&device->new_request_id, 1);
+	halt->request_id = atomic_fetchadd_int(&device->new_request_id, 1);
 	halt->request_id += 1;  //KYS need to add 1! 
 	
 	/* Ignore return since this msg is optional. */

@@ -479,8 +479,10 @@ netvsc_linkstatus_callback(struct hv_device *device_obj, uint32_t status)
 }
 
 /*
- * RX Callback.  Called when we receive a packet from the "wire" on the
+ * RX Callback.  Called when we receive a data packet from the "wire" on the
  * specified device
+ *
+ * Fixme:  This is no longer used as a callback
  */
 int
 netvsc_recv_callback(struct hv_device *device_ctx, netvsc_packet *packet)
@@ -532,8 +534,12 @@ netvsc_recv_callback(struct hv_device *device_ctx, netvsc_packet *packet)
 	    ETHER_CRC_LEN;
 	m_new->m_pkthdr.rcvif = ifp;
 
-	hv_nv_on_receive_completion(
-	    (void *)packet->compl.rx.rx_completion_context);
+	/*
+	 * Fixme:  Moved completion back to hv_nv_on_receive(), so all
+	 * messages (not just data messages) will trigger a response.
+	 */
+	//hv_nv_on_receive_completion(packet->compl.rx.rx_completion_context);
+
 	ifp->if_ipackets++;
 	/* Fixme:  Is the lock held? */
 //	SN_UNLOCK(sc);
@@ -726,7 +732,7 @@ hn_watchdog(struct ifnet *ifp)
 	hn_softc_t *sc;
 	sc = ifp->if_softc;
 
-	printf("sx%d: watchdog timeout -- resetting\n", sc->hn_unit);
+	printf("hn%d: watchdog timeout -- resetting\n", sc->hn_unit);
 	hn_ifinit(sc);    /*???*/
 	ifp->if_oerrors++;
 }

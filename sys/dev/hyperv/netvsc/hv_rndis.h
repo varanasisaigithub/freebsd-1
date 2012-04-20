@@ -62,7 +62,15 @@
 
 
 /*
- *  Status codes
+ * NDIS protocol version numbers
+ */
+#define NDIS_VERSION_5_0                        0x00050000
+#define NDIS_VERSION_5_1                        0x00050001
+#define NDIS_VERSION_6_0                        0x00060000
+#define NDIS_VERSION                            (NDIS_VERSION_5_1)
+
+/*
+ * Status codes
  */
 
 #define STATUS_SUCCESS                          (0x00000000L)

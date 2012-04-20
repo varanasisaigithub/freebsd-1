@@ -178,7 +178,7 @@ hv_nv_init_rx_buffer_with_net_vsp(struct hv_device *device)
 	}
 
 	/*
-	 * Establish the gpadl handle for this buffer on this channel.
+	 * Establish the GPADL handle for this buffer on this channel.
 	 * Note:  This call uses the vmbus connection rather than the
 	 * channel to establish the gpadl handle. 
 	 * GPADL:  Guest physical address descriptor list.
@@ -459,6 +459,47 @@ hv_nv_destroy_send_buffer(netvsc_dev *net_dev)
 
 
 /*
+ * Attempt to negotiate the specified NVSP version
+ *
+ * For NVSP v2, Server 2008 R2 does not set
+ * init_pkt->msgs.init_msgs.init_compl.negotiated_prot_vers
+ * to the negotiated version, so we cannot rely on that.
+ */
+static int
+hv_nv_negotiate_nvsp_protocol(struct hv_device *device, netvsc_dev *net_dev,
+			      uint32_t nvsp_ver)
+{
+	nvsp_msg *init_pkt;
+	int ret;
+
+	init_pkt = &net_dev->channel_init_packet;
+	memset(init_pkt, 0, sizeof(nvsp_msg));
+	init_pkt->hdr.msg_type = nvsp_msg_type_init;
+
+	/*
+	 * Specify parameter as the only acceptable protocol version
+	 */
+	init_pkt->msgs.init_msgs.init.min_protocol_version = nvsp_ver;
+	init_pkt->msgs.init_msgs.init.max_protocol_version = nvsp_ver;
+
+	/* Send the init request */
+	ret = hv_vmbus_channel_send_packet(device->channel, init_pkt,
+	    sizeof(nvsp_msg), (uint64_t)init_pkt, VmbusPacketTypeDataInBand,
+	    VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+	if (ret != 0) {
+		return (-1);
+	}
+
+	sema_wait(&net_dev->channel_init_sema);
+
+	if (init_pkt->msgs.init_msgs.init_compl.status != nvsp_status_success) {
+		return (-EINVAL);
+	}
+
+	return (0);
+}
+
+/*
  * Net VSC connect to VSP
  */
 static int
@@ -467,6 +508,7 @@ hv_nv_connect_to_vsp(struct hv_device *device)
 	int ret = 0;
 	netvsc_dev *net_dev;
 	nvsp_msg *init_pkt;
+	uint32_t nvsp_vers;
 	uint32_t ndis_version;
 
 	net_dev = hv_nv_get_outbound_net_device(device);
@@ -474,48 +516,33 @@ hv_nv_connect_to_vsp(struct hv_device *device)
 		return (-ENODEV);
 	}
 
+	/*
+	 * Negotiate the NVSP version.  Try NVSP v2 first.
+	 */
+	nvsp_vers = NVSP_PROTOCOL_VERSION_2;
+	ret = hv_nv_negotiate_nvsp_protocol(device, net_dev, nvsp_vers);
+	if (ret != 0) {
+		/* NVSP v2 failed, try NVSP v1 */
+		nvsp_vers = NVSP_PROTOCOL_VERSION_1;
+		ret = hv_nv_negotiate_nvsp_protocol(device, net_dev, nvsp_vers);
+		if (ret != 0) {
+			/* NVSP v1 failed, return bad status */
+			return (ret);
+		}
+	}
+	net_dev->nvsp_version = nvsp_vers;
+
+	/*
+	 * Send the NDIS version
+	 */
 	init_pkt = &net_dev->channel_init_packet;
 
 	memset(init_pkt, 0, sizeof(nvsp_msg));
-	init_pkt->hdr.msg_type = nvsp_msg_type_init;
-	/*
-	 * XXXKYS: These are ancient versions! Need to update.
-	 */
-	init_pkt->msgs.init_msgs.init.min_protocol_version =
-	NVSP_MIN_PROTOCOL_VERSION;
-	init_pkt->msgs.init_msgs.init.max_protocol_version =
-	NVSP_MAX_PROTOCOL_VERSION;
-
-	/* Send the init request */
-	ret = hv_vmbus_channel_send_packet(device->channel, init_pkt,
-	    sizeof(nvsp_msg), (uint64_t)init_pkt, VmbusPacketTypeDataInBand,
-	    VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
-
-	if (ret != 0) {
-		goto cleanup;
-	}
-
-	sema_wait(&net_dev->channel_init_sema);
-
-	if (init_pkt->msgs.init_msgs.init_compl.status != nvsp_status_success) {
-		ret = -EINVAL;
-		goto cleanup;
-	}
-
-	if (init_pkt->msgs.init_msgs.init_compl.negotiated_prot_vers !=
-						    NVSP_PROTOCOL_VERSION_1) {
-		ret = -EPROTO;
-		goto cleanup;
-	}
-
-	/* Send the ndis version */
-	memset(init_pkt, 0, sizeof(nvsp_msg));
 
 	/*
-	 * Fixme:  Magic number
-	 * Fixme:  This represents version 5.0, which needs to be updated
+	 * Updated to version 5.1, minimum, for VLAN per Haiyang
 	 */
-	ndis_version = 0x00050000;
+	ndis_version = NDIS_VERSION;
 
 	init_pkt->hdr.msg_type = nvsp_msg_1_type_send_ndis_vers;
 	init_pkt->msgs.vers_1_msgs.send_ndis_vers.ndis_major_vers =
@@ -525,7 +552,7 @@ hv_nv_connect_to_vsp(struct hv_device *device)
 
 	/* Send the init request */
 
-	ret = hv_vmbus_channel_send_packet( device->channel, init_pkt,
+	ret = hv_vmbus_channel_send_packet(device->channel, init_pkt,
 	    sizeof(nvsp_msg), (uint64_t)init_pkt, VmbusPacketTypeDataInBand, 0);
 	if (ret != 0) {
 		goto cleanup;
@@ -932,6 +959,13 @@ hv_nv_on_receive(struct hv_device *device, VMPACKET_DESCRIPTOR *pkt)
 		 * has been moved into this function.
 		 */
 		hv_rf_on_receive(device, net_vsc_pkt);
+
+		/*
+		 * Moved completion call back here so that all received 
+		 * messages (not just data messages) will trigger a response
+		 * message back to the host.
+		 */
+		hv_nv_on_receive_completion(net_vsc_pkt);
 	}
 }
 
@@ -945,8 +979,7 @@ hv_nv_send_receive_completion(struct hv_device *device, uint64_t tid)
 	int retries = 0;
 	int ret = 0;
 	
-	rx_comp_msg.hdr.msg_type =
-	    nvsp_msg_1_type_send_rndis_pkt_complete;
+	rx_comp_msg.hdr.msg_type = nvsp_msg_1_type_send_rndis_pkt_complete;
 
 	/* Pass in the status */
 	rx_comp_msg.msgs.vers_1_msgs.send_rndis_pkt_complete.status =
