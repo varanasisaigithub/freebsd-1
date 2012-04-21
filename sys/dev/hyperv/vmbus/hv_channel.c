@@ -606,9 +606,9 @@ hv_vmbus_channel_close(VMBUS_CHANNEL *Channel)
 	hv_vmbus_channel_close_channel* msg;
 	VMBUS_CHANNEL_MSGINFO* info;
 
-	mtx_lock_spin(&Channel->InboundLock);
+	mtx_lock(&Channel->InboundLock);
 	Channel->OnChannelCallback = NULL;
-	mtx_unlock_spin(&Channel->InboundLock);
+	mtx_unlock(&Channel->InboundLock);
 
 	// Send a closing message
 	info = (VMBUS_CHANNEL_MSGINFO *)

@@ -70,7 +70,7 @@
 #include <vm/pmap.h>
 
 
-#include "../include/hyperv.h"
+#include <dev/hyperv/include/hyperv.h>
 #include "vmbus_priv.h"
 
 //
@@ -330,11 +330,11 @@ VmbusProcessChannelEvent(uint32_t relid)
 	 * callback to NULL. This closes the window.
 	 */
 
-	mtx_lock_spin(&channel->InboundLock);
-	if (channel->OnChannelCallback != NULL)
+	mtx_lock(&channel->InboundLock);
+	if (channel->OnChannelCallback != NULL) {
 		channel->OnChannelCallback(channel->ChannelCallbackContext);
-
-	mtx_unlock_spin(&channel->InboundLock);
+	}
+	mtx_unlock(&channel->InboundLock);
 
 }
 

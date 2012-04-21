@@ -701,71 +701,63 @@ typedef struct hv_vmbus_pipe_hdr {
 struct hv_vmbus_ic_version {
 	uint16_t major;
 	uint16_t minor;
-} hv_vmbus_ic_version;
+}__attribute__((packed));
 
-typedef struct hv_vmbus_icmsg_hdr {
-	hv_vmbus_ic_version	icverframe;
-	uint16_t		icmsgtype;
-	hv_vmbus_ic_version	icvermsg;
-	uint16_t		icmsgsize;
-	uint32_t		status;
-	uint8_t			ictransaction_id;
-	uint8_t			icflags;
-	uint8_t			reserved[2];
-} hv_vmbus_icmsg_hdr;
+struct icmsg_hdr {
+	struct ic_version icverframe;
+	uint16_t icmsgtype;
+	struct ic_version icvermsg;
+	uint16_t icmsgsize;
+	uint32_t status;
+	uint8_t ictransaction_id;
+	uint8_t icflags;
+	uint8_t reserved[2];
+}__attribute__((packed));
 
-typedef struct hv_vmbus_icmsg_negotiate {
-	uint16_t		icframe_vercnt;
-	uint16_t		icmsg_vercnt;
-	uint32_t		reserved;
-	hv_vmbus_ic_version	icversion_data[1]; /* any size array */
-} hv_vmbus_icmsg_negotiate;
+struct icmsg_negotiate {
+	uint16_t icframe_vercnt;
+	uint16_t icmsg_vercnt;
+	uint32_t reserved;
+	struct ic_version icversion_data[1]; /* any size array */
+}__attribute__((packed));
 
-typedef struct hv_shutdown_msg_data {
-	uint32_t		reason_code;
-	uint32_t		timeout_seconds;
-	uint32_t 		flags;
-	uint8_t			display_message[2048];
-} hv_shutdown_msg_data;
+struct shutdown_msg_data {
+	uint32_t reason_code;
+	uint32_t timeout_seconds;
+	uint32_t flags;
+	uint8_t display_message[2048];
+}__attribute__((packed));
 
-typedef struct hv_vmbus_heartbeat_msg_data {
-	uint64_t 		seq_num;
-	uint32_t 		reserved[8];
-} hv_vmbus_heartbeat_msg_data;
+struct heartbeat_msg_data {
+	uint64_t seq_num;
+	uint32_t reserved[8];
+}__attribute__((packed));
 
-typedef struct {
-	/*
-	 * offset in bytes from the start of ring data below
-	 */
-	volatile uint32_t       write_index;
-	/*
-	 * offset in bytes from the start of ring data below
-	 */
-	volatile uint32_t       read_index;
-	/*
-	 * NOTE: The interrupt_mask field is used only for channels, but
-	 * vmbus connection also uses this data structure
-	 */
-	volatile uint32_t       interrupt_mask;
-	uint8_t                 reserved[4084];	/* pad it to PAGE_SIZE so that data starts on a page */
+#pragma pack(pop)
 
-	/*
-	 * WARNING: Ring data starts here + RingDataStartOffset
-	 *  !!! DO NOT place any fields below this !!!
-	 */
-	uint8_t			buffer[0];	/* doubles as interrupt mask */
-} hv_vmbus_ring_buffer;
+typedef struct _RING_BUFFER {
+	volatile uint32_t       WriteIndex;     // Offset in bytes from the start of ring data below
+	volatile uint32_t       ReadIndex;      // Offset in bytes from the start of ring data below
+	volatile uint32_t       InterruptMask;
+	uint8_t                 Reserved[4084]; // Pad it to PAGE_SIZE so that data starts on a page 
 
-typedef struct {
-	hv_vmbus_ring_buffer	*ring_buffer;
-	uint32_t		ring_size;	/* Include the shared header */
-	struct mtx		ring_lock;
-	uint32_t		ring_data_size;	/* < ringSize */
-	uint32_t		RingDataStartOffset;
-} hv_vmbus_ring_buffer_info;
+	// NOTE: The InterruptMask field is used only for channels but since our vmbus connection
+	// also uses this data structure and its data starts here, we commented out this field.
+	// __volatile__ uint32_t InterruptMask;
+	// Ring data starts here + RingDataStartOffset !!! DO NOT place any fields below this !!!
+	uint8_t Buffer[0];
+} __attribute__((__packed__)) RING_BUFFER;
+
+typedef struct _RING_BUFFER_INFO {
+	RING_BUFFER* RingBuffer;
+	uint32_t RingSize;      // Include the shared header
+	struct mtx RingLock;
+	uint32_t RingDataSize;  // < ringSize
+	uint32_t RingDataStartOffset;
+} RING_BUFFER_INFO;
 
 
-typedef void (*hv_vmbus_pfn_channel_callback)(void *context);
+typedef void (*PFN_CHANNEL_CALLBACK)(void *context);
 
 typedef enum {
 	HV_CHANNEL_OFFER_STATE,
@@ -799,6 +791,8 @@ typedef struct _VMBUS_CHANNEL {
 	void *ChannelCallbackContext;
 
 } VMBUS_CHANNEL;
+
+#pragma pack(push,1)
 
 struct hv_device {
 	hv_guid			class_id;

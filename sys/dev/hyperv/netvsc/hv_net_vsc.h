@@ -22,7 +22,8 @@
  *
  * Ported from lis21 code drop
  *
- * HyperV vmbus network vsc header file
+ * HyperV vmbus (virtual machine bus) network VSC (virtual services client)
+ * header file
  *
  */
 
@@ -68,11 +69,12 @@
 #include "../include/hyperv.h"
 
 
-#define NVSP_INVALID_PROTOCOL_VERSION           ((uint32_t)0xFFFFFFFF)
+#define NVSP_INVALID_PROTOCOL_VERSION           (0xFFFFFFFF)
 
 #define NVSP_PROTOCOL_VERSION_1                 2
+#define NVSP_PROTOCOL_VERSION_2                 0x30002
 #define NVSP_MIN_PROTOCOL_VERSION               (NVSP_PROTOCOL_VERSION_1)
-#define NVSP_MAX_PROTOCOL_VERSION               (NVSP_PROTOCOL_VERSION_1)
+#define NVSP_MAX_PROTOCOL_VERSION               (NVSP_PROTOCOL_VERSION_2)
 
 typedef enum nvsp_msg_type_ {
 	nvsp_msg_type_none                      = 0,
@@ -102,24 +104,51 @@ typedef enum nvsp_msg_type_ {
 	nvsp_msg_1_type_send_rndis_pkt_complete,
     
 	/*
-	 * This should be set to the number of messages for the version
-	 * with the maximum number of messages.
+	 * Version 2 Messages
 	 */
-	nvsp_num_msg_per_version                = 9,
+	nvsp_msg_2_type_send_chimney_delegated_buf,
+	nvsp_msg_2_type_send_chimney_delegated_buf_complete,
+	nvsp_msg_2_type_revoke_chimney_delegated_buf,
+
+	nvsp_msg_2_type_resume_chimney_rx_indication,
+
+	nvsp_msg_2_type_terminate_chimney,
+	nvsp_msg_2_type_terminate_chimney_complete,
+
+	nvsp_msg_2_type_indicate_chimney_event,
+
+	nvsp_msg_2_type_send_chimney_packet,
+	nvsp_msg_2_type_send_chimney_packet_complete,
+
+	nvsp_msg_2_type_post_chimney_rx_request,
+	nvsp_msg_2_type_post_chimney_rx_request_complete,
+
+	nvsp_msg_2_type_alloc_rx_buf,
+	nvsp_msg_2_type_alloc_rx_buf_complete,
+
+	nvsp_msg_2_type_free_rx_buf,
+
+	nvsp_msg_2_send_vmq_rndis_pkt,
+	nvsp_msg_2_send_vmq_rndis_pkt_complete,
+
+	nvsp_msg_2_type_send_ndis_config,
+
+	nvsp_msg_2_type_alloc_chimney_handle,
+	nvsp_msg_2_type_alloc_chimney_handle_complete,
 } nvsp_msg_type;
 
 typedef enum nvsp_status_ {
 	nvsp_status_none = 0,
 	nvsp_status_success,
 	nvsp_status_failure,
+	/* Deprecated */
 	nvsp_status_prot_vers_range_too_new,
+	/* Deprecated */
 	nvsp_status_prot_vers_range_too_old,
 	nvsp_status_invalid_rndis_pkt,
 	nvsp_status_busy,
 	nvsp_status_max,
 } nvsp_status;
-
-#pragma pack(push, 1)
 
 typedef struct nvsp_msg_hdr_ {
 	uint32_t                                msg_type;
@@ -138,7 +167,7 @@ typedef struct nvsp_msg_hdr_ {
 typedef struct nvsp_msg_init_ {
 	uint32_t                                min_protocol_version;
 	uint32_t                                max_protocol_version;
-} __attribute__((packed))  nvsp_msg_init;
+} __attribute__((packed)) nvsp_msg_init;
 
 /*
  * This message is used by the VSP to complete the initialization
@@ -263,7 +292,7 @@ typedef struct nvsp_1_msg_revoke_send_buf_ {
 
 /*
  * This message is used by both the VSP and the VSC to send
- * a RNDIS message to the opposite channel endpoint.
+ * an RNDIS message to the opposite channel endpoint.
  */
 typedef struct nvsp_1_msg_send_rndis_pkt_ {
 	/*
@@ -324,8 +353,6 @@ typedef struct nvsp_msg_ {
 	nvsp_all_msgs                           msgs;
 } __attribute__((packed)) nvsp_msg;
 
-#pragma pack(pop)
-
 
 /*
  * Defines
@@ -384,7 +411,10 @@ typedef struct netvsc_dev_ {
 
 	/* Holds rndis device info */
 	void					*extension;
+
 	bool					destroy;
+	/* Negotiated NVSP version */
+	uint32_t				nvsp_version;
 } netvsc_dev;
 
 
@@ -411,20 +441,20 @@ typedef struct netvsc_packet_ {
 	 */
 	STAILQ_ENTRY(netvsc_packet_) mylist_entry;
 	struct hv_device           *device;
-	bool                    is_data_pkt;      /* One byte */
-	xfer_page_packet        *xfer_page_pkt;
+	bool                       is_data_pkt;      /* One byte */
+	xfer_page_packet           *xfer_page_pkt;
 
 	/* Completion */
 	union {
 		struct {
-			uint64_t rx_completion_tid;
-			void	*rx_completion_context;
+			uint64_t   rx_completion_tid;
+			void	   *rx_completion_context;
 			/* This is no longer used */
 			pfn_on_send_rx_completion   on_rx_completion;
 		} rx;
 		struct {
-			uint64_t send_completion_tid;
-			void	*send_completion_context;
+			uint64_t    send_completion_tid;
+			void	    *send_completion_context;
 			/* Still used in netvsc and filter code */
 			pfn_on_send_rx_completion   on_send_completion;
 		} send;
