@@ -69,81 +69,80 @@
 #include <vm/vm_param.h>
 #include <vm/pmap.h>
 
-
-#include <dev/hyperv/include/hyperv.h>
+#include "hyperv.h"
 #include "vmbus_priv.h"
 
 //
 // Globals
 //
 
-VMBUS_CONNECTION gVmbusConnection =
-	{ .ConnectState = Disconnected,
-	  .NextGpadlHandle = 0xE1E10, };
+hv_vmbus_connection hv_vmbus_g_connection =
+	{ .connect_state = HV_DISCONNECTED,
+	  .next_gpadl_handle = 0xE1E10, };
 
 /*++
 
  Name:
- VmbusConnect()
+ hv_vmbus_connect()
 
  Description:
  Sends a connect request on the partition service connection
 
  --*/
 int
-VmbusConnect(void) {
+hv_vmbus_connect(void) {
 	int ret = 0;
-	VMBUS_CHANNEL_MSGINFO *msgInfo = NULL;
+	hv_vmbus_channel_msg_info *msgInfo = NULL;
 	hv_vmbus_channel_initiate_contact *msg;
 
 
 	// Make sure we are not connecting or connected
-	if (gVmbusConnection.ConnectState != Disconnected) {
+	if (hv_vmbus_g_connection.connect_state != HV_DISCONNECTED) {
 		return -1;
 	}
 
 	// Initialize the vmbus connection
-	gVmbusConnection.ConnectState = Connecting;
-	gVmbusConnection.WorkQueue = hv_work_queue_create("vmbusQ");
-	sema_init(&gVmbusConnection.control_sema, 1, "control_sema");
+	hv_vmbus_g_connection.connect_state = HV_CONNECTING;
+	hv_vmbus_g_connection.work_queue = hv_work_queue_create("vmbusQ");
+	sema_init(&hv_vmbus_g_connection.control_sema, 1, "control_sema");
 
-	TAILQ_INIT(&gVmbusConnection.channel_msg_anchor);
-	mtx_init(&gVmbusConnection.ChannelMsgLock, "vmbus channel msg",
+	TAILQ_INIT(&hv_vmbus_g_connection.channel_msg_anchor);
+	mtx_init(&hv_vmbus_g_connection.channel_msg_lock, "vmbus channel msg",
 		NULL, MTX_SPIN);
 
-	TAILQ_INIT(&gVmbusConnection.channel_anchor);
-	mtx_init(&gVmbusConnection.ChannelLock, "vmbus channel",
+	TAILQ_INIT(&hv_vmbus_g_connection.channel_anchor);
+	mtx_init(&hv_vmbus_g_connection.channel_lock, "vmbus channel",
 		NULL, MTX_SPIN);
 
 	// Set up the vmbus event connection for channel interrupt abstraction
 	// stuff
-	gVmbusConnection.interrupt_page = contigmalloc(PAGE_SIZE, M_DEVBUF,
+	hv_vmbus_g_connection.interrupt_page = contigmalloc(PAGE_SIZE, M_DEVBUF,
 					 M_NOWAIT | M_ZERO, 0UL, BUS_SPACE_MAXADDR,
 					 PAGE_SIZE, 0);
 
-	if (gVmbusConnection.interrupt_page == NULL) {
+	if (hv_vmbus_g_connection.interrupt_page == NULL) {
 		ret = -ENOMEM;
 		goto Cleanup;
 	}
 
-	gVmbusConnection.recv_interrupt_page = gVmbusConnection.interrupt_page;
-	gVmbusConnection.send_interrupt_page =
-		((uint8_t *) gVmbusConnection.interrupt_page + (PAGE_SIZE >> 1));
+	hv_vmbus_g_connection.recv_interrupt_page = hv_vmbus_g_connection.interrupt_page;
+	hv_vmbus_g_connection.send_interrupt_page =
+		((uint8_t *) hv_vmbus_g_connection.interrupt_page + (PAGE_SIZE >> 1));
 
 	// Set up the monitor notification facility. The 1st page for
 	// parent->child and the 2nd page for child->parent
-	gVmbusConnection.MonitorPages = contigmalloc(2*PAGE_SIZE, M_DEVBUF,
+	hv_vmbus_g_connection.monitor_pages = contigmalloc(2*PAGE_SIZE, M_DEVBUF,
 					 M_NOWAIT | M_ZERO,
 					 0UL, BUS_SPACE_MAXADDR,
 					 PAGE_SIZE, 0);
 
-	if (gVmbusConnection.MonitorPages == NULL) {
+	if (hv_vmbus_g_connection.monitor_pages == NULL) {
 		ret = -ENOMEM;
 		goto Cleanup;
 	}
 
-	msgInfo = (VMBUS_CHANNEL_MSGINFO*)
-			malloc(sizeof(VMBUS_CHANNEL_MSGINFO) +
+	msgInfo = (hv_vmbus_channel_msg_info*)
+			malloc(sizeof(hv_vmbus_channel_msg_info) +
 				sizeof(hv_vmbus_channel_initiate_contact),
 				M_DEVBUF, M_NOWAIT | M_ZERO);
 
@@ -153,42 +152,49 @@ VmbusConnect(void) {
 	}
 
 	sema_init(&msgInfo->wait_sema, 0, "Msg Info Sema");
-	msg = (hv_vmbus_channel_initiate_contact*) msgInfo->Msg;
+	msg = (hv_vmbus_channel_initiate_contact*) msgInfo->msg;
 
 	msg->header.message_type = HV_CHANNEL_MESSAGE_INITIATED_CONTACT;
 	msg->vmbus_version_requested = HV_VMBUS_REVISION_NUMBER;
-	msg->interrupt_page = hv_get_phys_addr(gVmbusConnection.interrupt_page);
-	msg->monitor_page_1 = hv_get_phys_addr(gVmbusConnection.MonitorPages);
+	msg->interrupt_page = hv_get_phys_addr(hv_vmbus_g_connection.interrupt_page);
+	msg->monitor_page_1 = hv_get_phys_addr(hv_vmbus_g_connection.monitor_pages);
 	msg->monitor_page_2 =
-		hv_get_phys_addr(((uint8_t *) gVmbusConnection.MonitorPages
+		hv_get_phys_addr(((uint8_t *) hv_vmbus_g_connection.monitor_pages
 					+ PAGE_SIZE));
 
 	// Add to list before we send the request since we may receive the
 	// response before returning from this routine
-	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
-	TAILQ_INSERT_TAIL(&gVmbusConnection.channel_msg_anchor, msgInfo, MsgListEntry);
-	mtx_unlock_spin(&gVmbusConnection.ChannelMsgLock);
+	mtx_lock_spin(&hv_vmbus_g_connection.channel_msg_lock);
+	TAILQ_INSERT_TAIL(
+		&hv_vmbus_g_connection.channel_msg_anchor,
+		msgInfo,
+		msg_list_entry);
+	mtx_unlock_spin(&hv_vmbus_g_connection.channel_msg_lock);
 
-
-	ret = VmbusPostMessage(msg, sizeof(hv_vmbus_channel_initiate_contact));
+	ret = hv_vmbus_post_message(msg, sizeof(hv_vmbus_channel_initiate_contact));
 	if (ret != 0) {
-		mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
-		TAILQ_REMOVE(&gVmbusConnection.channel_msg_anchor, msgInfo, MsgListEntry);
-		mtx_unlock_spin(&gVmbusConnection.ChannelMsgLock);
+		mtx_lock_spin(&hv_vmbus_g_connection.channel_msg_lock);
+		TAILQ_REMOVE(
+			&hv_vmbus_g_connection.channel_msg_anchor,
+			msgInfo,
+			msg_list_entry);
+		mtx_unlock_spin(&hv_vmbus_g_connection.channel_msg_lock);
 		goto Cleanup;
 	}
 
 	// Wait for the connection response
 	ret = sema_timedwait(&msgInfo->wait_sema, 500); //KYS 5 seconds
 
-
-	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
-	TAILQ_REMOVE(&gVmbusConnection.channel_msg_anchor, msgInfo, MsgListEntry);
-	mtx_unlock_spin(&gVmbusConnection.ChannelMsgLock);
+	mtx_lock_spin(&hv_vmbus_g_connection.channel_msg_lock);
+	TAILQ_REMOVE(
+		&hv_vmbus_g_connection.channel_msg_anchor,
+		msgInfo,
+		msg_list_entry);
+	mtx_unlock_spin(&hv_vmbus_g_connection.channel_msg_lock);
 
 	// Check if successful
-	if (msgInfo->Response.VersionResponse.version_supported) {
-		gVmbusConnection.ConnectState = Connected;
+	if (msgInfo->response.version_response.version_supported) {
+		hv_vmbus_g_connection.connect_state = HV_CONNECTED;
 	} else {
 		ret = -ECONNREFUSED;
 		goto Cleanup;
@@ -201,21 +207,21 @@ VmbusConnect(void) {
 
 Cleanup:
 
-	gVmbusConnection.ConnectState = Disconnected;
+	hv_vmbus_g_connection.connect_state = HV_DISCONNECTED;
 
-	hv_work_queue_close(gVmbusConnection.WorkQueue);
-	sema_destroy(&gVmbusConnection.control_sema);
-	mtx_destroy(&gVmbusConnection.ChannelLock);
-	mtx_destroy(&gVmbusConnection.ChannelMsgLock);
+	hv_work_queue_close(hv_vmbus_g_connection.work_queue);
+	sema_destroy(&hv_vmbus_g_connection.control_sema);
+	mtx_destroy(&hv_vmbus_g_connection.channel_lock);
+	mtx_destroy(&hv_vmbus_g_connection.channel_msg_lock);
 
-	if (gVmbusConnection.interrupt_page) {
-		contigfree(gVmbusConnection.interrupt_page, PAGE_SIZE, M_DEVBUF);
-		gVmbusConnection.interrupt_page = NULL;
+	if (hv_vmbus_g_connection.interrupt_page) {
+		contigfree(hv_vmbus_g_connection.interrupt_page, PAGE_SIZE, M_DEVBUF);
+		hv_vmbus_g_connection.interrupt_page = NULL;
 	}
 
-	if (gVmbusConnection.MonitorPages) {
-		contigfree(gVmbusConnection.MonitorPages, 2 * PAGE_SIZE, M_DEVBUF);
-		gVmbusConnection.MonitorPages = NULL;
+	if (hv_vmbus_g_connection.monitor_pages) {
+		contigfree(hv_vmbus_g_connection.monitor_pages, 2 * PAGE_SIZE, M_DEVBUF);
+		hv_vmbus_g_connection.monitor_pages = NULL;
 	}
 
 	if (msgInfo) {
@@ -230,14 +236,14 @@ Cleanup:
 /*++
 
  Name:
- VmbusDisconnect()
+ hv_vmbus_disconnect()
 
  Description:
  Sends a disconnect request on the partition service connection
 
  --*/
 int
-VmbusDisconnect(void) {
+hv_vmbus_disconnect(void) {
 	int ret = 0;
 	hv_vmbus_channel_unload *msg;
 
@@ -248,18 +254,18 @@ VmbusDisconnect(void) {
 
 	msg->message_type = HV_CHANNEL_MESSAGE_UNLOAD;
 
-	ret = VmbusPostMessage(msg, sizeof(hv_vmbus_channel_unload));
+	ret = hv_vmbus_post_message(msg, sizeof(hv_vmbus_channel_unload));
 
 	KASSERT(ret == 0, ("Message Post Failed\n"));
 
-	contigfree(gVmbusConnection.interrupt_page, PAGE_SIZE, M_DEVBUF);
+	contigfree(hv_vmbus_g_connection.interrupt_page, PAGE_SIZE, M_DEVBUF);
 
-	mtx_destroy(&gVmbusConnection.ChannelMsgLock);
+	mtx_destroy(&hv_vmbus_g_connection.channel_msg_lock);
 
-	hv_work_queue_close(gVmbusConnection.WorkQueue);
-	sema_destroy(&gVmbusConnection.control_sema);
+	hv_work_queue_close(hv_vmbus_g_connection.work_queue);
+	sema_destroy(&hv_vmbus_g_connection.control_sema);
 
-	gVmbusConnection.ConnectState = Disconnected;
+	hv_vmbus_g_connection.connect_state = HV_DISCONNECTED;
 
 	free(msg, M_DEVBUF);
 
@@ -270,7 +276,7 @@ VmbusDisconnect(void) {
 /*++
 
  Name:
- GetChannelFromRelId()
+ hv_vmbus_get_channel_from_rel_id()
 
  Description:
  Get the channel object given its child relative id (ie channel id)
@@ -278,20 +284,20 @@ VmbusDisconnect(void) {
  XXX Consider optimization where relids are stored in a fixed size array
  and channels are accessed without the need to take this lock or search the list.
  --*/
-VMBUS_CHANNEL*
-GetChannelFromRelId(uint32_t relId) {
-	VMBUS_CHANNEL* channel;
-	VMBUS_CHANNEL* foundChannel = NULL;
+hv_vmbus_channel*
+hv_vmbus_get_channel_from_rel_id(uint32_t relId) {
+	hv_vmbus_channel* channel;
+	hv_vmbus_channel* foundChannel = NULL;
 
-	mtx_lock_spin(&gVmbusConnection.ChannelLock);
-	TAILQ_FOREACH(channel, &gVmbusConnection.channel_anchor, ListEntry) {
+	mtx_lock_spin(&hv_vmbus_g_connection.channel_lock);
+	TAILQ_FOREACH(channel, &hv_vmbus_g_connection.channel_anchor, list_entry) {
 
-		if (channel->OfferMsg.child_rel_id == relId) {
+		if (channel->offer_msg.child_rel_id == relId) {
 			foundChannel = channel;
 			break;
 		}
 	}
-	mtx_unlock_spin(&gVmbusConnection.ChannelLock);
+	mtx_unlock_spin(&hv_vmbus_g_connection.channel_lock);
 
 	return foundChannel;
 }
@@ -309,14 +315,14 @@ static void
 VmbusProcessChannelEvent(uint32_t relid) 
 {
 
-	VMBUS_CHANNEL* channel;
+	hv_vmbus_channel* channel;
 
 	/*
 	 * Find the channel based on this relid and invokes
 	 * the channel callback to process the event
 	 */
 
-	channel = GetChannelFromRelId(relid);
+	channel = hv_vmbus_get_channel_from_rel_id(relid);
 
 	if (!channel) {
 		return;
@@ -330,11 +336,11 @@ VmbusProcessChannelEvent(uint32_t relid)
 	 * callback to NULL. This closes the window.
 	 */
 
-	mtx_lock(&channel->InboundLock);
-	if (channel->OnChannelCallback != NULL) {
-		channel->OnChannelCallback(channel->ChannelCallbackContext);
+	mtx_lock(&channel->inbound_lock);
+	if (channel->on_channel_callback != NULL) {
+		channel->on_channel_callback(channel->channel_callback_context);
 	}
-	mtx_unlock(&channel->InboundLock);
+	mtx_unlock(&channel->inbound_lock);
 
 }
 
@@ -352,10 +358,10 @@ vmbus_on_events(void *arg)
 {
 	int dword;
 	//int maxdword = PAGE_SIZE >> 3; // receive size is 1/2 page and divide that by 4 bytes
-	int maxdword = MAX_NUM_CHANNELS_SUPPORTED >> 5;
+	int maxdword = HV_MAX_NUM_CHANNELS_SUPPORTED >> 5;
 	int bit;
 	int relid;
-	uint32_t* recv_interrupt_page = gVmbusConnection.recv_interrupt_page;
+	uint32_t* recv_interrupt_page = hv_vmbus_g_connection.recv_interrupt_page;
 
 	// Check events
 	if (recv_interrupt_page) {
@@ -388,21 +394,21 @@ vmbus_on_events(void *arg)
 /*++
 
  Name:
- VmbusPostMessage()
+ hv_vmbus_post_message()
 
  Description:
  Send a msg on the vmbus's message connection
 
  --*/
-int VmbusPostMessage(void *buffer, size_t bufferLen) {
+int hv_vmbus_post_message(void *buffer, size_t bufferLen) {
 	int ret = 0;
-	HV_CONNECTION_ID connId;
+	hv_vmbus_connection_id connId;
 	int retries = 0;
 
 	while (retries < 3) {
-		connId.Asuint32_t = 0;
-		connId.u.Id = VMBUS_MESSAGE_CONNECTION_ID;
-		ret = HvPostMessage(connId, 1, buffer, bufferLen);
+		connId.as_uint32_t = 0;
+		connId.u.id = HV_VMBUS_MESSAGE_CONNECTION_ID;
+		ret = hv_vmbus_post_message_via_msg_ipc(connId, 1, buffer, bufferLen);
 		if (ret != HV_STATUS_INSUFFICIENT_BUFFERS)
                         return ret;
 		retries++;
@@ -415,21 +421,21 @@ int VmbusPostMessage(void *buffer, size_t bufferLen) {
 /*++
 
  Name:
- VmbusSetEvent()
+ hv_vmbus_set_event()
 
  Description:
  Send an event notification to the parent
 
  --*/
 int
-VmbusSetEvent(uint32_t childRelId) {
+hv_vmbus_set_event(uint32_t childRelId) {
 	int ret = 0;
 
 
 	// Each uint32_t represents 32 channels
 	synch_set_bit(childRelId & 31,
-		(((uint32_t *)gVmbusConnection.send_interrupt_page + (childRelId >> 5))));
-	ret = HvSignalEvent();
+		(((uint32_t *)hv_vmbus_g_connection.send_interrupt_page + (childRelId >> 5))));
+	ret = hv_vmbus_signal_event();
 
 	return ret;
 }

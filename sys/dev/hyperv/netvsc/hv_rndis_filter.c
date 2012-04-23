@@ -70,11 +70,9 @@
 #include <vm/vm_param.h>
 #include <vm/pmap.h>
 
-
-#include "../include/hyperv.h"
-#include <dev/hyperv/netvsc/hv_net_vsc.h>
-#include <dev/hyperv/netvsc/hv_rndis.h>
-
+#include "hyperv.h"
+#include "hv_net_vsc.h"
+#include "hv_rndis.h"
 
 /*
  * Data types
@@ -100,7 +98,7 @@ typedef struct rndis_request_ {
 
 	/* Simplify allocation by having a netvsc packet inline */
 	netvsc_packet			pkt;
-	PAGE_BUFFER			buffer;
+	hv_vmbus_page_buffer			buffer;
 	/* Fixme:  We assumed a fixed size request here. */
 	rndis_msg			request_msg;
 } rndis_request;
@@ -285,7 +283,7 @@ hv_rf_receive_response(rndis_device *device, rndis_msg *response)
 	request = STAILQ_FIRST(&device->myrequest_list);
 	while (request != NULL) {
 		/*
-		 * All request/response message contains RequestId as the
+		 * All request/response message contains request_id as the
 		 * first field
 		 */
 		if (request->request_msg.msg.init_request.request_id ==
@@ -704,7 +702,7 @@ hv_rf_open_device(rndis_device *device)
 		return (0);
 	}
 
-	if (promisc_mode != 1) {
+	if (hv_promisc_mode != 1) {
 		ret = hv_rf_set_packet_filter(device, 
 		    NDIS_PACKET_TYPE_BROADCAST     |
 		    NDIS_PACKET_TYPE_ALL_MULTICAST |

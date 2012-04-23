@@ -84,36 +84,36 @@ vmbus_msg_swintr(void *dummy)
 {
 	int cpu;
 	void *page_addr;
-	HV_MESSAGE *msg;
-	HV_MESSAGE *copied;
+	hv_vmbus_message *msg;
+	hv_vmbus_message *copied;
 
 	cpu = PCPU_GET(cpuid);
-	page_addr = gHvContext.synICMessagePage[cpu];
-	msg = (HV_MESSAGE*) page_addr + VMBUS_MESSAGE_SINT;
+	page_addr = hv_vmbus_g_context.syn_ic_message_page[cpu];
+	msg = (hv_vmbus_message*) page_addr + HV_VMBUS_MESSAGE_SINT;
 	while (1) {
-		if (msg->header.MessageType == HvMessageTypeNone) {
+		if (msg->header.message_type == HV_MESSAGE_TYPE_NONE) {
 			break; /* no message */
 		} else {
-			copied = malloc(sizeof(HV_MESSAGE), M_DEVBUF, M_NOWAIT);
+			copied = malloc(sizeof(hv_vmbus_message), M_DEVBUF, M_NOWAIT);
 			if (copied == NULL) {
 				continue;
 			}
 
-			memcpy(copied, msg, sizeof(HV_MESSAGE));
-			hv_queue_work_item(gVmbusConnection.WorkQueue,
-				VmbusOnChannelMessage, copied);
+			memcpy(copied, msg, sizeof(hv_vmbus_message));
+			hv_queue_work_item(hv_vmbus_g_connection.work_queue,
+				hv_vmbus_on_channel_message, copied);
 		}
 
-		msg->header.MessageType = HvMessageTypeNone;
+		msg->header.message_type = HV_MESSAGE_TYPE_NONE;
 
-		// Make sure the write to MessageType (ie set to HvMessageTypeNone) happens
-		// before we read the MessagePending and EOMing. Otherwise, the EOMing will not deliver
+		// Make sure the write to message_type (ie set to HV_MESSAGE_TYPE_NONE) happens
+		// before we read the message_pending and EOMing. Otherwise, the EOMing will not deliver
 		// any more messages since there is no empty slot
 		wmb();
 
-		if (msg->header.MessageFlags.MessagePending) {
+		if (msg->header.message_flags.message_pending) {
 			// This will cause message queue rescan to possibly deliver another msg from the hypervisor
-			WriteMsr(HV_X64_MSR_EOM, 0);
+			hv_vmbus_write_msr(HV_X64_MSR_EOM, 0);
 		}
 	}
 }
@@ -139,7 +139,7 @@ hv_vmbus_isr(void *unused)
 {
 	int cpu;
 	void *page_addr;
-	HV_MESSAGE* msg;
+	hv_vmbus_message* msg;
 	HV_SYNIC_EVENT_FLAGS* event;
 
 	cpu = PCPU_GET(cpuid);
@@ -152,19 +152,19 @@ hv_vmbus_isr(void *unused)
 	 * and the Windows team suggested we do the same here.
 	 */
 
-	page_addr = gHvContext.synICEventPage[cpu];
-	event = (HV_SYNIC_EVENT_FLAGS*) page_addr + VMBUS_MESSAGE_SINT;
+	page_addr = hv_vmbus_g_context.syn_ic_event_page[cpu];
+	event = (HV_SYNIC_EVENT_FLAGS*) page_addr + HV_VMBUS_MESSAGE_SINT;
 
 	// Since we are a child, we only need to check bit 0
-	if (synch_test_and_clear_bit(0, &event->Flags32[0])) {
+	if (synch_test_and_clear_bit(0, &event->flags32[0])) {
 		swi_sched(event_swintr, 0);
 	}
 
 	// Check if there are actual msgs to be process
-	page_addr = gHvContext.synICMessagePage[cpu];
-	msg = (HV_MESSAGE*) page_addr + VMBUS_MESSAGE_SINT;
+	page_addr = hv_vmbus_g_context.syn_ic_message_page[cpu];
+	msg = (hv_vmbus_message*) page_addr + HV_VMBUS_MESSAGE_SINT;
 
-	if (msg->header.MessageType != HvMessageTypeNone) {
+	if (msg->header.message_type != HV_MESSAGE_TYPE_NONE) {
 		swi_sched(msg_swintr, 0);
 	}
 
@@ -209,7 +209,7 @@ static int vmbus_write_ivar(device_t dev, device_t child, int index,
 
 struct hv_device *vmbus_child_device_create(hv_guid type,
 						hv_guid instance,
-						VMBUS_CHANNEL *channel ) 
+						hv_vmbus_channel *channel ) 
 {
 	struct hv_device *child_dev;
 
@@ -283,7 +283,7 @@ static void vmbus_identify(driver_t *driver, device_t parent) {
 static int vmbus_probe(device_t dev) {
 	printf("vmbus_probe\n");
 
-	if (!HvQueryHypervisorPresence())
+	if (!hv_vmbus_query_hypervisor_presence())
 		return (ENXIO);
 
 	device_set_desc(dev, "Vmbus Devices");
@@ -317,7 +317,7 @@ static int vmbus_bus_init(void)
 
 	vmbus_inited = 1;
 
-	ret = HvInit();
+	ret = hv_vmbus_init();
 
 	if (ret) {
 		printf("Hypervisor Initialization Failed\n");
@@ -356,8 +356,8 @@ static int vmbus_bus_init(void)
 
 	/* Setup interrupt filter handler */
 	ret = bus_setup_intr(vmbus_devp, intr_res,
-						 INTR_TYPE_NET | INTR_FAST | INTR_MPSAFE, hv_vmbus_isr, NULL,
-						 NULL, &vmbus_cookiep);
+		INTR_TYPE_NET | INTR_FAST | INTR_MPSAFE, hv_vmbus_isr, NULL,
+		NULL, &vmbus_cookiep);
 
 	if (ret != 0)
 		goto cleanup3;
@@ -379,27 +379,25 @@ static int vmbus_bus_init(void)
 	 * Notify the hypervisor of our irq.
 	 */
 
-	smp_rendezvous(NULL, HvSynicInit, NULL, &vector);
+	smp_rendezvous(NULL, hv_vmbus_synic_init, NULL, &vector);
 
 	// Connect to VMBus in the root partition
-	ret = VmbusConnect();
+	ret = hv_vmbus_connect();
 
 	if (ret)
 		goto cleanup4;
 
-	VmbusChannelRequestOffers();
+	hv_vmbus_request_channel_offers();
 	return ret;
 
 cleanup4:
 
 	/* remove swi, bus and intr resource */
-	bus_teardown_intr(vmbus_devp, intr_res,
-		vmbus_cookiep);
+	bus_teardown_intr(vmbus_devp, intr_res, vmbus_cookiep);
 
 cleanup3:
 
-	bus_release_resource(vmbus_devp, SYS_RES_IRQ,
-		vmbus_rid, intr_res);
+	bus_release_resource(vmbus_devp, SYS_RES_IRQ, vmbus_rid, intr_res);
 
 cleanup2: 
 	swi_remove(event_swintr);
@@ -408,7 +406,7 @@ cleanup1:
 	swi_remove(msg_swintr);
 
 cleanup:
-	HvCleanup();
+	hv_vmbus_cleanup();
 
 	return ret;
 }
@@ -446,12 +444,12 @@ static void vmbus_init(void)
 static void vmbus_bus_exit(void) 
 {
 
-	VmbusChannelReleaseUnattachedChannels();
-	VmbusDisconnect();
+	hv_vmbus_release_unattached_channels();
+	hv_vmbus_disconnect();
 
-	smp_rendezvous(NULL, HvSynicCleanup, NULL, NULL);
+	smp_rendezvous(NULL, hv_vmbus_synic_cleanup, NULL, NULL);
 
-	HvCleanup();
+	hv_vmbus_cleanup();
 
 	/* remove swi, bus and intr resource */
 	bus_teardown_intr(vmbus_devp, intr_res, vmbus_cookiep);

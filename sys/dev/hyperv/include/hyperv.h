@@ -102,27 +102,32 @@ typedef unsigned char bool;
  * A revision number of vmbus that is used for ensuring both ends on a
  * partition are using compatible versions.
  */
+
 #define HV_VMBUS_REVISION_NUMBER	13
 
 /*
  * Make maximum size of pipe payload of 16K
  */
+
 #define HV_MAX_PIPE_DATA_PAYLOAD	(sizeof(BYTE) * 16384)
 
 /*
  * Define pipe_mode values
  */
+
 #define HV_VMBUS_PIPE_TYPE_BYTE		0x00000000
 #define HV_VMBUS_PIPE_TYPE_MESSAGE	0x00000004
 
 /*
  * The size of the user defined data buffer for non-pipe offers
  */
+
 #define HV_MAX_USER_DEFINED_BYTES	120
 
 /*
  *  The size of the user defined data buffer for pipe offers
  */
+
 #define HV_MAX_PIPE_USER_DEFINED_BYTES	116
 
 #pragma pack(push,1)
@@ -130,8 +135,6 @@ typedef unsigned char bool;
 typedef struct hv_guid {
 	 unsigned char data[16];
 } hv_guid;
-
-typedef struct hv_guid hv_guid;
 
 typedef struct hv_bound {
 	int interrupt_mask;
@@ -276,9 +279,9 @@ typedef struct {
  */
 
 typedef struct {
-	uint32_t  byte_count;
-	uint32_t  byte_offset;
-	uint64_t  pfn_array[0];
+	uint32_t byte_count;
+	uint32_t byte_offset;
+	uint64_t pfn_array[0];
 } hv_gpa_range;
 
 /*
@@ -322,7 +325,6 @@ typedef struct {
 /*
  * This is the format for a Additional data Packet.
  */
-
 typedef struct {
 	hv_vm_packet_descriptor	d;
 	uint64_t		total_bytes;
@@ -643,26 +645,16 @@ typedef hv_vmbus_channel_message_header hv_vmbus_channel_unload;
 
 typedef void *hv_vmbus_handle;
 
-#ifndef HV_CONTAINING_RECORD
-#define HV_CONTAINING_RECORD(address, type, field) ((type *)( \
+
+#ifndef CONTAINING_RECORD
+#define CONTAINING_RECORD(address, type, field) ((type *)( \
                                                   (uint8_t *)(address) - \
                                                   (uint8_t *)(&((type *)0)->field)))
-#endif /* HV_CONTAINING_RECORD */
+#endif /* CONTAINING_RECORD */
 
 
-#define HV_VMPACKET_DATA_START_ADDRESS(__packet)	\
-    (void *)(((PUCHAR)__packet) + ((hv_vm_packet_descriptor *)__packet)->data_offset8 * 8)
-
-#define HV_VMPACKET_DATA_LENGTH(__packet)		\
-    ((((hv_vm_packet_descriptor *)__packet)->length8 - ((hv_vm_packet_descriptor *)__packet)->data_offset8) * 8)
-
-#define HV_VMPACKET_TRANSFER_MODE(__packet) ((hv_vm_packet_descriptor *)__packet)->type
-
-#define HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED    1
-
-
-#define HV_CONTAINER_OF(ptr, type, member)	({		\
-        __typeof__( ((type *)0)->member ) *__mptr = (ptr);	\
+#define container_of(ptr, type, member) ({		\
+        __typeof__( ((type *)0)->member ) *__mptr = (ptr);  \
         (type *)( (char *)__mptr - offsetof(type,member) );})
 
 enum {
@@ -672,12 +664,13 @@ enum {
 	HV_VMBUS_IVAR_DEVCTX
 };
 
-
 #define HV_VMBUS_ACCESSOR(var, ivar, type) \
-		__BUS_ACCESSOR(vmbus, var, VMBUS, ivar, type)
+		__BUS_ACCESSOR(vmbus, var, HV_VMBUS, ivar, type)
 
 HV_VMBUS_ACCESSOR(type, TYPE,  const char *)
 HV_VMBUS_ACCESSOR(devctx, DEVCTX,  struct hv_device *)
+
+
 
 /*
  * Common header for Hyper-V ICs
@@ -698,66 +691,73 @@ typedef struct hv_vmbus_pipe_hdr {
 	uint32_t msgsize;
 } hv_vmbus_pipe_hdr;
 
-struct hv_vmbus_ic_version {
+typedef struct hv_vmbus_ic_version {
 	uint16_t major;
 	uint16_t minor;
-}__attribute__((packed));
+} hv_vmbus_ic_version;
 
-struct icmsg_hdr {
-	struct ic_version icverframe;
-	uint16_t icmsgtype;
-	struct ic_version icvermsg;
-	uint16_t icmsgsize;
-	uint32_t status;
-	uint8_t ictransaction_id;
-	uint8_t icflags;
-	uint8_t reserved[2];
-}__attribute__((packed));
+typedef struct hv_vmbus_icmsg_hdr {
+	hv_vmbus_ic_version	icverframe;
+	uint16_t		icmsgtype;
+	hv_vmbus_ic_version	icvermsg;
+	uint16_t		icmsgsize;
+	uint32_t		status;
+	uint8_t			ictransaction_id;
+	uint8_t			icflags;
+	uint8_t			reserved[2];
+} hv_vmbus_icmsg_hdr;
 
-struct icmsg_negotiate {
-	uint16_t icframe_vercnt;
-	uint16_t icmsg_vercnt;
-	uint32_t reserved;
-	struct ic_version icversion_data[1]; /* any size array */
-}__attribute__((packed));
+typedef struct hv_vmbus_icmsg_negotiate {
+	uint16_t		icframe_vercnt;
+	uint16_t		icmsg_vercnt;
+	uint32_t		reserved;
+	hv_vmbus_ic_version	icversion_data[1]; /* any size array */
+} hv_vmbus_icmsg_negotiate;
 
-struct shutdown_msg_data {
-	uint32_t reason_code;
-	uint32_t timeout_seconds;
-	uint32_t flags;
-	uint8_t display_message[2048];
-}__attribute__((packed));
+typedef struct hv_shutdown_msg_data {
+	uint32_t		reason_code;
+	uint32_t		timeout_seconds;
+	uint32_t 		flags;
+	uint8_t			display_message[2048];
+} hv_shutdown_msg_data;
 
-struct heartbeat_msg_data {
-	uint64_t seq_num;
-	uint32_t reserved[8];
-}__attribute__((packed));
+typedef struct hv_vmbus_heartbeat_msg_data {
+	uint64_t 		seq_num;
+	uint32_t 		reserved[8];
+} hv_vmbus_heartbeat_msg_data;
 
-#pragma pack(pop)
+typedef struct {
+	/*
+	 * offset in bytes from the start of ring data below
+	 */
+	volatile uint32_t       write_index;
+	/*
+	 * offset in bytes from the start of ring data below
+	 */
+	volatile uint32_t       read_index;
+	/*
+	 * NOTE: The interrupt_mask field is used only for channels, but
+	 * vmbus connection also uses this data structure
+	 */
+	volatile uint32_t       interrupt_mask;
+	uint8_t                 reserved[4084];	/* pad it to PAGE_SIZE so that data starts on a page */
 
-typedef struct _RING_BUFFER {
-	volatile uint32_t       WriteIndex;     // Offset in bytes from the start of ring data below
-	volatile uint32_t       ReadIndex;      // Offset in bytes from the start of ring data below
-	volatile uint32_t       InterruptMask;
-	uint8_t                 Reserved[4084]; // Pad it to PAGE_SIZE so that data starts on a page 
+	/*
+	 * WARNING: Ring data starts here + RingDataStartOffset
+	 *  !!! DO NOT place any fields below this !!!
+	 */
+	uint8_t			buffer[0];	/* doubles as interrupt mask */
+} hv_vmbus_ring_buffer;
 
-	// NOTE: The InterruptMask field is used only for channels but since our vmbus connection
-	// also uses this data structure and its data starts here, we commented out this field.
-	// __volatile__ uint32_t InterruptMask;
-	// Ring data starts here + RingDataStartOffset !!! DO NOT place any fields below this !!!
-	uint8_t Buffer[0];
-} __attribute__((__packed__)) RING_BUFFER;
+typedef struct {
+	hv_vmbus_ring_buffer	*ring_buffer;
+	uint32_t		ring_size;	/* Include the shared header */
+	struct mtx		ring_lock;
+	uint32_t		ring_data_size;	/* < ringSize */
+	uint32_t		RingDataStartOffset;
+} hv_vmbus_ring_buffer_info;
 
-typedef struct _RING_BUFFER_INFO {
-	RING_BUFFER* RingBuffer;
-	uint32_t RingSize;      // Include the shared header
-	struct mtx RingLock;
-	uint32_t RingDataSize;  // < ringSize
-	uint32_t RingDataStartOffset;
-} RING_BUFFER_INFO;
-
-
-typedef void (*PFN_CHANNEL_CALLBACK)(void *context);
+typedef void (*hv_vmbus_pfn_channel_callback)(void *context);
 
 typedef enum {
 	HV_CHANNEL_OFFER_STATE,
@@ -765,47 +765,54 @@ typedef enum {
 	HV_CHANNEL_OPEN_STATE,
 } hv_vmbus_channel_state;
 
-typedef struct _VMBUS_CHANNEL {
-	TAILQ_ENTRY(_VMBUS_CHANNEL) ListEntry;
-	struct hv_device *device;
-	hv_vmbus_channel_state State;
-	hv_vmbus_channel_offer_channel OfferMsg;
+typedef struct hv_vmbus_channel {
+	TAILQ_ENTRY(hv_vmbus_channel)	list_entry;
+	struct hv_device		*device;
+	hv_vmbus_channel_state		state;
+	hv_vmbus_channel_offer_channel	offer_msg;
 	/*
-	 * These are based on the OfferMsg.monitor_id.
+	 * These are based on the offer_msg.monitor_id.
 	 * Save it here for easy access.
 	 */
-	uint8_t MonitorGroup;
-	uint8_t MonitorBit;
+	uint8_t				monitor_group;
+	uint8_t				monitor_bit;
 
-	uint32_t ring_buffer_gpadl_handle;
+	uint32_t			ring_buffer_gpadl_handle;
+	/*
+	 * Allocated memory for ring buffer
+	 */
+	void				*ring_buffer_pages;
+	uint32_t			ring_buffer_page_count;
+	/*
+	 * send to parent
+	 */
+	hv_vmbus_ring_buffer_info	outbound;
+	/*
+	 * receive from parent
+	 */
+	hv_vmbus_ring_buffer_info	inbound;
 
-	// Allocated memory for ring buffer
-	void *RingBufferPages;
-	uint32_t RingBufferPageCount;
-	hv_vmbus_ring_buffer_info Outbound;      // send to parent
-	hv_vmbus_ring_buffer_info Inbound;       // receive from parent
-	struct mtx InboundLock;
-	hv_vmbus_handle ControlWQ;
+	struct mtx			inbound_lock;
+	hv_vmbus_handle			control_work_queue;
 
-	hv_vmbus_pfn_channel_callback OnChannelCallback;
-	void *ChannelCallbackContext;
+	hv_vmbus_pfn_channel_callback	on_channel_callback;
+	void				*channel_callback_context;
 
-} VMBUS_CHANNEL;
+} hv_vmbus_channel;
 
-#pragma pack(push,1)
 
-struct hv_device {
+typedef struct hv_device {
 	hv_guid			class_id;
 	hv_guid			device_id;
 	device_t		device;
-	VMBUS_CHANNEL		*channel;
-};
+	hv_vmbus_channel	*channel;
+} hv_device;
 
 typedef struct {
 	int		length;
 	int		offset;
 	uint64_t	pfn;
-} PAGE_BUFFER;
+} hv_vmbus_page_buffer;
 
 #define HV_MAX_PAGE_BUFFER_COUNT	16
 #define HV_MAX_MULTIPAGE_BUFFER_COUNT	32
@@ -827,63 +834,90 @@ typedef struct {
 
 #pragma pack(pop)
 
-struct hv_util_service {
-	uint8_t		*recv_buffer;
-	char		*serv_name;
-	struct hv_work_queue *workq;
-	void (*util_cb)(void *);
-	int  (*util_init)(struct hv_util_service *);
-	void (*util_deinit)(void);
-};
+typedef struct hv_util_service {
+	uint8_t			*recv_buffer;
+	char			*serv_name;
+	struct hv_work_queue	*workq;
+	void			(*util_cb)(void *);
+	int  			(*util_init)(struct hv_util_service *);
+	void			(*util_deinit)(void);
+} hv_util_service;
 
 void
-vmbus_prep_negotiate_resp(struct hv_vmbus_icmsg_hdr *icmsghdrp,
-                               struct hv_vmbus_icmsg_negotiate *negop, uint8_t *buf);
+vmbus_prep_negotiate_resp(
+	struct hv_vmbus_icmsg_hdr	*icmsghdrp,
+	struct hv_vmbus_icmsg_negotiate	*negop,
+	uint8_t *buf);
 
 int
-hv_vmbus_channel_recv_packet(VMBUS_CHANNEL *Channel, void *Buffer,
-		uint32_t BufferLen, uint32_t* BufferActualLen,
-		uint64_t* RequestId);
+hv_vmbus_channel_recv_packet(
+	hv_vmbus_channel	*channel,
+	void			*buffer,
+	uint32_t		buffer_len,
+	uint32_t*		buffer_actual_len,
+	uint64_t*		request_id);
 
 int
-hv_vmbus_channel_recv_packet_raw(VMBUS_CHANNEL *Channel, void *Buffer,
-        uint32_t BufferLen, uint32_t* BufferActualLen, uint64_t* RequestId);
+hv_vmbus_channel_recv_packet_raw(
+	hv_vmbus_channel	*channel,
+	void			*buffer,
+	uint32_t		buffer_len,
+	uint32_t*		buffer_actual_len,
+	uint64_t*		request_id);
 
 int
-hv_vmbus_channel_open(VMBUS_CHANNEL *Channel, uint32_t SendRingBufferSize,
-        uint32_t RecvRingBufferSize, void *user_data, uint32_t UserDataLen,
-        hv_vmbus_pfn_channel_callback pfnOnChannelCallback, void *Context);
+hv_vmbus_channel_open(
+	hv_vmbus_channel	*channel,
+	uint32_t		send_ring_buffer_size,
+	uint32_t		recv_ring_buffer_size,
+	void			*user_data,
+	uint32_t		user_data_len,
+	hv_vmbus_pfn_channel_callback pfn_on_channel_callback,
+	void *context);
 
 void
-hv_vmbus_channel_close(VMBUS_CHANNEL *Channel);
-
-
-int
-hv_vmbus_channel_send_packet(VMBUS_CHANNEL *Channel, void *Buffer,
-        uint32_t BufferLen, uint64_t RequestId, hv_vmbus_packet_type Type,
-        uint32_t Flags);
-
+hv_vmbus_channel_close(hv_vmbus_channel *channel);
 
 int
-hv_vmbus_channel_send_packet_pagebuffer(VMBUS_CHANNEL *Channel,
-        PAGE_BUFFER PageBuffers[], uint32_t PageCount, void *Buffer,
-        uint32_t BufferLen, uint64_t RequestId);
+hv_vmbus_channel_send_packet(
+	hv_vmbus_channel	*channel,
+	void			*buffer,
+	uint32_t		buffer_len,
+	uint64_t		request_id,
+	hv_vmbus_packet_type	type,
+	uint32_t		flags);
 
 int
-hv_vmbus_channel_send_packet_multipagebuffer(VMBUS_CHANNEL *Channel,
-        hv_vmbus_multipage_buffer *MultiPageBuffer, void *Buffer, uint32_t BufferLen,
-        uint64_t RequestId);
+hv_vmbus_channel_send_packet_pagebuffer(
+	hv_vmbus_channel	*channel,
+	hv_vmbus_page_buffer	page_buffers[],
+	uint32_t		page_count,
+	void			*buffer,
+	uint32_t		buffer_len,
+	uint64_t		request_id);
 
 int
-hv_vmbus_channel_establish_gpadl(VMBUS_CHANNEL *Channel, void *Kbuffer,// from kmalloc()
-	uint32_t Size,          // page-size multiple
-	uint32_t *GpadlHandle);
+hv_vmbus_channel_send_packet_multipagebuffer(
+	hv_vmbus_channel *channel,
+	hv_vmbus_multipage_buffer *multi_page_buffer,
+	void *Buffer,
+	uint32_t buffer_len,
+	uint64_t request_id);
 
 int
-hv_vmbus_channel_teardown_gpdal(VMBUS_CHANNEL *Channel, uint32_t GpadlHandle);
+hv_vmbus_channel_establish_gpadl(
+	hv_vmbus_channel *channel,
+	void *Kbuffer,	/* from kmalloc()	*/
+	uint32_t size,  /*  page-size multiple	*/
+	uint32_t *gpadl_handle);
+
+int
+hv_vmbus_channel_teardown_gpdal(
+	hv_vmbus_channel *Channel,
+	uint32_t gpadl_handle);
 
 /*
- * Work abstraction.
+ * Work abstraction
  */
 typedef struct hv_work_queue {
 	struct taskqueue	*queue;
@@ -898,14 +932,17 @@ typedef struct hv_work_item {
 	hv_work_queue		*wq;
 } hv_work_item;
 
-struct hv_work_queue *
-hv_work_queue_create(char* name);
+struct hv_work_queue
+*hv_work_queue_create(char* name);
 
 void
 hv_work_queue_close(struct hv_work_queue *wq);
 
 int
-hv_queue_work_item(struct hv_work_queue *wq, void (*callback)(void *), void *context);
+hv_queue_work_item(
+	struct	hv_work_queue *wq,
+	void	(*callback)(void *),
+	void	*context);
 
 static inline unsigned long
 hv_get_phys_addr(void *virt)

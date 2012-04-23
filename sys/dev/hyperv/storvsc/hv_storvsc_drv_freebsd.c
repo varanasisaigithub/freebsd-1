@@ -209,7 +209,7 @@ get_stor_device(struct hv_device *device,
 		}
 	} else {
 		/*
-		 * Inbound case; if being destroyed
+		 * inbound case; if being destroyed
 		 * only permit to account for
 		 * messages already sent out.
 		 */
@@ -845,9 +845,9 @@ storvsc_detach(device_t dev)
 	struct hv_storvsc_request *reqp = NULL;
 	struct hv_device *hv_device = vmbus_get_devctx(dev);
 
-	mtx_lock(&hv_device->channel->InboundLock);
+	mtx_lock(&hv_device->channel->inbound_lock);
 	sc->hs_destroy = true;
-	mtx_unlock(&hv_device->channel->InboundLock);
+	mtx_unlock(&hv_device->channel->inbound_lock);
 
 	/*
 	 * At this point, all outbound traffic should be disable. We
@@ -1035,7 +1035,7 @@ storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		cts->protocol = PROTO_SCSI;
 		cts->protocol_version = SCSI_REV_SPC2;
 
-		/* Enable tag queuing and disconnected mode */
+		/* enable tag queuing and disconnected mode */
 		cts->proto_specific.valid = CTS_SCSI_VALID_TQ;
 		cts->proto_specific.scsi.valid = CTS_SCSI_VALID_TQ;
 		cts->proto_specific.scsi.flags = CTS_SCSI_FLAGS_TAG_ENB;

@@ -867,16 +867,16 @@ typedef struct _rndis_msg {
 /*
  * Externs
  */
-extern int  hv_rndis_filter_init(netvsc_driver_object *driver);
+int  hv_rndis_filter_init(netvsc_driver_object *driver);
 
-extern int  hv_rf_on_receive(struct hv_device *device, netvsc_packet *pkt);
+int  hv_rf_on_receive(struct hv_device *device, netvsc_packet *pkt);
 
-extern int  hv_rf_on_device_add(struct hv_device *device, void *additl_info);
-extern int  hv_rf_on_device_remove(struct hv_device *device);
+int  hv_rf_on_device_add(struct hv_device *device, void *additl_info);
+int  hv_rf_on_device_remove(struct hv_device *device);
 
-extern int  hv_rf_on_open(struct hv_device *device);
-extern int  hv_rf_on_close(struct hv_device *device);
-extern int  hv_rf_on_send(struct hv_device *device, netvsc_packet *pkt);
+int  hv_rf_on_open(struct hv_device *device);
+int  hv_rf_on_close(struct hv_device *device);
+int  hv_rf_on_send(struct hv_device *device, netvsc_packet *pkt);
 
 #endif  /* __HV_RNDIS_H__ */
 

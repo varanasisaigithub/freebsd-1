@@ -67,345 +67,295 @@
 #include <sys/mutex.h>
 #include <sys/sema.h>
 
-#include "../include/hyperv.h"
+#include "hyperv.h"
 
-//
-// Status codes for hypervisor operations.
-//
-typedef uint16_t HV_STATUS, *PHV_STATUS;
+/*
+ *  Status codes for hypervisor operations.
+ */
+
+typedef uint16_t hv_vmbus_status;
 
 #define HV_MESSAGE_SIZE                 (256)
 #define HV_MESSAGE_PAYLOAD_BYTE_COUNT   (240)
 #define HV_MESSAGE_PAYLOAD_QWORD_COUNT  (30)
 #define HV_ANY_VP                       (0xFFFFFFFF)
 
-//
-// Define synthetic interrupt controller flag constants.
-//
+/*
+ * Define synthetic interrupt controller flag constants.
+ */
+
 #define HV_EVENT_FLAGS_COUNT        (256 * 8)
 #define HV_EVENT_FLAGS_BYTE_COUNT   (256)
 #define HV_EVENT_FLAGS_DWORD_COUNT  (256 / sizeof(uint32_t))
 
-
-//
-// MessageId: HV_STATUS_INSUFFICIENT_BUFFERS
-//
-// MessageText:
-//
-// You did not supply enough message buffers to send a message.
-//
+/*
+ * MessageId: HV_STATUS_INSUFFICIENT_BUFFERS
+ * MessageText:
+ *    You did not supply enough message buffers to send a message.
+ *
+ */
 
 #define HV_STATUS_INSUFFICIENT_BUFFERS   ((uint16_t)0x0013)
 
-typedef void (*VMBUS_CHANNEL_CALLBACK)(void *context);
+typedef void (*hv_vmbus_channel_callback)(void *context);
 
-typedef struct _SG_BUFFER_LIST {
-	void		*Data;
+typedef struct {
+	void		*data;
 	uint32_t	length;
-} SG_BUFFER_LIST;
+} hv_vmbus_sg_buffer_list;
 
-typedef struct _RING_BUFFER_DEBUG_INFO {
-	uint32_t Currentinterrupt_mask;
-	uint32_t CurrentReadIndex;
-	uint32_t CurrentWriteIndex;
-	uint32_t BytesAvailToRead;
-	uint32_t BytesAvailToWrite;
-} RING_BUFFER_DEBUG_INFO;
+typedef struct {
+	uint32_t	current_interrupt_mask;
+	uint32_t	current_read_index;
+	uint32_t	current_write_index;
+	uint32_t	bytes_avail_to_read;
+	uint32_t	bytes_avail_to_write;
+} hv_vmbus_ring_buffer_debug_info;
 
-//
-// Interface
-//
-
-extern int
-RingBufferInit(hv_vmbus_ring_buffer_info *RingInfo, void *Buffer, uint32_t BufferLen);
-
-extern void
-RingBufferCleanup(hv_vmbus_ring_buffer_info *RingInfo);
-
-extern int
-RingBufferWrite(hv_vmbus_ring_buffer_info *RingInfo, SG_BUFFER_LIST SgBuffers[],
-	uint32_t SgBufferCount);
-
-extern int
-RingBufferPeek(hv_vmbus_ring_buffer_info *RingInfo, void *Buffer, uint32_t BufferLen);
-
-extern int
-RingBufferRead(hv_vmbus_ring_buffer_info *RingInfo, void *Buffer, uint32_t BufferLen,
-	uint32_t offset);
-
-extern uint32_t
-GetRingBufferinterrupt_mask(hv_vmbus_ring_buffer_info *RingInfo);
-
-extern void
-DumpRingInfo(hv_vmbus_ring_buffer_info* RingInfo, char *Prefix);
-
-extern void
-RingBufferGetDebugInfo(hv_vmbus_ring_buffer_info *RingInfo,
-	hv_vmbus_ring_buffer_DEBUG_INFO *DebugInfo);
-
-/*
- * Externs
- */
-extern void SetRingBufferinterrupt_mask(hv_vmbus_ring_buffer_info *rbi);
-extern void ClearRingBufferinterrupt_mask(hv_vmbus_ring_buffer_info *rbi);
-extern int RingBufferCheck(hv_vmbus_ring_buffer_info *rbi);
-
-
-
-typedef struct _VMBUS_CHANNEL_DEBUG_INFO {
-	uint32_t RelId;
-	hv_vmbus_channel_state State;
-	hv_guid InterfaceType;
-	hv_guid InterfaceInstance;
-	uint32_t monitor_id;
-	uint32_t ServerMonitorPending;
-	uint32_t ServerMonitorLatency;
-	uint32_t ServerMonitorConnectionId;
-	uint32_t ClientMonitorPending;
-	uint32_t ClientMonitorLatency;
-	uint32_t ClientMonitorConnectionId;
-
-	hv_vmbus_ring_buffer_DEBUG_INFO Inbound;
-	hv_vmbus_ring_buffer_DEBUG_INFO Outbound;
-} VMBUS_CHANNEL_DEBUG_INFO;
+typedef struct {
+	uint32_t 		rel_id;
+	hv_vmbus_channel_state	state;
+	hv_guid			interface_type;
+	hv_guid			interface_instance;
+	uint32_t		monitor_id;
+	uint32_t		server_monitor_pending;
+	uint32_t		server_monitor_latency;
+	uint32_t		server_monitor_connection_id;
+	uint32_t		client_monitor_pending;
+	uint32_t		client_monitor_latency;
+	uint32_t		client_monitor_connection_id;
+	hv_vmbus_ring_buffer_debug_info	inbound;
+	hv_vmbus_ring_buffer_debug_info	outbound;
+} hv_vmbus_channel_debug_info;
 
 typedef union {
-	hv_vmbus_channel_version_supported version_supported;
-	hv_vmbus_channel_open_result OpenResult;
-	hv_vmbus_channel_gpadl_torndown GpadlTorndown;
-	hv_vmbus_channel_gpadl_created GpadlCreated;
-	hv_vmbus_channel_version_response VersionResponse;
-} VMBUS_CHANNEL_MESSAGE_RESPONSE;
+	hv_vmbus_channel_version_supported	version_supported;
+	hv_vmbus_channel_open_result		open_result;
+	hv_vmbus_channel_gpadl_torndown		gpadl_torndown;
+	hv_vmbus_channel_gpadl_created		gpadl_created;
+	hv_vmbus_channel_version_response	version_response;
+} hv_vmbus_channel_message_response;
 
-// Represents each channel msg on the vmbus connection
-// This is a variable-size data structure depending on
-// the msg type itself
-typedef struct _VMBUS_CHANNEL_MSGINFO {
-	// Bookkeeping stuff
-	TAILQ_ENTRY(_VMBUS_CHANNEL_MSGINFO)  MsgListEntry;
+/*
+ * Represents each channel msg on the vmbus connection
+ * This is a variable-size data structure depending on
+ * the msg type itself
+ */
+typedef struct hv_vmbus_channel_msg_info {
+	/*
+	 * Bookkeeping stuff
+	 */
+	TAILQ_ENTRY(hv_vmbus_channel_msg_info)  msg_list_entry;
 
-	// So far, this is only used to handle gpadl body message
-	TAILQ_HEAD(, _VMBUS_CHANNEL_MSGINFO) sub_msg_list_anchor; 
-
-	// Synchronize the request/response if needed
-	// KYS: Use a semaphore for now. Not perf critical.
-	struct sema wait_sema;
-
-	VMBUS_CHANNEL_MESSAGE_RESPONSE Response;
-
-	uint32_t MessageSize;
-	// The channel message that goes out on the "wire".
-	// It will contain at minimum the hv_vmbus_channel_message_header header
-	unsigned char Msg[0];
-} VMBUS_CHANNEL_MSGINFO;
-
-extern VMBUS_CHANNEL*
-AllocVmbusChannel(void);
-
-extern void
-FreeVmbusChannel(VMBUS_CHANNEL *Channel);
-
-extern void
-VmbusOnChannelMessage(void *Context);
-
-extern int
-VmbusChannelRequestOffers(void);
-
-extern void
-VmbusChannelReleaseUnattachedChannels(void);
-
+	/*
+	 * So far, this is only used to handle
+	 * gpadl body message
+	 */
+	TAILQ_HEAD(, hv_vmbus_channel_msg_info) sub_msg_list_anchor; 
+	/*
+	 * Synchronize the request/response if
+	 * needed.
+	 * KYS: Use a semaphore for now.
+	 * Not perf critical.
+	 */
+	struct sema				wait_sema;
+	hv_vmbus_channel_message_response	response;
+	uint32_t				message_size;
+	/*
+	 * The channel message that goes out on
+	 *  the "wire". It will contain at
+	 *  minimum the
+	 *  hv_vmbus_channel_message_header
+	 * header.
+	 */
+	unsigned char 				msg[0];
+} hv_vmbus_channel_msg_info;
 
 #pragma pack(push,1)
 
-// The format must be the same as hv_vm_data_gpa_direct
-typedef struct _VMBUS_CHANNEL_PACKET_PAGE_BUFFER {
-	uint16_t Type;
-	uint16_t data_offset8;
-	uint16_t length8;
-	uint16_t Flags;
-	uint64_t transaction_id;
-	uint32_t reserved;
-	uint32_t range_count;
-	PAGE_BUFFER range[HV_MAX_PAGE_BUFFER_COUNT];
-} VMBUS_CHANNEL_PACKET_PAGE_BUFFER;
+/*
+ * The format must be the same as hv_vm_data_gpa_direct
+ */
+typedef struct hv_vmbus_channel_packet_page_buffer {
+	uint16_t		type;
+	uint16_t		data_offset8;
+	uint16_t		length8;
+	uint16_t		flags;
+	uint64_t		transaction_id;
+	uint32_t		reserved;
+	uint32_t		range_count;
+	hv_vmbus_page_buffer	range[HV_MAX_PAGE_BUFFER_COUNT];
+} hv_vmbus_channel_packet_page_buffer;
 
-// The format must be the same as hv_vm_data_gpa_direct
-typedef struct _VMBUS_CHANNEL_PACKET_MULITPAGE_BUFFER {
-	uint16_t Type;
-	uint16_t data_offset8;
-	uint16_t length8;
-	uint16_t Flags;
-	uint64_t transaction_id;
-	uint32_t reserved;
-	uint32_t range_count;		// Always 1 in this case
-	hv_vmbus_multipage_buffer range;
-} VMBUS_CHANNEL_PACKET_MULITPAGE_BUFFER;
+/*
+ * The format must be the same as hv_vm_data_gpa_direct
+ */
+typedef struct hv_vmbus_channel_packet_multipage_buffer {
+	uint16_t 			type;
+	uint16_t 			data_offset8;
+	uint16_t 			length8;
+	uint16_t 			flags;
+	uint64_t			transaction_id;
+	uint32_t 			reserved;
+	uint32_t			range_count; /* Always 1 in this case */
+	hv_vmbus_multipage_buffer	range;
+} hv_vmbus_channel_packet_multipage_buffer;
 
 #pragma pack(pop)
 
-void
-hv_vmbus_channel_get_debug_info(VMBUS_CHANNEL *Channel,
-	VMBUS_CHANNEL_DEBUG_INFO *DebugInfo);
-
-void
-GetChannelInfo(struct hv_device *dev, struct hv_devinfo *info);
-
 
 enum {
-	VMBUS_MESSAGE_CONNECTION_ID = 1,
-	VMBUS_MESSAGE_PORT_ID = 1,
-	VMBUS_EVENT_CONNECTION_ID = 2,
-	VMBUS_EVENT_PORT_ID = 2,
-	VMBUS_MONITOR_CONNECTION_ID = 3,
-	VMBUS_MONITOR_PORT_ID = 3,
-	VMBUS_MESSAGE_SINT = 2
+	HV_VMBUS_MESSAGE_CONNECTION_ID	= 1,
+	HV_VMBUS_MESSAGE_PORT_ID	= 1,
+	HV_VMBUS_EVENT_CONNECTION_ID	= 2,
+	HV_VMBUS_EVENT_PORT_ID		= 2,
+	HV_VMBUS_MONITOR_CONNECTION_ID	= 3,
+	HV_VMBUS_MONITOR_PORT_ID		= 3,
+	HV_VMBUS_MESSAGE_SINT		= 2
 };
 
-/* 
- * #defines
- */
 #define HV_PRESENT_BIT		0x80000000
-
 
 #define HV_LINUX_GUEST_ID_LO	0x00000000
 #define HV_LINUX_GUEST_ID_HI	0xB16B00B5
 #define HV_LINUX_GUEST_ID	(((uint64_t)HV_LINUX_GUEST_ID_HI << 32) | HV_LINUX_GUEST_ID_LO)
 
-
 #define HV_HYPERCALL_PARAM_ALIGN sizeof(uint64_t)
 
-//
-// Define connection identifier type.
-//
-
-typedef union _HV_CONNECTION_ID {
-	uint32_t Asuint32_t;
-
+/*
+ *  Connection identifier type
+ */
+typedef union {
+	uint32_t		as_uint32_t;
 	struct {
-		uint32_t Id:24;
-		uint32_t reserved:8;
+		uint32_t	id:24;
+		uint32_t	reserved:8;
 	} u;
 
-} HV_CONNECTION_ID, *PHV_CONNECTION_ID;
+} hv_vmbus_connection_id;
 
-//
-// Definition of the HvSignalEvent hypercall input structure.
-//
-typedef struct _HV_INPUT_SIGNAL_EVENT {
-	HV_CONNECTION_ID ConnectionId;
-	uint16_t           FlagNumber;
-	uint16_t           RsvdZ;
-} HV_INPUT_SIGNAL_EVENT, *PHV_INPUT_SIGNAL_EVENT;
+/*
+ * Definition of the hv_vmbus_signal_event hypercall input structure
+ */
+typedef struct {
+	hv_vmbus_connection_id	connection_id;
+	uint16_t		flag_number;
+	uint16_t		rsvd_z;
+} hv_vmbus_input_signal_event;
 
 typedef struct {
-	uint64_t Align8;
-	HV_INPUT_SIGNAL_EVENT Event;
-} HV_INPUT_SIGNAL_EVENT_BUFFER;
+	uint64_t			align8;
+	hv_vmbus_input_signal_event	event;
+} hv_vmbus_input_signal_event_buffer;
 
 typedef struct {
-	uint64_t GuestId;
-	void* HypercallPage;
+	uint64_t	guest_id;
+	void		*hypercall_page;
+	bool		syn_ic_initialized;
+	/*
+	 * This is used as an input param to HV_CALL_SIGNAL_EVENT hypercall.
+	 * The input param is immutable  in our usage and
+	 * must be dynamic mem (vs stack or global).
+	 */
+	hv_vmbus_input_signal_event_buffer	*signal_event_buffer;
+	/*
+	 * 8-bytes aligned of the buffer above
+	 */
+	hv_vmbus_input_signal_event		*signal_event_param;
 
-	bool SynICInitialized;
-	// This is used as an input param to HvCallSignalEvent hypercall. The input param is immutable 
-	// in our usage and must be dynamic mem (vs stack or global). 
-	HV_INPUT_SIGNAL_EVENT_BUFFER *SignalEventBuffer;
-	HV_INPUT_SIGNAL_EVENT *SignalEventParam; // 8-bytes aligned of the buffer above
+	hv_vmbus_handle	syn_ic_message_page[MAXCPU];
+	hv_vmbus_handle	syn_ic_event_page[MAXCPU];
+} hv_vmbus_context;
 
-	hv_vmbus_handle synICMessagePage[MAXCPU];
-	hv_vmbus_handle synICEventPage[MAXCPU];
-} HV_CONTEXT;
+/*
+ * Define hypervisor message types
+ */
+typedef enum {
 
-//
-// Define hypervisor message types.
-//
-typedef enum _HV_MESSAGE_TYPE {
-	HvMessageTypeNone = 0x00000000,
+	HV_MESSAGE_TYPE_NONE				= 0x00000000,
 
-	//
-	// Memory access messages.
-	//
-	HvMessageTypeUnmappedGpa = 0x80000000,
-	HvMessageTypeGpaIntercept = 0x80000001,
+	/*
+	 * Memory access messages
+	 */
+	HV_MESSAGE_TYPE_UNMAPPED_GPA			= 0x80000000,
+	HV_MESSAGE_TYPE_GPA_INTERCEPT			= 0x80000001,
 
-	//
-	// Timer notification messages.
-	//
-	HvMessageTimerExpired = 0x80000010,
+	/*
+	 * Timer notification messages
+	 */
+	HV_MESSAGE_TIMER_EXPIRED			= 0x80000010,
 
-	//
-	// Error messages.
-	//
-	HvMessageTypeInvalidVpRegisterValue = 0x80000020,
-	HvMessageTypeUnrecoverableException = 0x80000021,
-	HvMessageTypeUnsupportedFeature = 0x80000022,
+	/*
+	 * Error messages
+	 */
+	HV_MESSAGE_TYPE_INVALID_VP_REGISTER_VALUE	= 0x80000020,
+	HV_MESSAGE_TYPE_UNRECOVERABLE_EXCEPTION		= 0x80000021,
+	HV_MESSAGE_TYPE_UNSUPPORTED_FEATURE		= 0x80000022,
 
-	//
-	// Trace buffer complete messages.
-	//
-	HvMessageTypeEventLogBufferComplete = 0x80000040,
+	/*
+	 * Trace buffer complete messages
+	 */
+	HV_MESSAGE_TYPE_EVENT_LOG_BUFFER_COMPLETE	= 0x80000040,
 
-	//
-	// Platform-specific processor intercept messages.
-	//
-	HvMessageTypeX64IoPortIntercept = 0x80010000,
-	HvMessageTypeX64MsrIntercept = 0x80010001,
-	HvMessageTypeX64CpuidIntercept = 0x80010002,
-	HvMessageTypeX64ExceptionIntercept = 0x80010003,
-	HvMessageTypeX64ApicEoi = 0x80010004,
-	HvMessageTypeX64LegacyFpError = 0x80010005
-} HV_MESSAGE_TYPE, *PHV_MESSAGE_TYPE;
+	/*
+	 * Platform-specific processor intercept messages
+	 */
+	HV_MESSAGE_TYPE_X64_IO_PORT_INTERCEPT		= 0x80010000,
+	HV_MESSAGE_TYPE_X64_MSR_INTERCEPT		= 0x80010001,
+	HV_MESSAGE_TYPE_X64_CPU_INTERCEPT		= 0x80010002,
+	HV_MESSAGE_TYPE_X64_EXCEPTION_INTERCEPT		= 0x80010003,
+	HV_MESSAGE_TYPE_X64_APIC_EOI			= 0x80010004,
+	HV_MESSAGE_TYPE_X64_LEGACY_FP_ERROR		= 0x80010005
 
-//
-// Define port identifier type.
-//
-typedef union _HV_PORT_ID {
-	uint32_t Asuint32_t;
+} hv_vmbus_message_type;
 
+/*
+ * Define port identifier type
+ */
+typedef union _hv_vmbus_port_id {
+	uint32_t	as_uint32_t;
 	struct {
-		uint32_t Id:24;
-		uint32_t reserved:8;
+		uint32_t	id:24;
+		uint32_t	reserved:8;
 	} u ;
+} hv_vmbus_port_id;
 
-} HV_PORT_ID, *PHV_PORT_ID;
-
-//
-// Define synthetic interrupt controller message flags.
-//
-typedef union _HV_MESSAGE_FLAGS {
-	uint8_t Asuint8_t;
+/*
+ * Define synthetic interrupt controller message flag
+ */
+typedef union {
+	uint8_t	as_uint8_t;
 	struct {
-		uint8_t MessagePending:1;
-		uint8_t reserved:7;
+		uint8_t	message_pending:1;
+		uint8_t	reserved:7;
 	};
-} HV_MESSAGE_FLAGS, *PHV_MESSAGE_FLAGS;
+} hv_vmbus_message_flags;
 
-typedef uint64_t HV_PARTITION_ID, *PHV_PARTITION_ID;
+typedef uint64_t hv_vmbus_partition_id;
 
-//
-// Define synthetic interrupt controller message header.
-//
-typedef struct _HV_MESSAGE_HEADER {
-	HV_MESSAGE_TYPE MessageType;
-	uint8_t PayloadSize;
-	HV_MESSAGE_FLAGS MessageFlags;
-	uint8_t reserved[2];
+/*
+ * Define synthetic interrupt controller message header
+ */
+typedef struct {
+	hv_vmbus_message_type	message_type;
+	uint8_t			payload_size;
+	hv_vmbus_message_flags	message_flags;
+	uint8_t			reserved[2];
 	union {
-		HV_PARTITION_ID Sender;
-		HV_PORT_ID      Port;
-	};
-} HV_MESSAGE_HEADER, *PHV_MESSAGE_HEADER;
+		hv_vmbus_partition_id	sender;
+		hv_vmbus_port_id	port;
+	} u;
+} hv_vmbus_message_header;
 
-//
-// Define synthetic interrupt controller message format.
-//
-
-typedef struct _HV_MESSAGE {
-	HV_MESSAGE_HEADER header;
+/*
+ *  Define synthetic interrupt controller message format
+ */
+typedef struct {
+	hv_vmbus_message_header	header;
 	union {
-		uint64_t Payload[HV_MESSAGE_PAYLOAD_QWORD_COUNT];
+		uint64_t	payload[HV_MESSAGE_PAYLOAD_QWORD_COUNT];
 	} u ;
-} HV_MESSAGE, *PHV_MESSAGE;
+} hv_vmbus_message;
 
 #ifdef __x86_64__
 
@@ -441,327 +391,249 @@ typedef struct _HV_MESSAGE {
 #endif
 
 
+/*
+ *  Maximum channels is determined by the size of the interrupt
+ *  page which is PAGE_SIZE. 1/2 of PAGE_SIZE is for
+ *  send endpoint interrupt and the other is receive
+ *  endpoint interrupt.
+ *
+ *   Note: (PAGE_SIZE >> 1) << 3 allocates 16348 channels
+ */
+#define HV_MAX_NUM_CHANNELS			(PAGE_SIZE >> 1) << 3
 
 /*
- * Inline functions
+ * The value here must be in multiple of 32
  */
+#define HV_MAX_NUM_CHANNELS_SUPPORTED		256
 
-static inline unsigned long long ReadMsr(int msr) {
-	unsigned long long val;
-	RDMSR(msr, val);
-	return val;
-}
-
-static inline void WriteMsr(int msr, uint64_t val) {
-	WRMSR(msr, val);
-	return;
-}
-
-extern int
-HvInit(void);
-
-extern void
-HvCleanup( void);
-
-extern uint16_t 
-HvPostMessage(HV_CONNECTION_ID connectionId, HV_MESSAGE_TYPE messageType,
-	      void *payload, size_t payloadSize);
-
-extern uint16_t 
-HvSignalEvent( void);
-
-extern void
-HvSynicInit(void *irqArg);
-
-extern void
-HvSynicCleanup(void *arg);
-
-extern HV_CONTEXT gHvContext;
-extern int HvQueryHypervisorPresence(void);
-
-
-
-
-//
-// Defines
-//
-
-// Maximum channels is determined by the size of the interrupt page which is PAGE_SIZE. 1/2 of PAGE_SIZE is for
-// send endpoint interrupt and the other is receive endpoint interrupt
-#define MAX_NUM_CHANNELS				(PAGE_SIZE >> 1) << 3  // 16348 channels
-// The value here must be in multiple of 32
-// TODO: Need to make this configurable
-#define MAX_NUM_CHANNELS_SUPPORTED		256
-
-//
-// Data types
-//
-
+/*
+ * VM Bus connection states
+ */
 typedef enum {
-	Disconnected,
-	Connecting,
-	Connected,
-	Disconnecting
-} VMBUS_CONNECT_STATE;
+	HV_DISCONNECTED,
+	HV_CONNECTING,
+	HV_CONNECTED,
+	HV_DISCONNECTING
+} hv_vmbus_connect_state;
 
-#define MAX_SIZE_CHANNEL_MESSAGE			HV_MESSAGE_PAYLOAD_BYTE_COUNT
+#define HV_MAX_SIZE_CHANNEL_MESSAGE	HV_MESSAGE_PAYLOAD_BYTE_COUNT
 
-typedef struct _VMBUS_CONNECTION {
-
-	VMBUS_CONNECT_STATE ConnectState;
-
-	uint32_t NextGpadlHandle;
-
-	// Represents channel interrupts. Each bit position
-	// represents a channel.
-	// When a channel sends an interrupt via VMBUS, it 
-	// finds its bit in the send_interrupt_page, set it and 
-	// calls Hv to generate a port event. The other end
-	// receives the port event and parse the recv_interrupt_page
-	// to see which bit is set
-	void* interrupt_page;
-	void* send_interrupt_page;
-	void* recv_interrupt_page;
-
-	// 2 pages - 1st page for parent->child notification and 2nd is child->parent notification
-	void* MonitorPages;
-	TAILQ_HEAD(, _VMBUS_CHANNEL_MSGINFO)  channel_msg_anchor;
-	struct mtx ChannelMsgLock;
+typedef struct {
+	hv_vmbus_connect_state			connect_state;
+	uint32_t				next_gpadl_handle;
+	/*
+	 * Represents channel interrupts. Each bit position
+	 * represents a channel.
+	 * When a channel sends an interrupt via VMBUS, it
+	 * finds its bit in the send_interrupt_page, set it and
+	 * calls Hv to generate a port event. The other end
+	 * receives the port event and parse the
+	 * recv_interrupt_page to see which bit is set
+	 */
+	void					*interrupt_page;
+	void					*send_interrupt_page;
+	void					*recv_interrupt_page;
+	/*
+	 * 2 pages - 1st page for parent->child
+	 * notification and 2nd is child->parent
+	 * notification
+	 */
+	void					*monitor_pages;
+	TAILQ_HEAD(, hv_vmbus_channel_msg_info)	channel_msg_anchor;
+	struct mtx				channel_msg_lock;
 
 	// List of channels
-	TAILQ_HEAD(, _VMBUS_CHANNEL)  channel_anchor;
-	struct mtx ChannelLock;
+	TAILQ_HEAD(, hv_vmbus_channel)		channel_anchor;
+	struct mtx				channel_lock;
 
-	hv_vmbus_handle WorkQueue;
-	struct sema control_sema;
-} VMBUS_CONNECTION;
+	hv_vmbus_handle				work_queue;
+	struct sema				control_sema;
+} hv_vmbus_connection;
 
+/*
+ * Declare the MSR used to identify the guest OS
+ */
+#define HV_X64_MSR_GUEST_OS_ID	0x40000000
 
-//
-// Externs
-//
-extern VMBUS_CONNECTION gVmbusConnection;
-//
-// General vmbus interface
-//
+typedef union {
+	uint64_t as_uint64_t;
+	struct {
+		uint64_t build_number		: 16;
+		uint64_t service_version	: 8; // Service Pack, etc.
+		uint64_t minor_version		: 8;
+		uint64_t major_version		: 8;
+		uint64_t os_id			: 8; // HV_GUEST_OS_MICROSOFT_IDS (If Vendor=MS)
+		uint64_t vendor_id		: 16; // HV_GUEST_OS_VENDOR
+	};
+} hv_vmbus_x64_msr_guest_os_id_contents;
 
-struct hv_device *
-vmbus_child_device_create(hv_guid deviceType, hv_guid deviceInstance,
-			 VMBUS_CHANNEL *channel);
+/*
+ *  Declare the MSR used to setup pages used to communicate with the hypervisor
+ */
+#define HV_X64_MSR_HYPERCALL	0x40000001
 
+typedef union {
+	uint64_t as_uint64_t;
+	struct {
+		uint64_t enable :1;
+		uint64_t reserved :11;
+		uint64_t guest_physical_address :52;
+	};
+} hv_vmbus_x64_msr_hypercall_contents;
 
-int vmbus_child_device_register(struct hv_device *child_dev);
+typedef union {
+	uint32_t as_uint32_t;
 
-int vmbus_child_device_unregister(struct hv_device *child_dev);
+	struct {
+		uint32_t group_enable :4;
+		uint32_t rsvd_z :28;
+	};
+} hv_vmbus_monitor_trigger_state;
 
+typedef union {
+	uint64_t as_uint64_t;
+	struct {
+		uint32_t pending;
+		uint32_t armed;
+	};
+} hv_vmbus_monitor_trigger_group;
 
-VMBUS_CHANNEL*
-GetChannelFromRelId(uint32_t relId);
+typedef struct {
+	hv_vmbus_connection_id	connection_id;
+	uint16_t		flag_number;
+	uint16_t		rsvd_z;
+} hv_vmbus_monitor_parameter;
 
-//
-// Connection interface
-//
-extern int
-VmbusConnect(void);
+/*
+ * hv_vmbus_monitor_page Layout
+ * ------------------------------------------------------
+ * | 0   | trigger_state (4 bytes) | Rsvd1 (4 bytes)     |
+ * | 8   | trigger_group[0]                              |
+ * | 10  | trigger_group[1]                              |
+ * | 18  | trigger_group[2]                              |
+ * | 20  | trigger_group[3]                              |
+ * | 28  | Rsvd2[0]                                      |
+ * | 30  | Rsvd2[1]                                      |
+ * | 38  | Rsvd2[2]                                      |
+ * | 40  | next_check_time[0][0] | next_check_time[0][1] |
+ * | ...                                                 |
+ * | 240 | latency[0][0..3]                              |
+ * | 340 | Rsvz3[0]                                      |
+ * | 440 | parameter[0][0]                               |
+ * | 448 | parameter[0][1]                               |
+ * | ...                                                 |
+ * | 840 | Rsvd4[0]                                      |
+ * ------------------------------------------------------
+*/
+typedef struct {
+	hv_vmbus_monitor_trigger_state	trigger_state;
+	uint32_t			rsvd_z1;
 
-extern int
-VmbusDisconnect(void);
+	hv_vmbus_monitor_trigger_group	trigger_group[4];
+	uint64_t			rsvd_z2[3];
 
-extern int
-VmbusPostMessage(void * buffer, size_t bufSize);
+	int32_t				next_check_time[4][32];
 
-extern int
-VmbusSetEvent(uint32_t childRelId);
+	uint16_t			latency[4][32];
+	uint64_t			rsvd_z3[32];
 
-extern void
-vmbus_on_events(void *);
+	hv_vmbus_monitor_parameter	parameter[4][32];
 
-//
-// Declare the MSR used to identify the guest OS.
-//
-#define HV_X64_MSR_GUEST_OS_ID 0x40000000
+	uint8_t				rsvd_z4[1984];
+} hv_vmbus_monitor_page;
 
-typedef union _HV_X64_MSR_GUEST_OS_ID_CONTENTS {
-    uint64_t Asuint64_t;
+/*
+ *  ==========================================================================
+ * The below CPUID leaves are present if VersionAndFeatures.HypervisorPresent
+ * is set by CPUID(HV_CPU_ID_FUNCTION_VERSION_AND_FEATURES).
+ */
+typedef enum {
+	HV_CPU_ID_FUNCTION_VERSION_AND_FEATURES			= 0x00000001,
+	HV_CPU_ID_FUNCTION_HV_VENDOR_AND_MAX_FUNCTION		= 0x40000000,
+	HV_CPU_ID_FUNCTION_HV_INTERFACE				= 0x40000001,
+	/*
+	 * The remaining functions depend on the value
+	 * of hv_cpu_id_function_interface
+	 */
+	HV_CPU_ID_FUNCTION_MS_HV_VERSION			= 0x40000002,
+	HV_CPU_ID_FUNCTION_MS_HV_FEATURES			= 0x40000003,
+	HV_CPU_ID_FUNCTION_MS_HV_ENLIGHTENMENT_INFORMATION	= 0x40000004,
+	HV_CPU_ID_FUNCTION_MS_HV_IMPLEMENTATION_LIMITS		= 0x40000005
+
+} hv_vmbus_cpuid_function;
+
+/*
+ * Define the format of the SIMP register
+ */
+typedef union {
+	uint64_t as_uint64_t;
+	struct {
+		uint64_t simp_enabled	: 1;
+		uint64_t preserved	: 11;
+		uint64_t base_simp_gpa	: 52;
+	};
+} hv_vmbus_synic_simp;
+
+/*
+ * Define the format of the SIEFP register
+ */
+typedef union {
+	uint64_t as_uint64_t;
+	struct {
+		uint64_t siefp_enabled	: 1;
+		uint64_t preserved	: 11;
+		uint64_t base_siefp_gpa	: 52;
+	};
+} hv_vmbus_synic_siefp;
+
+/*
+ * Define synthetic interrupt source
+ */
+typedef union {
+	uint64_t as_uint64_t;
+	struct {
+		uint64_t Vector    : 8;
+		uint64_t reserved1 : 8;
+		uint64_t Masked    : 1;
+		uint64_t AutoEoi   : 1;
+		uint64_t reserved2 : 46;
+	};
+} hv_vmbus_synic_sint;
+
+/*
+ * Define syn_ic control register
+ */
+typedef union _hv_vmbus_synic_scontrol {
+    uint64_t as_uint64_t;
     struct {
-        uint64_t BuildNumber    : 16;
-        uint64_t ServiceVersion : 8; // Service Pack, etc.
-        uint64_t MinorVersion   : 8;
-        uint64_t MajorVersion   : 8;
-        uint64_t OsId           : 8; // HV_GUEST_OS_MICROSOFT_IDS (If Vendor=MS)
-        uint64_t VendorId       : 16; // HV_GUEST_OS_VENDOR
+        uint64_t enable		: 1;
+        uint64_t reserved	: 63;
     };
-} HV_X64_MSR_GUEST_OS_ID_CONTENTS, *PHV_X64_MSR_GUEST_OS_ID_CONTENTS;
+} hv_vmbus_synic_scontrol;
 
-//
-// Declare the MSR used to setup pages used to communicate with the hypervisor.
-//
-#define HV_X64_MSR_HYPERCALL 0x40000001
-
-typedef union _HV_X64_MSR_HYPERCALL_CONTENTS {
-    uint64_t Asuint64_t;
-    struct {
-        uint64_t Enable               : 1;
-        uint64_t reserved             : 11;
-        uint64_t GuestPhysicalAddress : 52;
-    };
-} HV_X64_MSR_HYPERCALL_CONTENTS, *PHV_X64_MSR_HYPERCALL_CONTENTS;
-
-typedef union _HV_MONITOR_TRIGGER_STATE {
-	uint32_t Asuint32_t;
-
-	struct {
-		uint32_t GroupEnable : 4;
-		uint32_t RsvdZ       : 28;
-	};
-} HV_MONITOR_TRIGGER_STATE, *PHV_MONITOR_TRIGGER_STATE;
-
-typedef union _HV_MONITOR_TRIGGER_GROUP {
-	uint64_t Asuint64_t;
-
-	struct {
-		uint32_t Pending;
-		uint32_t Armed;
-	};
-} HV_MONITOR_TRIGGER_GROUP, *PHV_MONITOR_TRIGGER_GROUP;
-
-typedef struct _HV_MONITOR_PARAMETER {
-	HV_CONNECTION_ID    ConnectionId;
-	uint16_t              FlagNumber;
-	uint16_t              RsvdZ;
-} HV_MONITOR_PARAMETER, *PHV_MONITOR_PARAMETER;
+/*
+ *  Definition of the hv_vmbus_post_message hypercall input structure
+ */
+typedef struct {
+	hv_vmbus_connection_id	connection_id;
+	uint32_t		reserved;
+	hv_vmbus_message_type	message_type;
+	uint32_t		payload_size;
+	uint64_t		payload[HV_MESSAGE_PAYLOAD_QWORD_COUNT];
+} hv_vmbus_input_post_message;
 
 
-//
-// HV_MONITOR_PAGE Layout
-// ------------------------------------------------------
-// | 0   | TriggerState (4 bytes) | Rsvd1 (4 bytes)     |
-// | 8   | TriggerGroup[0]                              |
-// | 10  | TriggerGroup[1]                              |
-// | 18  | TriggerGroup[2]                              |
-// | 20  | TriggerGroup[3]                              |
-// | 28  | Rsvd2[0]                                     |
-// | 30  | Rsvd2[1]                                     |
-// | 38  | Rsvd2[2]                                     |
-// | 40  | NextCheckTime[0][0]    | NextCheckTime[0][1] |
-// | ...                                                |
-// | 240 | Latency[0][0..3]                             |
-// | 340 | Rsvz3[0]                                     |
-// | 440 | Parameter[0][0]                              |
-// | 448 | Parameter[0][1]                              |
-// | ...                                                |
-// | 840 | Rsvd4[0]                                     |
-// ------------------------------------------------------
+/*
+ * Define the synthetic interrupt controller event flags format
+ */
+typedef union {
+	uint8_t		flags8[HV_EVENT_FLAGS_BYTE_COUNT];
+	uint32_t	flags32[HV_EVENT_FLAGS_DWORD_COUNT];
+} HV_SYNIC_EVENT_FLAGS;
 
-typedef struct _HV_MONITOR_PAGE {
-	HV_MONITOR_TRIGGER_STATE TriggerState;
-	uint32_t                   RsvdZ1;
-
-	HV_MONITOR_TRIGGER_GROUP TriggerGroup[4];
-	uint64_t                   RsvdZ2[3];
-
-	int32_t                    NextCheckTime[4][32];
-
-	uint16_t                   Latency[4][32];
-	uint64_t                   RsvdZ3[32];
-
-	HV_MONITOR_PARAMETER     Parameter[4][32];
-
-	uint8_t                    RsvdZ4[1984];
-} HV_MONITOR_PAGE, *PHV_MONITOR_PAGE;
-
-//
-// The below CPUID leaves are present if VersionAndFeatures.HypervisorPresent
-// is set by CPUID(HvCpuIdFunctionVersionAndFeatures).
-// ==========================================================================
-//
-typedef enum _HV_CPUID_FUNCTION {
-	HvCpuIdFunctionVersionAndFeatures           = 0x00000001,
-	HvCpuIdFunctionHvVendorAndMaxFunction       = 0x40000000,
-	HvCpuIdFunctionHvInterface                  = 0x40000001,
-
-	//
-	// The remaining functions depend on the value of HvCpuIdFunctionInterface
-	//
-	HvCpuIdFunctionMsHvVersion                  = 0x40000002,
-	HvCpuIdFunctionMsHvFeatures                 = 0x40000003,
-	HvCpuIdFunctionMsHvEnlightenmentInformation = 0x40000004,
-	HvCpuIdFunctionMsHvImplementationLimits     = 0x40000005
-
-} HV_CPUID_FUNCTION, *PHV_CPUID_FUNCTION;
-
-//
-// Define the format of the SIMP register
-//
-typedef union _HV_SYNIC_SIMP {
-	uint64_t Asuint64_t;
-	struct {
-		uint64_t SimpEnabled : 1;
-		uint64_t Preserved   : 11;
-		uint64_t BaseSimpGpa : 52;
-	};
-} HV_SYNIC_SIMP, *PHV_SYNIC_SIMP;
-
-//
-// Define the format of the SIEFP register
-//
-typedef union _HV_SYNIC_SIEFP {
-	uint64_t Asuint64_t;
-	struct {
-		uint64_t SiefpEnabled : 1;
-		uint64_t Preserved   : 11;
-		uint64_t BaseSiefpGpa : 52;
-	};
-} HV_SYNIC_SIEFP, *PHV_SYNIC_SIEFP;
-
-//
-// Define synthetic interrupt source.
-//
-typedef union _HV_SYNIC_SINT {
-	uint64_t Asuint64_t;
-	struct {
-		uint64_t Vector    :8;
-		uint64_t reserved1 :8;
-		uint64_t Masked    :1;
-		uint64_t AutoEoi   :1;
-		uint64_t reserved2 :46;
-	};
-} HV_SYNIC_SINT, *PHV_SYNIC_SINT;
-
-//
-// Define SynIC control register.
-//
-typedef union _HV_SYNIC_SCONTROL {
-    uint64_t Asuint64_t;
-    struct {
-        uint64_t Enable:1;
-        uint64_t reserved:63;
-    };
-} HV_SYNIC_SCONTROL, *PHV_SYNIC_SCONTROL;
-
-//
-// Definition of the HvPostMessage hypercall input structure.
-//
-typedef struct _HV_INPUT_POST_MESSAGE {
-    HV_CONNECTION_ID    ConnectionId;
-    uint32_t              reserved;
-    HV_MESSAGE_TYPE     MessageType;
-    uint32_t              PayloadSize;
-    uint64_t              Payload[HV_MESSAGE_PAYLOAD_QWORD_COUNT];
-} HV_INPUT_POST_MESSAGE, *PHV_INPUT_POST_MESSAGE;
-
-//
-// Define the synthetic interrupt controller event flags format.
-//
-typedef union _HV_SYNIC_EVENT_FLAGS {
-	uint8_t Flags8[HV_EVENT_FLAGS_BYTE_COUNT];
-	uint32_t Flags32[HV_EVENT_FLAGS_DWORD_COUNT];
-} HV_SYNIC_EVENT_FLAGS, *PHV_SYNIC_EVENT_FLAGS;
-
-
-//
-// Define synthetic interrupt controller model specific registers.
-//
+/*
+ * Define synthetic interrupt controller model specific registers
+ */
 #define HV_X64_MSR_SCONTROL   (0x40000080)
 #define HV_X64_MSR_SVERSION   (0x40000081)
 #define HV_X64_MSR_SIEFP      (0x40000082)
@@ -785,12 +657,169 @@ typedef union _HV_SYNIC_EVENT_FLAGS {
 #define HV_X64_MSR_SINT14     (0x4000009E)
 #define HV_X64_MSR_SINT15     (0x4000009F)
 
-//
-// Declare the various hypercall operations.
-//
-typedef enum _HV_CALL_CODE {
-	HvCallPostMessage                   = 0x005c,
-	HvCallSignalEvent                   = 0x005d,
-} HV_CALL_CODE, *PHV_CALL_CODE;
+/*
+ * Declare the various hypercall operations
+ */
+typedef enum {
+	HV_CALL_POST_MESSAGE	= 0x005c,
+	HV_CALL_SIGNAL_EVENT	= 0x005d,
+} hv_vmbus_call_code;
+
+/*
+ * Global variables
+ */
+extern hv_vmbus_context		hv_vmbus_g_context;
+extern hv_vmbus_connection	hv_vmbus_g_connection;
+
+
+/*
+ * private VM Bus functions
+ */
+
+void
+hv_vmbus_channel_get_debug_info(
+	hv_vmbus_channel		*channel,
+	hv_vmbus_channel_debug_info	*debug_info);
+
+void
+hv_vmbus_get_channel_info(
+	struct hv_device		*dev,
+	struct hv_devinfo		*info);
+
+int
+hv_vmbus_ring_buffer_init(
+	hv_vmbus_ring_buffer_info	*ring_info,
+	void				*buffer,
+	uint32_t			buffer_len);
+
+void
+hv_ring_buffer_cleanup(
+	hv_vmbus_ring_buffer_info	*ring_info);
+
+int
+hv_ring_buffer_write(
+	hv_vmbus_ring_buffer_info	*ring_info,
+	hv_vmbus_sg_buffer_list		sg_buffers[],
+	uint32_t			sg_buffer_count);
+
+int
+hv_ring_buffer_beek(
+	hv_vmbus_ring_buffer_info	*ring_info,
+	void				*buffer,
+	uint32_t			buffer_len);
+
+int
+hv_ring_buffer_read(
+	hv_vmbus_ring_buffer_info	*ring_info,
+	void				*buffer,
+	uint32_t			buffer_len,
+	uint32_t			offset);
+
+uint32_t
+hv_vmbus_get_ring_buffer_interrupt_mask(
+	hv_vmbus_ring_buffer_info	*ring_info);
+
+void
+hv_vmbus_dump_ring_info(
+	hv_vmbus_ring_buffer_info*	ring_info,
+	char				*prefix);
+
+void
+hv_vmbus_ring_buffer_get_debug_info(
+	hv_vmbus_ring_buffer_info	*ring_info,
+	hv_vmbus_ring_buffer_debug_info	*debug_info);
+
+hv_vmbus_channel*
+hv_vmbus_allocate_channel(void);
+
+void
+hv_vmbus_free_vmbus_channel(hv_vmbus_channel *channel);
+
+void
+hv_vmbus_on_channel_message(void *context);
+
+int
+hv_vmbus_request_channel_offers(void);
+
+void
+hv_vmbus_release_unattached_channels(void);
+
+int
+hv_vmbus_init(void);
+
+void
+hv_vmbus_cleanup(void);
+
+uint16_t
+hv_vmbus_post_message_via_msg_ipc(
+	hv_vmbus_connection_id	connectionId,
+	hv_vmbus_message_type	messageType,
+	void			*payload,
+	size_t			payloadSize);
+
+uint16_t
+hv_vmbus_signal_event(void);
+
+void
+hv_vmbus_synic_init(void *irqArg);
+
+void
+hv_vmbus_synic_cleanup(void *arg);
+
+int
+hv_vmbus_query_hypervisor_presence(void);
+
+struct hv_device *
+vmbus_child_device_create(
+	hv_guid			deviceType,
+	hv_guid			deviceInstance,
+	hv_vmbus_channel	*channel);
+
+int
+vmbus_child_device_register(struct hv_device *child_dev);
+
+int
+vmbus_child_device_unregister(struct hv_device *child_dev);
+
+hv_vmbus_channel*
+hv_vmbus_get_channel_from_rel_id(uint32_t relId);
+
+/*
+ * Connection interface
+ */
+int
+hv_vmbus_connect(void);
+
+int
+hv_vmbus_disconnect(
+	void);
+int
+hv_vmbus_post_message(
+	void	*buffer,
+	size_t	bufSize);
+
+int
+hv_vmbus_set_event(uint32_t childRelId);
+
+void
+vmbus_on_events(void *);
+
+
+/*
+ * static inline functions
+ */
+
+static inline unsigned long long
+hv_vmbus_read_msr(int msr) {
+	unsigned long long val;
+	RDMSR(msr, val);
+	return val;
+}
+
+static inline
+void hv_vmbus_write_msr(int msr, uint64_t val) {
+	WRMSR(msr, val);
+	return;
+}
 
 #endif  /* __HYPERV_PRIV_H__ */

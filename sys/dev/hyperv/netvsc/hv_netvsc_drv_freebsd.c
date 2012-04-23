@@ -98,10 +98,9 @@
 
 #include <machine/intr_machdep.h>
 
-#include "../include/hyperv.h"
-#include <dev/hyperv/netvsc/hv_net_vsc.h>
-#include <dev/hyperv/netvsc/hv_rndis.h>
-
+#include "hyperv.h"
+#include "hv_net_vsc.h"
+#include "hv_rndis.h"
 
 /* Short for Hyper-V network interface */
 #define NETVSC_DEVNAME    "hn"
@@ -146,9 +145,6 @@ struct netvsc_driver_context {
  */
 
 int hv_promisc_mode = 0;    /* normal mode by default */
-
-/* Fixme:  Should this be hv_promisc_mode, defined above? */
-int promisc_mode;
 
 
 /* The one and only one */
@@ -382,7 +378,7 @@ hn_start_locked(struct ifnet *ifp)
 
 		/* Allocate a netvsc packet based on # of frags. */
 		buf = malloc(HV_NV_PACKET_OFFSET_IN_BUF +
-		    sizeof(netvsc_packet) + (num_frags * sizeof(PAGE_BUFFER)) + 
+		    sizeof(netvsc_packet) + (num_frags * sizeof(hv_vmbus_page_buffer)) + 
 		    net_drv_obj->request_ext_size, M_DEVBUF, M_ZERO | M_WAITOK);
 		if (buf == NULL) {
 			return (ENOMEM);
@@ -392,7 +388,7 @@ hn_start_locked(struct ifnet *ifp)
 		*(vm_offset_t *)buf = HV_NV_SC_PTR_OFFSET_IN_BUF;
 
 		packet->extension = (void *)((unsigned long)packet +
-		    sizeof(netvsc_packet) + (num_frags * sizeof(PAGE_BUFFER)));
+		    sizeof(netvsc_packet) + (num_frags * sizeof(hv_vmbus_page_buffer)));
 
 		/* Set up the rndis header */
 		packet->page_buf_count = num_frags;
@@ -697,7 +693,7 @@ hn_ifinit_locked(hn_softc_t *sc)
 		return;
 	}
 
-	promisc_mode = 1;
+	hv_promisc_mode = 1;
 
 	ret = hv_rf_on_open(device_ctx);
 	if (ret != 0) {

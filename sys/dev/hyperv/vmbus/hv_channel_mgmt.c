@@ -61,19 +61,15 @@
 #include <sys/param.h>
 #include <sys/mbuf.h>
 
-#include <dev/hyperv/include/hyperv.h>
+#include "hyperv.h"
 #include "vmbus_priv.h"
 
-//
-// Data types
-//
+typedef void (*pfn_channel_message_handler)(hv_vmbus_channel_message_header* msg);
 
-typedef void (*PFN_CHANNEL_MESSAGE_HANDLER)(hv_vmbus_channel_message_header* msg);
-
-typedef struct _VMBUS_CHANNEL_MESSAGE_TABLE_ENTRY {
-	hv_vmbus_channel_message_type messageType;
-	PFN_CHANNEL_MESSAGE_HANDLER messageHandler;
-} VMBUS_CHANNEL_MESSAGE_TABLE_ENTRY;
+typedef struct hv_vmbus_channel_message_table_entry {
+	hv_vmbus_channel_message_type	messageType;
+	pfn_channel_message_handler	messageHandler;
+} hv_vmbus_channel_message_table_entry;
 
 /*
  *
@@ -110,7 +106,7 @@ struct hv_work_queue *hv_work_queue_create(char* name)
 
 	wq = malloc(sizeof(struct hv_work_queue), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (!wq) {
-		printf("Failed to create WorkQueue\n");
+		printf("Failed to create work_queue\n");
 		return (NULL);
 	}
 
@@ -132,7 +128,7 @@ struct hv_work_queue *hv_work_queue_create(char* name)
 		 * to the globale semaphore used for synchronizing all
 		 * control messages.
 		 */
-		wq->work_sema = &gVmbusConnection.control_sema;
+		wq->work_sema = &hv_vmbus_g_connection.control_sema;
 	}
 
 	sprintf(qname, "hv_%s_%u", name, qid);
@@ -199,48 +195,48 @@ int hv_queue_work_item(struct hv_work_queue *wq, void (*callback)(void *), void 
 //
 
 static void
-VmbusChannelOnOffer(hv_vmbus_channel_message_header * hdr);
+vmbus_channel_on_offer(hv_vmbus_channel_message_header * hdr);
 
 static void
-VmbusChannelOnOpenResult(hv_vmbus_channel_message_header * hdr);
+vmbus_channel_on_open_result(hv_vmbus_channel_message_header * hdr);
 
 static void
-VmbusChannelOnOfferRescind(hv_vmbus_channel_message_header * hdr);
+vmbus_channel_on_offer_rescind(hv_vmbus_channel_message_header * hdr);
 
 static void
-VmbusChannelOnGpadlCreated(hv_vmbus_channel_message_header * hdr);
+vmbus_channel_on_gpadl_created(hv_vmbus_channel_message_header * hdr);
 
 static void
-VmbusChannelOnGpadlTorndown(hv_vmbus_channel_message_header * hdr);
+vmbus_channel_on_gpadl_torndown(hv_vmbus_channel_message_header * hdr);
 
 static void
-VmbusChannelOnOffersDelivered(hv_vmbus_channel_message_header * hdr);
+vmbus_channel_on_offers_delivered(hv_vmbus_channel_message_header * hdr);
 
 static void
-VmbusChannelOnVersionResponse(hv_vmbus_channel_message_header * hdr);
+vmbus_channel_on_version_response(hv_vmbus_channel_message_header * hdr);
 
 static void
-VmbusChannelProcessOffer(void *context);
+vmbus_channel_process_offer(void *context);
 
 
 // Channel message dispatch table
-VMBUS_CHANNEL_MESSAGE_TABLE_ENTRY gChannelMessageTable[HV_CHANNEL_MESSAGE_COUNT] = {
+hv_vmbus_channel_message_table_entry gChannelMessageTable[HV_CHANNEL_MESSAGE_COUNT] = {
 	{ HV_CHANNEL_MESSAGE_INVALID, NULL },
-	{ HV_CHANNEL_MESSAGE_OFFER_CHANNEL, VmbusChannelOnOffer },
-	{ HV_CHANNEL_MESSAGE_RESCIND_CHANNEL_OFFER, VmbusChannelOnOfferRescind },
+	{ HV_CHANNEL_MESSAGE_OFFER_CHANNEL, vmbus_channel_on_offer },
+	{ HV_CHANNEL_MESSAGE_RESCIND_CHANNEL_OFFER, vmbus_channel_on_offer_rescind },
 	{ HV_CHANNEL_MESSAGE_REQUEST_OFFERS, NULL },
-	{ HV_CHANNEL_MESSAGE_ALL_OFFERS_DELIVERED,VmbusChannelOnOffersDelivered },
+	{ HV_CHANNEL_MESSAGE_ALL_OFFERS_DELIVERED,vmbus_channel_on_offers_delivered },
 	{ HV_CHANNEL_MESSAGE_OPEN_CHANNEL,NULL },
-	{ HV_CHANNEL_MESSAGE_OPEN_CHANNEL_RESULT,VmbusChannelOnOpenResult },
+	{ HV_CHANNEL_MESSAGE_OPEN_CHANNEL_RESULT,vmbus_channel_on_open_result },
 	{ HV_CHANNEL_MESSAGE_CLOSE_CHANNEL, NULL },
 	{ HV_CHANNEL_MESSAGEL_GPADL_HEADER, NULL },
 	{ HV_CHANNEL_MESSAGE_GPADL_BODY, NULL },
-	{ HV_CHANNEL_MESSAGE_GPADL_CREATED, VmbusChannelOnGpadlCreated },
+	{ HV_CHANNEL_MESSAGE_GPADL_CREATED, vmbus_channel_on_gpadl_created },
 	{ HV_CHANNEL_MESSAGE_GPADL_TEARDOWN, NULL },
-	{ HV_CHANNEL_MESSAGE_GPADL_TORNDOWN, VmbusChannelOnGpadlTorndown },
+	{ HV_CHANNEL_MESSAGE_GPADL_TORNDOWN, vmbus_channel_on_gpadl_torndown },
 	{ HV_CHANNEL_MESSAGE_REL_ID_RELEASED, NULL },
 	{ HV_CHANNEL_MESSAGE_INITIATED_CONTACT, NULL },
-	{ HV_CHANNEL_MESSAGE_VERSION_RESPONSE, VmbusChannelOnVersionResponse },
+	{ HV_CHANNEL_MESSAGE_VERSION_RESPONSE, vmbus_channel_on_version_response },
 	{ HV_CHANNEL_MESSAGE_UNLOAD, NULL }, };
 
 
@@ -254,9 +250,9 @@ VMBUS_CHANNEL_MESSAGE_TABLE_ENTRY gChannelMessageTable[HV_CHANNEL_MESSAGE_COUNT]
 
  --*/
 static void
-VmbusChannelProcessRescindOffer(void *context) 
+vmbus_channel_process_rescind_offer(void *context)
 {
-	VMBUS_CHANNEL* channel = (VMBUS_CHANNEL*) context;
+	hv_vmbus_channel* channel = (hv_vmbus_channel*) context;
 
 	vmbus_child_device_unregister(channel->device);
 
@@ -265,26 +261,26 @@ VmbusChannelProcessRescindOffer(void *context)
 /*++
 
  Name:
- AllocVmbusChannel()
+ hv_vmbus_allocate_channel()
 
  Description:
  Allocate and initialize a vmbus channel object
 
  --*/
-VMBUS_CHANNEL*
-AllocVmbusChannel(void) {
-	VMBUS_CHANNEL* channel;
+hv_vmbus_channel*
+hv_vmbus_allocate_channel(void) {
+	hv_vmbus_channel* channel;
 
-	channel = (VMBUS_CHANNEL*) malloc(sizeof(VMBUS_CHANNEL), M_DEVBUF, M_NOWAIT | M_ZERO);
+	channel = (hv_vmbus_channel*) malloc(sizeof(hv_vmbus_channel), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (!channel) {
 		return NULL;
 	}
 
-	mtx_init(&channel->InboundLock, "channel inbound", NULL, MTX_DEF);
+	mtx_init(&channel->inbound_lock, "channel inbound", NULL, MTX_DEF);
 
-	channel->ControlWQ = hv_work_queue_create("control");
-	if (!channel->ControlWQ) {
-		mtx_destroy(&channel->InboundLock);
+	channel->control_work_queue = hv_work_queue_create("control");
+	if (!channel->control_work_queue) {
+		mtx_destroy(&channel->inbound_lock);
 		free(channel, M_DEVBUF);
 		return NULL;
 	}
@@ -303,28 +299,28 @@ AllocVmbusChannel(void) {
  --*/
 static inline void
 ReleaseVmbusChannel(void* Context) {
-	VMBUS_CHANNEL* channel = (VMBUS_CHANNEL*) Context;
+	hv_vmbus_channel* channel = (hv_vmbus_channel*) Context;
 
-	hv_work_queue_close(channel->ControlWQ);
+	hv_work_queue_close(channel->control_work_queue);
 	free(channel, M_DEVBUF);
 }
 
 /*++
 
  Name:
- FreeVmbusChannel()
+ hv_vmbus_free_vmbus_channel()
 
  Description:
  Release the resources used by the vmbus channel object
 
  --*/
 void
-FreeVmbusChannel(VMBUS_CHANNEL* Channel) {
-	mtx_destroy(&Channel->InboundLock);
+hv_vmbus_free_vmbus_channel(hv_vmbus_channel* Channel) {
+	mtx_destroy(&Channel->inbound_lock);
 
 	// We have to release the channel's workqueue/thread in the vmbus's workqueue/thread context
 	// ie we can't destroy ourselves.
-	hv_queue_work_item(gVmbusConnection.WorkQueue, ReleaseVmbusChannel,
+	hv_queue_work_item(hv_vmbus_g_connection.work_queue, ReleaseVmbusChannel,
 		(void*) Channel);
 }
 
@@ -339,21 +335,21 @@ FreeVmbusChannel(VMBUS_CHANNEL* Channel) {
 
  --*/
 static void
-VmbusChannelProcessOffer(void *context) {
+vmbus_channel_process_offer(void *context) {
 	int ret = 0;
-	VMBUS_CHANNEL* newChannel = (VMBUS_CHANNEL*) context;
+	hv_vmbus_channel* newChannel = (hv_vmbus_channel*) context;
 	bool fNew = true;
-	VMBUS_CHANNEL* channel = NULL;
+	hv_vmbus_channel* channel = NULL;
 
 	// Make sure this is a new offer
-	mtx_lock_spin(&gVmbusConnection.ChannelLock);
+	mtx_lock_spin(&hv_vmbus_g_connection.channel_lock);
 
-	TAILQ_FOREACH(channel, &gVmbusConnection.channel_anchor, ListEntry) {
+	TAILQ_FOREACH(channel, &hv_vmbus_g_connection.channel_anchor, list_entry) {
 
-		if (!memcmp(&channel->OfferMsg.offer.interface_type,
-			&newChannel->OfferMsg.offer.interface_type, sizeof(hv_guid))
-			&& !memcmp(&channel->OfferMsg.offer.interface_instance,
-				&newChannel->OfferMsg.offer.interface_instance,
+		if (!memcmp(&channel->offer_msg.offer.interface_type,
+			&newChannel->offer_msg.offer.interface_type, sizeof(hv_guid))
+			&& !memcmp(&channel->offer_msg.offer.interface_instance,
+				&newChannel->offer_msg.offer.interface_instance,
 				sizeof(hv_guid))) {
 			fNew = false;
 			break;
@@ -362,21 +358,21 @@ VmbusChannelProcessOffer(void *context) {
 
 	if (fNew) {
 		/* Insert at tail */
-		TAILQ_INSERT_TAIL(&gVmbusConnection.channel_anchor, newChannel, ListEntry);
+		TAILQ_INSERT_TAIL(&hv_vmbus_g_connection.channel_anchor, newChannel, list_entry);
 
 	}
-	mtx_unlock_spin(&gVmbusConnection.ChannelLock);
+	mtx_unlock_spin(&hv_vmbus_g_connection.channel_lock);
 
 	if (!fNew) {
-		FreeVmbusChannel(newChannel);
+		hv_vmbus_free_vmbus_channel(newChannel);
 		return;
 	}
 
 	// Start the process of binding this offer to the driver
 	// We need to set the device field before calling VmbusChildDeviceAdd()
 	newChannel->device = vmbus_child_device_create(
-		newChannel->OfferMsg.offer.interface_type,
-		newChannel->OfferMsg.offer.interface_instance, newChannel);
+		newChannel->offer_msg.offer.interface_type,
+		newChannel->offer_msg.offer.interface_instance, newChannel);
 
 	// todo - the HV_CHANNEL_OPEN_STATE flag should not be set below but in the "open" channel
 	//			request. The ret != 0 logic below doesn't take into account that a channel
@@ -386,16 +382,16 @@ VmbusChannelProcessOffer(void *context) {
 	// which eventually invokes the device driver's AddDevice() method.
 	ret = vmbus_child_device_register(newChannel->device);
 	if (ret != 0) {
-		mtx_lock_spin(&gVmbusConnection.ChannelLock);
-		TAILQ_REMOVE(&gVmbusConnection.channel_anchor, newChannel, ListEntry);
-		mtx_unlock_spin(&gVmbusConnection.ChannelLock);
+		mtx_lock_spin(&hv_vmbus_g_connection.channel_lock);
+		TAILQ_REMOVE(&hv_vmbus_g_connection.channel_anchor, newChannel, list_entry);
+		mtx_unlock_spin(&hv_vmbus_g_connection.channel_lock);
 
-		FreeVmbusChannel(newChannel);
+		hv_vmbus_free_vmbus_channel(newChannel);
 	} else {
 		// This state is used to indicate a successful open 
 		// so that when we do close the channel normally,
 		// we can cleanup properly
-		newChannel->State = HV_CHANNEL_OPEN_STATE;
+		newChannel->state = HV_CHANNEL_OPEN_STATE;
 
 	} 
 }
@@ -404,7 +400,7 @@ VmbusChannelProcessOffer(void *context) {
 /*++
 
  Name:
- VmbusChannelOnOffer()
+ vmbus_channel_on_Offer()
 
  Description:
  Handler for channel offers from vmbus in parent partition. We ignore all offers except
@@ -413,9 +409,9 @@ VmbusChannelProcessOffer(void *context) {
 
  --*/
 static void
-VmbusChannelOnOffer(hv_vmbus_channel_message_header * hdr) {
+vmbus_channel_on_offer(hv_vmbus_channel_message_header * hdr) {
 	hv_vmbus_channel_offer_channel* offer = (hv_vmbus_channel_offer_channel*) hdr;
-	VMBUS_CHANNEL* newChannel;
+	hv_vmbus_channel* newChannel;
 
 	hv_guid *guidType;
 	hv_guid *guidInstance;
@@ -425,18 +421,18 @@ VmbusChannelOnOffer(hv_vmbus_channel_message_header * hdr) {
 
 
 	// Allocate the channel object and save this offer.
-	newChannel = AllocVmbusChannel();
+	newChannel = hv_vmbus_allocate_channel();
 	if (!newChannel)
 		return;
 
 
-	memcpy(&newChannel->OfferMsg, offer,
+	memcpy(&newChannel->offer_msg, offer,
 		sizeof(hv_vmbus_channel_offer_channel));
-	newChannel->MonitorGroup = (uint8_t) offer->monitor_id / 32;
-	newChannel->MonitorBit = (uint8_t) offer->monitor_id % 32;
+	newChannel->monitor_group = (uint8_t) offer->monitor_id / 32;
+	newChannel->monitor_bit = (uint8_t) offer->monitor_id % 32;
 
 	// TODO: Make sure the offer comes from our parent partition
-	hv_queue_work_item(newChannel->ControlWQ, VmbusChannelProcessOffer,
+	hv_queue_work_item(newChannel->control_work_queue, vmbus_channel_process_offer,
 		newChannel);
 
 }
@@ -444,7 +440,7 @@ VmbusChannelOnOffer(hv_vmbus_channel_message_header * hdr) {
 /*++
 
  Name:
- VmbusChannelOnOfferRescind()
+ vmbus_channel_on_OfferRescind()
 
  Description:
  Rescind offer handler. We queue a work item to process this offer
@@ -452,24 +448,24 @@ VmbusChannelOnOffer(hv_vmbus_channel_message_header * hdr) {
 
  --*/
 static void
-VmbusChannelOnOfferRescind(hv_vmbus_channel_message_header * hdr) {
+vmbus_channel_on_offer_rescind(hv_vmbus_channel_message_header * hdr) {
 	hv_vmbus_channel_rescind_offer* rescind =
 		(hv_vmbus_channel_rescind_offer*) hdr;
-	VMBUS_CHANNEL* channel;
+	hv_vmbus_channel* channel;
 
-	channel = GetChannelFromRelId(rescind->child_rel_id);
+	channel = hv_vmbus_get_channel_from_rel_id(rescind->child_rel_id);
 	if (channel == NULL) 
 		return;
 
-	hv_queue_work_item(channel->ControlWQ,
-		VmbusChannelProcessRescindOffer, channel);
+	hv_queue_work_item(channel->control_work_queue,
+		vmbus_channel_process_rescind_offer, channel);
 
 }
 
 /*++
 
  Name:
- VmbusChannelOnOffersDelivered()
+ vmbus_channel_on_OffersDelivered()
 
  Description:
  This is invoked when all offers have been delivered.
@@ -477,13 +473,13 @@ VmbusChannelOnOfferRescind(hv_vmbus_channel_message_header * hdr) {
 
  --*/
 static void
-VmbusChannelOnOffersDelivered(hv_vmbus_channel_message_header * hdr) {
+vmbus_channel_on_offers_delivered(hv_vmbus_channel_message_header * hdr) {
 }
 
 /*++
 
  Name:
- VmbusChannelOnOpenResult()
+ vmbus_channel_on_open_result()
 
  Description:
  Open result handler. This is invoked when we received a response
@@ -492,38 +488,38 @@ VmbusChannelOnOffersDelivered(hv_vmbus_channel_message_header * hdr) {
 
  --*/
 static void
-VmbusChannelOnOpenResult(hv_vmbus_channel_message_header * hdr) {
+vmbus_channel_on_open_result(hv_vmbus_channel_message_header * hdr) {
 	hv_vmbus_channel_open_result* result = (hv_vmbus_channel_open_result*) hdr;
-	VMBUS_CHANNEL_MSGINFO* msgInfo;
+	hv_vmbus_channel_msg_info* msgInfo;
 	hv_vmbus_channel_message_header* requestHeader;
 	hv_vmbus_channel_open_channel* openMsg;
 
 
 	// Find the open msg, copy the result and signal/unblock the wait event
-	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
+	mtx_lock_spin(&hv_vmbus_g_connection.channel_msg_lock);
 
-	TAILQ_FOREACH(msgInfo, &gVmbusConnection.channel_msg_anchor, MsgListEntry) {
-		requestHeader = (hv_vmbus_channel_message_header*) msgInfo->Msg;
+	TAILQ_FOREACH(msgInfo, &hv_vmbus_g_connection.channel_msg_anchor, msg_list_entry) {
+		requestHeader = (hv_vmbus_channel_message_header*) msgInfo->msg;
 
 		if (requestHeader->message_type == HV_CHANNEL_MESSAGE_OPEN_CHANNEL) {
-			openMsg = (hv_vmbus_channel_open_channel*) msgInfo->Msg;
+			openMsg = (hv_vmbus_channel_open_channel*) msgInfo->msg;
 			if (openMsg->child_rel_id == result->child_rel_id
 				&& openMsg->open_id == result->open_id) {
-				memcpy(&msgInfo->Response.OpenResult, result,
+				memcpy(&msgInfo->response.open_result, result,
 					sizeof(hv_vmbus_channel_open_result));
 				sema_post(&msgInfo->wait_sema);
 				break;
 			}
 		}
 	}
-	mtx_unlock_spin(&gVmbusConnection.ChannelMsgLock);
+	mtx_unlock_spin(&hv_vmbus_g_connection.channel_msg_lock);
 
 }
 
 /*++
 
  Name:
- VmbusChannelOnGpadlCreated()
+ vmbus_channel_on_gpadl_created()
 
  Description:
  GPADL created handler. This is invoked when we received a response
@@ -532,19 +528,19 @@ VmbusChannelOnOpenResult(hv_vmbus_channel_message_header * hdr) {
 
  --*/
 static void
-VmbusChannelOnGpadlCreated(hv_vmbus_channel_message_header * hdr) {
+vmbus_channel_on_gpadl_created(hv_vmbus_channel_message_header * hdr) {
 	hv_vmbus_channel_gpadl_created *gpadlCreated =
 		(hv_vmbus_channel_gpadl_created*) hdr;
-	VMBUS_CHANNEL_MSGINFO *msgInfo;
+	hv_vmbus_channel_msg_info *msgInfo;
 	hv_vmbus_channel_message_header *requestHeader;
 	hv_vmbus_channel_gpadl_header *gpadlHeader;
 
 
 	// Find the establish msg, copy the result and signal/unblock the wait event
-	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
+	mtx_lock_spin(&hv_vmbus_g_connection.channel_msg_lock);
 
-	TAILQ_FOREACH(msgInfo, &gVmbusConnection.channel_msg_anchor, MsgListEntry) {
-		requestHeader = (hv_vmbus_channel_message_header*) msgInfo->Msg;
+	TAILQ_FOREACH(msgInfo, &hv_vmbus_g_connection.channel_msg_anchor, msg_list_entry) {
+		requestHeader = (hv_vmbus_channel_message_header*) msgInfo->msg;
 
 		if (requestHeader->message_type == HV_CHANNEL_MESSAGEL_GPADL_HEADER) {
 			gpadlHeader =
@@ -552,7 +548,7 @@ VmbusChannelOnGpadlCreated(hv_vmbus_channel_message_header * hdr) {
 
 			if ((gpadlCreated->child_rel_id == gpadlHeader->child_rel_id)
 				&& (gpadlCreated->gpadl == gpadlHeader->gpadl)) {
-				memcpy(&msgInfo->Response.GpadlCreated,
+				memcpy(&msgInfo->response.gpadl_created,
 					gpadlCreated,
 					sizeof(hv_vmbus_channel_gpadl_created));
 				sema_post(&msgInfo->wait_sema);
@@ -560,14 +556,14 @@ VmbusChannelOnGpadlCreated(hv_vmbus_channel_message_header * hdr) {
 			}
 		}
 	}
-	mtx_unlock_spin(&gVmbusConnection.ChannelMsgLock);
+	mtx_unlock_spin(&hv_vmbus_g_connection.channel_msg_lock);
 
 }
 
 /*++
 
  Name:
- VmbusChannelOnGpadlTorndown()
+ vmbus_channel_on_gpadl_torndown()
 
  Description:
  GPADL torndown handler. This is invoked when we received a response
@@ -576,41 +572,41 @@ VmbusChannelOnGpadlCreated(hv_vmbus_channel_message_header * hdr) {
 
  --*/
 static void
-VmbusChannelOnGpadlTorndown(hv_vmbus_channel_message_header * hdr) {
-	hv_vmbus_channel_gpadl_torndown* gpadlTorndown =
+vmbus_channel_on_gpadl_torndown(hv_vmbus_channel_message_header * hdr) {
+	hv_vmbus_channel_gpadl_torndown* gpadl_torndown =
 		(hv_vmbus_channel_gpadl_torndown*) hdr;
-	VMBUS_CHANNEL_MSGINFO* msgInfo;
+	hv_vmbus_channel_msg_info* msgInfo;
 	hv_vmbus_channel_message_header *requestHeader;
 	hv_vmbus_channel_gpadl_teardown *gpadlTeardown;
 
 
 	// Find the open msg, copy the result and signal/unblock the wait event
-	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
+	mtx_lock_spin(&hv_vmbus_g_connection.channel_msg_lock);
 
-	TAILQ_FOREACH(msgInfo, &gVmbusConnection.channel_msg_anchor, MsgListEntry) {
-		requestHeader = (hv_vmbus_channel_message_header*) msgInfo->Msg;
+	TAILQ_FOREACH(msgInfo, &hv_vmbus_g_connection.channel_msg_anchor, msg_list_entry) {
+		requestHeader = (hv_vmbus_channel_message_header*) msgInfo->msg;
 
 		if (requestHeader->message_type == HV_CHANNEL_MESSAGE_GPADL_TEARDOWN) {
 			gpadlTeardown =
 				(hv_vmbus_channel_gpadl_teardown*) requestHeader;
 
-			if (gpadlTorndown->gpadl == gpadlTeardown->gpadl) {
-				memcpy(&msgInfo->Response.GpadlTorndown,
-					gpadlTorndown,
+			if (gpadl_torndown->gpadl == gpadlTeardown->gpadl) {
+				memcpy(&msgInfo->response.gpadl_torndown,
+					gpadl_torndown,
 					sizeof(hv_vmbus_channel_gpadl_torndown));
 				sema_post(&msgInfo->wait_sema);
 				break;
 			}
 		}
 	}
-	mtx_unlock_spin(&gVmbusConnection.ChannelMsgLock);
+	mtx_unlock_spin(&hv_vmbus_g_connection.channel_msg_lock);
 
 }
 
 /*++
 
  Name:
- VmbusChannelOnVersionResponse()
+ vmbus_channel_on_version_response()
 
  Description:
  Version response handler. This is invoked when we received a response
@@ -619,37 +615,37 @@ VmbusChannelOnGpadlTorndown(hv_vmbus_channel_message_header * hdr) {
 
  --*/
 static void
-VmbusChannelOnVersionResponse(hv_vmbus_channel_message_header * hdr) {
-	VMBUS_CHANNEL_MSGINFO *msgInfo;
+vmbus_channel_on_version_response(hv_vmbus_channel_message_header * hdr) {
+	hv_vmbus_channel_msg_info *msgInfo;
 	hv_vmbus_channel_message_header *requestHeader;
 	hv_vmbus_channel_initiate_contact *initiate;
 	hv_vmbus_channel_version_response *versionResponse =
 		(hv_vmbus_channel_version_response*) hdr;
 
 
-	mtx_lock_spin(&gVmbusConnection.ChannelMsgLock);
+	mtx_lock_spin(&hv_vmbus_g_connection.channel_msg_lock);
 
-	TAILQ_FOREACH(msgInfo, &gVmbusConnection.channel_msg_anchor, MsgListEntry) {
-		requestHeader = (hv_vmbus_channel_message_header*) msgInfo->Msg;
+	TAILQ_FOREACH(msgInfo, &hv_vmbus_g_connection.channel_msg_anchor, msg_list_entry) {
+		requestHeader = (hv_vmbus_channel_message_header*) msgInfo->msg;
 
 		if (requestHeader->message_type
 			== HV_CHANNEL_MESSAGE_INITIATED_CONTACT) {
 			initiate =
 				(hv_vmbus_channel_initiate_contact*) requestHeader;
-			memcpy(&msgInfo->Response.VersionResponse,
+			memcpy(&msgInfo->response.version_response,
 				versionResponse,
 				sizeof(hv_vmbus_channel_version_response));
 			sema_post(&msgInfo->wait_sema);
 		}
 	}
-	mtx_unlock_spin(&gVmbusConnection.ChannelMsgLock);
+	mtx_unlock_spin(&hv_vmbus_g_connection.channel_msg_lock);
 
 }
 
 /*++
 
  Name:
- VmbusOnChannelMessage()
+ hv_vmbus_on_channel_message()
 
  Description:
  Handler for channel protocol messages.
@@ -657,14 +653,14 @@ VmbusChannelOnVersionResponse(hv_vmbus_channel_message_header * hdr) {
 
  --*/
 void
-VmbusOnChannelMessage(void *Context) {
-	HV_MESSAGE *msg = (HV_MESSAGE*) Context;
+hv_vmbus_on_channel_message(void *Context) {
+	hv_vmbus_message *msg = (hv_vmbus_message*) Context;
 	hv_vmbus_channel_message_header* hdr;
 	int size;
 
 
-	hdr = (hv_vmbus_channel_message_header*) msg->u.Payload;
-	size = msg->header.PayloadSize;
+	hdr = (hv_vmbus_channel_message_header*) msg->u.payload;
+	size = msg->header.payload_size;
 
 
 	if (hdr->message_type >= HV_CHANNEL_MESSAGE_COUNT) {
@@ -683,20 +679,20 @@ VmbusOnChannelMessage(void *Context) {
 /*++
 
  Name:
- VmbusChannelRequestOffers()
+ hv_vmbus_request_channel_offers()
 
  Description:
  Send a request to get all our pending offers.
 
  --*/
 int
-VmbusChannelRequestOffers(void) {
+hv_vmbus_request_channel_offers(void) {
 	int ret = 0;
 	hv_vmbus_channel_message_header* msg;
-	VMBUS_CHANNEL_MSGINFO* msgInfo;
+	hv_vmbus_channel_msg_info* msgInfo;
 
-	msgInfo = (VMBUS_CHANNEL_MSGINFO *)
-	        malloc(sizeof(VMBUS_CHANNEL_MSGINFO) +
+	msgInfo = (hv_vmbus_channel_msg_info *)
+	        malloc(sizeof(hv_vmbus_channel_msg_info) +
 	          sizeof(hv_vmbus_channel_message_header), M_DEVBUF, M_NOWAIT);
 
 	if (!msgInfo) {
@@ -704,10 +700,10 @@ VmbusChannelRequestOffers(void) {
 		return -ENOMEM;
 	}
 
-	msg = (hv_vmbus_channel_message_header*) msgInfo->Msg;
+	msg = (hv_vmbus_channel_message_header*) msgInfo->msg;
 	msg->message_type = HV_CHANNEL_MESSAGE_REQUEST_OFFERS;
 
-	ret = VmbusPostMessage(msg, sizeof(hv_vmbus_channel_message_header));
+	ret = hv_vmbus_post_message(msg, sizeof(hv_vmbus_channel_message_header));
 	if (ret != 0) 
 		printf("VMBUS: Request Offers PostMessage failed\n");
 
@@ -720,26 +716,26 @@ VmbusChannelRequestOffers(void) {
 /*++
 
  Name:
- VmbusChannelReleaseUnattachedChannels()
+ hv_vmbus_release_unattached_channels()
 
  Description:
  Release channels that are unattached/unconnected ie (no drivers associated)
 
  --*/
 void
-VmbusChannelReleaseUnattachedChannels(void) 
+hv_vmbus_release_unattached_channels(void) 
 {
-	VMBUS_CHANNEL *channel;
+	hv_vmbus_channel *channel;
 
-	mtx_lock_spin(&gVmbusConnection.ChannelLock);
+	mtx_lock_spin(&hv_vmbus_g_connection.channel_lock);
 
-	while (!TAILQ_EMPTY(&gVmbusConnection.channel_anchor)) {
-		channel = TAILQ_FIRST(&gVmbusConnection.channel_anchor);
-		TAILQ_REMOVE(&gVmbusConnection.channel_anchor, channel, ListEntry);
+	while (!TAILQ_EMPTY(&hv_vmbus_g_connection.channel_anchor)) {
+		channel = TAILQ_FIRST(&hv_vmbus_g_connection.channel_anchor);
+		TAILQ_REMOVE(&hv_vmbus_g_connection.channel_anchor, channel, list_entry);
 
 		vmbus_child_device_unregister(channel->device);
-		FreeVmbusChannel(channel);
+		hv_vmbus_free_vmbus_channel(channel);
 
 	}
-	mtx_unlock_spin(&gVmbusConnection.ChannelLock);
+	mtx_unlock_spin(&hv_vmbus_g_connection.channel_lock);
 }

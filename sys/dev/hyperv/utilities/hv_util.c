@@ -16,7 +16,7 @@
 #include <sys/reboot.h>
 #include <sys/timetc.h>
 
-#include "../include/hyperv.h"
+#include "hyperv.h"
 
 #define MAX_UTIL_SERVICES 4
 
@@ -185,7 +185,7 @@ static inline void adj_guesttime(uint64_t hosttime, uint8_t flags)
  */
 static void timesync_cb(void *context)
 {
-	VMBUS_CHANNEL *channel = context;
+	hv_vmbus_channel *channel = context;
 	uint32_t recvlen;
 	uint64_t requestid;
 	struct hv_vmbus_icmsg_hdr *icmsghdrp;
@@ -220,7 +220,7 @@ static void timesync_cb(void *context)
 
 static void shutdown_cb(void *context) 
 {
-	VMBUS_CHANNEL *channel = context;
+	hv_vmbus_channel *channel = context;
 	uint8_t *buf;
 	int ret;
 	uint32_t recvlen;
@@ -279,7 +279,7 @@ static void shutdown_cb(void *context)
 
 static void heartbeat_cb(void *context) 
 {
-	VMBUS_CHANNEL *channel = context;
+	hv_vmbus_channel *channel = context;
 	uint8_t *buf;
 	uint32_t recvlen;
 	uint64_t requestid;

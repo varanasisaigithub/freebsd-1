@@ -68,10 +68,9 @@
 #include <machine/bus.h>
 #include <machine/atomic.h>
 
-#include <dev/hyperv/include/hyperv.h>
-
-#include <dev/hyperv/netvsc/hv_net_vsc.h>
-#include <dev/hyperv/netvsc/hv_rndis.h>
+#include "hyperv.h"
+#include "hv_net_vsc.h"
+#include "hv_rndis.h"
 
 
 /*
@@ -631,7 +630,7 @@ hv_nv_on_device_add(struct hv_device *device, void *additional_info)
 	 */
 	for (i=0; i < NETVSC_RECEIVE_PACKETLIST_COUNT; i++) {
 		packet = malloc(sizeof(netvsc_packet) +
-		    (NETVSC_RECEIVE_SG_COUNT * sizeof(PAGE_BUFFER)),
+		    (NETVSC_RECEIVE_SG_COUNT * sizeof(hv_vmbus_page_buffer)),
 		    M_DEVBUF, M_NOWAIT | M_ZERO);
 		if (!packet) {
 			break;
@@ -704,9 +703,9 @@ hv_nv_on_device_remove(struct hv_device *device)
 	netvsc_dev *net_dev = sc->net_dev;;
 	
 	/* Stop outbound traffic ie sends and receives completions */
-	mtx_lock(&device->channel->InboundLock);
+	mtx_lock(&device->channel->inbound_lock);
 	net_dev->destroy = true;
-	mtx_unlock(&device->channel->InboundLock);
+	mtx_unlock(&device->channel->inbound_lock);
 
 	/* Wait for all send completions */
 	while (net_dev->num_outstanding_sends) {

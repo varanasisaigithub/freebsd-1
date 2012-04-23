@@ -463,7 +463,7 @@ typedef struct netvsc_packet_ {
 	void		*extension;
 	uint32_t	tot_data_buf_len;
 	uint32_t	page_buf_count;
-	PAGE_BUFFER	page_buffers[NETVSC_PACKET_MAXPAGE];
+	hv_vmbus_page_buffer	page_buffers[NETVSC_PACKET_MAXPAGE];
 } netvsc_packet;
 
 
@@ -505,7 +505,7 @@ typedef struct hn_softc {
 /*
  * Externs
  */
-extern int promisc_mode;
+extern int hv_promisc_mode;
 
 void hv_nv_on_receive_completion(void *context);
 void netvsc_linkstatus_callback(struct hv_device *device_obj,

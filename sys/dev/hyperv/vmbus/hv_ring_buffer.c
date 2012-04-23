@@ -62,8 +62,7 @@
 #include <sys/lock.h>
 #include <sys/mutex.h>
 
-
-#include "../include/hyperv.h"
+#include "hyperv.h"
 #include "vmbus_priv.h"
 
 // Amount of space to write to
@@ -103,9 +102,9 @@ GetRingBufferAvailBytes(hv_vmbus_ring_buffer_info *rbi, uint32_t *read,
 
  --*/
 static inline uint32_t
-GetNextWriteLocation(hv_vmbus_ring_buffer_info* RingInfo) 
+GetNextWriteLocation(hv_vmbus_ring_buffer_info* ring_info) 
 {
-	uint32_t next = RingInfo->ring_buffer->write_index;
+	uint32_t next = ring_info->ring_buffer->write_index;
 
 	return next;
 }
@@ -120,10 +119,10 @@ GetNextWriteLocation(hv_vmbus_ring_buffer_info* RingInfo)
 
  --*/
 static inline void
-SetNextWriteLocation(hv_vmbus_ring_buffer_info* RingInfo,
+SetNextWriteLocation(hv_vmbus_ring_buffer_info* ring_info,
 	uint32_t NextWriteLocation) 
 {
-	RingInfo->ring_buffer->write_index = NextWriteLocation;
+	ring_info->ring_buffer->write_index = NextWriteLocation;
 }
 
 /*++
@@ -136,9 +135,9 @@ SetNextWriteLocation(hv_vmbus_ring_buffer_info* RingInfo,
 
  --*/
 static inline uint32_t
-GetNextReadLocation(hv_vmbus_ring_buffer_info* RingInfo) 
+GetNextReadLocation(hv_vmbus_ring_buffer_info* ring_info) 
 {
-	uint32_t next = RingInfo->ring_buffer->read_index;
+	uint32_t next = ring_info->ring_buffer->read_index;
 
 	return next;
 }
@@ -154,13 +153,13 @@ GetNextReadLocation(hv_vmbus_ring_buffer_info* RingInfo)
 
  --*/
 static inline uint32_t
-GetNextReadLocationWithOffset(hv_vmbus_ring_buffer_info* RingInfo,
+GetNextReadLocationWithOffset(hv_vmbus_ring_buffer_info* ring_info,
 	uint32_t Offset) 
 {
-	uint32_t next = RingInfo->ring_buffer->read_index;
+	uint32_t next = ring_info->ring_buffer->read_index;
 
 	next += Offset;
-	next %= RingInfo->ring_data_size;
+	next %= ring_info->ring_data_size;
 
 	return next;
 }
@@ -175,10 +174,10 @@ GetNextReadLocationWithOffset(hv_vmbus_ring_buffer_info* RingInfo,
 
  --*/
 static inline void
-SetNextReadLocation(hv_vmbus_ring_buffer_info* RingInfo,
+SetNextReadLocation(hv_vmbus_ring_buffer_info* ring_info,
 	uint32_t NextReadLocation) 
 {
-	RingInfo->ring_buffer->read_index = NextReadLocation;
+	ring_info->ring_buffer->read_index = NextReadLocation;
 }
 
 /*++
@@ -191,9 +190,9 @@ SetNextReadLocation(hv_vmbus_ring_buffer_info* RingInfo,
 
  --*/
 static inline void *
-GetRingBuffer(hv_vmbus_ring_buffer_info* RingInfo) 
+GetRingBuffer(hv_vmbus_ring_buffer_info* ring_info) 
 {
-	return (void *) RingInfo->ring_buffer->Buffer;
+	return (void *) ring_info->ring_buffer->buffer;
 }
 
 /*++
@@ -206,9 +205,9 @@ GetRingBuffer(hv_vmbus_ring_buffer_info* RingInfo)
 
  --*/
 static inline uint32_t
-GetRingBufferSize(hv_vmbus_ring_buffer_info* RingInfo) 
+GetRingBufferSize(hv_vmbus_ring_buffer_info* ring_info) 
 {
-	return RingInfo->ring_data_size;
+	return ring_info->ring_data_size;
 }
 
 /*++
@@ -221,9 +220,9 @@ GetRingBufferSize(hv_vmbus_ring_buffer_info* RingInfo)
 
  --*/
 static inline uint64_t
-GetRingBufferIndices(hv_vmbus_ring_buffer_info* RingInfo) 
+GetRingBufferIndices(hv_vmbus_ring_buffer_info* ring_info) 
 {
-	return (uint64_t) RingInfo->ring_buffer->write_index << 32;
+	return (uint64_t) ring_info->ring_buffer->write_index << 32;
 }
 
 
@@ -231,54 +230,54 @@ GetRingBufferIndices(hv_vmbus_ring_buffer_info* RingInfo)
 // Internal routines
 //
 static uint32_t
-CopyToRingBuffer(hv_vmbus_ring_buffer_info *RingInfo, uint32_t StartWriteOffset, char *Src,
+CopyToRingBuffer(hv_vmbus_ring_buffer_info *ring_info, uint32_t StartWriteOffset, char *Src,
 	uint32_t SrcLen);
 
 static uint32_t
-CopyFromRingBuffer(hv_vmbus_ring_buffer_info *RingInfo, char *Dest, uint32_t DestLen,
+CopyFromRingBuffer(hv_vmbus_ring_buffer_info *ring_info, char *Dest, uint32_t DestLen,
 	uint32_t StartReadOffset);
 
 /*++
 
  Name:
- RingBufferGetDebugInfo()
+ hv_vmbus_ring_buffer_get_debug_info()
 
  Description:
  Get various debug metrics for the specified ring buffer
 
  --*/
 void
-RingBufferGetDebugInfo(hv_vmbus_ring_buffer_info *RingInfo,
-	RING_BUFFER_DEBUG_INFO *DebugInfo) 
+hv_vmbus_ring_buffer_get_debug_info(hv_vmbus_ring_buffer_info *ring_info,
+	hv_vmbus_ring_buffer_debug_info *debug_info)
 {
 	uint32_t bytesAvailToWrite;
 	uint32_t bytesAvailToRead;
 
-	if (RingInfo->ring_buffer) {
-		GetRingBufferAvailBytes(RingInfo, &bytesAvailToRead,
+	if (ring_info->ring_buffer) {
+		GetRingBufferAvailBytes(ring_info, &bytesAvailToRead,
 			&bytesAvailToWrite);
 
-		DebugInfo->BytesAvailToRead = bytesAvailToRead;
-		DebugInfo->BytesAvailToWrite = bytesAvailToWrite;
-		DebugInfo->CurrentReadIndex = RingInfo->ring_buffer->read_index;
-		DebugInfo->CurrentWriteIndex = RingInfo->ring_buffer->write_index;
+		debug_info->bytes_avail_to_read = bytesAvailToRead;
+		debug_info->bytes_avail_to_write = bytesAvailToWrite;
+		debug_info->current_read_index = ring_info->ring_buffer->read_index;
+		debug_info->current_write_index = ring_info->ring_buffer->write_index;
 
-		DebugInfo->Currentinterrupt_mask =
-			RingInfo->ring_buffer->interrupt_mask;
+		debug_info->current_interrupt_mask =
+			ring_info->ring_buffer->interrupt_mask;
 	}
 }
 
 /*++
 
  Name:
- GetRingBufferinterrupt_mask()
+ hv_vmbus_get_ring_buffer_interrupt_mask()
 
  Description:
  Get the interrupt mask for the specified ring buffer
 
  --*/
 uint32_t
-GetRingBufferinterrupt_mask(hv_vmbus_ring_buffer_info *rbi) 
+hv_vmbus_get_ring_buffer_interrupt_mask(hv_vmbus_ring_buffer_info *rbi) 
 {
 	return rbi->ring_buffer->interrupt_mask;
 }
@@ -286,25 +285,25 @@ GetRingBufferinterrupt_mask(hv_vmbus_ring_buffer_info *rbi)
 /*++
 
  Name:
- RingBufferInit()
+ hv_vmbus_ring_buffer_init()
 
  Description:
  Initialize the ring buffer
 
  --*/
 int
-RingBufferInit(hv_vmbus_ring_buffer_info *RingInfo, void *Buffer, uint32_t BufferLen) 
+hv_vmbus_ring_buffer_init(hv_vmbus_ring_buffer_info *ring_info, void *Buffer, uint32_t buffer_len) 
 {
 
-	memset(RingInfo, 0, sizeof(hv_vmbus_ring_buffer_info));
+	memset(ring_info, 0, sizeof(hv_vmbus_ring_buffer_info));
 
-	RingInfo->ring_buffer = (hv_vmbus_ring_buffer*) Buffer;
-	RingInfo->ring_buffer->read_index = RingInfo->ring_buffer->write_index = 0;
+	ring_info->ring_buffer = (hv_vmbus_ring_buffer*) Buffer;
+	ring_info->ring_buffer->read_index = ring_info->ring_buffer->write_index = 0;
 
-	RingInfo->ring_size = BufferLen;
-	RingInfo->ring_data_size = BufferLen - sizeof(hv_vmbus_ring_buffer);
+	ring_info->ring_size = buffer_len;
+	ring_info->ring_data_size = buffer_len - sizeof(hv_vmbus_ring_buffer);
 
-	mtx_init(&RingInfo->ring_lock, "vmbus ring buffer", NULL, MTX_SPIN);
+	mtx_init(&ring_info->ring_lock, "vmbus ring buffer", NULL, MTX_SPIN);
 
 	return 0;
 }
@@ -312,29 +311,29 @@ RingBufferInit(hv_vmbus_ring_buffer_info *RingInfo, void *Buffer, uint32_t Buffe
 /*++
 
  Name:
- RingBufferCleanup()
+ hv_ring_buffer_cleanup()
 
  Description:
  Cleanup the ring buffer
 
  --*/
-void RingBufferCleanup(hv_vmbus_ring_buffer_info* RingInfo) 
+void hv_ring_buffer_cleanup(hv_vmbus_ring_buffer_info* ring_info) 
 {
-	mtx_destroy(&RingInfo->ring_lock);
+	mtx_destroy(&ring_info->ring_lock);
 }
 
 /*++
 
  Name:
- RingBufferWrite()
+ hv_ring_buffer_write()
 
  Description:
  Write to the ring buffer
 
  --*/
 int
-RingBufferWrite(hv_vmbus_ring_buffer_info* OutRingInfo, SG_BUFFER_LIST SgBuffers[],
-	uint32_t SgBufferCount) 
+hv_ring_buffer_write(hv_vmbus_ring_buffer_info* Outring_info, hv_vmbus_sg_buffer_list sg_buffers[],
+	uint32_t sg_buffer_count) 
 {
 	int i = 0;
 	uint32_t byteAvailToWrite;
@@ -344,15 +343,15 @@ RingBufferWrite(hv_vmbus_ring_buffer_info* OutRingInfo, SG_BUFFER_LIST SgBuffers
 	volatile uint32_t nextWriteLocation;
 	uint64_t prevIndices=0;
 
-	for (i = 0; i < SgBufferCount; i++) {
-		totalBytesToWrite += SgBuffers[i].length;
+	for (i = 0; i < sg_buffer_count; i++) {
+		totalBytesToWrite += sg_buffers[i].length;
 	}
 
 	totalBytesToWrite += sizeof(uint64_t);
 
-	mtx_lock_spin(&OutRingInfo->ring_lock);
+	mtx_lock_spin(&Outring_info->ring_lock);
 
-	GetRingBufferAvailBytes(OutRingInfo, &byteAvailToRead,
+	GetRingBufferAvailBytes(Outring_info, &byteAvailToRead,
 		&byteAvailToWrite);
 
 
@@ -362,33 +361,33 @@ RingBufferWrite(hv_vmbus_ring_buffer_info* OutRingInfo, SG_BUFFER_LIST SgBuffers
 
 	if (byteAvailToWrite <= totalBytesToWrite) {
 
-		mtx_unlock_spin(&OutRingInfo->ring_lock);
+		mtx_unlock_spin(&Outring_info->ring_lock);
 		return -EAGAIN;
 	}
 
 	// Write to the ring buffer
-	nextWriteLocation = GetNextWriteLocation(OutRingInfo);
+	nextWriteLocation = GetNextWriteLocation(Outring_info);
 
-	for (i = 0; i < SgBufferCount; i++) {
-		nextWriteLocation = CopyToRingBuffer(OutRingInfo,
-			nextWriteLocation, (char *)SgBuffers[i].Data,
-			SgBuffers[i].length);
+	for (i = 0; i < sg_buffer_count; i++) {
+		nextWriteLocation = CopyToRingBuffer(Outring_info,
+			nextWriteLocation, (char *)sg_buffers[i].data,
+			sg_buffers[i].length);
 	}
 
 	// Set previous packet start
-	prevIndices = GetRingBufferIndices(OutRingInfo);
+	prevIndices = GetRingBufferIndices(Outring_info);
 
-	nextWriteLocation = CopyToRingBuffer(OutRingInfo, nextWriteLocation,
+	nextWriteLocation = CopyToRingBuffer(Outring_info, nextWriteLocation,
 		(char *)&prevIndices, sizeof(uint64_t));
 
 	// Make sure we flush all writes before updating the writeIndex
 	wmb();
 
 	// Now, update the write location
-	SetNextWriteLocation(OutRingInfo, nextWriteLocation);
+	SetNextWriteLocation(Outring_info, nextWriteLocation);
 
 
-	mtx_unlock_spin(&OutRingInfo->ring_lock);
+	mtx_unlock_spin(&Outring_info->ring_lock);
 
 	return 0;
 }
@@ -396,37 +395,37 @@ RingBufferWrite(hv_vmbus_ring_buffer_info* OutRingInfo, SG_BUFFER_LIST SgBuffers
 /*++
 
  Name:
- RingBufferPeek()
+ hv_ring_buffer_beek()
 
  Description:
  Read without advancing the read index
 
  --*/
 int
-RingBufferPeek(hv_vmbus_ring_buffer_info* InRingInfo, void* Buffer, uint32_t BufferLen) 
+hv_ring_buffer_beek(hv_vmbus_ring_buffer_info* Inring_info, void* Buffer, uint32_t buffer_len) 
 {
 	uint32_t bytesAvailToWrite;
 	uint32_t bytesAvailToRead;
 	uint32_t nextReadLocation = 0;
 
-	mtx_lock_spin(&InRingInfo->ring_lock);
+	mtx_lock_spin(&Inring_info->ring_lock);
 
-	GetRingBufferAvailBytes(InRingInfo, &bytesAvailToRead,
+	GetRingBufferAvailBytes(Inring_info, &bytesAvailToRead,
 		&bytesAvailToWrite);
 
 	// Make sure there is something to read
-	if (bytesAvailToRead < BufferLen) {
-		mtx_unlock_spin(&InRingInfo->ring_lock);
+	if (bytesAvailToRead < buffer_len) {
+		mtx_unlock_spin(&Inring_info->ring_lock);
 		return -EAGAIN;
 	}
 
 	// Convert to byte offset
-	nextReadLocation = GetNextReadLocation(InRingInfo);
+	nextReadLocation = GetNextReadLocation(Inring_info);
 
-	nextReadLocation = CopyFromRingBuffer(InRingInfo, (char *)Buffer, BufferLen,
+	nextReadLocation = CopyFromRingBuffer(Inring_info, (char *)Buffer, buffer_len,
 		nextReadLocation);
 
-	mtx_unlock_spin(&InRingInfo->ring_lock);
+	mtx_unlock_spin(&Inring_info->ring_lock);
 
 	return 0;
 }
@@ -434,14 +433,14 @@ RingBufferPeek(hv_vmbus_ring_buffer_info* InRingInfo, void* Buffer, uint32_t Buf
 /*++
 
  Name:
- RingBufferRead()
+ hv_ring_buffer_read()
 
  Description:
  Read and advance the read index
 
  --*/
 int
-RingBufferRead(hv_vmbus_ring_buffer_info* InRingInfo, void *Buffer, uint32_t BufferLen,
+hv_ring_buffer_read(hv_vmbus_ring_buffer_info* Inring_info, void *Buffer, uint32_t buffer_len,
 	uint32_t Offset) 
 {
 	uint32_t bytesAvailToWrite;
@@ -449,26 +448,26 @@ RingBufferRead(hv_vmbus_ring_buffer_info* InRingInfo, void *Buffer, uint32_t Buf
 	uint32_t nextReadLocation = 0;
 	uint64_t prevIndices = 0;
 
-        if (BufferLen <= 0)
+        if (buffer_len <= 0)
                 return -EINVAL;
 
-	mtx_lock_spin(&InRingInfo->ring_lock);
+	mtx_lock_spin(&Inring_info->ring_lock);
 
-	GetRingBufferAvailBytes(InRingInfo, &bytesAvailToRead,
+	GetRingBufferAvailBytes(Inring_info, &bytesAvailToRead,
 		&bytesAvailToWrite);
 
 	// Make sure there is something to read
-	if (bytesAvailToRead < BufferLen) {
-		mtx_unlock_spin(&InRingInfo->ring_lock);
+	if (bytesAvailToRead < buffer_len) {
+		mtx_unlock_spin(&Inring_info->ring_lock);
 		return -EAGAIN;
 	}
 
-	nextReadLocation = GetNextReadLocationWithOffset(InRingInfo, Offset);
+	nextReadLocation = GetNextReadLocationWithOffset(Inring_info, Offset);
 
-	nextReadLocation = CopyFromRingBuffer(InRingInfo, (char *)Buffer, BufferLen,
+	nextReadLocation = CopyFromRingBuffer(Inring_info, (char *)Buffer, buffer_len,
 		nextReadLocation);
 
-	nextReadLocation = CopyFromRingBuffer(InRingInfo, (char *)&prevIndices,
+	nextReadLocation = CopyFromRingBuffer(Inring_info, (char *)&prevIndices,
 		sizeof(uint64_t), nextReadLocation);
 
 	// Make sure all reads are done before we update the read index since 
@@ -476,11 +475,11 @@ RingBufferRead(hv_vmbus_ring_buffer_info* InRingInfo, void *Buffer, uint32_t Buf
 	wmb();
 
 	// Update the read index
-	SetNextReadLocation(InRingInfo, nextReadLocation);
+	SetNextReadLocation(Inring_info, nextReadLocation);
 
-	//DumpRingInfo(InRingInfo, "AFTER ");
+	//Dumpring_info(Inring_info, "AFTER ");
 
-	mtx_unlock_spin(&InRingInfo->ring_lock);
+	mtx_unlock_spin(&Inring_info->ring_lock);
 
 	return 0;
 }
@@ -496,12 +495,12 @@ RingBufferRead(hv_vmbus_ring_buffer_info* InRingInfo, void *Buffer, uint32_t Buf
 
  --*/
 uint32_t
-CopyToRingBuffer(hv_vmbus_ring_buffer_info *RingInfo, uint32_t StartWriteOffset,
+CopyToRingBuffer(hv_vmbus_ring_buffer_info *ring_info, uint32_t StartWriteOffset,
 	char *Src, uint32_t SrcLen) 
 {
 	/* Fixme:  This should not be a void pointer! */
-	char *ringBuffer = GetRingBuffer(RingInfo);
-	uint32_t ringBufferSize = GetRingBufferSize(RingInfo);
+	char *ringBuffer = GetRingBuffer(ring_info);
+	uint32_t ringBufferSize = GetRingBufferSize(ring_info);
 	uint32_t fragLen;
 
 	if (SrcLen > ringBufferSize - StartWriteOffset) // wrap-around detected!
@@ -532,11 +531,11 @@ CopyToRingBuffer(hv_vmbus_ring_buffer_info *RingInfo, uint32_t StartWriteOffset,
 
  --*/
 uint32_t
-CopyFromRingBuffer(hv_vmbus_ring_buffer_info *RingInfo, char *Dest,
+CopyFromRingBuffer(hv_vmbus_ring_buffer_info *ring_info, char *Dest,
 	uint32_t DestLen, uint32_t StartReadOffset) 
 {
-	char *ringBuffer = GetRingBuffer(RingInfo);
-	uint32_t ringBufferSize = GetRingBufferSize(RingInfo);
+	char *ringBuffer = GetRingBuffer(ring_info);
+	uint32_t ringBufferSize = GetRingBufferSize(ring_info);
 
 	uint32_t fragLen;
 
