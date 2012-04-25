@@ -1,57 +1,32 @@
 /*-
+ * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2012 NetApp Inc.
+ * Copyright (c) 2012 Citrix Inc.
+ * All rights reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to
- * deal in the Software without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice unmodified, this list of conditions, and the following
+ *    disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
  *
- * The following copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
- *
- * Copyright (c) 2010-2012, Citrix, Inc.
- *
- * Ported from lis21 code drop
- *
- * HyperV RNDIS (remote network driver interface specification) filter code
- *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/*-
- * Copyright (c) 2009, Microsoft Corporation - All rights reserved.
- *
- *     Redistribution and use in source and binary forms, with or
- *     without modification, are permitted provided that the following
- *     conditions are met:
- *
- *      - Redistributions of source code must retain the above
- *        copyright notice, this list of conditions and the following
- *        disclaimer.
- *
- *      - Redistributions in binary form must reproduce the above
- *        copyright notice, this list of conditions and the following
- *        disclaimer in the documentation and/or other materials
- *        provided with the distribution.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
- * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
- * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- *
- * Authors:
+/* Authors:
  *   Haiyang Zhang <haiyangz@microsoft.com>
  *   Hank Janssen  <hjanssen@microsoft.com>
  *   K. Y. Srinivasan <kys@microsoft.com>
@@ -208,7 +183,7 @@ hv_rndis_request(rndis_device *device, uint32_t message_type,
 	set = &rndis_mesg->msg.set_request;
 	set->request_id = atomic_fetchadd_int(&device->new_request_id, 1);
 	/* Increment to get the new value (call above returns old value) */
-	set->request_id += 1; //KYS need to add 1! 
+	set->request_id += 1; /* KYS need to add 1! */
 
 	/* Add to the request list */
 	mtx_lock_spin(&device->req_lock);
@@ -374,12 +349,12 @@ hv_rf_on_receive(struct hv_device *device, netvsc_packet *pkt)
 
 	/* Make sure the rndis device state is initialized */
 	if (!net_dev->extension) {
-		return (-ENODEV);
+		return (ENODEV);
 	}
 
 	rndis_dev = (rndis_device *)net_dev->extension;
 	if (rndis_dev->state == RNDIS_DEV_UNINITIALIZED) {
-		return (-EINVAL);
+		return (EINVAL);
 	}
 
 	/* Shift virtual page number to form virtual page address */
@@ -479,7 +454,7 @@ hv_rf_query_device(rndis_device *device, uint32_t oid, void *result,
 	query_complete = &request->response_msg.msg.query_complete;
 	
 	if (query_complete->info_buffer_length > inresultSize) {
-		ret = -EINVAL;
+		ret = EINVAL;
 		goto cleanup;
 	}
 
@@ -563,7 +538,7 @@ hv_rf_set_packet_filter(rndis_device *device, uint32_t new_filter)
 	 * Address filter hang fixed elsewhere
 	 * Fixme:  Remove the unnecessary return checking code
 	 */
-	//ret = sema_timedwait(&request->wait_sema, 500); /* KYS 5 seconds */
+	/*ret = sema_timedwait(&request->wait_sema, 500); */ /* Fixme: KYS 5 seconds */
 
 	sema_wait(&request->wait_sema);
 	/* Fixme:  Kludge */
@@ -677,7 +652,7 @@ hv_rf_halt_device(rndis_device *device)
 	/* Set up the rndis set */
 	halt = &request->request_msg.msg.halt_request;
 	halt->request_id = atomic_fetchadd_int(&device->new_request_id, 1);
-	halt->request_id += 1;  //KYS need to add 1! 
+	halt->request_id += 1; /* KYS need to add 1! */
 	
 	/* Ignore return since this msg is optional. */
 	hv_rf_send_request(device, request);
@@ -752,7 +727,7 @@ hv_rf_on_device_add(struct hv_device *device, void *additl_info)
 
 	rndis_dev = hv_get_rndis_device();
 	if (!rndis_dev) {
-		return (-ENOMEM);
+		return (ENOMEM);
 	}
 
 	/*
@@ -765,7 +740,7 @@ hv_rf_on_device_add(struct hv_device *device, void *additl_info)
 	if (!net_dev) {
 		hv_put_rndis_device(rndis_dev);
 
-		return (-ENOMEM);
+		return (ENOMEM);
 	}
 
 	/*

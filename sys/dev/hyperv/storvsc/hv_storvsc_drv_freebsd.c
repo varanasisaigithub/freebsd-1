@@ -1,3 +1,31 @@
+/*-
+ * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2012 NetApp Inc.
+ * Copyright (c) 2012 Citrix Inc.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice unmodified, this list of conditions, and the following
+ *    disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 #include <sys/param.h>
 #include <sys/proc.h>
 #include <sys/condvar.h>
@@ -33,7 +61,7 @@
 #include "hyperv.h"
 #include "hv_vstorage.h"
 
-#define MAX_MULTIPAGE_BUFFER_PACKET (4096)
+#define MAX_MULTIPAGE_BUFFER_PACKET	(4096)
 #define STORVSC_RINGBUFFER_SIZE		(20*PAGE_SIZE)
 #define STORVSC_MAX_LUNS_PER_TARGET	(64)
 #define STORVSC_MAX_IO_REQUESTS		(STORVSC_MAX_LUNS_PER_TARGET * 2)
@@ -59,9 +87,7 @@ struct hv_storvsc_request {
 	union ccb *ccb;
 	struct storvsc_softc *softc;
 	struct callout callout;
-
-	// Synchronize the request/response if needed
-	struct sema synch_sema;
+	struct sema synch_sema; /*Synchronize the request/response if needed */
 };
 
 struct storvsc_softc {
@@ -238,9 +264,9 @@ hv_storvsc_channel_init(struct hv_device *dev)
 	vstor_packet = &request->vstor_packet;
 	request->softc = sc;
 
-	// Now, initiate the vsc/vsp initialization protocol on the open channel
-
-
+	/**
+	 * Initiate the vsc/vsp initialization protocol on the open channel
+	 */
 	sema_init(&request->synch_sema, 0, ("stor_synch_sema"));
 
 	vstor_packet->operation = VSTOR_OPERATION_BEGININITIALIZATION;
@@ -256,21 +282,22 @@ hv_storvsc_channel_init(struct hv_device *dev)
 			HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	if (ret != 0) {
-		goto Cleanup;
+		goto cleanup;
 	}
 
-	ret = sema_timedwait(&request->synch_sema, 500); //KYS 5 seconds
+	ret = sema_timedwait(&request->synch_sema, 500); /* KYS 5 seconds */
 
 	if (ret != 0) {
-		goto Cleanup;
+		goto cleanup;
 	}
 
 	if (vstor_packet->operation != VSTOR_OPERATION_COMPLETEIO ||
 		vstor_packet->status != 0) {
-		goto Cleanup;
+		goto cleanup;
 	}
 
-	// reuse the packet for version range supported
+	/* reuse the packet for version range supported */
+
 	memset(vstor_packet, 0, sizeof(struct vstor_packet));
 	vstor_packet->operation = VSTOR_OPERATION_QUERYPROTOCOLVERSION;
 	vstor_packet->flags = REQUEST_COMPLETION_FLAG;
@@ -287,22 +314,24 @@ hv_storvsc_channel_init(struct hv_device *dev)
 			HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	if (ret != 0) {
-		goto Cleanup;
+		goto cleanup;
 	}
 
-	ret = sema_timedwait(&request->synch_sema, 500); //KYS 5 seconds
+	ret = sema_timedwait(&request->synch_sema, 500); /* KYS 5 seconds */
 
 	if (ret) {
-		goto Cleanup;
+		goto cleanup;
 	}
 
-	// TODO: Check returned version 
+	/* TODO: Check returned version */
 	if (vstor_packet->operation != VSTOR_OPERATION_COMPLETEIO ||
 		vstor_packet->status != 0) {
-		goto Cleanup;
+		goto cleanup;
 	}
 
-	// Query channel properties
+	/**
+	 * Query channel properties
+	 */
 	memset(vstor_packet, 0, sizeof(struct vstor_packet));
 	vstor_packet->operation = VSTOR_OPERATION_QUERYPROPERTIES;
 	vstor_packet->flags = REQUEST_COMPLETION_FLAG;
@@ -316,19 +345,19 @@ hv_storvsc_channel_init(struct hv_device *dev)
 				HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	if ( ret != 0) {
-		goto Cleanup;
+		goto cleanup;
 	}
 
-	ret = sema_timedwait(&request->synch_sema, 500); //KYS 5 seconds
+	ret = sema_timedwait(&request->synch_sema, 500); /* KYS 5 seconds */
 
 	if (ret) {
-		goto Cleanup;
+		goto cleanup;
 	}
 
-	// TODO: Check returned version 
+	/* TODO: Check returned version */
 	if (vstor_packet->operation != VSTOR_OPERATION_COMPLETEIO ||
 		vstor_packet->status != 0) {
-		goto Cleanup;
+		goto cleanup;
 	}
 
 	memset(vstor_packet, 0, sizeof(struct vstor_packet));
@@ -344,23 +373,23 @@ hv_storvsc_channel_init(struct hv_device *dev)
 				HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	if (ret != 0) {
-		goto Cleanup;
+		goto cleanup;
 	}
 
-	ret = sema_timedwait(&request->synch_sema, 500); //KYS 5 seconds
+	ret = sema_timedwait(&request->synch_sema, 500); /* KYS 5 seconds */
 
 	if (ret != 0) {
-		goto Cleanup;
+		goto cleanup;
 	}
 
 	if (vstor_packet->operation != VSTOR_OPERATION_COMPLETEIO ||
 		vstor_packet->status != 0) {
-		goto Cleanup;
+		goto cleanup;
 	}
 
-Cleanup:
+cleanup:
 	sema_destroy(&request->synch_sema);
-	return ret;
+	return (ret);
 }
 
 
@@ -375,7 +404,9 @@ hv_storvsc_connect_vsp(struct hv_device *dev)
 		
 	memset(&props, 0, sizeof(struct vmstor_chan_props));
 
-	// Open the channel
+	/*
+	 * Open the channel
+	 */
 
 	ret = hv_vmbus_channel_open(
 		dev->channel,
@@ -393,7 +424,7 @@ hv_storvsc_connect_vsp(struct hv_device *dev)
 
 	ret = hv_storvsc_channel_init(dev);
 
-	return ret;
+	return (ret);
 }
 
 
@@ -428,13 +459,13 @@ hv_storvsc_host_reset(struct hv_device *dev)
 			HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	if (ret != 0) {
-		goto Cleanup;
+		goto cleanup;
 	}
 
-	ret = sema_timedwait(&request->synch_sema, 500); //KYS 5 seconds
+	ret = sema_timedwait(&request->synch_sema, 500); /* KYS 5 seconds */
 
 	if (ret) {
-		goto Cleanup;
+		goto cleanup;
 	}
 
 
@@ -443,9 +474,9 @@ hv_storvsc_host_reset(struct hv_device *dev)
 	 * should have been flushed out and return to us
 	 */
 
-Cleanup:
+cleanup:
 	sema_destroy(&request->synch_sema);
-	return ret;
+	return (ret);
 }
 
 /*++
@@ -509,7 +540,7 @@ hv_storvsc_io_request(struct hv_device *device,
 
 	atomic_add_int(&sc->hs_num_out_reqs, 1);
 
-	return ret;
+	return (ret);
 }
 
 
@@ -597,7 +628,7 @@ hv_storvsc_on_channel_callback(void *context)
 							   vstor_packet, request);
 				break;
 			case VSTOR_OPERATION_REMOVEDEVICE:
-				// TODO:
+				/* TODO: implement */
 				break;
 			default:
 				break;
@@ -825,7 +856,7 @@ storvsc_attach(device_t dev)
 	hs_softc[i] = sc;
 
 	root_mount_rel(root_mount_token);
-	return 0;
+	return (0);
 
 
 cleanup:
@@ -835,7 +866,7 @@ cleanup:
 		LIST_REMOVE(reqp, link);
 		free(reqp, M_DEVBUF);
 	}
-	return ret;
+	return (ret);
 }
 
 static int
@@ -876,7 +907,7 @@ storvsc_detach(device_t dev)
 		free(reqp, M_DEVBUF);
 	}
 	mtx_unlock(&sc->hs_lock);
-	return 0;
+	return (0);
 }
 
 #if HVS_TIMEOUT_TEST

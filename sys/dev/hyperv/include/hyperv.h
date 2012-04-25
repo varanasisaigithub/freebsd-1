@@ -1,59 +1,32 @@
-
-/*****************************************************************************
+/*-
+ * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2012 NetApp Inc.
+ * Copyright (c) 2012 Citrix Inc.
+ * All rights reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to
- * deal in the Software without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice unmodified, this list of conditions, and the following
+ *    disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
  *
- * The following copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
- *
- * Copyright (c) 2010-2012, Citrix, Inc.
- *
- * Ported from lis21 code drop
- *
- * HyperV definitions for messages that are sent between instances of the
- * Channel Management Library in separate partitions, or in some cases,
- * back to itself.
- *
- *****************************************************************************/
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
 /*
- * Copyright (c) 2009, Microsoft Corporation - All rights reserved.
- *
- *     Redistribution and use in source and binary forms, with or
- *     without modification, are permitted provided that the following
- *     conditions are met:
- *
- *      - Redistributions of source code must retain the above
- *        copyright notice, this list of conditions and the following
- *        disclaimer.
- *
- *      - Redistributions in binary form must reproduce the above
- *        copyright notice, this list of conditions and the following
- *        disclaimer in the documentation and/or other materials
- *        provided with the distribution.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
- * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
- * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- *
  * Authors:
  *   Haiyang Zhang <haiyangz@microsoft.com>
  *   Hank Janssen  <hjanssen@microsoft.com>
@@ -307,7 +280,8 @@ typedef struct {
 typedef struct {
 	hv_vm_packet_descriptor	d;
 	uint32_t		gpadl;
-	uint32_t		reserved; // for alignment to a 8-byte boundary
+				/* for alignment to a 8-byte boundary */
+	uint32_t		reserved;
 } hv_vm_teardown_gpadl;
 
 /*
@@ -403,18 +377,18 @@ typedef enum {
 	HV_CHANNEL_MESSAGE_VIEW_RANGE_REMOVE		= 18,
 #endif
 	HV_CHANNEL_MESSAGE_COUNT
-} hv_vmbus_channel_message_type;
+} hv_vmbus_channel_msg_type;
 
 typedef struct {
-	hv_vmbus_channel_message_type	message_type;
+	hv_vmbus_channel_msg_type	message_type;
 	uint32_t			padding;
-} hv_vmbus_channel_message_header;
+} hv_vmbus_channel_msg_header;
 
 /*
  * Query VMBus Version parameters
  */
 typedef struct {
-	hv_vmbus_channel_message_header	header;
+	hv_vmbus_channel_msg_header	header;
 	uint32_t			version;
 } hv_vmbus_channel_query_vmbus_version;
 
@@ -422,7 +396,7 @@ typedef struct {
  * VMBus Version Supported parameters
  */
 typedef struct {
-	hv_vmbus_channel_message_header	header;
+	hv_vmbus_channel_msg_header	header;
 	bool				version_supported;
 } hv_vmbus_channel_version_supported;
 
@@ -430,7 +404,7 @@ typedef struct {
  * Channel Offer parameters
  */
 typedef struct {
-	hv_vmbus_channel_message_header	header;
+	hv_vmbus_channel_msg_header	header;
 	hv_vmbus_channel_offer		offer;
 	uint32_t			child_rel_id;
 	uint8_t				monitor_id;
@@ -442,7 +416,7 @@ typedef struct {
  */
 typedef struct
 {
-    hv_vmbus_channel_message_header	header;
+    hv_vmbus_channel_msg_header	header;
     uint32_t				child_rel_id;
 } hv_vmbus_channel_rescind_offer;
 
@@ -465,7 +439,7 @@ typedef struct
  */
 typedef struct
 {
-    hv_vmbus_channel_message_header header;
+    hv_vmbus_channel_msg_header header;
 
     /*
      * Identifies the specific VMBus channel that is being opened.
@@ -508,7 +482,7 @@ typedef uint32_t hv_nt_status;
  */
 typedef struct
 {
-	hv_vmbus_channel_message_header	header;
+	hv_vmbus_channel_msg_header	header;
 	uint32_t			child_rel_id;
 	uint32_t			open_id;
 	hv_nt_status			status;
@@ -519,7 +493,7 @@ typedef struct
  */
 typedef struct
 {
-	hv_vmbus_channel_message_header	header;
+	hv_vmbus_channel_msg_header	header;
 	uint32_t			child_rel_id;
 } hv_vmbus_channel_close_channel;
 
@@ -538,7 +512,7 @@ typedef struct
  */
 
 typedef struct {
-	hv_vmbus_channel_message_header	header;
+	hv_vmbus_channel_msg_header	header;
 	uint32_t	child_rel_id;
 	uint32_t	gpadl;
 	uint16_t	range_buf_len;
@@ -550,37 +524,37 @@ typedef struct {
  * This is the follow-up packet that contains more PFNs
  */
 typedef struct {
-	hv_vmbus_channel_message_header	header;
+	hv_vmbus_channel_msg_header	header;
 	uint32_t	message_number;
 	uint32_t 	gpadl;
 	uint64_t 	pfn[0];
 } hv_vmbus_channel_gpadl_body;
 
 typedef struct {
-	hv_vmbus_channel_message_header	header;
+	hv_vmbus_channel_msg_header	header;
 	uint32_t	child_rel_id;
 	uint32_t	gpadl;
 	uint32_t	creation_status;
 } hv_vmbus_channel_gpadl_created;
 
 typedef struct {
-	hv_vmbus_channel_message_header	header;
+	hv_vmbus_channel_msg_header	header;
 	uint32_t	child_rel_id;
 	uint32_t	gpadl;
 } hv_vmbus_channel_gpadl_teardown;
 
 typedef struct {
-	hv_vmbus_channel_message_header	header;
+	hv_vmbus_channel_msg_header	header;
 	uint32_t	gpadl;
 } hv_vmbus_channel_gpadl_torndown;
 
 typedef struct {
-	hv_vmbus_channel_message_header	header;
+	hv_vmbus_channel_msg_header	header;
 	uint32_t	child_rel_id;
 } hv_vmbus_channel_relid_released;
 
 typedef struct {
-	hv_vmbus_channel_message_header header;
+	hv_vmbus_channel_msg_header header;
 	uint32_t	vmbus_version_requested;
 	uint32_t	padding2;
 	uint64_t	interrupt_page;
@@ -589,11 +563,11 @@ typedef struct {
 } hv_vmbus_channel_initiate_contact;
 
 typedef struct {
-	hv_vmbus_channel_message_header header;
+	hv_vmbus_channel_msg_header header;
 	bool		version_supported;
 } hv_vmbus_channel_version_response;
 
-typedef hv_vmbus_channel_message_header hv_vmbus_channel_unload;
+typedef hv_vmbus_channel_msg_header hv_vmbus_channel_unload;
 
 /*
  * Kind of a table to use the preprocessor to get us the right type for a
@@ -602,12 +576,12 @@ typedef hv_vmbus_channel_message_header hv_vmbus_channel_unload;
  * NOTE: These are reserved for future use
  */
 /*
-#define HV_CHANNEL_MESSAGE_QUERY_VMBUS_VERSION_TYPE	hv_vmbus_channel_message_header
+#define HV_CHANNEL_MESSAGE_QUERY_VMBUS_VERSION_TYPE	hv_vmbus_channel_msg_header
 #define HV_CHANNEL_MESSAGE_VERSION_SUPPORTED_TYPE	hv_vmbus_channel_version_supported
 #define HV_CHANNEL_MESSAGE_OFFER_CHANNEL_TYPE		hv_vmbus_channel_offer_channel
 #define HV_CHANNEL_MESSAGE_RESCIND_CHANNEL_OFFER_TYPE	hv_vmbus_channel_rescind_offer
-#define HV_CHANNEL_MESSAGE_REQUEST_OFFERS_TYPE		hv_vmbus_channel_message_header
-#define HV_CHANNEL_MESSAGE_ALL_OFFERS_DELIVERED_TYPE	hv_vmbus_channel_message_header
+#define HV_CHANNEL_MESSAGE_REQUEST_OFFERS_TYPE		hv_vmbus_channel_msg_header
+#define HV_CHANNEL_MESSAGE_ALL_OFFERS_DELIVERED_TYPE	hv_vmbus_channel_msg_header
 #define HV_CHANNEL_MESSAGE_OPEN_CHANNEL_TYPE		hv_vmbus_channel_open_channel
 #define HV_CHANNEL_MESSAGE_OPEN_CHANNEL_RESULT_TYPE	hv_vmbus_channel_open_result
 #define HV_CHANNEL_MESSAGE_CLOSE_CHANNEL_TYPE		hv_vmbus_channel_close_channel
@@ -671,7 +645,6 @@ HV_VMBUS_ACCESSOR(type, TYPE,  const char *)
 HV_VMBUS_ACCESSOR(devctx, DEVCTX,  struct hv_device *)
 
 
-
 /*
  * Common header for Hyper-V ICs
  */
@@ -714,12 +687,12 @@ typedef struct hv_vmbus_icmsg_negotiate {
 	hv_vmbus_ic_version	icversion_data[1]; /* any size array */
 } hv_vmbus_icmsg_negotiate;
 
-typedef struct hv_shutdown_msg_data {
+typedef struct hv_vmbus_shutdown_msg_data {
 	uint32_t		reason_code;
 	uint32_t		timeout_seconds;
 	uint32_t 		flags;
 	uint8_t			display_message[2048];
-} hv_shutdown_msg_data;
+} hv_vmbus_shutdown_msg_data;
 
 typedef struct hv_vmbus_heartbeat_msg_data {
 	uint64_t 		seq_num;
@@ -727,11 +700,11 @@ typedef struct hv_vmbus_heartbeat_msg_data {
 } hv_vmbus_heartbeat_msg_data;
 
 typedef struct {
-	/*
+	/**
 	 * offset in bytes from the start of ring data below
 	 */
 	volatile uint32_t       write_index;
-	/*
+	/**
 	 * offset in bytes from the start of ring data below
 	 */
 	volatile uint32_t       read_index;
@@ -743,18 +716,18 @@ typedef struct {
 	uint8_t                 reserved[4084];	/* pad it to PAGE_SIZE so that data starts on a page */
 
 	/*
-	 * WARNING: Ring data starts here + RingDataStartOffset
+	 * WARNING: Ring data starts here + ring_data_start_offset
 	 *  !!! DO NOT place any fields below this !!!
 	 */
 	uint8_t			buffer[0];	/* doubles as interrupt mask */
 } hv_vmbus_ring_buffer;
 
 typedef struct {
-	hv_vmbus_ring_buffer	*ring_buffer;
+	hv_vmbus_ring_buffer*	ring_buffer;
 	uint32_t		ring_size;	/* Include the shared header */
 	struct mtx		ring_lock;
-	uint32_t		ring_data_size;	/* < ringSize */
-	uint32_t		RingDataStartOffset;
+	uint32_t		ring_data_size;	/* < ring_size */
+	uint32_t		ring_data_start_offset;
 } hv_vmbus_ring_buffer_info;
 
 typedef void (*hv_vmbus_pfn_channel_callback)(void *context);
@@ -767,7 +740,7 @@ typedef enum {
 
 typedef struct hv_vmbus_channel {
 	TAILQ_ENTRY(hv_vmbus_channel)	list_entry;
-	struct hv_device		*device;
+	struct hv_device*		device;
 	hv_vmbus_channel_state		state;
 	hv_vmbus_channel_offer_channel	offer_msg;
 	/*
@@ -778,16 +751,16 @@ typedef struct hv_vmbus_channel {
 	uint8_t				monitor_bit;
 
 	uint32_t			ring_buffer_gpadl_handle;
-	/*
+	/**
 	 * Allocated memory for ring buffer
 	 */
-	void				*ring_buffer_pages;
+	void*				ring_buffer_pages;
 	uint32_t			ring_buffer_page_count;
-	/*
+	/**
 	 * send to parent
 	 */
 	hv_vmbus_ring_buffer_info	outbound;
-	/*
+	/**
 	 * receive from parent
 	 */
 	hv_vmbus_ring_buffer_info	inbound;
@@ -796,16 +769,15 @@ typedef struct hv_vmbus_channel {
 	hv_vmbus_handle			control_work_queue;
 
 	hv_vmbus_pfn_channel_callback	on_channel_callback;
-	void				*channel_callback_context;
+	void*				channel_callback_context;
 
 } hv_vmbus_channel;
 
-
 typedef struct hv_device {
-	hv_guid			class_id;
-	hv_guid			device_id;
-	device_t		device;
-	hv_vmbus_channel	*channel;
+	hv_guid		    class_id;
+	hv_guid		    device_id;
+	device_t	    device;
+	hv_vmbus_channel*   channel;
 } hv_device;
 
 typedef struct {
@@ -817,13 +789,15 @@ typedef struct {
 #define HV_MAX_PAGE_BUFFER_COUNT	16
 #define HV_MAX_MULTIPAGE_BUFFER_COUNT	32
 
-#define HV_ALIGN_UP(value, align)		\
-		(((value) & (align-1)) ? (((value) + (align-1)) & ~(align-1) ) : (value))
+#define HV_ALIGN_UP(value, align)					\
+		(((value) & (align-1)) ?				\
+		    (((value) + (align-1)) & ~(align-1) ) : (value))
 
 #define HV_ALIGN_DOWN(value, align) ( (value) & ~(align-1) )
 
-#define HV_NUM_PAGES_SPANNED(addr, len)	\
-		((HV_ALIGN_UP(addr+len, PAGE_SIZE) - HV_ALIGN_DOWN(addr, PAGE_SIZE)) >> PAGE_SHIFT )
+#define HV_NUM_PAGES_SPANNED(addr, len)					\
+		((HV_ALIGN_UP(addr+len, PAGE_SIZE) -			\
+		    HV_ALIGN_DOWN(addr, PAGE_SIZE)) >> PAGE_SHIFT )
 
 typedef struct {
 	int		length;
@@ -835,121 +809,113 @@ typedef struct {
 #pragma pack(pop)
 
 typedef struct hv_util_service {
-	uint8_t			*recv_buffer;
-	char			*serv_name;
-	struct hv_work_queue	*workq;
+	uint8_t*		recv_buffer;
+	char*			serv_name;
+	struct hv_work_queue*	workq;
 	void			(*util_cb)(void *);
 	int  			(*util_init)(struct hv_util_service *);
 	void			(*util_deinit)(void);
 } hv_util_service;
 
-void
-vmbus_prep_negotiate_resp(
-	struct hv_vmbus_icmsg_hdr	*icmsghdrp,
-	struct hv_vmbus_icmsg_negotiate	*negop,
-	uint8_t *buf);
+void		hv_vmbus_prep_negotiate_resp(
+				struct hv_vmbus_icmsg_hdr*	 icmsghdrp,
+				struct hv_vmbus_icmsg_negotiate* negop,
+				uint8_t *buf);
 
-int
-hv_vmbus_channel_recv_packet(
-	hv_vmbus_channel	*channel,
-	void			*buffer,
-	uint32_t		buffer_len,
-	uint32_t*		buffer_actual_len,
-	uint64_t*		request_id);
+int		hv_vmbus_channel_recv_packet(
+				hv_vmbus_channel*	channel,
+				void*			buffer,
+				uint32_t		buffer_len,
+				uint32_t*		buffer_actual_len,
+				uint64_t*		request_id);
 
-int
-hv_vmbus_channel_recv_packet_raw(
-	hv_vmbus_channel	*channel,
-	void			*buffer,
-	uint32_t		buffer_len,
-	uint32_t*		buffer_actual_len,
-	uint64_t*		request_id);
+int		hv_vmbus_channel_recv_packet_raw(
+				hv_vmbus_channel*	channel,
+				void*			buffer,
+				uint32_t		buffer_len,
+				uint32_t*		buffer_actual_len,
+				uint64_t*		request_id);
 
-int
-hv_vmbus_channel_open(
-	hv_vmbus_channel	*channel,
-	uint32_t		send_ring_buffer_size,
-	uint32_t		recv_ring_buffer_size,
-	void			*user_data,
-	uint32_t		user_data_len,
-	hv_vmbus_pfn_channel_callback pfn_on_channel_callback,
-	void *context);
+int		hv_vmbus_channel_open(
+				hv_vmbus_channel*	channel,
+				uint32_t		send_ring_buffer_size,
+				uint32_t		recv_ring_buffer_size,
+				void*			user_data,
+				uint32_t		user_data_len,
+				hv_vmbus_pfn_channel_callback
+							pfn_on_channel_callback,
+				void*			context);
 
-void
-hv_vmbus_channel_close(hv_vmbus_channel *channel);
+void		hv_vmbus_channel_close(hv_vmbus_channel *channel);
 
-int
-hv_vmbus_channel_send_packet(
-	hv_vmbus_channel	*channel,
-	void			*buffer,
-	uint32_t		buffer_len,
-	uint64_t		request_id,
-	hv_vmbus_packet_type	type,
-	uint32_t		flags);
+int		hv_vmbus_channel_send_packet(
+				hv_vmbus_channel*	channel,
+				void*			buffer,
+				uint32_t		buffer_len,
+				uint64_t		request_id,
+				hv_vmbus_packet_type	type,
+				uint32_t		flags);
 
-int
-hv_vmbus_channel_send_packet_pagebuffer(
-	hv_vmbus_channel	*channel,
-	hv_vmbus_page_buffer	page_buffers[],
-	uint32_t		page_count,
-	void			*buffer,
-	uint32_t		buffer_len,
-	uint64_t		request_id);
+int		hv_vmbus_channel_send_packet_pagebuffer(
+				hv_vmbus_channel*	channel,
+				hv_vmbus_page_buffer	page_buffers[],
+				uint32_t		page_count,
+				void*			buffer,
+				uint32_t		buffer_len,
+				uint64_t		request_id);
 
-int
-hv_vmbus_channel_send_packet_multipagebuffer(
-	hv_vmbus_channel *channel,
-	hv_vmbus_multipage_buffer *multi_page_buffer,
-	void *Buffer,
-	uint32_t buffer_len,
-	uint64_t request_id);
+int		hv_vmbus_channel_send_packet_multipagebuffer(
+				hv_vmbus_channel*	    channel,
+				hv_vmbus_multipage_buffer*  multi_page_buffer,
+				void*			    buffer,
+				uint32_t		    buffer_len,
+				uint64_t		    request_id);
 
-int
-hv_vmbus_channel_establish_gpadl(
-	hv_vmbus_channel *channel,
-	void *Kbuffer,	/* from kmalloc()	*/
-	uint32_t size,  /*  page-size multiple	*/
-	uint32_t *gpadl_handle);
+int		hv_vmbus_channel_establish_gpadl(
+				hv_vmbus_channel*	channel,
+				/* from kmalloc()	*/
+				void*			Kbuffer,
+				/*  page-size multiple	*/
+				uint32_t		size,
+				uint32_t*		gpadl_handle);
 
-int
-hv_vmbus_channel_teardown_gpdal(
-	hv_vmbus_channel *Channel,
-	uint32_t gpadl_handle);
+int		hv_vmbus_channel_teardown_gpdal(
+				hv_vmbus_channel*	channel,
+				uint32_t		gpadl_handle);
 
-/*
- * Work abstraction
+/**
+ * Work abstraction defines
  */
 typedef struct hv_work_queue {
-	struct taskqueue	*queue;
-	struct proc		*proc;
-	struct sema		*work_sema;
+	struct taskqueue*	queue;
+	struct proc*		proc;
+	struct sema*		work_sema;
 } hv_work_queue;
 
 typedef struct hv_work_item {
-	struct task		work;
-	void			(*callback)(void *);
-	void			*context;
-	hv_work_queue		*wq;
+	struct task	work;
+	void		(*callback)(void *);
+	void*		context;
+	hv_work_queue*	wq;
 } hv_work_item;
 
-struct hv_work_queue
-*hv_work_queue_create(char* name);
+struct hv_work_queue*	hv_work_queue_create(char* name);
 
-void
-hv_work_queue_close(struct hv_work_queue *wq);
+void			hv_work_queue_close(struct hv_work_queue* wq);
 
-int
-hv_queue_work_item(
-	struct	hv_work_queue *wq,
-	void	(*callback)(void *),
-	void	*context);
-
+int			hv_queue_work_item(
+				hv_work_queue*	wq,
+				void		(*callback)(void *),
+				void*		context);
+/**
+ * Get physical address from virtual
+ */
 static inline unsigned long
 hv_get_phys_addr(void *virt)
 {
 	unsigned long ret;
 	ret = (vtophys(virt) | ((vm_offset_t) virt & PAGE_MASK));
-	return ret;
+	return (ret);
 }
 
 #endif  /* __HYPERV_H__ */

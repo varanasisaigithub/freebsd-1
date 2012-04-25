@@ -1,55 +1,32 @@
-/*****************************************************************************
+/*-
+ * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2012 NetApp Inc.
+ * Copyright (c) 2012 Citrix Inc.
+ * All rights reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to
- * deal in the Software without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice unmodified, this list of conditions, and the following
+ *    disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
  *
- * The following copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
- *
- * Copyright (c) 2010-2011, Citrix, Inc.
- *
- * Hyperv channel code
- *
- *****************************************************************************/
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
-/*
- * Copyright (c) 2009, Microsoft Corporation - All rights reserved.
- *
- *     Redistribution and use in source and binary forms, with or
- *     without modification, are permitted provided that the following
- *     conditions are met:
- *
- *      - Redistributions of source code must retain the above
- *        copyright notice, this list of conditions and the following
- *        disclaimer.
- *
- *      - Redistributions in binary form must reproduce the above
- *        copyright notice, this list of conditions and the following
- *        disclaimer in the documentation and/or other materials
- *        provided with the distribution.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
- * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
- * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- *
- * Authors:
+/* Authors:
  *   Haiyang Zhang <haiyangz@microsoft.com>
  *   Hank Janssen  <hjanssen@microsoft.com>
  *   K. Y. Srinivasan <kys@microsoft.com>
@@ -69,101 +46,95 @@
 #include <vm/pmap.h>
 
 #include "hyperv.h"
-#include "vmbus_priv.h"
+#include "hv_vmbus_priv.h"
 
-static int
-VmbusChannelCreateGpadlHeader(void *Kbuffer, // must be phys and virt contiguous
-	uint32_t Size,	 // page-size multiple
-	hv_vmbus_channel_msg_info **msgInfo, uint32_t *MessageCount);
+static int 	vmbus_channel_create_gpadl_header(
+			/* must be phys and virt contiguous*/
+			void*				k_buffer,
+			/* page-size multiple */
+			uint32_t 			size,
+			hv_vmbus_channel_msg_info**	msg_info,
+			uint32_t*			message_count);
 
+static void 	vmbus_channel_set_event(hv_vmbus_channel* channel);
 
+/**
+ *  Trigger an event notification on the specified channel
+ */
 static void
-VmbusChannelSetEvent(hv_vmbus_channel *Channel);
-
-/*++
-
- Name:
- VmbusChannelSetEvent()
-
- Description:
- Trigger an event notification on the specified channel.
-
- --*/
-static void
-VmbusChannelSetEvent(hv_vmbus_channel *Channel) 
+vmbus_channel_set_event(hv_vmbus_channel *channel)
 {
-	hv_vmbus_monitor_page *monitorPage;
+	hv_vmbus_monitor_page *monitor_page;
 
 
-	if (Channel->offer_msg.monitor_allocated) {
-		// Each uint32_t represents 32 channels
-		synch_set_bit((Channel->offer_msg.child_rel_id & 31),
+	if (channel->offer_msg.monitor_allocated) {
+		/* Each uint32_t represents 32 channels */
+		synch_set_bit((channel->offer_msg.child_rel_id & 31),
 			((uint32_t *)hv_vmbus_g_connection.send_interrupt_page +
-			((Channel->offer_msg.child_rel_id >> 5))));
+			((channel->offer_msg.child_rel_id >> 5))));
 
-		monitorPage = (hv_vmbus_monitor_page *) hv_vmbus_g_connection.monitor_pages;
-		monitorPage++; // Get the child to parent monitor page
+		monitor_page = (hv_vmbus_monitor_page *) hv_vmbus_g_connection.monitor_pages;
+		monitor_page++; /* Get the child to parent monitor page */
 
-		synch_set_bit(Channel->monitor_bit,
-			(uint32_t *)&monitorPage->trigger_group[Channel->monitor_group].pending);
+		synch_set_bit(channel->monitor_bit,
+			(uint32_t *)&monitor_page->trigger_group[channel->monitor_group].pending);
 	} else {
-		hv_vmbus_set_event(Channel->offer_msg.child_rel_id);
+		hv_vmbus_set_event(channel->offer_msg.child_rel_id);
 	}
 
 }
 
-/*++;
-
- Name:
- hv_vmbus_channel_get_debug_info()
-
- Description:
- Retrieve various channel debug info
-
- --*/
+/**
+ * Retrieve various channel debug info
+ */
 void
-hv_vmbus_channel_get_debug_info(hv_vmbus_channel *Channel,
-	hv_vmbus_channel_debug_info *debug_info) 
+hv_vmbus_channel_get_debug_info(
+	hv_vmbus_channel*		channel,
+	hv_vmbus_channel_debug_info*	debug_info)
 {
 
-	hv_vmbus_monitor_page *monitorPage;
-	uint8_t monitorGroup = (uint8_t) Channel->offer_msg.monitor_id / 32;
-	uint8_t monitorOffset = (uint8_t) Channel->offer_msg.monitor_id % 32;
-	//uint32_t monitorBit	= 1 << monitorOffset;
+	hv_vmbus_monitor_page*	monitor_page;
+	uint8_t			monitor_group;
+	uint8_t			monitor_offset;
 
-	debug_info->rel_id = Channel->offer_msg.child_rel_id;
-	debug_info->state = Channel->state;
+	monitor_group = (uint8_t) channel->offer_msg.monitor_id / 32;
+	monitor_offset = (uint8_t) channel->offer_msg.monitor_id % 32;
+
+	/* uint32_t monitorBit	= 1 << monitor_offset; */
+
+	debug_info->rel_id = channel->offer_msg.child_rel_id;
+	debug_info->state = channel->state;
 	memcpy(&debug_info->interface_type,
-		&Channel->offer_msg.offer.interface_type, sizeof(hv_guid));
+		&channel->offer_msg.offer.interface_type, sizeof(hv_guid));
 	memcpy(&debug_info->interface_instance,
-		&Channel->offer_msg.offer.interface_instance, sizeof(hv_guid));
+		&channel->offer_msg.offer.interface_instance, sizeof(hv_guid));
 
-	monitorPage = (hv_vmbus_monitor_page*) hv_vmbus_g_connection.monitor_pages;
+	monitor_page = (hv_vmbus_monitor_page*) hv_vmbus_g_connection.monitor_pages;
 
-	debug_info->monitor_id = Channel->offer_msg.monitor_id;
+	debug_info->monitor_id = channel->offer_msg.monitor_id;
 
 	debug_info->server_monitor_pending =
-		monitorPage->trigger_group[monitorGroup].pending;
+		monitor_page->trigger_group[monitor_group].pending;
 	debug_info->server_monitor_latency =
-		monitorPage->latency[monitorGroup][monitorOffset];
+		monitor_page->latency[monitor_group][monitor_offset];
 	debug_info->server_monitor_connection_id =
-		monitorPage->parameter[monitorGroup][monitorOffset].connection_id.u.id;
+		monitor_page->parameter[monitor_group][monitor_offset].connection_id.u.id;
 
-	monitorPage++;
+	monitor_page++;
 
 	debug_info->client_monitor_pending =
-		monitorPage->trigger_group[monitorGroup].pending;
+		monitor_page->trigger_group[monitor_group].pending;
 	debug_info->client_monitor_latency =
-		monitorPage->latency[monitorGroup][monitorOffset];
+		monitor_page->latency[monitor_group][monitor_offset];
 	debug_info->client_monitor_connection_id =
-		monitorPage->parameter[monitorGroup][monitorOffset].connection_id.u.id;
+		monitor_page->parameter[monitor_group][monitor_offset].connection_id.u.id;
 
-	hv_vmbus_ring_buffer_get_debug_info(&Channel->inbound, &debug_info->inbound);
-	hv_vmbus_ring_buffer_get_debug_info(&Channel->outbound, &debug_info->outbound);
+	hv_vmbus_ring_buffer_get_debug_info(&channel->inbound, &debug_info->inbound);
+	hv_vmbus_ring_buffer_get_debug_info(&channel->outbound, &debug_info->outbound);
 }
 
 void
-hv_vmbus_get_channel_info(struct hv_device *dev, struct hv_devinfo *p)
+hv_vmbus_get_channel_info(struct hv_device* dev, struct hv_devinfo* p)
 {
 	hv_vmbus_channel_debug_info di;
 
@@ -200,177 +171,202 @@ hv_vmbus_get_channel_info(struct hv_device *dev, struct hv_devinfo *p)
 	}
 }
 
-/*++;
-
- Name:
- hv_vmbus_channel_open()
-
- Description:
- Open the specified channel.
-
- --*/
+/**
+ *  Open the specified channel
+ */
 int
-hv_vmbus_channel_open(hv_vmbus_channel *NewChannel, uint32_t send_ring_buffer_size,
-	uint32_t recv_ring_buffer_size, void *user_data, uint32_t user_data_len,
-	hv_vmbus_pfn_channel_callback pfn_on_channel_callback, void *Context) 
+hv_vmbus_channel_open(
+	hv_vmbus_channel*		new_channel,
+	uint32_t			send_ring_buffer_size,
+	uint32_t			recv_ring_buffer_size,
+	void*				user_data,
+	uint32_t			user_data_len,
+	hv_vmbus_pfn_channel_callback	pfn_on_channel_callback,
+	void* 				context)
 {
 
 	int ret = 0;
-	hv_vmbus_channel_open_channel* openMsg;
-	hv_vmbus_channel_msg_info* openInfo;
 	void *in, *out;
+	hv_vmbus_channel_open_channel*	open_msg;
+	hv_vmbus_channel_msg_info* 	open_info;
 
+	new_channel->on_channel_callback = pfn_on_channel_callback;
+	new_channel->channel_callback_context = context;
 
-	NewChannel->on_channel_callback = pfn_on_channel_callback;
-	NewChannel->channel_callback_context = Context;
-
-	// Allocate the ring buffer
+	/* Allocate the ring buffer */
 	out = contigmalloc((send_ring_buffer_size + recv_ring_buffer_size),
-			M_DEVBUF, M_ZERO, 0UL, BUS_SPACE_MAXADDR, PAGE_SIZE, 0);
-			
-	if (!out)
-		return -ENOMEM;
+		M_DEVBUF, M_ZERO, 0UL, BUS_SPACE_MAXADDR, PAGE_SIZE, 0);
 
-	in = ((uint8_t *)out + send_ring_buffer_size);
+	if (out == NULL) {
+	    printf("VMBUS: malloc failed to create Ring Buffer\n");
+	    return (ENOMEM);
+	}
 
-	NewChannel->ring_buffer_pages = out;
-	NewChannel->ring_buffer_page_count = (send_ring_buffer_size
+	in = ((uint8_t *) out + send_ring_buffer_size);
+
+	new_channel->ring_buffer_pages = out;
+	new_channel->ring_buffer_page_count = (send_ring_buffer_size
 		+ recv_ring_buffer_size) >> PAGE_SHIFT;
 
-	hv_vmbus_ring_buffer_init(&NewChannel->outbound, out, send_ring_buffer_size);
+	hv_vmbus_ring_buffer_init(
+		&new_channel->outbound,
+		out,
+		send_ring_buffer_size);
 
-	hv_vmbus_ring_buffer_init(&NewChannel->inbound, in, recv_ring_buffer_size);
+	hv_vmbus_ring_buffer_init(
+		&new_channel->inbound,
+		in,
+		recv_ring_buffer_size);
 
-	// Establish the gpadl for the ring buffer
+	/**
+	 * Establish the gpadl for the ring buffer
+	 */
+	new_channel->ring_buffer_gpadl_handle = 0;
 
-	NewChannel->ring_buffer_gpadl_handle = 0;
-
-	ret = hv_vmbus_channel_establish_gpadl(NewChannel,
-		NewChannel->outbound.ring_buffer,
+	ret = hv_vmbus_channel_establish_gpadl(new_channel,
+		new_channel->outbound.ring_buffer,
 		send_ring_buffer_size + recv_ring_buffer_size,
-		&NewChannel->ring_buffer_gpadl_handle);
+		&new_channel->ring_buffer_gpadl_handle);
 
+	/**
+	 * Create and init the channel open message
+	 */
+	open_info = (hv_vmbus_channel_msg_info*) malloc(
+		sizeof(hv_vmbus_channel_msg_info) +
+			sizeof(hv_vmbus_channel_open_channel),
+		M_DEVBUF,
+		M_NOWAIT);
 
-	// Create and init the channel open message 
-	openInfo = (hv_vmbus_channel_msg_info*)malloc(
-		   sizeof(hv_vmbus_channel_msg_info) +
-		   sizeof(hv_vmbus_channel_open_channel), M_DEVBUF, M_NOWAIT);
+	if (open_info == NULL) {
+	    printf("VMBUS: malloc failed to create Open Channel message\n");
+	    return (ENOMEM);
+	}
 
-	if (!openInfo)
-		return -ENOMEM;
+	sema_init(&open_info->wait_sema, 0, "Open Info Sema");
 
-	sema_init(&openInfo->wait_sema, 0, "Open Info Sema");
-
-	openMsg = (hv_vmbus_channel_open_channel*) openInfo->msg;
-	openMsg->header.message_type = HV_CHANNEL_MESSAGE_OPEN_CHANNEL;
-	openMsg->open_id = NewChannel->offer_msg.child_rel_id; // FIXME
-	openMsg->child_rel_id = NewChannel->offer_msg.child_rel_id;
-	openMsg->ring_buffer_gpadl_handle = NewChannel->ring_buffer_gpadl_handle;
-	openMsg->downstream_ring_buffer_page_offset = send_ring_buffer_size
+	open_msg = (hv_vmbus_channel_open_channel*) open_info->msg;
+	open_msg->header.message_type = HV_CHANNEL_MESSAGE_OPEN_CHANNEL;
+	open_msg->open_id = new_channel->offer_msg.child_rel_id; /* FIXME */
+	open_msg->child_rel_id = new_channel->offer_msg.child_rel_id;
+	open_msg->ring_buffer_gpadl_handle =
+		new_channel->ring_buffer_gpadl_handle;
+	open_msg->downstream_ring_buffer_page_offset = send_ring_buffer_size
 		>> PAGE_SHIFT;
-	openMsg->server_context_area_gpadl_handle = 0; // TODO
+	open_msg->server_context_area_gpadl_handle = 0;
 
 	if (user_data_len) {
-		memcpy(openMsg->user_data, user_data, user_data_len);
+		memcpy(open_msg->user_data, user_data, user_data_len);
 	}
 
 	mtx_lock_spin(&hv_vmbus_g_connection.channel_msg_lock);
-	TAILQ_INSERT_TAIL(&hv_vmbus_g_connection.channel_msg_anchor, openInfo, msg_list_entry);
+	TAILQ_INSERT_TAIL(
+		&hv_vmbus_g_connection.channel_msg_anchor,
+		open_info,
+		msg_list_entry);
 	mtx_unlock_spin(&hv_vmbus_g_connection.channel_msg_lock);
 
-
-	ret = hv_vmbus_post_message(openMsg, sizeof(hv_vmbus_channel_open_channel));
+	ret = hv_vmbus_post_message(
+		open_msg,
+		sizeof(hv_vmbus_channel_open_channel));
 
 	if (ret != 0)
-		goto Cleanup;
+		goto cleanup;
 
-	ret = sema_timedwait(&openInfo->wait_sema, 500); //KYS 5 seconds 
-	
+	ret = sema_timedwait(&open_info->wait_sema, 500); /* KYS 5 seconds */
+
 	if (ret)
-		goto Cleanup;
+		goto cleanup;
 
-	if (openInfo->response.open_result.status == 0) {
-		printf("channel <%p> open success!!", NewChannel);
+	if (open_info->response.open_result.status == 0) {
+		printf("channel <%p> open success!!", new_channel);
 	} else {
 		printf("channel <%p> open failed - %d!!",
-			NewChannel, openInfo->response.open_result.status);
+			new_channel, open_info->response.open_result.status);
 	}
 
-Cleanup:
+	cleanup:
 	mtx_lock_spin(&hv_vmbus_g_connection.channel_msg_lock);
-	TAILQ_REMOVE(&hv_vmbus_g_connection.channel_msg_anchor, openInfo, msg_list_entry);
+	TAILQ_REMOVE(
+		&hv_vmbus_g_connection.channel_msg_anchor,
+		open_info,
+		msg_list_entry);
 	mtx_unlock_spin(&hv_vmbus_g_connection.channel_msg_lock);
-	sema_destroy(&openInfo->wait_sema);
-	free(openInfo, M_DEVBUF);
+	sema_destroy(&open_info->wait_sema);
+	free(open_info, M_DEVBUF);
 
-	return ret;
+	return (ret);
 }
 
-
-/*
- Name:
- VmbusChannelCreateGpadlHeader()
-
- Description:
- Creates a gpadl for the specified buffer
-
- --*/
-
+/**
+ * Create a gpadl for the specified buffer
+ */
 static int
-VmbusChannelCreateGpadlHeader(void *Kbuffer,
-	uint32_t Size,	// page-size multiple
-	hv_vmbus_channel_msg_info **MsgInfo, uint32_t *MessageCount) 
+vmbus_channel_create_gpadl_header(
+	void*				k_buffer,
+	uint32_t			size,	/* page-size multiple */
+	hv_vmbus_channel_msg_info**	msg_info,
+	uint32_t*			message_count)
 {
-	int i;
-	int pageCount;
-	unsigned long long pfn;
-	hv_vmbus_channel_gpadl_header* gpaHeader;
-	hv_vmbus_channel_gpadl_body* gpadlBody;
-	hv_vmbus_channel_msg_info* msgHeader;
-	hv_vmbus_channel_msg_info* msgBody;
-	uint32_t msgSize;
+	int				i;
+	int				page_count;
+	unsigned long long 		pfn;
+	uint32_t			msg_size;
+	hv_vmbus_channel_gpadl_header*	gpa_header;
+	hv_vmbus_channel_gpadl_body*	gpadl_body;
+	hv_vmbus_channel_msg_info*	msg_header;
+	hv_vmbus_channel_msg_info*	msg_body;
+
 
 	int pfnSum, pfnCount, pfnLeft, pfnCurr, pfnSize;
 
+	page_count = size >> PAGE_SHIFT;
+	pfn = hv_get_phys_addr(k_buffer) >> PAGE_SHIFT;
 
-	pageCount = Size >> PAGE_SHIFT;
-	pfn = hv_get_phys_addr(Kbuffer) >> PAGE_SHIFT;
-
-	// do we need a gpadl body msg
-	pfnSize = HV_MAX_SIZE_CHANNEL_MESSAGE - sizeof(hv_vmbus_channel_gpadl_header)
+	/*do we need a gpadl body msg */
+	pfnSize = HV_MAX_SIZE_CHANNEL_MESSAGE
+		- sizeof(hv_vmbus_channel_gpadl_header)
 		- sizeof(hv_gpa_range);
 	pfnCount = pfnSize / sizeof(uint64_t);
 
-	if (pageCount > pfnCount) { // we need a gpadl body
-		// fill in the header
-		msgSize = sizeof(hv_vmbus_channel_msg_info)
-			+ sizeof(hv_vmbus_channel_gpadl_header) + sizeof(hv_gpa_range)
+	if (page_count > pfnCount) { 	/* if(we need a gpadl body)	*/
+					/* fill in the header		*/
+		msg_size = sizeof(hv_vmbus_channel_msg_info)
+			+ sizeof(hv_vmbus_channel_gpadl_header)
+			+ sizeof(hv_gpa_range)
 			+ pfnCount * sizeof(uint64_t);
-		msgHeader = malloc(msgSize, M_DEVBUF, M_NOWAIT | M_ZERO);
-		TAILQ_INIT(&msgHeader->sub_msg_list_anchor);
-		msgHeader->message_size = msgSize;
-
-		gpaHeader = (hv_vmbus_channel_gpadl_header*) msgHeader->msg;
-		gpaHeader->range_count = 1;
-		gpaHeader->range_buf_len = sizeof(hv_gpa_range)
-			+ pageCount * sizeof(uint64_t);
-		gpaHeader->range[0].byte_offset = 0;
-		gpaHeader->range[0].byte_count = Size;
-		for (i = 0; i < pfnCount; i++) {
-			gpaHeader->range[0].pfn_array[i] = pfn + i;
+		msg_header = malloc(msg_size, M_DEVBUF, M_NOWAIT | M_ZERO);
+		if(msg_header == NULL) {
+		    printf("VMBUS: malloc failed to create Gpadl message!\n");
+		    return (ENOMEM);
 		}
-		*MsgInfo = msgHeader;
-		*MessageCount = 1;
+		TAILQ_INIT(&msg_header->sub_msg_list_anchor);
+		msg_header->message_size = msg_size;
+
+		gpa_header = (hv_vmbus_channel_gpadl_header*) msg_header->msg;
+		gpa_header->range_count = 1;
+		gpa_header->range_buf_len = sizeof(hv_gpa_range)
+			+ page_count * sizeof(uint64_t);
+		gpa_header->range[0].byte_offset = 0;
+		gpa_header->range[0].byte_count = size;
+		for (i = 0; i < pfnCount; i++) {
+			gpa_header->range[0].pfn_array[i] = pfn + i;
+		}
+		*msg_info = msg_header;
+		*message_count = 1;
 
 		pfnSum = pfnCount;
-		pfnLeft = pageCount - pfnCount;
+		pfnLeft = page_count - pfnCount;
 
-		// how many pfns can we fit
+		/*
+		 *  figure out how many pfns we can fit
+		 */
 		pfnSize = HV_MAX_SIZE_CHANNEL_MESSAGE
 			- sizeof(hv_vmbus_channel_gpadl_body);
 		pfnCount = pfnSize / sizeof(uint64_t);
 
-		// fill in the body
+		/*
+		 * fill in the body
+		 */
 		while (pfnLeft) {
 			if (pfnLeft > pfnCount) {
 				pfnCurr = pfnCount;
@@ -378,77 +374,89 @@ VmbusChannelCreateGpadlHeader(void *Kbuffer,
 				pfnCurr = pfnLeft;
 			}
 
-			msgSize = sizeof(hv_vmbus_channel_msg_info)
-				+ sizeof(hv_vmbus_channel_gpadl_body)
-				+ pfnCurr * sizeof(uint64_t);
-			msgBody = malloc(msgSize, M_DEVBUF, M_NOWAIT | M_ZERO);
-			msgBody->message_size = msgSize;
-			(*MessageCount)++;
-			gpadlBody = (hv_vmbus_channel_gpadl_body*) msgBody->msg;
-
-			// FIXME: Gpadl is uint32_t and we are using a pointer which could be 64-bit
-			//gpadlBody->gpadl = kbuffer;
+			msg_size = sizeof(hv_vmbus_channel_msg_info) +
+				sizeof(hv_vmbus_channel_gpadl_body) +
+				pfnCurr * sizeof(uint64_t);
+			msg_body = malloc(
+				msg_size,
+				M_DEVBUF,
+				M_NOWAIT | M_ZERO);
+			if(msg_header == NULL) {
+			    printf("VMBUS: malloc failed to create Gpadl message!");
+			    return (ENOMEM);
+			}
+			msg_body->message_size = msg_size;
+			(*message_count)++;
+			gpadl_body =
+				(hv_vmbus_channel_gpadl_body*) msg_body->msg;
+			/*
+			 * FIXME: Gpadl is uint32_t and we are using a pointer
+			 * which could be 64-bit
+			 *
+			 * gpadl_body->gpadl = kbuffer;
+			 */
 			for (i = 0; i < pfnCurr; i++) {
-				gpadlBody->pfn[i] = pfn + pfnSum + i;
+				gpadl_body->pfn[i] = pfn + pfnSum + i;
 			}
 
-			TAILQ_INSERT_TAIL(&msgHeader->sub_msg_list_anchor, msgBody, msg_list_entry);
+			TAILQ_INSERT_TAIL(
+				&msg_header->sub_msg_list_anchor,
+				msg_body,
+				msg_list_entry);
 			pfnSum += pfnCurr;
 			pfnLeft -= pfnCurr;
 		}
-	} else {
-		// everything fits in a header
-		msgSize = sizeof(hv_vmbus_channel_msg_info)
-			+ sizeof(hv_vmbus_channel_gpadl_header) + sizeof(hv_gpa_range)
-			+ pageCount * sizeof(uint64_t);
-		msgHeader = malloc(msgSize, M_DEVBUF, M_NOWAIT | M_ZERO);
-		msgHeader->message_size = msgSize;
+	} else {	/* else everything fits in a header */
 
-		gpaHeader = (hv_vmbus_channel_gpadl_header*) msgHeader->msg;
-		gpaHeader->range_count = 1;
-		gpaHeader->range_buf_len = sizeof(hv_gpa_range)
-			+ pageCount * sizeof(uint64_t);
-		gpaHeader->range[0].byte_offset = 0;
-		gpaHeader->range[0].byte_count = Size;
-		for (i = 0; i < pageCount; i++) {
-			gpaHeader->range[0].pfn_array[i] = pfn + i;
+		msg_size = sizeof(hv_vmbus_channel_msg_info)  +
+			sizeof(hv_vmbus_channel_gpadl_header) +
+			sizeof(hv_gpa_range) +
+			page_count * sizeof(uint64_t);
+		msg_header = malloc(msg_size, M_DEVBUF, M_NOWAIT | M_ZERO);
+		if(msg_header == NULL) {
+		    printf("VMBUS: malloc failed for Gpadl Message!");
+		    return (ENOMEM);
+		}
+		msg_header->message_size = msg_size;
+
+		gpa_header = (hv_vmbus_channel_gpadl_header*) msg_header->msg;
+		gpa_header->range_count = 1;
+		gpa_header->range_buf_len = sizeof(hv_gpa_range) +
+			page_count * sizeof(uint64_t);
+		gpa_header->range[0].byte_offset = 0;
+		gpa_header->range[0].byte_count = size;
+		for (i = 0; i < page_count; i++) {
+			gpa_header->range[0].pfn_array[i] = pfn + i;
 		}
 
-		*MsgInfo = msgHeader;
-		*MessageCount = 1;
+		*msg_info = msg_header;
+		*message_count = 1;
 	}
 
-	return 0;
+	return (0);
 }
 
-/*++;
-
- Name:
- hv_vmbus_channel_establish_gpadl()
-
- Description:
- Estabish a GPADL for the specified buffer
-
- --*/
+/**
+ * Establish a GPADL for the specified buffer
+ */
 int
-hv_vmbus_channel_establish_gpadl(hv_vmbus_channel *Channel, void *Kbuffer,
-	uint32_t Size,	 // page-size multiple
-	uint32_t *gpadl_handle) 
+hv_vmbus_channel_establish_gpadl(
+	hv_vmbus_channel*	channel,
+	void*			k_buffer,
+	uint32_t		size, /* page-size multiple */
+	uint32_t*		gpadl_handle)
 
 {
 	int ret = 0;
-	hv_vmbus_channel_gpadl_header* gpadlMsg;
-	hv_vmbus_channel_gpadl_body* gpadlBody;
+	hv_vmbus_channel_gpadl_header*	gpadl_msg;
+	hv_vmbus_channel_gpadl_body*	gpadl_body;
+	hv_vmbus_channel_msg_info*	msg_info;
+	hv_vmbus_channel_msg_info*	sub_msg_info;
+	uint32_t			msg_count;
+	hv_vmbus_channel_msg_info*	curr;
+	uint32_t			next_gpadl_handle;
 
-	hv_vmbus_channel_msg_info *msgInfo;
-	hv_vmbus_channel_msg_info *subMsgInfo;
-
-	uint32_t msgCount;
-	struct hv_vmbus_channel_msg_info *curr;
-	uint32_t next_gpadl_handle;
-
-	/* Fixme:  NetScaler */
-	int retrycnt = 0;
+	int retrycnt = 0; /* Fixme:  NetScaler */
 
 	/* Fixme:  NetScaler:  Used in error message only */
 	int mcnt = 0;
@@ -456,107 +464,108 @@ hv_vmbus_channel_establish_gpadl(hv_vmbus_channel *Channel, void *Kbuffer,
 	next_gpadl_handle = hv_vmbus_g_connection.next_gpadl_handle;
 	atomic_add_int((int*) &hv_vmbus_g_connection.next_gpadl_handle, 1);
 
-	VmbusChannelCreateGpadlHeader(Kbuffer, Size, &msgInfo, &msgCount);
+	ret = vmbus_channel_create_gpadl_header(k_buffer, size, &msg_info, &msg_count);
+	if(ret != 0) { /* if(allocation failed) return immediately */
+	    /* FIXME: probably should reverse atomic_add_int above */
+	    return ret;
+	}
 
-	/*
-	 * XXXKYS: Deal with allocation failures in 
-	 * VmbusChannelCreateGpadlHeader()
-	 */
-
-	sema_init(&msgInfo->wait_sema, 0, "Open Info Sema");
-	gpadlMsg = (hv_vmbus_channel_gpadl_header*) msgInfo->msg;
-	gpadlMsg->header.message_type = HV_CHANNEL_MESSAGEL_GPADL_HEADER;
-	gpadlMsg->child_rel_id = Channel->offer_msg.child_rel_id;
-	gpadlMsg->gpadl = next_gpadl_handle;
-
+	sema_init(&msg_info->wait_sema, 0, "Open Info Sema");
+	gpadl_msg = (hv_vmbus_channel_gpadl_header*) msg_info->msg;
+	gpadl_msg->header.message_type = HV_CHANNEL_MESSAGEL_GPADL_HEADER;
+	gpadl_msg->child_rel_id = channel->offer_msg.child_rel_id;
+	gpadl_msg->gpadl = next_gpadl_handle;
 
 	mtx_lock_spin(&hv_vmbus_g_connection.channel_msg_lock);
-	TAILQ_INSERT_TAIL(&hv_vmbus_g_connection.channel_msg_anchor, msgInfo, msg_list_entry);
+	TAILQ_INSERT_TAIL(
+		&hv_vmbus_g_connection.channel_msg_anchor,
+		msg_info,
+		msg_list_entry);
+
 	mtx_unlock_spin(&hv_vmbus_g_connection.channel_msg_lock);
 
+	ret = hv_vmbus_post_message(
+		gpadl_msg,
+		msg_info->message_size -
+		    (uint32_t) sizeof(hv_vmbus_channel_msg_info));
 
-	ret = hv_vmbus_post_message(gpadlMsg,
-		msgInfo->message_size - (uint32_t) sizeof(hv_vmbus_channel_msg_info));
 	if (ret != 0) {
-		goto Cleanup;
+	    goto cleanup;
 	}
 
 	mcnt = 1;
-	if (msgCount > 1) {
-		TAILQ_FOREACH(curr, &msgInfo->sub_msg_list_anchor, msg_list_entry)
-		{
-			mcnt++;
-			subMsgInfo = curr;
-			gpadlBody = (hv_vmbus_channel_gpadl_body*) subMsgInfo->msg;
+	if (msg_count > 1) {
+	    TAILQ_FOREACH(curr, &msg_info->sub_msg_list_anchor, msg_list_entry) {
+		mcnt++;
+		sub_msg_info = curr;
+		gpadl_body =
+		    (hv_vmbus_channel_gpadl_body*) sub_msg_info->msg;
 
-			gpadlBody->header.message_type = HV_CHANNEL_MESSAGE_GPADL_BODY;
-			gpadlBody->gpadl = next_gpadl_handle;
+		gpadl_body->header.message_type =
+		    HV_CHANNEL_MESSAGE_GPADL_BODY;
+		gpadl_body->gpadl = next_gpadl_handle;
 
-			retry: ret =
-				hv_vmbus_post_message(
-					gpadlBody,
-					subMsgInfo->message_size
-						- (uint32_t) sizeof(hv_vmbus_channel_msg_info));
-			/* Fixme:  NetScaler */
-			if (ret != 0) {
-				if ((ret == HV_STATUS_INSUFFICIENT_BUFFERS)
-					&& (retrycnt < 5)) {
-					printf(
-						"Failed to send GPADL body (%d): %x, retry: %d\n",
-						mcnt, (unsigned int) ret,
-						retrycnt);
-					DELAY(5000);
-					retrycnt++;
-					goto retry;
-				}
-			}
+		retry: ret =
+		    hv_vmbus_post_message(
+			gpadl_body,
+			sub_msg_info->message_size
+			    - (uint32_t) sizeof(hv_vmbus_channel_msg_info));
+		/* Fixme:  NetScaler */
+		if (ret != 0) {
+		    if ((ret == HV_STATUS_INSUFFICIENT_BUFFERS)
+			&& (retrycnt < 5)) {
+			printf(
+			    "VMBUS: Failed to send GPADL body (%d): %x, retry: %d\n",
+			    mcnt,
+			    (unsigned int) ret,
+			    retrycnt);
+			DELAY(5000);
+			retrycnt++;
+			goto retry;
+		    }
 		}
+	    }
 	}
 
-	ret = sema_timedwait(&msgInfo->wait_sema, 500); //KYS 5 seconds
+	ret = sema_timedwait(&msg_info->wait_sema, 500); /* KYS 5 seconds*/
 	if (ret)
-		goto Cleanup;
+		goto cleanup;
 
+	*gpadl_handle = gpadl_msg->gpadl;
 
-	*gpadl_handle = gpadlMsg->gpadl;
-
-Cleanup:
+cleanup:
 
 	mtx_lock_spin(&hv_vmbus_g_connection.channel_msg_lock);
-	TAILQ_REMOVE(&hv_vmbus_g_connection.channel_msg_anchor, msgInfo, msg_list_entry);
+	TAILQ_REMOVE(&hv_vmbus_g_connection.channel_msg_anchor, msg_info, msg_list_entry);
 	mtx_unlock_spin(&hv_vmbus_g_connection.channel_msg_lock);
 
-	sema_destroy(&msgInfo->wait_sema);
-	free(msgInfo, M_DEVBUF);
+	sema_destroy(&msg_info->wait_sema);
+	free(msg_info, M_DEVBUF);
 
-	return ret;
+	return (ret);
 }
 
-/*++;
-
- Name:
- hv_vmbus_channel_teardown_gpdal()
-
- Description:
- Teardown the specified GPADL handle
-
- --*/
+/**
+ * Teardown the specified GPADL handle
+ */
 int
-hv_vmbus_channel_teardown_gpdal(hv_vmbus_channel *Channel, uint32_t gpadl_handle) 
+hv_vmbus_channel_teardown_gpdal(
+	hv_vmbus_channel*	channel,
+	uint32_t		gpadl_handle)
 {
-	int ret = 0;
-	hv_vmbus_channel_gpadl_teardown *msg;
-	hv_vmbus_channel_msg_info* info;
-
+	int					ret = 0;
+	hv_vmbus_channel_gpadl_teardown*	msg;
+	hv_vmbus_channel_msg_info*		info;
 
 	info = (hv_vmbus_channel_msg_info *)
 		malloc(	sizeof(hv_vmbus_channel_msg_info) +
 			sizeof(hv_vmbus_channel_gpadl_teardown),
 				M_DEVBUF, M_NOWAIT);
 
-	if (!info) {
-		ret = -ENOMEM;
-		goto cleanup;
+	if (info == NULL) {
+	    printf("VMBUS: malloc failed to create Gpadl Teardown message!\n");
+	    ret = ENOMEM;
+	    goto cleanup;
 	}
 
 	sema_init(&info->wait_sema, 0, "Open Info Sema");
@@ -564,7 +573,7 @@ hv_vmbus_channel_teardown_gpdal(hv_vmbus_channel *Channel, uint32_t gpadl_handle
 	msg = (hv_vmbus_channel_gpadl_teardown*) info->msg;
 
 	msg->header.message_type = HV_CHANNEL_MESSAGE_GPADL_TEARDOWN;
-	msg->child_rel_id = Channel->offer_msg.child_rel_id;
+	msg->child_rel_id = channel->offer_msg.child_rel_id;
 	msg->gpadl = gpadl_handle;
 
 	mtx_lock_spin(&hv_vmbus_g_connection.channel_msg_lock);
@@ -575,174 +584,190 @@ hv_vmbus_channel_teardown_gpdal(hv_vmbus_channel *Channel, uint32_t gpadl_handle
 	if (ret != 0) 
 		goto cleanup;
 	
-
-	ret = sema_timedwait(&info->wait_sema, 500); //KYS 5 seconds
+	ret = sema_timedwait(&info->wait_sema, 500); /* KYS 5 seconds */
 
 cleanup:
-
-	// Received a torndown response
+	/*
+	 * Received a torndown response
+	 */
 	mtx_lock_spin(&hv_vmbus_g_connection.channel_msg_lock);
 	TAILQ_REMOVE(&hv_vmbus_g_connection.channel_msg_anchor, info, msg_list_entry);
 	mtx_unlock_spin(&hv_vmbus_g_connection.channel_msg_lock);
 	sema_destroy(&info->wait_sema);
 	free(info, M_DEVBUF);
 
-	return ret;
+	return (ret);
 }
 
-/*++
-
- Name:
- hv_vmbus_channel_close()
-
- Description:
- Close the specified channel
-
- --*/
+/**
+ *  Close the specified channel
+ */
 void
-hv_vmbus_channel_close(hv_vmbus_channel *Channel) 
+hv_vmbus_channel_close(hv_vmbus_channel *channel)
 {
 	int ret = 0;
 	hv_vmbus_channel_close_channel* msg;
 	hv_vmbus_channel_msg_info* info;
 
-	mtx_lock(&Channel->inbound_lock);
-	Channel->on_channel_callback = NULL;
-	mtx_unlock(&Channel->inbound_lock);
+	mtx_lock(&channel->inbound_lock);
+	channel->on_channel_callback = NULL;
+	mtx_unlock(&channel->inbound_lock);
 
-	// Send a closing message
+	/**
+	 * Send a closing message
+	 */
 	info = (hv_vmbus_channel_msg_info *)
 		malloc(	sizeof(hv_vmbus_channel_msg_info) +
 			sizeof(hv_vmbus_channel_close_channel),
 				M_DEVBUF, M_NOWAIT);
 
-	KASSERT(info != NULL, ("malloc failed")); //KYS: eliminate this error
-
+	KASSERT(info != NULL, ("malloc failed")); /* KYS: eliminate this error */
+	if(info == NULL) {
+	    /* FIXME: need to replace malloc with preallocated buffers*/
+	    printf("VMBUS: Channel Close Message malloc failed!\n");
+	    return;
+	}
 	msg = (hv_vmbus_channel_close_channel*) info->msg;
 	msg->header.message_type = HV_CHANNEL_MESSAGE_CLOSE_CHANNEL;
-	msg->child_rel_id = Channel->offer_msg.child_rel_id;
+	msg->child_rel_id = channel->offer_msg.child_rel_id;
 
-	ret = hv_vmbus_post_message(msg, sizeof(hv_vmbus_channel_close_channel));
+	ret = hv_vmbus_post_message(
+		msg,
+		sizeof(hv_vmbus_channel_close_channel));
+
 	if (ret != 0) {
-		// TODO:
+		/* TODO: handle bad post message */
 	}
 
-	// Tear down the gpadl for the channel's ring buffer
-	if (Channel->ring_buffer_gpadl_handle) {
-		hv_vmbus_channel_teardown_gpdal(Channel,
-			Channel->ring_buffer_gpadl_handle);
+	/* Tear down the gpadl for the channel's ring buffer */
+	if (channel->ring_buffer_gpadl_handle) {
+		hv_vmbus_channel_teardown_gpdal(channel,
+			channel->ring_buffer_gpadl_handle);
 	}
 
-	// TODO: Send a msg to release the childRelId
+	/* TODO: Send a msg to release the childRelId */
 
-	// Cleanup the ring buffers for this channel
-	hv_ring_buffer_cleanup(&Channel->outbound);
-	hv_ring_buffer_cleanup(&Channel->inbound);
+	/* cleanup the ring buffers for this channel */
+	hv_ring_buffer_cleanup(&channel->outbound);
+	hv_ring_buffer_cleanup(&channel->inbound);
 
-	contigfree(Channel->ring_buffer_pages, Channel->ring_buffer_page_count, M_DEVBUF);
+	contigfree(
+		channel->ring_buffer_pages,
+		channel->ring_buffer_page_count,
+		M_DEVBUF);
 
 	free(info, M_DEVBUF);
 
-	// If we are closing the channel during an error path in opening the channel, don't free the channel
-	// since the caller will free the channel
-	if (Channel->state == HV_CHANNEL_OPEN_STATE) {
+	/*
+	 *  If we are closing the channel during an error path in
+	 *  opening the channel, don't free the channel
+	 *  since the caller will free the channel
+	 */
+	if (channel->state == HV_CHANNEL_OPEN_STATE) {
 		mtx_lock_spin(&hv_vmbus_g_connection.channel_lock);
-		TAILQ_REMOVE(&hv_vmbus_g_connection.channel_anchor, Channel, list_entry);
+		TAILQ_REMOVE(
+			&hv_vmbus_g_connection.channel_anchor,
+			channel,
+			list_entry);
 		mtx_unlock_spin(&hv_vmbus_g_connection.channel_lock);
 
-		hv_vmbus_free_vmbus_channel(Channel);
+		hv_vmbus_free_vmbus_channel(channel);
 	}
 
 }
 
-/*++
-
- Name:
- hv_vmbus_channel_send_packet()
-
- Description:
- Send the specified buffer on the given channel
-
- --*/
+/**
+ * Send the specified buffer on the given channel
+ */
 int
-hv_vmbus_channel_send_packet(hv_vmbus_channel *Channel, void *Buffer,
-	uint32_t buffer_len, uint64_t request_id, hv_vmbus_packet_type Type,
-	uint32_t Flags) 
+hv_vmbus_channel_send_packet(
+	hv_vmbus_channel*	channel,
+	void*			buffer,
+	uint32_t		buffer_len,
+	uint64_t		request_id,
+	hv_vmbus_packet_type	type,
+	uint32_t		flags)
 {
-	
-	int ret = 0;
-	hv_vm_packet_descriptor desc;
-	uint32_t packetLen = sizeof(hv_vm_packet_descriptor) + buffer_len;
-	uint32_t packetLenAligned = HV_ALIGN_UP(packetLen, sizeof(uint64_t));
-	hv_vmbus_sg_buffer_list bufferList[3];
-	uint64_t alignedData = 0;
+	int			ret = 0;
+	hv_vm_packet_descriptor	desc;
+	uint32_t		packet_len;
+	uint64_t		aligned_data;
+	uint32_t		packet_len_aligned;
+	hv_vmbus_sg_buffer_list	buffer_list[3];
 
+	packet_len = sizeof(hv_vm_packet_descriptor) + buffer_len;
+	packet_len_aligned = HV_ALIGN_UP(packet_len, sizeof(uint64_t));
+	aligned_data = 0;
 
-	// Setup the descriptor
-	desc.type = Type;	//HV_VMBUS_PACKET_TYPE_DATA_IN_BAND;
-	desc.flags = Flags;	//HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED;
-	desc.data_offset8 = sizeof(hv_vm_packet_descriptor) >> 3; // in 8-bytes granularity
-	desc.length8 = (uint16_t) (packetLenAligned >> 3);
+	/* Setup the descriptor */
+	desc.type = type;   /* HV_VMBUS_PACKET_TYPE_DATA_IN_BAND;             */
+	desc.flags = flags; /* HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED */
+			    /* in 8-bytes granularity */
+	desc.data_offset8 = sizeof(hv_vm_packet_descriptor) >> 3;
+	desc.length8 = (uint16_t) (packet_len_aligned >> 3);
 	desc.transaction_id = request_id;
 
-	bufferList[0].data = &desc;
-	bufferList[0].length = sizeof(hv_vm_packet_descriptor);
+	buffer_list[0].data = &desc;
+	buffer_list[0].length = sizeof(hv_vm_packet_descriptor);
 
-	bufferList[1].data = Buffer;
-	bufferList[1].length = buffer_len;
+	buffer_list[1].data = buffer;
+	buffer_list[1].length = buffer_len;
 
-	bufferList[2].data = &alignedData;
-	bufferList[2].length = packetLenAligned - packetLen;
+	buffer_list[2].data = &aligned_data;
+	buffer_list[2].length = packet_len_aligned - packet_len;
 
-	ret = hv_ring_buffer_write(&Channel->outbound, bufferList, 3);
+	ret = hv_ring_buffer_write(&channel->outbound, buffer_list, 3);
 
-	// TODO: We should determine if this is optional
-	if (ret == 0 && !hv_vmbus_get_ring_buffer_interrupt_mask(&Channel->outbound)) {
-		VmbusChannelSetEvent(Channel);
+	/* TODO: We should determine if this is optional */
+	if (ret == 0
+		&& !hv_vmbus_get_ring_buffer_interrupt_mask(&channel->outbound)) {
+		vmbus_channel_set_event(channel);
 	}
 
-	return ret;
+	return (ret);
 }
 
-/*++
-
- Name:
- hv_vmbus_channel_send_packet_pagebuffer()
-
- Description:
- Send a range of single-page buffer packets using a GPADL Direct packet type.
-
- --*/
+/**
+ * Send a range of single-page buffer packets using
+ * a GPADL Direct packet type
+ */
 int
-hv_vmbus_channel_send_packet_pagebuffer(hv_vmbus_channel *Channel,
-	hv_vmbus_page_buffer page_buffers[], uint32_t page_count, void *Buffer,
-	uint32_t buffer_len, uint64_t request_id) 
+hv_vmbus_channel_send_packet_pagebuffer(
+	hv_vmbus_channel*	channel,
+	hv_vmbus_page_buffer	page_buffers[],
+	uint32_t		page_count,
+	void*			buffer,
+	uint32_t		buffer_len,
+	uint64_t		request_id)
 {
-	
-	int ret = 0;
-	int i = 0;
-	hv_vmbus_channel_packet_page_buffer desc;
-	uint32_t descSize;
-	uint32_t packetLen;
-	uint32_t packetLenAligned;
-	hv_vmbus_sg_buffer_list bufferList[3];
-	uint64_t alignedData = 0;
 
-        if (page_count > HV_MAX_PAGE_BUFFER_COUNT)
-                return -EINVAL;
+	int					ret = 0;
+	int					i = 0;
+	uint32_t				packet_len;
+	uint32_t				packetLen_aligned;
+	hv_vmbus_sg_buffer_list			buffer_list[3];
+	hv_vmbus_channel_packet_page_buffer	desc;
+	uint32_t				descSize;
+	uint64_t				alignedData = 0;
 
-	// Adjust the size down since hv_vmbus_channel_packet_page_buffer is the largest size we support
-	descSize = sizeof(hv_vmbus_channel_packet_page_buffer)
-		- ((HV_MAX_PAGE_BUFFER_COUNT - page_count) * sizeof(hv_vmbus_page_buffer));
-	packetLen = descSize + buffer_len;
-	packetLenAligned = HV_ALIGN_UP(packetLen, sizeof(uint64_t));
+	if (page_count > HV_MAX_PAGE_BUFFER_COUNT)
+		return (EINVAL);
 
+	/*
+	 * Adjust the size down since hv_vmbus_channel_packet_page_buffer
+	 *  is the largest size we support
+	 */
+	descSize = sizeof(hv_vmbus_channel_packet_page_buffer) -
+			((HV_MAX_PAGE_BUFFER_COUNT - page_count) *
+			sizeof(hv_vmbus_page_buffer));
+	packet_len = descSize + buffer_len;
+	packetLen_aligned = HV_ALIGN_UP(packet_len, sizeof(uint64_t));
 
-	// Setup the descriptor
+	/* Setup the descriptor */
 	desc.type = HV_VMBUS_PACKET_TYPE_DATA_USING_GPA_DIRECT;
 	desc.flags = HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED;
-	desc.data_offset8 = descSize >> 3; // in 8-bytes grandularity
-	desc.length8 = (uint16_t) (packetLenAligned >> 3);
+	desc.data_offset8 = descSize >> 3; /* in 8-bytes granularity */
+	desc.length8 = (uint16_t) (packetLen_aligned >> 3);
 	desc.transaction_id = request_id;
 	desc.range_count = page_count;
 
@@ -752,66 +777,72 @@ hv_vmbus_channel_send_packet_pagebuffer(hv_vmbus_channel *Channel,
 		desc.range[i].pfn = page_buffers[i].pfn;
 	}
 
-	bufferList[0].data = &desc;
-	bufferList[0].length = descSize;
+	buffer_list[0].data = &desc;
+	buffer_list[0].length = descSize;
 
-	bufferList[1].data = Buffer;
-	bufferList[1].length = buffer_len;
+	buffer_list[1].data = buffer;
+	buffer_list[1].length = buffer_len;
 
-	bufferList[2].data = &alignedData;
-	bufferList[2].length = packetLenAligned - packetLen;
+	buffer_list[2].data = &alignedData;
+	buffer_list[2].length = packetLen_aligned - packet_len;
 
-	ret = hv_ring_buffer_write(&Channel->outbound, bufferList, 3);
+	ret = hv_ring_buffer_write(&channel->outbound, buffer_list, 3);
 
-	// TODO: We should determine if this is optional
-	if (ret == 0 && !hv_vmbus_get_ring_buffer_interrupt_mask(&Channel->outbound)) {
-		VmbusChannelSetEvent(Channel);
+	/* TODO: We should determine if this is optional */
+	if (ret == 0 &&
+		!hv_vmbus_get_ring_buffer_interrupt_mask(&channel->outbound)) {
+		vmbus_channel_set_event(channel);
 	}
 
-	return ret;
+	return (ret);
 }
 
-/*++
-
- Name:
- hv_vmbus_channel_send_packet_multipagebuffer()
-
- Description:
- Send a multi-page buffer packet using a GPADL Direct packet type.
-
- --*/
+/**
+ *  Send a multi-page buffer packet using a GPADL Direct packet type
+ */
 int
-hv_vmbus_channel_send_packet_multipagebuffer(hv_vmbus_channel *Channel,
-	hv_vmbus_multipage_buffer *multi_page_buffer, void *Buffer, uint32_t buffer_len,
-	uint64_t request_id) 
+hv_vmbus_channel_send_packet_multipagebuffer(
+	hv_vmbus_channel*		channel,
+	hv_vmbus_multipage_buffer*	multi_page_buffer,
+	void*				buffer,
+	uint32_t			buffer_len,
+	uint64_t			request_id)
 {
-	
-	int ret = 0;
+
+	int			ret = 0;
+	uint32_t		desc_size;
+	uint32_t		packet_len;
+	uint32_t		packet_len_aligned;
+	uint32_t		pfn_count;
+	uint64_t		aligned_data = 0;
+	hv_vmbus_sg_buffer_list	buffer_list[3];
 	hv_vmbus_channel_packet_multipage_buffer desc;
-	uint32_t descSize;
-	uint32_t packetLen;
-	uint32_t packetLenAligned;
-	hv_vmbus_sg_buffer_list bufferList[3];
-	uint64_t alignedData = 0;
-	uint32_t pfnCount =
-		HV_NUM_PAGES_SPANNED(multi_page_buffer->offset, multi_page_buffer->length);
 
+	pfn_count =
+	    HV_NUM_PAGES_SPANNED(
+		    multi_page_buffer->offset,
+		    multi_page_buffer->length);
 
-	if ((pfnCount < 0) || (pfnCount > HV_MAX_MULTIPAGE_BUFFER_COUNT))
-		return -EINVAL;
+	if ((pfn_count < 0) || (pfn_count > HV_MAX_MULTIPAGE_BUFFER_COUNT))
+	    return (EINVAL);
+	/*
+	 * Adjust the size down since hv_vmbus_channel_packet_multipage_buffer
+	 * is the largest size we support
+	 */
+	desc_size =
+	    sizeof(hv_vmbus_channel_packet_multipage_buffer) -
+		    ((HV_MAX_MULTIPAGE_BUFFER_COUNT - pfn_count) *
+			sizeof(uint64_t));
+	packet_len = desc_size + buffer_len;
+	packet_len_aligned = HV_ALIGN_UP(packet_len, sizeof(uint64_t));
 
-	// Adjust the size down since hv_vmbus_channel_packet_multipage_buffer is the largest size we support
-	descSize = sizeof(hv_vmbus_channel_packet_multipage_buffer)
-		- ((HV_MAX_MULTIPAGE_BUFFER_COUNT - pfnCount) * sizeof(uint64_t));
-	packetLen = descSize + buffer_len;
-	packetLenAligned = HV_ALIGN_UP(packetLen, sizeof(uint64_t));
-
-
-	// Setup the descriptor
+	/*
+	 * Setup the descriptor
+	 */
 	desc.type = HV_VMBUS_PACKET_TYPE_DATA_USING_GPA_DIRECT;
 	desc.flags = HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED;
-	desc.data_offset8 = descSize >> 3; // in 8-bytes grandularity
-	desc.length8 = (uint16_t) (packetLenAligned >> 3);
+	desc.data_offset8 = desc_size >> 3; /* in 8-bytes granularity */
+	desc.length8 = (uint16_t) (packet_len_aligned >> 3);
 	desc.transaction_id = request_id;
 	desc.range_count = 1;
 
@@ -819,97 +850,94 @@ hv_vmbus_channel_send_packet_multipagebuffer(hv_vmbus_channel *Channel,
 	desc.range.offset = multi_page_buffer->offset;
 
 	memcpy(desc.range.pfn_array, multi_page_buffer->pfn_array,
-		pfnCount*sizeof(uint64_t));
+		pfn_count * sizeof(uint64_t));
 
-	bufferList[0].data = &desc;
-	bufferList[0].length = descSize;
+	buffer_list[0].data = &desc;
+	buffer_list[0].length = desc_size;
 
-	bufferList[1].data = Buffer;
-	bufferList[1].length = buffer_len;
+	buffer_list[1].data = buffer;
+	buffer_list[1].length = buffer_len;
 
-	bufferList[2].data = &alignedData;
-	bufferList[2].length = packetLenAligned - packetLen;
+	buffer_list[2].data = &aligned_data;
+	buffer_list[2].length = packet_len_aligned - packet_len;
 
-	ret = hv_ring_buffer_write(&Channel->outbound, bufferList, 3);
+	ret = hv_ring_buffer_write(&channel->outbound, buffer_list, 3);
 
-	// TODO: We should determine if this is optional
-	if (ret == 0 && !hv_vmbus_get_ring_buffer_interrupt_mask(&Channel->outbound)) {
-		VmbusChannelSetEvent(Channel);
+	/* TODO: We should determine if this is optional */
+	if (ret == 0 &&
+	    !hv_vmbus_get_ring_buffer_interrupt_mask(&channel->outbound)) {
+	    vmbus_channel_set_event(channel);
 	}
 
-	return ret;
+	return (ret);
 }
 
-/*++
-
- Name:
- hv_vmbus_channel_recv_packet()
-
- Description:
- Retrieve the user packet on the specified channel
-
- --*/
+/**
+ * Retrieve the user packet on the specified channel
+ */
 int
-hv_vmbus_channel_recv_packet(hv_vmbus_channel *Channel, void *Buffer,
-	uint32_t buffer_len, uint32_t *buffer_actual_len, uint64_t *request_id) 
+hv_vmbus_channel_recv_packet(
+	hv_vmbus_channel*	channel,
+	void*			Buffer,
+	uint32_t		buffer_len,
+	uint32_t*		buffer_actual_len,
+	uint64_t*		request_id)
 {
-
-	hv_vm_packet_descriptor desc;
-	uint32_t packetLen;
-	uint32_t userLen;
-	int ret;
+	int			ret;
+	uint32_t		user_len;
+	uint32_t		packet_len;
+	hv_vm_packet_descriptor	desc;
 
 	*buffer_actual_len = 0;
 	*request_id = 0;
 
-	ret = hv_ring_buffer_beek(&Channel->inbound, &desc,
+	ret = hv_ring_buffer_beek(&channel->inbound, &desc,
 		sizeof(hv_vm_packet_descriptor));
-	if (ret != 0) 
-		return 0;
+	if (ret != 0)
+		return (0);
 
+	packet_len = desc.length8 << 3;
+	user_len = packet_len - (desc.data_offset8 << 3);
 
-	packetLen = desc.length8 << 3;
-	userLen = packetLen - (desc.data_offset8 << 3);
+	*buffer_actual_len = user_len;
 
-	*buffer_actual_len = userLen;
-
-	if (userLen > buffer_len)
-		return -EINVAL;
+	if (user_len > buffer_len)
+		return (EINVAL);
 
 	*request_id = desc.transaction_id;
 
-	// Copy over the packet to the user buffer
-	ret = hv_ring_buffer_read(&Channel->inbound, Buffer, userLen,
+	/* Copy over the packet to the user buffer */
+	ret = hv_ring_buffer_read(&channel->inbound, Buffer, user_len,
 		(desc.data_offset8 << 3));
-	return 0;
+
+	return (0);
 }
 
-/*++
-
- Name:
- hv_vmbus_channel_recv_packet_raw()
-
- Description:
- Retrieve the raw packet on the specified channel
-
- --*/
+/**
+ * Retrieve the raw packet on the specified channel
+ */
 int
-hv_vmbus_channel_recv_packet_raw(hv_vmbus_channel *Channel, void *Buffer,
-	uint32_t buffer_len, uint32_t *buffer_actual_len, uint64_t *request_id) 
+hv_vmbus_channel_recv_packet_raw(
+	hv_vmbus_channel*	channel,
+	void*			buffer,
+	uint32_t		buffer_len,
+	uint32_t*		buffer_actual_len,
+	uint64_t*		request_id)
 {
-	
-	hv_vm_packet_descriptor desc;
-	uint32_t packetLen;
-	uint32_t userLen;
-	int ret;
+	int		ret;
+	uint32_t	packetLen;
+	uint32_t	userLen;
+	hv_vm_packet_descriptor	desc;
+
 	*buffer_actual_len = 0;
 	*request_id = 0;
 
-	ret = hv_ring_buffer_beek(&Channel->inbound, &desc,
+	ret = hv_ring_buffer_beek(
+		&channel->inbound, &desc,
 		sizeof(hv_vm_packet_descriptor));
 
 	if (ret != 0)
-		return 0;
+	    return (0);
 
 	packetLen = desc.length8 << 3;
 	userLen = packetLen - (desc.data_offset8 << 3);
@@ -917,13 +945,12 @@ hv_vmbus_channel_recv_packet_raw(hv_vmbus_channel *Channel, void *Buffer,
 	*buffer_actual_len = packetLen;
 
 	if (packetLen > buffer_len)
-		return -ENOBUFS;
-
+	    return (ENOBUFS);
 
 	*request_id = desc.transaction_id;
 
-	// Copy over the entire packet to the user buffer
-	ret = hv_ring_buffer_read(&Channel->inbound, Buffer, packetLen, 0);
+	/* Copy over the entire packet to the user buffer */
+	ret = hv_ring_buffer_read(&channel->inbound, buffer, packetLen, 0);
 
-	return 0;
+	return (0);
 }

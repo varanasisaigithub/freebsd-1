@@ -1,35 +1,41 @@
-/***********************************************
+/*-
+ * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2012 NetApp Inc.
+ * Copyright (c) 2012 Citrix Inc.
+ * All rights reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to
- * deal in the Software without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice unmodified, this list of conditions, and the following
+ *    disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
  *
- * The following copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
- *
- * Copyright (c) 2010-2011, Citrix, Inc.
- *
- * HyperV FreeBSD vmbus driver implementation
- *
- *****************************************************************************/
-
-/*
- * Name:	vmbus_drv.c
- *
- * Desc:	vmbus driver implementation
- *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+/**
+ * VM Bus Driver Implementation
+ * <p/>
+ * Authors:
+ *   Haiyang Zhang <haiyangz@microsoft.com>
+ *   Hank Janssen  <hjanssen@microsoft.com>
+ *   K. Y. Srinivasan <kys@microsoft.com>
+ */
+
+
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -55,12 +61,12 @@
 #include <sys/pcpu.h>
 
 #include "hyperv.h"
-#include "vmbus_priv.h"
+#include "hv_vmbus_priv.h"
 
 
 #define VMBUS_IRQ				0x5
 
-static struct intr_event *hv_message_intr_event;
+static struct intr_event *hv_msg_intr_event;
 static struct intr_event *hv_event_intr_event;
 static void *msg_swintr;
 static void *event_swintr;
@@ -71,11 +77,7 @@ struct resource *intr_res;
 static int vmbus_irq = VMBUS_IRQ;
 static int vmbus_inited;
 
-
-/*
- * vmbus_msg_swintr()
- *
- * Description:
+/**
  * Software interrupt thread routine to handle channel messages from
  * the hypervisior
  */
@@ -88,40 +90,48 @@ vmbus_msg_swintr(void *dummy)
 	hv_vmbus_message *copied;
 
 	cpu = PCPU_GET(cpuid);
-	page_addr = hv_vmbus_g_context.syn_ic_message_page[cpu];
+	page_addr = hv_vmbus_g_context.syn_ic_msg_page[cpu];
 	msg = (hv_vmbus_message*) page_addr + HV_VMBUS_MESSAGE_SINT;
-	while (1) {
-		if (msg->header.message_type == HV_MESSAGE_TYPE_NONE) {
-			break; /* no message */
-		} else {
-			copied = malloc(sizeof(hv_vmbus_message), M_DEVBUF, M_NOWAIT);
-			if (copied == NULL) {
-				continue;
-			}
-
-			memcpy(copied, msg, sizeof(hv_vmbus_message));
-			hv_queue_work_item(hv_vmbus_g_connection.work_queue,
-				hv_vmbus_on_channel_message, copied);
+	for(;;) {
+	    if (msg->header.message_type == HV_MESSAGE_TYPE_NONE) {
+		break; /* no message */
+	    } else {
+		copied = malloc(sizeof(hv_vmbus_message), M_DEVBUF, M_NOWAIT);
+		if (copied == NULL) {
+		    printf("VMBUS: malloc failed for hv_vmbus_message"
+			   "(vmbus_msg_swintr)!\n");
+		    continue;
 		}
 
-		msg->header.message_type = HV_MESSAGE_TYPE_NONE;
+		memcpy(copied, msg, sizeof(hv_vmbus_message));
+		hv_queue_work_item(hv_vmbus_g_connection.work_queue,
+		    hv_vmbus_on_channel_message, copied);
+	    }
 
-		// Make sure the write to message_type (ie set to HV_MESSAGE_TYPE_NONE) happens
-		// before we read the message_pending and EOMing. Otherwise, the EOMing will not deliver
-		// any more messages since there is no empty slot
-		wmb();
+	    msg->header.message_type = HV_MESSAGE_TYPE_NONE;
 
-		if (msg->header.message_flags.message_pending) {
-			// This will cause message queue rescan to possibly deliver another msg from the hypervisor
-			hv_vmbus_write_msr(HV_X64_MSR_EOM, 0);
-		}
+	    /*
+	     * Make sure the write to message_type (ie set to
+	     * HV_MESSAGE_TYPE_NONE) happens before we read the
+	     * message_pending and EOMing. Otherwise, the EOMing will
+	     * not deliver any more messages
+	     * since there is no empty slot
+	     */
+	    wmb();
+
+	    if (msg->header.message_flags.message_pending) {
+		/*
+		 * This will cause message queue rescan to possibly deliver
+		 * another msg from the hypervisor
+		 */
+		hv_vmbus_write_msr(HV_X64_MSR_EOM, 0);
+	    }
 	}
 }
 
-/*
- * hv_vmbus_isr()
- *
+/**
  * Interrupt filter routine for VMBUS.
+ *
  * The purpose of this routine is to determine the type of VMBUS protocol
  * message to process - an event or a channel message.
  * As this is an interrupt filter routine, the function runs in a very
@@ -137,10 +147,10 @@ vmbus_msg_swintr(void *dummy)
 static int
 hv_vmbus_isr(void *unused) 
 {
-	int cpu;
-	void *page_addr;
-	hv_vmbus_message* msg;
-	HV_SYNIC_EVENT_FLAGS* event;
+	int 			cpu;
+	hv_vmbus_message*	msg;
+	HV_SYNIC_EVENT_FLAGS*	event;
+	void*			page_addr;
 
 	cpu = PCPU_GET(cpuid);
 
@@ -155,13 +165,13 @@ hv_vmbus_isr(void *unused)
 	page_addr = hv_vmbus_g_context.syn_ic_event_page[cpu];
 	event = (HV_SYNIC_EVENT_FLAGS*) page_addr + HV_VMBUS_MESSAGE_SINT;
 
-	// Since we are a child, we only need to check bit 0
+	/* Since we are a child, we only need to check bit 0 */
 	if (synch_test_and_clear_bit(0, &event->flags32[0])) {
 		swi_sched(event_swintr, 0);
 	}
 
-	// Check if there are actual msgs to be process
-	page_addr = hv_vmbus_g_context.syn_ic_message_page[cpu];
+	/* Check if there are actual msgs to be process */
+	page_addr = hv_vmbus_g_context.syn_ic_msg_page[cpu];
 	msg = (hv_vmbus_message*) page_addr + HV_VMBUS_MESSAGE_SINT;
 
 	if (msg->header.message_type != HV_MESSAGE_TYPE_NONE) {
@@ -171,8 +181,13 @@ hv_vmbus_isr(void *unused)
 	return FILTER_HANDLED;
 }
 
-static int vmbus_read_ivar(device_t dev, device_t child, int index,
-	uintptr_t *result) {
+static int
+vmbus_read_ivar(
+	device_t	dev,
+	device_t	child,
+	int		index,
+	uintptr_t*	result)
+{
 	struct hv_device *child_dev_ctx = device_get_ivars(child);
 
 	switch (index) {
@@ -193,8 +208,13 @@ static int vmbus_read_ivar(device_t dev, device_t child, int index,
 	return (ENOENT);
 }
 
-static int vmbus_write_ivar(device_t dev, device_t child, int index,
-	uintptr_t value) {
+static int
+vmbus_write_ivar(
+	device_t	dev,
+	device_t	child,
+	int		index,
+	uintptr_t	value)
+{
 	switch (index) {
 
 	case HV_VMBUS_IVAR_TYPE:
@@ -207,36 +227,44 @@ static int vmbus_write_ivar(device_t dev, device_t child, int index,
 	return (ENOENT);
 }
 
-struct hv_device *vmbus_child_device_create(hv_guid type,
-						hv_guid instance,
-						hv_vmbus_channel *channel ) 
+struct hv_device*
+hv_vmbus_child_device_create(
+	hv_guid			type,
+	hv_guid			instance,
+	hv_vmbus_channel*	channel)
 {
-	struct hv_device *child_dev;
+	hv_device* child_dev;
 
-	// Allocate the new child device
-	child_dev = malloc(sizeof(struct hv_device), M_DEVBUF,
+	/*
+	 * Allocate the new child device
+	 */
+	child_dev = malloc(sizeof(hv_device), M_DEVBUF,
 			M_NOWAIT |  M_ZERO);
-	if (!child_dev) 
-		return NULL;
+	if (child_dev == NULL) {
+	    printf("VMBUS: malloc failed to allocate hv_device"
+		    "(hv_vmbus_child_device_create)!\n");
+	    return (NULL);
+	}
 
 	child_dev->channel = channel;
 	memcpy(&child_dev->class_id, &type, sizeof(hv_guid));
 	memcpy(&child_dev->device_id, &instance, sizeof(hv_guid));
 
-	return child_dev;
+	return (child_dev);
 }
 
-static void print_dev_guid(struct hv_device *dev)
+static void
+print_dev_guid(struct hv_device *dev)
 {
-        int i;
+	int i;
 	unsigned char guid_name[100];
-        for (i = 0; i < 32; i += 2)
-                sprintf(&guid_name[i], "%02x", dev->class_id.data[i/2]);
+	for (i = 0; i < 32; i += 2)
+	    sprintf(&guid_name[i], "%02x", dev->class_id.data[i / 2]);
 	printf("Class ID: %s\n", guid_name);
 }
 
-
-int vmbus_child_device_register(struct hv_device *child_dev)
+int
+hv_vmbus_child_device_register(struct hv_device *child_dev)
 {
 	device_t child;
 	int ret = 0;
@@ -252,10 +280,11 @@ int vmbus_child_device_register(struct hv_device *child_dev)
 	ret = device_probe_and_attach(child);
 	mtx_unlock(&Giant);
 
-	return 0;
+	return (0);
 }
 
-int vmbus_child_device_unregister(struct hv_device *child_dev)
+int
+hv_vmbus_child_device_unregister(struct hv_device *child_dev)
 {
 	/*
 	 * XXXKYS: Ensure that this is the opposite of
@@ -264,7 +293,8 @@ int vmbus_child_device_unregister(struct hv_device *child_dev)
 	return(device_delete_child(vmbus_devp, child_dev->device));
 }
 
-static int vmbus_print_child(device_t dev, device_t child) {
+static int
+vmbus_print_child(device_t dev, device_t child) {
 	int retval = 0;
 
 	retval += bus_print_child_header(dev, child);
@@ -280,7 +310,8 @@ static void vmbus_identify(driver_t *driver, device_t parent) {
 	}
 }
 
-static int vmbus_probe(device_t dev) {
+static int
+vmbus_probe(device_t dev) {
 	printf("vmbus_probe\n");
 
 	if (!hv_vmbus_query_hypervisor_presence())
@@ -291,127 +322,131 @@ static int vmbus_probe(device_t dev) {
 	return (0);
 }
 
-
-/*++
-
- Name:   vmbus_bus_init()
-
- Desc:   Main vmbus driver initialization routine. Here, we
- - initialize the vmbus driver context
- - setup various driver entry points
- - invoke the vmbus hv main init routine
- - get the irq resource
- - invoke the vmbus to add the vmbus root device
- - setup the vmbus root device
- - retrieve the channel offers
- --*/
-
-static int vmbus_bus_init(void) 
+/**
+ *  Main vmbus driver initialization routine. Here, we
+ * - initialize the vmbus driver context
+ * - setup various driver entry points
+ * - invoke the vmbus hv main init routine
+ * - get the irq resource
+ * - invoke the vmbus to add the vmbus root device
+ * - setup the vmbus root device
+ * - retrieve the channel offers
+ */
+static int
+vmbus_bus_init(void)
 {
 	int ret;
 	unsigned int vector = 0;
 	struct intsrc *isrc;
 
 	if (vmbus_inited)
-		return 0;
+	    return (0);
 
 	vmbus_inited = 1;
 
 	ret = hv_vmbus_init();
 
 	if (ret) {
-		printf("Hypervisor Initialization Failed\n");
-		return ret;
+	    printf("Hypervisor Initialization Failed\n");
+	    return (ret);
 	}
 
-	ret = swi_add(&hv_message_intr_event, "hv_msg", vmbus_msg_swintr,
-		NULL, SWI_CLOCK, 0, &msg_swintr);
+	ret = swi_add(&hv_msg_intr_event, "hv_msg", vmbus_msg_swintr,
+	    NULL, SWI_CLOCK, 0, &msg_swintr);
 
 	if (ret)
-		goto cleanup;
+	    goto cleanup;
 
 	/*
 	 * Message SW interrupt handler checks a per-CPU page and
 	 * thus the thread needs to be bound to CPU-0 - which is where
 	 * all interrupts are processed.
 	 */
-	ret = intr_event_bind(hv_message_intr_event, 0);
+	ret = intr_event_bind(hv_msg_intr_event, 0);
 
 	if (ret)
-		goto cleanup1;
+	    goto cleanup1;
 
-	ret = swi_add(&hv_event_intr_event, "hv_event", vmbus_on_events,
-		NULL, SWI_CLOCK, 0, &event_swintr);
+	ret = swi_add(&hv_event_intr_event, "hv_event", hv_vmbus_on_events,
+	    NULL, SWI_CLOCK, 0, &event_swintr);
 
 	if (ret)
-		goto cleanup1;
+	    goto cleanup1;
 
 	intr_res = bus_alloc_resource(vmbus_devp,
-		SYS_RES_IRQ, &vmbus_rid, vmbus_irq, vmbus_irq, 1, RF_ACTIVE);
+	    SYS_RES_IRQ, &vmbus_rid, vmbus_irq, vmbus_irq, 1, RF_ACTIVE);
 
 	if (intr_res == NULL) {
-		ret = ENOMEM; /* XXXKYS: Need a better errno */
-		goto cleanup2;
+	    ret = ENOMEM; /* XXXKYS: Need a better errno */
+	    goto cleanup2;
 	}
 
-	/* Setup interrupt filter handler */
+	/*
+	 * Setup interrupt filter handler
+	 */
 	ret = bus_setup_intr(vmbus_devp, intr_res,
-		INTR_TYPE_NET | INTR_FAST | INTR_MPSAFE, hv_vmbus_isr, NULL,
-		NULL, &vmbus_cookiep);
+	    INTR_TYPE_NET | INTR_FAST | INTR_MPSAFE, hv_vmbus_isr, NULL,
+	    NULL, &vmbus_cookiep);
 
 	if (ret != 0)
-		goto cleanup3;
+	    goto cleanup3;
 
 	ret = bus_bind_intr(vmbus_devp, intr_res, 0);
-	if (ret != 0) 
-		goto cleanup4;
+	if (ret != 0)
+	    goto cleanup4;
 
 	isrc = intr_lookup_source(vmbus_irq);
 	if ((isrc == NULL) || (isrc->is_event == NULL)) {
-		ret = EINVAL;
-		goto cleanup4;
+	    ret = EINVAL;
+	    goto cleanup4;
 	}
 
 	vector = isrc->is_event->ie_vector;
 	printf("VMBUS: irq 0x%x vector 0x%x\n", vmbus_irq, vector);
 
-	/*
+	/**
 	 * Notify the hypervisor of our irq.
 	 */
 
 	smp_rendezvous(NULL, hv_vmbus_synic_init, NULL, &vector);
 
-	// Connect to VMBus in the root partition
+	/**
+	 * Connect to VMBus in the root partition
+	 */
 	ret = hv_vmbus_connect();
 
 	if (ret)
-		goto cleanup4;
+	    goto cleanup4;
 
 	hv_vmbus_request_channel_offers();
-	return ret;
+	return (ret);
 
-cleanup4:
+	cleanup4:
 
-	/* remove swi, bus and intr resource */
+	/*
+	 * remove swi, bus and intr resource
+	 */
 	bus_teardown_intr(vmbus_devp, intr_res, vmbus_cookiep);
 
-cleanup3:
+	cleanup3:
 
 	bus_release_resource(vmbus_devp, SYS_RES_IRQ, vmbus_rid, intr_res);
 
-cleanup2: 
+	cleanup2:
 	swi_remove(event_swintr);
 
-cleanup1:
+	cleanup1:
 	swi_remove(msg_swintr);
 
-cleanup:
+	cleanup:
 	hv_vmbus_cleanup();
 
-	return ret;
+	return (ret);
 }
 
-static int vmbus_attach(device_t dev) {
+static int
+vmbus_attach(device_t dev)
+{
 	printf("vmbus_attach: dev: %p\n", dev);
 	vmbus_devp = dev;
 
@@ -422,13 +457,14 @@ static int vmbus_attach(device_t dev) {
 	 * initialization directly.
 	 */
 	if (!cold) {
-		vmbus_bus_init();
+	    vmbus_bus_init();
 	}
 
-	return 0;
+	return (0);
 }
 
-static void vmbus_init(void) 
+static void
+vmbus_init(void)
 {
 	/* 
 	 * If the system has already booted and thread
@@ -437,11 +473,12 @@ static void vmbus_init(void)
 	 * initialization directly.
 	 */
 	if (!cold) {
-		vmbus_bus_init();
+	    vmbus_bus_init();
 	}
 }
 
-static void vmbus_bus_exit(void) 
+static void
+vmbus_bus_exit(void)
 {
 
 	hv_vmbus_release_unattached_channels();
@@ -462,29 +499,34 @@ static void vmbus_bus_exit(void)
 	return;
 }
 
-static void vmbus_exit(void) 
+static void
+vmbus_exit(void)
 {
 	vmbus_bus_exit();
 
 }
 
-static int vmbus_detach(device_t dev) 
+static int
+vmbus_detach(device_t dev)
 {
 	vmbus_exit();
-	return 0;
+	return (0);
 }
 
-static void vmbus_mod_load(void) 
+static void
+vmbus_mod_load(void)
 {
 	printf("Vmbus load\n");
 }
 
-static void vmbus_mod_unload(void) 
+static void
+vmbus_mod_unload(void)
 {
 	printf("Vmbus unload\n");
 }
 
-static int vmbus_modevent(module_t mod, int what, void *arg) 
+static int
+vmbus_modevent(module_t mod, int what, void *arg)
 {
 	switch (what) {
 
@@ -516,8 +558,7 @@ static device_method_t vmbus_methods[] = {
 	{ 0, 0 } };
 
 static char driver_name[] = "vmbus";
-static driver_t vmbus_driver = { driver_name, vmbus_methods,
-	0, };
+static driver_t vmbus_driver = { driver_name, vmbus_methods,0, };
 
 
 devclass_t vmbus_devclass;
@@ -525,6 +566,6 @@ devclass_t vmbus_devclass;
 DRIVER_MODULE(vmbus, nexus, vmbus_driver, vmbus_devclass, vmbus_modevent, 0);
 MODULE_VERSION(vmbus,1);
 
-// TODO: We want to be earlier than SI_SUB_VFS
+/* TODO: We want to be earlier than SI_SUB_VFS */
 SYSINIT(vmb_init, SI_SUB_VFS, SI_ORDER_MIDDLE, vmbus_init, NULL);
 

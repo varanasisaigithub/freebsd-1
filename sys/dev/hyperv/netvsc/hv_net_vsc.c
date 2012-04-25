@@ -1,56 +1,31 @@
 /*-
+ * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2012 NetApp Inc.
+ * Copyright (c) 2012 Citrix Inc.
+ * All rights reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to
- * deal in the Software without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice unmodified, this list of conditions, and the following
+ *    disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
  *
- * The following copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
- *
- * Copyright (c) 2010-2012, Citrix, Inc.
- *
- * Ported from lis21 code drop
- *
- * HyperV vmbus network VSC (virtual services client) module
- *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
-/*-
- * Copyright (c) 2009, Microsoft Corporation - All rights reserved.
- *
- *     Redistribution and use in source and binary forms, with or
- *     without modification, are permitted provided that the following
- *     conditions are met:
- *
- *      - Redistributions of source code must retain the above
- *        copyright notice, this list of conditions and the following
- *        disclaimer.
- *
- *      - Redistributions in binary form must reproduce the above
- *        copyright notice, this list of conditions and the following
- *        disclaimer in the documentation and/or other materials
- *        provided with the distribution.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
- * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
- * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- *
+/*
  * Authors:
  *   Haiyang Zhang <haiyangz@microsoft.com>
  *   Hank Janssen  <hjanssen@microsoft.com>
@@ -164,13 +139,13 @@ hv_nv_init_rx_buffer_with_net_vsp(struct hv_device *device)
 
 	net_dev = hv_nv_get_outbound_net_device(device);
 	if (!net_dev) {
-		return (-ENODEV);
+		return (ENODEV);
 	}
 
 	net_dev->rx_buf = contigmalloc(net_dev->rx_buf_size, M_DEVBUF,
 	    M_ZERO, 0UL, BUS_SPACE_MAXADDR, PAGE_SIZE, 0);
 	if (!net_dev->rx_buf) {
-		ret = -ENOMEM;
+		ret = ENOMEM;
 		goto cleanup;
 	}
 
@@ -186,7 +161,7 @@ hv_nv_init_rx_buffer_with_net_vsp(struct hv_device *device)
 		goto cleanup;
 	}
 	
-	//sema_wait(&ext->channel_init_sema); KYS CHECK
+	/* sema_wait(&ext->channel_init_sema); KYS CHECK */
 
 	/* Notify the NetVsp of the gpadl handle */
 	init_pkt = &net_dev->channel_init_packet;
@@ -217,7 +192,7 @@ hv_nv_init_rx_buffer_with_net_vsp(struct hv_device *device)
 	/* Check the response */
 	if (init_pkt->msgs.vers_1_msgs.send_rx_buf_complete.status
 						      != nvsp_status_success) {
-		ret = -EINVAL;
+		ret = EINVAL;
 		goto cleanup;
 	}
 
@@ -227,7 +202,7 @@ hv_nv_init_rx_buffer_with_net_vsp(struct hv_device *device)
 	net_dev->rx_sections = malloc(net_dev->rx_section_count *
 	    sizeof(nvsp_1_rx_buf_section), M_DEVBUF, M_NOWAIT);
 	if (net_dev->rx_sections == NULL) {
-		ret = -EINVAL;
+		ret = EINVAL;
 		goto cleanup;
 	}
 	memcpy(net_dev->rx_sections, 
@@ -241,7 +216,7 @@ hv_nv_init_rx_buffer_with_net_vsp(struct hv_device *device)
 	 */
 	if (net_dev->rx_section_count != 1 ||
 					  net_dev->rx_sections->offset != 0) {
-		ret = -EINVAL;
+		ret = EINVAL;
 		goto cleanup;
 	}
 
@@ -266,14 +241,14 @@ hv_nv_init_send_buffer_with_net_vsp(struct hv_device *device)
 
 	net_dev = hv_nv_get_outbound_net_device(device);
 	if (!net_dev) {
-		return (-ENODEV);
+		return (ENODEV);
 	}
 
 	net_dev->send_buf  = contigmalloc(net_dev->send_buf_size, M_DEVBUF,
 	    M_ZERO, 0UL, BUS_SPACE_MAXADDR, PAGE_SIZE, 0);
 
 	if (!net_dev->send_buf) {
-		ret = -ENOMEM;
+		ret = ENOMEM;
 		goto cleanup;
 	}
 
@@ -318,7 +293,7 @@ hv_nv_init_send_buffer_with_net_vsp(struct hv_device *device)
 	/* Check the response */
 	if (init_pkt->msgs.vers_1_msgs.send_send_buf_complete.status
 						       != nvsp_status_success) {
-		ret = -EINVAL;
+		ret = EINVAL;
 		goto cleanup;
 	}
 
@@ -502,7 +477,7 @@ hv_nv_negotiate_nvsp_protocol(struct hv_device *device, netvsc_dev *net_dev,
 	sema_wait(&net_dev->channel_init_sema);
 
 	if (init_pkt->msgs.init_msgs.init_compl.status != nvsp_status_success) {
-		return (-EINVAL);
+		return (EINVAL);
 	}
 	
 	return (0);
@@ -522,7 +497,7 @@ hv_nv_connect_to_vsp(struct hv_device *device)
 
 	net_dev = hv_nv_get_outbound_net_device(device);
 	if (!net_dev) {
-		return (-ENODEV);
+		return (ENODEV);
 	}
 
 	/*
@@ -569,12 +544,12 @@ hv_nv_connect_to_vsp(struct hv_device *device)
 		goto cleanup;
 	}
 	/*
-	 * BUGBUG - We have to wait for the above msg since the netvsp uses
+	 * TODO: BUGBUG - We have to wait for the above msg since the netvsp uses
 	 * KMCL which acknowledges packet (completion packet) 
 	 * since our Vmbus always set the
 	 * HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED flag
 	 */
-	//sema_wait(&NetVscChannel->channel_init_sema);
+	/* sema_wait(&NetVscChannel->channel_init_sema); */
 
 	/* Post the big receive buffer to NetVSP */
 	ret = hv_nv_init_rx_buffer_with_net_vsp(device);
@@ -791,7 +766,7 @@ hv_nv_on_send(struct hv_device *device, netvsc_packet *pkt)
 
 	net_dev = hv_nv_get_outbound_net_device(device);
 	if (!net_dev) {
-		return (-ENODEV);
+		return (ENODEV);
 	}
 
 	send_msg.hdr.msg_type = nvsp_msg_1_type_send_rndis_pkt;
@@ -1006,7 +981,7 @@ retry_send_cmplt:
 	if (ret == 0) {
 		/* success */
 		/* no-op */
-	} else if (ret == -EAGAIN) {
+	} else if (ret == EAGAIN) {
 		/* no more room... wait a bit and attempt to retry 3 times */
 		retries++;
 
@@ -1120,7 +1095,7 @@ hv_nv_on_channel_callback(void *context)
 			} else {
 				break;
 			}
-		} else if (ret == -ENOBUFS) {
+		} else if (ret == ENOBUFS) {
 			/* Handle large packet */
 			free(buffer, M_DEVBUF);
 			buffer = malloc(bytes_rxed, M_DEVBUF, M_NOWAIT);

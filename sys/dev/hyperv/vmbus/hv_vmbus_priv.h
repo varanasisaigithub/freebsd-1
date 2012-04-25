@@ -1,57 +1,32 @@
-
-/*****************************************************************************
+/*-
+ * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2012 NetApp Inc.
+ * Copyright (c) 2012 Citrix Inc.
+ * All rights reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to
- * deal in the Software without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice unmodified, this list of conditions, and the following
+ *    disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
  *
- * The following copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
- *
- * Copyright (c) 2010-2011, Citrix, Inc.
- *
- * Ported from lis21 code drop
- *
- * Channel definition file
- *
- *****************************************************************************/
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
 /*
- * Copyright (c) 2009, Microsoft Corporation - All rights reserved.
- *
- *     Redistribution and use in source and binary forms, with or
- *     without modification, are permitted provided that the following
- *     conditions are met:
- *
- *      - Redistributions of source code must retain the above
- *        copyright notice, this list of conditions and the following
- *        disclaimer.
- *
- *      - Redistributions in binary form must reproduce the above
- *        copyright notice, this list of conditions and the following
- *        disclaimer in the documentation and/or other materials
- *        provided with the distribution.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
- * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
- * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- *
  * Authors:
  *   Haiyang Zhang <haiyangz@microsoft.com>
  *   Hank Janssen  <hjanssen@microsoft.com>
@@ -69,7 +44,7 @@
 
 #include "hyperv.h"
 
-/*
+/**
  *  Status codes for hypervisor operations.
  */
 
@@ -80,7 +55,7 @@ typedef uint16_t hv_vmbus_status;
 #define HV_MESSAGE_PAYLOAD_QWORD_COUNT  (30)
 #define HV_ANY_VP                       (0xFFFFFFFF)
 
-/*
+/**
  * Define synthetic interrupt controller flag constants.
  */
 
@@ -92,7 +67,6 @@ typedef uint16_t hv_vmbus_status;
  * MessageId: HV_STATUS_INSUFFICIENT_BUFFERS
  * MessageText:
  *    You did not supply enough message buffers to send a message.
- *
  */
 
 #define HV_STATUS_INSUFFICIENT_BUFFERS   ((uint16_t)0x0013)
@@ -100,7 +74,7 @@ typedef uint16_t hv_vmbus_status;
 typedef void (*hv_vmbus_channel_callback)(void *context);
 
 typedef struct {
-	void		*data;
+	void*		data;
 	uint32_t	length;
 } hv_vmbus_sg_buffer_list;
 
@@ -134,9 +108,9 @@ typedef union {
 	hv_vmbus_channel_gpadl_torndown		gpadl_torndown;
 	hv_vmbus_channel_gpadl_created		gpadl_created;
 	hv_vmbus_channel_version_response	version_response;
-} hv_vmbus_channel_message_response;
+} hv_vmbus_channel_msg_response;
 
-/*
+/**
  * Represents each channel msg on the vmbus connection
  * This is a variable-size data structure depending on
  * the msg type itself
@@ -146,7 +120,6 @@ typedef struct hv_vmbus_channel_msg_info {
 	 * Bookkeeping stuff
 	 */
 	TAILQ_ENTRY(hv_vmbus_channel_msg_info)  msg_list_entry;
-
 	/*
 	 * So far, this is only used to handle
 	 * gpadl body message
@@ -159,13 +132,13 @@ typedef struct hv_vmbus_channel_msg_info {
 	 * Not perf critical.
 	 */
 	struct sema				wait_sema;
-	hv_vmbus_channel_message_response	response;
+	hv_vmbus_channel_msg_response		response;
 	uint32_t				message_size;
-	/*
+	/**
 	 * The channel message that goes out on
 	 *  the "wire". It will contain at
 	 *  minimum the
-	 *  hv_vmbus_channel_message_header
+	 *  hv_vmbus_channel_msg_header
 	 * header.
 	 */
 	unsigned char 				msg[0];
@@ -173,7 +146,7 @@ typedef struct hv_vmbus_channel_msg_info {
 
 #pragma pack(push,1)
 
-/*
+/**
  * The format must be the same as hv_vm_data_gpa_direct
  */
 typedef struct hv_vmbus_channel_packet_page_buffer {
@@ -187,7 +160,7 @@ typedef struct hv_vmbus_channel_packet_page_buffer {
 	hv_vmbus_page_buffer	range[HV_MAX_PAGE_BUFFER_COUNT];
 } hv_vmbus_channel_packet_page_buffer;
 
-/*
+/**
  * The format must be the same as hv_vm_data_gpa_direct
  */
 typedef struct hv_vmbus_channel_packet_multipage_buffer {
@@ -222,7 +195,7 @@ enum {
 
 #define HV_HYPERCALL_PARAM_ALIGN sizeof(uint64_t)
 
-/*
+/**
  *  Connection identifier type
  */
 typedef union {
@@ -234,7 +207,7 @@ typedef union {
 
 } hv_vmbus_connection_id;
 
-/*
+/**
  * Definition of the hv_vmbus_signal_event hypercall input structure
  */
 typedef struct {
@@ -263,11 +236,11 @@ typedef struct {
 	 */
 	hv_vmbus_input_signal_event		*signal_event_param;
 
-	hv_vmbus_handle	syn_ic_message_page[MAXCPU];
+	hv_vmbus_handle	syn_ic_msg_page[MAXCPU];
 	hv_vmbus_handle	syn_ic_event_page[MAXCPU];
 } hv_vmbus_context;
 
-/*
+/**
  * Define hypervisor message types
  */
 typedef enum {
@@ -307,9 +280,9 @@ typedef enum {
 	HV_MESSAGE_TYPE_X64_APIC_EOI			= 0x80010004,
 	HV_MESSAGE_TYPE_X64_LEGACY_FP_ERROR		= 0x80010005
 
-} hv_vmbus_message_type;
+} hv_vmbus_msg_type;
 
-/*
+/**
  * Define port identifier type
  */
 typedef union _hv_vmbus_port_id {
@@ -320,7 +293,7 @@ typedef union _hv_vmbus_port_id {
 	} u ;
 } hv_vmbus_port_id;
 
-/*
+/**
  * Define synthetic interrupt controller message flag
  */
 typedef union {
@@ -329,69 +302,37 @@ typedef union {
 		uint8_t	message_pending:1;
 		uint8_t	reserved:7;
 	};
-} hv_vmbus_message_flags;
+} hv_vmbus_msg_flags;
 
 typedef uint64_t hv_vmbus_partition_id;
 
-/*
+/**
  * Define synthetic interrupt controller message header
  */
 typedef struct {
-	hv_vmbus_message_type	message_type;
+	hv_vmbus_msg_type	message_type;
 	uint8_t			payload_size;
-	hv_vmbus_message_flags	message_flags;
+	hv_vmbus_msg_flags	message_flags;
 	uint8_t			reserved[2];
 	union {
 		hv_vmbus_partition_id	sender;
 		hv_vmbus_port_id	port;
 	} u;
-} hv_vmbus_message_header;
+} hv_vmbus_msg_header;
 
-/*
+/**
  *  Define synthetic interrupt controller message format
  */
 typedef struct {
-	hv_vmbus_message_header	header;
+	hv_vmbus_msg_header	header;
 	union {
 		uint64_t	payload[HV_MESSAGE_PAYLOAD_QWORD_COUNT];
 	} u ;
 } hv_vmbus_message;
 
-#ifdef __x86_64__
-
-#define RDMSR(reg, v) {			\
-	uint32_t h, l;			\
-	__asm__ __volatile__("rdmsr"	\
-	: "=a" (l), "=d" (h)		\
-	: "c" (reg));			\
-	v = (((uint64_t)h) << 32) | l;	\
-}
-
-#define WRMSR(reg, v) {						\
-	uint32_t h, l;						\
-	l = (uint32_t)(((uint64_t)(v)) & 0xFFFFFFFF);		\
-	h = (uint32_t)((((uint64_t)(v)) >> 32) & 0xFFFFFFFF);	\
-	__asm__ __volatile__("wrmsr"				\
-	: /* no outputs */					\
-	: "c" (reg), "a" (l), "d" (h));				\
-}
-
-#else
-
-#define RDMSR(reg, v)			\
-     __asm__ __volatile__("rdmsr"	\
-    : "=A" (v)				\
-    : "c" (reg))
-
-#define WRMSR(reg, v)			\
-     __asm__ __volatile__("wrmsr"	\
-    : /* no outputs */			\
-    : "c" (reg), "A" ((uint64_t)v))
-
-#endif
 
 
-/*
+/**
  *  Maximum channels is determined by the size of the interrupt
  *  page which is PAGE_SIZE. 1/2 of PAGE_SIZE is for
  *  send endpoint interrupt and the other is receive
@@ -401,12 +342,12 @@ typedef struct {
  */
 #define HV_MAX_NUM_CHANNELS			(PAGE_SIZE >> 1) << 3
 
-/*
+/**
  * The value here must be in multiple of 32
  */
 #define HV_MAX_NUM_CHANNELS_SUPPORTED		256
 
-/*
+/**
  * VM Bus connection states
  */
 typedef enum {
@@ -441,8 +382,9 @@ typedef struct {
 	void					*monitor_pages;
 	TAILQ_HEAD(, hv_vmbus_channel_msg_info)	channel_msg_anchor;
 	struct mtx				channel_msg_lock;
-
-	// List of channels
+	/**
+	 * List of channels
+	 */
 	TAILQ_HEAD(, hv_vmbus_channel)		channel_anchor;
 	struct mtx				channel_lock;
 
@@ -450,7 +392,7 @@ typedef struct {
 	struct sema				control_sema;
 } hv_vmbus_connection;
 
-/*
+/**
  * Declare the MSR used to identify the guest OS
  */
 #define HV_X64_MSR_GUEST_OS_ID	0x40000000
@@ -459,15 +401,19 @@ typedef union {
 	uint64_t as_uint64_t;
 	struct {
 		uint64_t build_number		: 16;
-		uint64_t service_version	: 8; // Service Pack, etc.
+		uint64_t service_version	: 8; /* Service Pack, etc. */
 		uint64_t minor_version		: 8;
 		uint64_t major_version		: 8;
-		uint64_t os_id			: 8; // HV_GUEST_OS_MICROSOFT_IDS (If Vendor=MS)
-		uint64_t vendor_id		: 16; // HV_GUEST_OS_VENDOR
+		/*
+		 * HV_GUEST_OS_MICROSOFT_IDS (If Vendor=MS)
+		 * HV_GUEST_OS_VENDOR
+		 */
+		uint64_t os_id			: 8;
+		uint64_t vendor_id		: 16;
 	};
 } hv_vmbus_x64_msr_guest_os_id_contents;
 
-/*
+/**
  *  Declare the MSR used to setup pages used to communicate with the hypervisor
  */
 #define HV_X64_MSR_HYPERCALL	0x40000001
@@ -504,7 +450,7 @@ typedef struct {
 	uint16_t		rsvd_z;
 } hv_vmbus_monitor_parameter;
 
-/*
+/**
  * hv_vmbus_monitor_page Layout
  * ------------------------------------------------------
  * | 0   | trigger_state (4 bytes) | Rsvd1 (4 bytes)     |
@@ -524,7 +470,8 @@ typedef struct {
  * | ...                                                 |
  * | 840 | Rsvd4[0]                                      |
  * ------------------------------------------------------
-*/
+ */
+
 typedef struct {
 	hv_vmbus_monitor_trigger_state	trigger_state;
 	uint32_t			rsvd_z1;
@@ -542,8 +489,7 @@ typedef struct {
 	uint8_t				rsvd_z4[1984];
 } hv_vmbus_monitor_page;
 
-/*
- *  ==========================================================================
+/**
  * The below CPUID leaves are present if VersionAndFeatures.HypervisorPresent
  * is set by CPUID(HV_CPU_ID_FUNCTION_VERSION_AND_FEATURES).
  */
@@ -562,7 +508,7 @@ typedef enum {
 
 } hv_vmbus_cpuid_function;
 
-/*
+/**
  * Define the format of the SIMP register
  */
 typedef union {
@@ -574,7 +520,7 @@ typedef union {
 	};
 } hv_vmbus_synic_simp;
 
-/*
+/**
  * Define the format of the SIEFP register
  */
 typedef union {
@@ -586,21 +532,21 @@ typedef union {
 	};
 } hv_vmbus_synic_siefp;
 
-/*
+/**
  * Define synthetic interrupt source
  */
 typedef union {
 	uint64_t as_uint64_t;
 	struct {
-		uint64_t Vector    : 8;
-		uint64_t reserved1 : 8;
-		uint64_t Masked    : 1;
-		uint64_t AutoEoi   : 1;
-		uint64_t reserved2 : 46;
+		uint64_t vector		: 8;
+		uint64_t reserved1	: 8;
+		uint64_t masked		: 1;
+		uint64_t auto_eoi	: 1;
+		uint64_t reserved2	: 46;
 	};
 } hv_vmbus_synic_sint;
 
-/*
+/**
  * Define syn_ic control register
  */
 typedef union _hv_vmbus_synic_scontrol {
@@ -611,19 +557,19 @@ typedef union _hv_vmbus_synic_scontrol {
     };
 } hv_vmbus_synic_scontrol;
 
-/*
+/**
  *  Definition of the hv_vmbus_post_message hypercall input structure
  */
 typedef struct {
 	hv_vmbus_connection_id	connection_id;
 	uint32_t		reserved;
-	hv_vmbus_message_type	message_type;
+	hv_vmbus_msg_type	message_type;
 	uint32_t		payload_size;
 	uint64_t		payload[HV_MESSAGE_PAYLOAD_QWORD_COUNT];
 } hv_vmbus_input_post_message;
 
 
-/*
+/**
  * Define the synthetic interrupt controller event flags format
  */
 typedef union {
@@ -631,7 +577,7 @@ typedef union {
 	uint32_t	flags32[HV_EVENT_FLAGS_DWORD_COUNT];
 } HV_SYNIC_EVENT_FLAGS;
 
-/*
+/**
  * Define synthetic interrupt controller model specific registers
  */
 #define HV_X64_MSR_SCONTROL   (0x40000080)
@@ -657,7 +603,7 @@ typedef union {
 #define HV_X64_MSR_SINT14     (0x4000009E)
 #define HV_X64_MSR_SINT15     (0x4000009F)
 
-/*
+/**
  * Declare the various hypercall operations
  */
 typedef enum {
@@ -665,160 +611,149 @@ typedef enum {
 	HV_CALL_SIGNAL_EVENT	= 0x005d,
 } hv_vmbus_call_code;
 
-/*
+/**
  * Global variables
  */
+
 extern hv_vmbus_context		hv_vmbus_g_context;
 extern hv_vmbus_connection	hv_vmbus_g_connection;
 
 
-/*
- * private VM Bus functions
+/**
+ * Private, VM Bus functions
  */
 
-void
-hv_vmbus_channel_get_debug_info(
-	hv_vmbus_channel		*channel,
-	hv_vmbus_channel_debug_info	*debug_info);
+void			hv_vmbus_channel_get_debug_info(
+				hv_vmbus_channel		*channel,
+				hv_vmbus_channel_debug_info	*debug_info);
 
-void
-hv_vmbus_get_channel_info(
-	struct hv_device		*dev,
-	struct hv_devinfo		*info);
+void			hv_vmbus_get_channel_info(
+				struct hv_device		*dev,
+				struct hv_devinfo		*info);
 
-int
-hv_vmbus_ring_buffer_init(
-	hv_vmbus_ring_buffer_info	*ring_info,
-	void				*buffer,
-	uint32_t			buffer_len);
+int			hv_vmbus_ring_buffer_init(
+				hv_vmbus_ring_buffer_info	*ring_info,
+				void				*buffer,
+				uint32_t			buffer_len);
 
-void
-hv_ring_buffer_cleanup(
-	hv_vmbus_ring_buffer_info	*ring_info);
+void			hv_ring_buffer_cleanup(
+				hv_vmbus_ring_buffer_info	*ring_info);
 
-int
-hv_ring_buffer_write(
-	hv_vmbus_ring_buffer_info	*ring_info,
-	hv_vmbus_sg_buffer_list		sg_buffers[],
-	uint32_t			sg_buffer_count);
+int			hv_ring_buffer_write(
+				hv_vmbus_ring_buffer_info	*ring_info,
+				hv_vmbus_sg_buffer_list		sg_buffers[],
+				uint32_t			sg_buffer_count);
 
-int
-hv_ring_buffer_beek(
-	hv_vmbus_ring_buffer_info	*ring_info,
-	void				*buffer,
-	uint32_t			buffer_len);
+int			hv_ring_buffer_beek(
+				hv_vmbus_ring_buffer_info	*ring_info,
+				void				*buffer,
+				uint32_t			buffer_len);
 
-int
-hv_ring_buffer_read(
-	hv_vmbus_ring_buffer_info	*ring_info,
-	void				*buffer,
-	uint32_t			buffer_len,
-	uint32_t			offset);
+int			hv_ring_buffer_read(
+				hv_vmbus_ring_buffer_info	*ring_info,
+				void				*buffer,
+				uint32_t			buffer_len,
+				uint32_t			offset);
 
-uint32_t
-hv_vmbus_get_ring_buffer_interrupt_mask(
-	hv_vmbus_ring_buffer_info	*ring_info);
+uint32_t		hv_vmbus_get_ring_buffer_interrupt_mask(
+				hv_vmbus_ring_buffer_info	*ring_info);
 
-void
-hv_vmbus_dump_ring_info(
-	hv_vmbus_ring_buffer_info*	ring_info,
-	char				*prefix);
+void			hv_vmbus_dump_ring_info(
+				hv_vmbus_ring_buffer_info*	ring_info,
+				char				*prefix);
 
-void
-hv_vmbus_ring_buffer_get_debug_info(
-	hv_vmbus_ring_buffer_info	*ring_info,
-	hv_vmbus_ring_buffer_debug_info	*debug_info);
+void			hv_vmbus_ring_buffer_get_debug_info(
+				hv_vmbus_ring_buffer_info	*ring_info,
+				hv_vmbus_ring_buffer_debug_info	*debug_info);
 
-hv_vmbus_channel*
-hv_vmbus_allocate_channel(void);
+hv_vmbus_channel*	hv_vmbus_allocate_channel(void);
+void			hv_vmbus_free_vmbus_channel(hv_vmbus_channel *channel);
+void			hv_vmbus_on_channel_message(void *context);
+int			hv_vmbus_request_channel_offers(void);
+void			hv_vmbus_release_unattached_channels(void);
+int			hv_vmbus_init(void);
+void			hv_vmbus_cleanup(void);
 
-void
-hv_vmbus_free_vmbus_channel(hv_vmbus_channel *channel);
+uint16_t		hv_vmbus_post_msg_via_msg_ipc(
+				hv_vmbus_connection_id	connectionId,
+				hv_vmbus_msg_type	messageType,
+				void			*payload,
+				size_t			payloadSize);
 
-void
-hv_vmbus_on_channel_message(void *context);
+uint16_t		hv_vmbus_signal_event(void);
+void			hv_vmbus_synic_init(void *irqArg);
+void			hv_vmbus_synic_cleanup(void *arg);
+int			hv_vmbus_query_hypervisor_presence(void);
 
-int
-hv_vmbus_request_channel_offers(void);
+struct hv_device*	hv_vmbus_child_device_create(
+				hv_guid			deviceType,
+				hv_guid			deviceInstance,
+				hv_vmbus_channel	*channel);
 
-void
-hv_vmbus_release_unattached_channels(void);
+int			hv_vmbus_child_device_register(struct hv_device *child_dev);
+int			hv_vmbus_child_device_unregister(struct hv_device *child_dev);
+hv_vmbus_channel*	hv_vmbus_get_channel_from_rel_id(uint32_t relId);
 
-int
-hv_vmbus_init(void);
-
-void
-hv_vmbus_cleanup(void);
-
-uint16_t
-hv_vmbus_post_message_via_msg_ipc(
-	hv_vmbus_connection_id	connectionId,
-	hv_vmbus_message_type	messageType,
-	void			*payload,
-	size_t			payloadSize);
-
-uint16_t
-hv_vmbus_signal_event(void);
-
-void
-hv_vmbus_synic_init(void *irqArg);
-
-void
-hv_vmbus_synic_cleanup(void *arg);
-
-int
-hv_vmbus_query_hypervisor_presence(void);
-
-struct hv_device *
-vmbus_child_device_create(
-	hv_guid			deviceType,
-	hv_guid			deviceInstance,
-	hv_vmbus_channel	*channel);
-
-int
-vmbus_child_device_register(struct hv_device *child_dev);
-
-int
-vmbus_child_device_unregister(struct hv_device *child_dev);
-
-hv_vmbus_channel*
-hv_vmbus_get_channel_from_rel_id(uint32_t relId);
-
-/*
- * Connection interface
+/**
+ * Connection interfaces
  */
-int
-hv_vmbus_connect(void);
-
-int
-hv_vmbus_disconnect(
-	void);
-int
-hv_vmbus_post_message(
-	void	*buffer,
-	size_t	bufSize);
-
-int
-hv_vmbus_set_event(uint32_t childRelId);
-
-void
-vmbus_on_events(void *);
+int			hv_vmbus_connect(void);
+int			hv_vmbus_disconnect(void);
+int			hv_vmbus_post_message(void *buffer, size_t bufSize);
+int			hv_vmbus_set_event(uint32_t childRelId);
+void			hv_vmbus_on_events(void *);
 
 
-/*
+/**
  * static inline functions
+ * (with some helper macros for reading/writing to model specific registers)
  */
+
+#ifdef __x86_64__
+
+#define HV_VMBUS_READ_MSR(reg, v) {			\
+	uint32_t h, l;			\
+	__asm__ __volatile__("rdmsr"	\
+	: "=a" (l), "=d" (h)		\
+	: "c" (reg));			\
+	v = (((uint64_t)h) << 32) | l;	\
+}
+
+#define HV_VMBUS_WRITE_MSR(reg, v) {						\
+	uint32_t h, l;						\
+	l = (uint32_t)(((uint64_t)(v)) & 0xFFFFFFFF);		\
+	h = (uint32_t)((((uint64_t)(v)) >> 32) & 0xFFFFFFFF);	\
+	__asm__ __volatile__("wrmsr"				\
+	: /* no outputs */					\
+	: "c" (reg), "a" (l), "d" (h));				\
+}
+
+#else
+
+#define HV_VMBUS_READ_MSR(reg, v)			\
+     __asm__ __volatile__("rdmsr"	\
+    : "=A" (v)				\
+    : "c" (reg))
+
+#define HV_VMBUS_WRITE_MSR(reg, v)			\
+     __asm__ __volatile__("wrmsr"	\
+    : /* no outputs */			\
+    : "c" (reg), "A" ((uint64_t)v))
+
+#endif
 
 static inline unsigned long long
-hv_vmbus_read_msr(int msr) {
+hv_vmbus_read_msr(int msr)
+{
 	unsigned long long val;
-	RDMSR(msr, val);
-	return val;
+	HV_VMBUS_READ_MSR(msr, val);
+	return (val);
 }
 
 static inline
-void hv_vmbus_write_msr(int msr, uint64_t val) {
-	WRMSR(msr, val);
+void hv_vmbus_write_msr(int msr, uint64_t val)
+{
+	HV_VMBUS_WRITE_MSR(msr, val);
 	return;
 }
 
