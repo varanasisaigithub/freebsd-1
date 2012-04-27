@@ -318,13 +318,16 @@ typedef union {
 	hv_vm_data_gpa_direct               data_gpa_direct_header;
 } hv_vm_packet_largest_possible_header;
 
-#define HV_VMPACKET_DATA_START_ADDRESS(__packet)                           \
-    (void *)(((PUCHAR)__packet) + ((hv_vm_packet_descriptor *)__packet)->data_offset8 * 8)
+#define HV_VMPACKET_DATA_START_ADDRESS(__packet)			\
+		(void *)(((PUCHAR)__packet) +				\
+		((hv_vm_packet_descriptor *)__packet)->data_offset8 * 8)
 
-#define HV_VMPACKET_DATA_LENGTH(__packet)                                  \
-    ((((hv_vm_packet_descriptor *)__packet)->length8 - ((hv_vm_packet_descriptor *)__packet)->data_offset8) * 8)
+#define HV_VMPACKET_DATA_LENGTH(__packet)				\
+		((((hv_vm_packet_descriptor *)__packet)->length8 -	\
+		((hv_vm_packet_descriptor *)__packet)->data_offset8) * 8)
 
-#define HV_VMPACKET_TRANSFER_MODE(__packet) ((hv_vm_packet_descriptor *)__packet)->type
+#define HV_VMPACKET_TRANSFER_MODE(__packet)				\
+		((hv_vm_packet_descriptor *)__packet)->type
 
 typedef enum {
 	HV_VMBUS_SERVER_ENDPOINT = 0,
@@ -462,14 +465,14 @@ typedef struct
      */
     hv_gpadl_handle	server_context_area_gpadl_handle;
 
-    /*
+    /**
      * The upstream ring buffer begins at offset zero in the memory described
      * by ring_buffer_gpadl_handle. The downstream ring buffer follows it at this
      * offset (in pages).
      */
     uint32_t		downstream_ring_buffer_page_offset;
 
-    /*
+    /**
      * User-specific data to be passed along to the server endpoint.
      */
     uint8_t		user_data[HV_MAX_USER_DEFINED_BYTES];
@@ -617,20 +620,18 @@ typedef hv_vmbus_channel_msg_header hv_vmbus_channel_unload;
 #define NULL  (void *)0
 #endif
 
-
 typedef void *hv_vmbus_handle;
 
-
 #ifndef CONTAINING_RECORD
-#define CONTAINING_RECORD(address, type, field) ((type *)( \
-                                                  (uint8_t *)(address) - \
-                                                  (uint8_t *)(&((type *)0)->field)))
+#define CONTAINING_RECORD(address, type, field) ((type *)(	\
+		(uint8_t *)(address) -				\
+		(uint8_t *)(&((type *)0)->field)))
 #endif /* CONTAINING_RECORD */
 
 
-#define container_of(ptr, type, member) ({		\
-        __typeof__( ((type *)0)->member ) *__mptr = (ptr);  \
-        (type *)( (char *)__mptr - offsetof(type,member) );})
+#define container_of(ptr, type, member) ({				\
+		__typeof__( ((type *)0)->member ) *__mptr = (ptr);	\
+		(type *)( (char *)__mptr - offsetof(type,member) );})
 
 enum {
 	HV_VMBUS_IVAR_TYPE,
@@ -861,7 +862,8 @@ int		hv_vmbus_channel_send_packet_multipagebuffer(
 
 int		hv_vmbus_channel_establish_gpadl(
 				hv_vmbus_channel*	channel,
-				void*			Kbuffer,
+				/** must be phys and virt contiguous */
+				void*			contig_buffer,
 				/**  page-size multiple	*/
 				uint32_t		size,
 				uint32_t*		gpadl_handle);

@@ -50,7 +50,7 @@
 
 static int 	vmbus_channel_create_gpadl_header(
 			/* must be phys and virt contiguous*/
-			void*				k_buffer,
+			void*				contig_buffer,
 			/* page-size multiple */
 			uint32_t 			size,
 			hv_vmbus_channel_msg_info**	msg_info,
@@ -302,7 +302,7 @@ hv_vmbus_channel_open(
  */
 static int
 vmbus_channel_create_gpadl_header(
-	void*				k_buffer,
+	void*				contig_buffer,
 	uint32_t			size,	/* page-size multiple */
 	hv_vmbus_channel_msg_info**	msg_info,
 	uint32_t*			message_count)
@@ -320,7 +320,7 @@ vmbus_channel_create_gpadl_header(
 	int pfnSum, pfnCount, pfnLeft, pfnCurr, pfnSize;
 
 	page_count = size >> PAGE_SHIFT;
-	pfn = hv_get_phys_addr(k_buffer) >> PAGE_SHIFT;
+	pfn = hv_get_phys_addr(contig_buffer) >> PAGE_SHIFT;
 
 	/*do we need a gpadl body msg */
 	pfnSize = HV_MAX_SIZE_CHANNEL_MESSAGE
@@ -442,7 +442,7 @@ vmbus_channel_create_gpadl_header(
 int
 hv_vmbus_channel_establish_gpadl(
 	hv_vmbus_channel*	channel,
-	void*			k_buffer,
+	void*			contig_buffer,
 	uint32_t		size, /* page-size multiple */
 	uint32_t*		gpadl_handle)
 
@@ -464,7 +464,7 @@ hv_vmbus_channel_establish_gpadl(
 	next_gpadl_handle = hv_vmbus_g_connection.next_gpadl_handle;
 	atomic_add_int((int*) &hv_vmbus_g_connection.next_gpadl_handle, 1);
 
-	ret = vmbus_channel_create_gpadl_header(k_buffer, size, &msg_info, &msg_count);
+	ret = vmbus_channel_create_gpadl_header(contig_buffer, size, &msg_info, &msg_count);
 	if(ret != 0) { /* if(allocation failed) return immediately */
 	    /* FIXME: probably should reverse atomic_add_int above */
 	    return ret;
