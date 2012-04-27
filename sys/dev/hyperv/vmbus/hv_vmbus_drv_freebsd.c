@@ -27,8 +27,8 @@
  */
 
 /**
- * VM Bus Driver Implementation
- * <p/>
+ * @brief VM Bus Driver Implementation
+ *
  * Authors:
  *   Haiyang Zhang <haiyangz@microsoft.com>
  *   Hank Janssen  <hjanssen@microsoft.com>
