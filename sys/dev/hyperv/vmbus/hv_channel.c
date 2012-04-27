@@ -198,7 +198,7 @@ hv_vmbus_channel_open(
 		M_DEVBUF, M_ZERO, 0UL, BUS_SPACE_MAXADDR, PAGE_SIZE, 0);
 
 	if (out == NULL) {
-	    printf("VMBUS: malloc failed to create Ring Buffer\n");
+	    printf("Error VMBUS: malloc failed to allocate Ring Buffer\n");
 	    return (ENOMEM);
 	}
 
@@ -238,7 +238,7 @@ hv_vmbus_channel_open(
 		M_NOWAIT);
 
 	if (open_info == NULL) {
-	    printf("VMBUS: malloc failed to create Open Channel message\n");
+	    printf("Error VMBUS: malloc failed to allocate Open Channel message\n");
 	    return (ENOMEM);
 	}
 
@@ -278,9 +278,9 @@ hv_vmbus_channel_open(
 		goto cleanup;
 
 	if (open_info->response.open_result.status == 0) {
-		printf("channel <%p> open success!!", new_channel);
+		printf("VMBUS: channel <%p> open success.", new_channel);
 	} else {
-		printf("channel <%p> open failed - %d!!",
+		printf("Error VMBUS: channel <%p> open failed - %d!",
 			new_channel, open_info->response.open_result.status);
 	}
 
@@ -336,7 +336,7 @@ vmbus_channel_create_gpadl_header(
 			+ pfnCount * sizeof(uint64_t);
 		msg_header = malloc(msg_size, M_DEVBUF, M_NOWAIT | M_ZERO);
 		if(msg_header == NULL) {
-		    printf("VMBUS: malloc failed to create Gpadl message!\n");
+		    printf("Error VMBUS: malloc failed to allocate Gpadl Message!\n");
 		    return (ENOMEM);
 		}
 		TAILQ_INIT(&msg_header->sub_msg_list_anchor);
@@ -382,7 +382,7 @@ vmbus_channel_create_gpadl_header(
 				M_DEVBUF,
 				M_NOWAIT | M_ZERO);
 			if(msg_header == NULL) {
-			    printf("VMBUS: malloc failed to create Gpadl message!");
+			    printf("Error VMBUS: malloc failed to allocate Gpadl Message!");
 			    return (ENOMEM);
 			}
 			msg_body->message_size = msg_size;
@@ -414,7 +414,7 @@ vmbus_channel_create_gpadl_header(
 			page_count * sizeof(uint64_t);
 		msg_header = malloc(msg_size, M_DEVBUF, M_NOWAIT | M_ZERO);
 		if(msg_header == NULL) {
-		    printf("VMBUS: malloc failed for Gpadl Message!");
+		    printf("Error VMBUS: malloc failed to allocate Gpadl Message!");
 		    return (ENOMEM);
 		}
 		msg_header->message_size = msg_size;
@@ -515,7 +515,7 @@ hv_vmbus_channel_establish_gpadl(
 		    if ((ret == HV_STATUS_INSUFFICIENT_BUFFERS)
 			&& (retrycnt < 5)) {
 			printf(
-			    "VMBUS: Failed to send GPADL body (%d): %x, retry: %d\n",
+			    "Error VMBUS: Failed to send GPADL body (%d): %x, retry: %d\n",
 			    mcnt,
 			    (unsigned int) ret,
 			    retrycnt);
@@ -563,7 +563,7 @@ hv_vmbus_channel_teardown_gpdal(
 				M_DEVBUF, M_NOWAIT);
 
 	if (info == NULL) {
-	    printf("VMBUS: malloc failed to create Gpadl Teardown message!\n");
+	    printf("Error VMBUS: malloc failed to allocate Gpadl Teardown Message!\n");
 	    ret = ENOMEM;
 	    goto cleanup;
 	}
@@ -624,7 +624,7 @@ hv_vmbus_channel_close(hv_vmbus_channel *channel)
 	KASSERT(info != NULL, ("malloc failed")); /* KYS: eliminate this error */
 	if(info == NULL) {
 	    /* FIXME: need to replace malloc with preallocated buffers*/
-	    printf("VMBUS: Channel Close Message malloc failed!\n");
+	    printf("Error VMBUS: malloc failed to allocate Channel Close Message!\n");
 	    return;
 	}
 	msg = (hv_vmbus_channel_close_channel*) info->msg;

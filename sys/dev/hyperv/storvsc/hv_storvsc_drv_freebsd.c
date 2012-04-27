@@ -493,7 +493,7 @@ hv_storvsc_io_request(struct hv_device *device,
 	sc = get_stor_device(device, true);
 
 	if (sc == NULL) {
-		printf("unable to get stor device context...device being destroyed?");
+		printf("Unable to get stor device context...device being destroyed?");
 		return -2;
 	}
 
@@ -641,7 +641,7 @@ storvsc_xptdone(struct cam_periph *periph, union ccb *done_ccb)
 }
 
 /**
- * scan_for_luns
+ * @brief scan_for_luns
  *
  * In Hyper-V there is no backend changed device operation which
  * presents FreeBSD with a list of devices to connect.  The result is
@@ -776,7 +776,7 @@ storvsc_attach(device_t dev)
 				 M_DEVBUF, M_WAITOK|M_ZERO);
 		if (reqp == NULL) {
 			ret = ENOMEM;
-			printf("cannot alloc struct hv_storvsc_request\n");
+			printf("Cannot alloc struct hv_storvsc_request\n");
 			goto cleanup;
 		}
 
@@ -1113,7 +1113,7 @@ storvsc_action(struct cam_sim *sim, union ccb *ccb)
 				sc->hs_frozen = 1;
 				xpt_freeze_simq(sim, /* count*/1);
 			}
-			printf("no free requests on sc 0x%p\n", sc);
+			printf("No free requests on sc 0x%p\n", sc);
 			xpt_done(ccb);
 			return;
 		}

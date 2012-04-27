@@ -395,7 +395,7 @@ hv_util_attach(device_t dev)
 	printf("Hyper-V Service attaching: %s\n", service->name);
 	service->recv_buffer = malloc(PAGE_SIZE, M_DEVBUF, M_WAITOK | M_ZERO);
 	if (service->recv_buffer == NULL) {
-	    printf("VMBUS: malloc faled to create a receive recv_buffer"
+	    printf("Error VMBUS: malloc faled to allocate a receive recv_buffer"
 		    "(hv_util_attach)!\n");
 	    return ENOMEM;
 	}

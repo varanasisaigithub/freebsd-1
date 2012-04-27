@@ -97,7 +97,7 @@ hv_vmbus_connect(void) {
 					PAGE_SIZE, 0);
 
 	if (hv_vmbus_g_connection.interrupt_page == NULL) {
-	    printf("VMBUS: malloc failed to create Channel Request Event message"
+	    printf("Error VMBUS: malloc failed to allocate Channel Request Event message"
 		    "(hv_vmbus_connect)!\n");
 	    ret = ENOMEM;
 	    goto cleanup;
@@ -124,7 +124,7 @@ hv_vmbus_connect(void) {
 		0);
 
 	if (hv_vmbus_g_connection.monitor_pages == NULL) {
-	    printf("VMBUS: malloc failed to create monitor_pages"
+	    printf("Error VMBUS: malloc failed to allocate Monitor Pages"
 		    "(hv_vmbus_connect)!\n");
 	    ret = ENOMEM;
 	    goto cleanup;
@@ -136,7 +136,7 @@ hv_vmbus_connect(void) {
 			M_DEVBUF, M_NOWAIT | M_ZERO);
 
 	if (msg_info == NULL) {
-	    printf("VMBUS: malloc failed for Initiate Contact message!\n");
+	    printf("Error VMBUS: malloc failed for Initiate Contact message!\n");
 	    ret = ENOMEM;
 	    goto cleanup;
 	}
@@ -259,7 +259,7 @@ hv_vmbus_disconnect(void) {
 	msg = malloc(sizeof(hv_vmbus_channel_unload), M_DEVBUF, M_NOWAIT | M_ZERO);
 
 	if (msg == NULL) {
-	    printf("VMBUS: malloc failed to allocate Channel Unload message!\n");
+	    printf("Error VMBUS: malloc failed to allocate Channel Unload Message!\n");
 	    return (ENOMEM);
 	}
 

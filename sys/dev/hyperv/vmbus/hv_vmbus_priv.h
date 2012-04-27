@@ -174,6 +174,8 @@ typedef struct hv_vmbus_channel_packet_multipage_buffer {
 	hv_vmbus_multipage_buffer	range;
 } hv_vmbus_channel_packet_multipage_buffer;
 
+#pragma pack(pop)
+
 enum {
 	HV_VMBUS_MESSAGE_CONNECTION_ID	= 1,
 	HV_VMBUS_MESSAGE_PORT_ID	= 1,
@@ -355,10 +357,11 @@ typedef enum {
 
 #define HV_MAX_SIZE_CHANNEL_MESSAGE	HV_MESSAGE_PAYLOAD_BYTE_COUNT
 
+
 typedef struct {
 	hv_vmbus_connect_state			connect_state;
 	uint32_t				next_gpadl_handle;
-	/*
+	/**
 	 * Represents channel interrupts. Each bit position
 	 * represents a channel.
 	 * When a channel sends an interrupt via VMBUS, it
@@ -572,7 +575,6 @@ typedef union {
 	uint32_t	flags32[HV_EVENT_FLAGS_DWORD_COUNT];
 } hv_vmbus_synic_event_flags;
 
-#pragma pack(pop)
 
 /**
  * Define synthetic interrupt controller model specific registers
@@ -700,7 +702,6 @@ int			hv_vmbus_post_message(void *buffer, size_t bufSize);
 int			hv_vmbus_set_event(uint32_t childRelId);
 void			hv_vmbus_on_events(void *);
 
-
 /**
  * static inline functions
  * (with some helper macros for reading/writing to model specific registers)
@@ -708,7 +709,7 @@ void			hv_vmbus_on_events(void *);
 
 #ifdef __x86_64__
 
-#define HV_VMBUS_READ_MSR(reg, v) {			\
+#define HV_VMBUS_READ_MSR(reg, v) {	\
 	uint32_t h, l;			\
 	__asm__ __volatile__("rdmsr"	\
 	: "=a" (l), "=d" (h)		\
@@ -716,7 +717,7 @@ void			hv_vmbus_on_events(void *);
 	v = (((uint64_t)h) << 32) | l;	\
 }
 
-#define HV_VMBUS_WRITE_MSR(reg, v) {						\
+#define HV_VMBUS_WRITE_MSR(reg, v) {				\
 	uint32_t h, l;						\
 	l = (uint32_t)(((uint64_t)(v)) & 0xFFFFFFFF);		\
 	h = (uint32_t)((((uint64_t)(v)) >> 32) & 0xFFFFFFFF);	\
@@ -727,12 +728,12 @@ void			hv_vmbus_on_events(void *);
 
 #else
 
-#define HV_VMBUS_READ_MSR(reg, v)			\
+#define HV_VMBUS_READ_MSR(reg, v)	\
      __asm__ __volatile__("rdmsr"	\
     : "=A" (v)				\
     : "c" (reg))
 
-#define HV_VMBUS_WRITE_MSR(reg, v)			\
+#define HV_VMBUS_WRITE_MSR(reg, v)	\
      __asm__ __volatile__("wrmsr"	\
     : /* no outputs */			\
     : "c" (reg), "A" ((uint64_t)v))

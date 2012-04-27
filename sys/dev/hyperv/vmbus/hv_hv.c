@@ -208,7 +208,7 @@ hv_vmbus_init(void)
 	virt_addr = malloc(PAGE_SIZE, M_DEVBUF, M_NOWAIT | M_ZERO);
 
 	if (virt_addr == NULL) {
-	    printf("VMBUS: malloc failed for hypercall page init!\n");
+	    printf("Error VMBUS: malloc failed to allocate page during init!\n");
 	    goto cleanup;
 	}
 
@@ -313,7 +313,7 @@ hv_vmbus_post_msg_via_msg_ipc(
 	addr = (size_t) malloc(sizeof(struct alignedinput), M_DEVBUF,
 			    M_ZERO | M_NOWAIT);
 	if (addr == 0) {
-	    printf("VMBUS: malloc failed to allocate an message buffer"
+	    printf("Error VMBUS: malloc failed to allocate message buffer"
 		    " (hv_vmbus_post_msg_via_msg_ipc)!\n");
 	    return (ENOMEM);
 	}
@@ -390,7 +390,7 @@ hv_vmbus_synic_init(void *irqArg)
 	    malloc(PAGE_SIZE, M_DEVBUF, M_NOWAIT | M_ZERO);
 
 	if (hv_vmbus_g_context.syn_ic_msg_page[cpu] == NULL) {
-	    printf("VMBUS: malloc failed for allocating page!"
+	    printf("Error VMBUS: malloc failed for allocating page!"
 		"(hv_vmbus_synic_init #1)\n");
 	    goto cleanup;
 	}
@@ -399,7 +399,7 @@ hv_vmbus_synic_init(void *irqArg)
 	    malloc(PAGE_SIZE, M_DEVBUF, M_NOWAIT | M_ZERO);
 
 	if (hv_vmbus_g_context.syn_ic_event_page[cpu] == NULL){
-	    printf("VMBUS: malloc failed for allocating page!"
+	    printf("Error VMBUS: malloc failed to allocate page!"
 		"(hv_vmbus_synic_init #2)\n");
 	    goto cleanup;
 	}

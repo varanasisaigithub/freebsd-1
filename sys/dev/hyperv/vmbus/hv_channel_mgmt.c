@@ -124,7 +124,7 @@ hv_work_queue_create(char* name)
 
 	wq = malloc(sizeof(struct hv_work_queue), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (wq == NULL) {
-	    printf("VMBUS: Failed to create work_queue\n");
+	    printf("Error VMBUS: Failed to allocate work_queue\n");
 	    return (NULL);
 	}
 
@@ -201,7 +201,7 @@ hv_queue_work_item(struct hv_work_queue *wq, void (*callback)(void *), void *con
 	struct hv_work_item *w = malloc(sizeof(struct hv_work_item),
 					M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (w == NULL) {
-	    printf("VMBUS: Failed to create WorkItem\n");
+	    printf("Error VMBUS: Failed to allocate WorkItem\n");
 	    return (ENOMEM);
 	}
 
@@ -237,7 +237,7 @@ hv_vmbus_allocate_channel(void)
 					M_DEVBUF,
 					M_NOWAIT | M_ZERO);
 	if (channel == NULL) {
-	    printf("VMBUS: Failed to create channel\n");
+	    printf("Error VMBUS: Failed to allocate channel\n");
 	    return (NULL);
 	}
 
@@ -632,7 +632,7 @@ hv_vmbus_request_channel_offers(void)
 		sizeof(hv_vmbus_channel_msg_header), M_DEVBUF, M_NOWAIT);
 
 	if (msg_info == NULL) {
-	    printf("VMBUS: malloc failed for Request Offers\n");
+	    printf("Error VMBUS: malloc failed for Request Offers\n");
 	    return (ENOMEM);
 	}
 
@@ -642,7 +642,7 @@ hv_vmbus_request_channel_offers(void)
 	ret = hv_vmbus_post_message(msg, sizeof(hv_vmbus_channel_msg_header));
 
 	if (ret != 0) 
-	    printf("VMBUS: Request Offers PostMessage failed\n");
+	    printf("Error VMBUS: Request Offers PostMessage failed\n");
 
 	if (msg_info)
 	    free(msg_info, M_DEVBUF);

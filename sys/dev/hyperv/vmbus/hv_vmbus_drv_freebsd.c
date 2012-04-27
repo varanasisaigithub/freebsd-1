@@ -96,7 +96,7 @@ vmbus_msg_swintr(void *dummy)
 	    } else {
 		copied = malloc(sizeof(hv_vmbus_message), M_DEVBUF, M_NOWAIT);
 		if (copied == NULL) {
-		    printf("VMBUS: malloc failed for hv_vmbus_message"
+		    printf("Error VMBUS: malloc failed to allocate hv_vmbus_message"
 			   "(vmbus_msg_swintr)!\n");
 		    continue;
 		}
@@ -239,7 +239,7 @@ hv_vmbus_child_device_create(
 	child_dev = malloc(sizeof(hv_device), M_DEVBUF,
 			M_NOWAIT |  M_ZERO);
 	if (child_dev == NULL) {
-	    printf("VMBUS: malloc failed to allocate hv_device"
+	    printf("Error VMBUS: malloc failed to allocate hv_device"
 		    "(hv_vmbus_child_device_create)!\n");
 	    return (NULL);
 	}
@@ -258,7 +258,7 @@ print_dev_guid(struct hv_device *dev)
 	unsigned char guid_name[100];
 	for (i = 0; i < 32; i += 2)
 	    sprintf(&guid_name[i], "%02x", dev->class_id.data[i / 2]);
-	printf("Class ID: %s\n", guid_name);
+	printf("VMBUS: Class ID: %s\n", guid_name);
 }
 
 int
@@ -310,7 +310,7 @@ static void vmbus_identify(driver_t *driver, device_t parent) {
 
 static int
 vmbus_probe(device_t dev) {
-	printf("vmbus_probe\n");
+	printf("VMBUS: probe\n");
 
 	if (!hv_vmbus_query_hypervisor_presence())
 		return (ENXIO);
@@ -345,7 +345,7 @@ vmbus_bus_init(void)
 	ret = hv_vmbus_init();
 
 	if (ret) {
-	    printf("Hypervisor Initialization Failed\n");
+	    printf("Error VMBUS: Hypervisor Initialization Failed!\n");
 	    return (ret);
 	}
 
@@ -445,7 +445,7 @@ vmbus_bus_init(void)
 static int
 vmbus_attach(device_t dev)
 {
-	printf("vmbus_attach: dev: %p\n", dev);
+	printf("VMBUS: attach dev: %p\n", dev);
 	vmbus_devp = dev;
 
 	/* 
@@ -512,13 +512,13 @@ vmbus_detach(device_t dev)
 static void
 vmbus_mod_load(void)
 {
-	printf("Vmbus load\n");
+	printf("VMBUS: load\n");
 }
 
 static void
 vmbus_mod_unload(void)
 {
-	printf("Vmbus unload\n");
+	printf("VMBUS: unload\n");
 }
 
 static int
