@@ -55,7 +55,6 @@
 #include <amd64/include/xen/synch_bitops.h>
 #include <amd64/include/atomic.h>
 
-
 typedef unsigned char bool;
 
 #ifndef false
@@ -183,7 +182,7 @@ typedef struct {
 		volatile int64_t	in_out;
 	} rio;
 
-	/*
+	/**
 	 * If the receiving endpoint sets this to some non-zero
 	 * value, the sending endpoint should not send any interrupts.
 	 */
@@ -198,7 +197,7 @@ typedef struct {
 		uint8_t reserved[PAGE_SIZE];
 	} rctl;
 
-	/*
+	/**
 	 * Beginning of the ring data.  Note: It must be guaranteed that
 	 * this data does not share a page with the control structure.
 	 */
@@ -274,7 +273,7 @@ typedef struct {
 	hv_gpa_range		range[1];
 } hv_vm_establish_gpadl;
 
-/*
+/**
  * This is the format for a Teardown Gpadl packet, which indicates that the
  * GPADL handle in the Establish Gpadl packet will never be referenced again.
  */
@@ -286,7 +285,7 @@ typedef struct {
 	uint32_t		reserved;
 } hv_vm_teardown_gpadl;
 
-/*
+/**
  * This is the format for a GPA-Direct packet, which contains a set of GPA
  * ranges, in addition to commands and/or data.
  */
@@ -298,7 +297,7 @@ typedef struct {
 	hv_gpa_range		range[1];
 } hv_vm_data_gpa_direct;
 
-/*
+/**
  * This is the format for a Additional data Packet.
  */
 typedef struct {
@@ -386,7 +385,7 @@ typedef struct {
 	uint32_t			padding;
 } hv_vmbus_channel_msg_header;
 
-/*
+/**
  * Query VMBus Version parameters
  */
 typedef struct {
@@ -413,7 +412,7 @@ typedef struct {
 	bool				monitor_allocated;
 } hv_vmbus_channel_offer_channel;
 
-/*
+/**
  * Rescind Offer parameters
  */
 typedef struct
@@ -436,7 +435,7 @@ typedef struct
  */
 
 
-/*
+/**
  * Open Channel parameters
  */
 typedef struct
@@ -647,8 +646,8 @@ HV_VMBUS_ACCESSOR(type, TYPE,  const char *)
 HV_VMBUS_ACCESSOR(devctx, DEVCTX,  struct hv_device *)
 
 
-/*
- * Common header for Hyper-V ICs
+/**
+ * Common defintes for Hyper-V ICs
  */
 #define HV_ICMSGTYPE_NEGOTIATE		0
 #define HV_ICMSGTYPE_HEARTBEAT		1
@@ -810,17 +809,6 @@ typedef struct {
 	uint64_t	pfn_array[HV_MAX_MULTIPAGE_BUFFER_COUNT];
 } hv_vmbus_multipage_buffer;
 
-
-
-
-typedef struct hv_util_service {
-	uint8_t*		recv_buffer;
-	char*			serv_name;
-	struct hv_work_queue*	workq;
-	void			(*util_cb)(void *);
-	int  			(*util_init)(struct hv_util_service *);
-	void			(*util_deinit)(void);
-} hv_util_service;
 
 int		hv_vmbus_channel_recv_packet(
 				hv_vmbus_channel*	channel,
