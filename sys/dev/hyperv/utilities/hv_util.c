@@ -79,7 +79,11 @@ static void hv_timesync_cb(void *context);
 static void hv_kvp_cb(void *context);
 
 static int hv_timesync_init(struct hv_vmbus_util_service *serv);
- 
+
+/*
+ * Note: GUID codes below are predefined by the host hypervisor
+ * (Hyper-V and Azure)interface and required for correct operation.
+ */
 static  struct hv_vmbus_util_service  service_table[] = {
 	/* Shutdown Service */
 	{ .guid.data = {0x31, 0x60, 0x0B, 0X0E, 0x13, 0x52, 0x34, 0x49,
@@ -92,7 +96,7 @@ static  struct hv_vmbus_util_service  service_table[] = {
         { .guid.data = {0x30, 0xe6, 0x27, 0x95, 0xae, 0xd0, 0x7b, 0x49,
 			0xad, 0xce, 0xe8, 0x0a, 0xb0, 0x17, 0x5c, 0xaf},
 	  .cb = hv_timesync_cb,
-	  .name = "Hyper-V Timesynch Service\n",
+	  .name = "Hyper-V Time Synch Service\n",
 	  .init = hv_timesync_init,
 	},
 
@@ -103,7 +107,7 @@ static  struct hv_vmbus_util_service  service_table[] = {
 	  .name = "Hyper-V Heartbeat Service\n",
 	},
 
-        /* KVP Service */
+        /* KVP (Key Value Pair) Service */
         { .guid.data = {0xe7, 0xf4, 0xa0, 0xa9, 0x45, 0x5a, 0x96, 0x4d,
 			0xb8, 0x27, 0x8a, 0x84, 0x1e, 0x8c, 0x3,  0xe6},
 	  .cb = hv_kvp_cb,
@@ -120,7 +124,7 @@ struct hv_ictimesync_data {
 
 static int hv_timesync_init(struct hv_vmbus_util_service *serv)
 {
-	serv->workq = hv_work_queue_create("Time Synch");
+	serv->workq = hv_work_queue_create("Time Sync");
 	if (serv->workq == NULL)
 	    return (ENOMEM);
 	return (0);

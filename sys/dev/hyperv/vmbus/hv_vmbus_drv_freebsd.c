@@ -128,7 +128,7 @@ vmbus_msg_swintr(void *dummy)
 }
 
 /**
- * Interrupt filter routine for VMBUS.
+ * @brief Interrupt filter routine for VMBUS.
  *
  * The purpose of this routine is to determine the type of VMBUS protocol
  * message to process - an event or a channel message.
@@ -155,9 +155,9 @@ hv_vmbus_isr(void *unused)
 	KASSERT(cpu == 0, ("hv_vmbus_isr: Interrupt on CPU other than zero"));
 
 	/*
-	 * Check for events before checking for messages. This is the order
-	 * in which events and messages are checked in Windows guests on Hyper-V
-	 * and the Windows team suggested we do the same here.
+	 * The Windows team has advised that we check for events
+	 * before checking for messages. This is the way they do it
+	 * in Windows when running as a guest in Hyper-V
 	 */
 
 	page_addr = hv_vmbus_g_context.syn_ic_event_page[cpu];
@@ -291,16 +291,6 @@ hv_vmbus_child_device_unregister(struct hv_device *child_dev)
 	return(device_delete_child(vmbus_devp, child_dev->device));
 }
 
-static int
-vmbus_print_child(device_t dev, device_t child) {
-	int retval = 0;
-
-	retval += bus_print_child_header(dev, child);
-	retval += bus_print_child_footer(dev, child);
-
-	return (retval);
-}
-
 static void vmbus_identify(driver_t *driver, device_t parent) {
 	BUS_ADD_CHILD(parent, 0, "vmbus", 0);
 	if (device_find_child(parent, "vmbus", 0) == NULL) {
@@ -321,7 +311,7 @@ vmbus_probe(device_t dev) {
 }
 
 /**
- *  Main vmbus driver initialization routine. Here, we
+ * @brief Main vmbus driver initialization routine. Here, we
  * - initialize the vmbus driver context
  * - setup various driver entry points
  * - invoke the vmbus hv main init routine
@@ -547,8 +537,9 @@ static device_method_t vmbus_methods[] = {
 	DEVMETHOD(device_suspend, bus_generic_suspend),
 	DEVMETHOD(device_resume, bus_generic_resume),
 
-	/** Bus interface */DEVMETHOD(bus_add_child, bus_generic_add_child),
-	DEVMETHOD(bus_print_child, vmbus_print_child),
+	/** Bus interface */
+	DEVMETHOD(bus_add_child, bus_generic_add_child),
+	DEVMETHOD(bus_print_child, bus_generic_print_child),
 	DEVMETHOD(bus_read_ivar, vmbus_read_ivar),
 	DEVMETHOD(bus_write_ivar, vmbus_write_ivar),
 
