@@ -71,14 +71,14 @@ typedef unsigned char bool;
 #define HV_ERROR_NOT_SUPPORTED	0x80070032
 #define HV_ERROR_MACHINE_LOCKED	0x800704F7
 
-/*
+/**
  * A revision number of vmbus that is used for ensuring both ends on a
  * partition are using compatible versions.
  */
 
 #define HV_VMBUS_REVISION_NUMBER	13
 
-/*
+/**
  * Make maximum size of pipe payload of 16K
  */
 
@@ -91,23 +91,17 @@ typedef unsigned char bool;
 #define HV_VMBUS_PIPE_TYPE_BYTE		0x00000000
 #define HV_VMBUS_PIPE_TYPE_MESSAGE	0x00000004
 
-/*
+/**
  * The size of the user defined data buffer for non-pipe offers
  */
 
 #define HV_MAX_USER_DEFINED_BYTES	120
 
-/*
+/**
  *  The size of the user defined data buffer for pipe offers
  */
 
 #define HV_MAX_PIPE_USER_DEFINED_BYTES	116
-
-#pragma pack(push,1)
-
-typedef struct hv_guid {
-	 unsigned char data[16];
-} hv_guid;
 
 typedef struct hv_bound {
 	int interrupt_mask;
@@ -132,7 +126,13 @@ typedef struct hv_devinfo {
 	hv_bound in_bound, out_bound;
 } hv_devinfo;
 
-/*
+
+#pragma pack(push,1)
+
+typedef struct hv_guid {
+	 unsigned char data[16];
+} hv_guid;
+/**
  * At the center of the Channel Management library is
  * the Channel Offer. This struct contains the
  * fundamental information about an offer.
@@ -148,14 +148,14 @@ typedef struct hv_vmbus_channel_offer {
 	uint16_t	mmio_megabytes;		  /* in bytes * 1024 * 1024 */
 	union
 	{
-        /*
+        /**
          * Non-pipes: The user has HV_MAX_USER_DEFINED_BYTES bytes.
          */
 		struct {
 			uint8_t	user_defined[HV_MAX_USER_DEFINED_BYTES];
 		} standard;
 
-        /*
+        /**
          * Pipes: The following structure is an integrated pipe protocol, which
          *        is implemented on top of standard user-defined data. pipe clients
          *        have HV_MAX_PIPE_USER_DEFINED_BYTES left for their own use.
@@ -175,8 +175,10 @@ typedef uint32_t hv_gpadl_handle;
 typedef struct {
 	union {
 		struct {
-			volatile uint32_t  in;  /* offset in bytes from the ring base */
-			volatile uint32_t  out; /* offset in bytes from the ring base */
+			/** offset in bytes from the ring base */
+			volatile uint32_t  in;
+			/** offset in bytes from the ring base */
+			volatile uint32_t  out;
 		} io;
 		volatile int64_t	in_out;
 	} rio;
@@ -245,7 +247,7 @@ typedef struct {
 	uint16_t		reserved;
 } hv_vm_add_remove_transfer_page_set;
 
-/*
+/**
  * This structure defines a range in guest
  * physical space that can be made
  * to look virtually contiguous.
@@ -257,7 +259,7 @@ typedef struct {
 	uint64_t pfn_array[0];
 } hv_gpa_range;
 
-/*
+/**
  * This is the format for an Establish Gpadl packet, which contains a handle
  * by which this GPADL will be known and a set of GPA ranges associated with
  * it.  This can be converted to a MDL by the guest OS.  If there are multiple
@@ -477,7 +479,7 @@ typedef struct
 
 typedef uint32_t hv_nt_status;
 
-/*
+/**
  * Open Channel Result parameters
  */
 typedef struct
@@ -488,7 +490,7 @@ typedef struct
 	hv_nt_status			status;
 } hv_vmbus_channel_open_result;
 
-/*
+/**
  * Close channel parameters
  */
 typedef struct
@@ -497,14 +499,14 @@ typedef struct
 	uint32_t			child_rel_id;
 } hv_vmbus_channel_close_channel;
 
-/*
+/**
  * Channel Message GPADL
  */
 #define HV_GPADL_TYPE_RING_BUFFER	1
 #define HV_GPADL_TYPE_SERVER_SAVE_AREA	2
 #define HV_GPADL_TYPE_TRANSACTION	8
 
-/*
+/**
  * The number of PFNs in a GPADL message is defined by the number of pages
  * that would be spanned by byte_count and byte_offset.  If the implied number
  * of PFNs won't fit in this packet, there will be a follow-up packet that
@@ -520,7 +522,7 @@ typedef struct {
 	hv_gpa_range			range[0];
 } hv_vmbus_channel_gpadl_header;
 
-/*
+/**
  * This is the follow-up packet that contains more PFNs
  */
 typedef struct {
@@ -708,25 +710,28 @@ typedef struct {
 	 * offset in bytes from the start of ring data below
 	 */
 	volatile uint32_t       read_index;
-	/*
+	/**
 	 * NOTE: The interrupt_mask field is used only for channels, but
 	 * vmbus connection also uses this data structure
 	 */
 	volatile uint32_t       interrupt_mask;
-	uint8_t                 reserved[4084];	/* pad it to PAGE_SIZE so that data starts on a page */
+	/** pad it to PAGE_SIZE so that data starts on a page */
+	uint8_t                 reserved[4084];
 
-	/*
+	/**
 	 * WARNING: Ring data starts here + ring_data_start_offset
 	 *  !!! DO NOT place any fields below this !!!
 	 */
-	uint8_t			buffer[0];	/* doubles as interrupt mask */
+	uint8_t			buffer[0];	/** doubles as interrupt mask */
 } hv_vmbus_ring_buffer;
+
+#pragma pack(pop)
 
 typedef struct {
 	hv_vmbus_ring_buffer*	ring_buffer;
-	uint32_t		ring_size;	/* Include the shared header */
+	uint32_t		ring_size;	/** Include the shared header */
 	struct mtx		ring_lock;
-	uint32_t		ring_data_size;	/* < ring_size */
+	uint32_t		ring_data_size;	/** ring_size */
 	uint32_t		ring_data_start_offset;
 } hv_vmbus_ring_buffer_info;
 
@@ -743,7 +748,7 @@ typedef struct hv_vmbus_channel {
 	struct hv_device*		device;
 	hv_vmbus_channel_state		state;
 	hv_vmbus_channel_offer_channel	offer_msg;
-	/*
+	/**
 	 * These are based on the offer_msg.monitor_id.
 	 * Save it here for easy access.
 	 */
@@ -806,7 +811,7 @@ typedef struct {
 } hv_vmbus_multipage_buffer;
 
 
-#pragma pack(pop)
+
 
 typedef struct hv_util_service {
 	uint8_t*		recv_buffer;
@@ -868,9 +873,8 @@ int		hv_vmbus_channel_send_packet_multipagebuffer(
 
 int		hv_vmbus_channel_establish_gpadl(
 				hv_vmbus_channel*	channel,
-				/* from kmalloc()	*/
 				void*			Kbuffer,
-				/*  page-size multiple	*/
+				/**  page-size multiple	*/
 				uint32_t		size,
 				uint32_t*		gpadl_handle);
 
