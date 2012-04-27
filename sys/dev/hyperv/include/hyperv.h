@@ -513,11 +513,11 @@ typedef struct
 
 typedef struct {
 	hv_vmbus_channel_msg_header	header;
-	uint32_t	child_rel_id;
-	uint32_t	gpadl;
-	uint16_t	range_buf_len;
-	uint16_t	range_count;
-	hv_gpa_range	range[0];
+	uint32_t			child_rel_id;
+	uint32_t			gpadl;
+	uint16_t			range_buf_len;
+	uint16_t			range_count;
+	hv_gpa_range			range[0];
 } hv_vmbus_channel_gpadl_header;
 
 /*
@@ -525,41 +525,41 @@ typedef struct {
  */
 typedef struct {
 	hv_vmbus_channel_msg_header	header;
-	uint32_t	message_number;
-	uint32_t 	gpadl;
-	uint64_t 	pfn[0];
+	uint32_t			message_number;
+	uint32_t 			gpadl;
+	uint64_t 			pfn[0];
 } hv_vmbus_channel_gpadl_body;
 
 typedef struct {
 	hv_vmbus_channel_msg_header	header;
-	uint32_t	child_rel_id;
-	uint32_t	gpadl;
-	uint32_t	creation_status;
+	uint32_t			child_rel_id;
+	uint32_t			gpadl;
+	uint32_t			creation_status;
 } hv_vmbus_channel_gpadl_created;
 
 typedef struct {
 	hv_vmbus_channel_msg_header	header;
-	uint32_t	child_rel_id;
-	uint32_t	gpadl;
+	uint32_t			child_rel_id;
+	uint32_t			gpadl;
 } hv_vmbus_channel_gpadl_teardown;
 
 typedef struct {
 	hv_vmbus_channel_msg_header	header;
-	uint32_t	gpadl;
+	uint32_t			gpadl;
 } hv_vmbus_channel_gpadl_torndown;
 
 typedef struct {
 	hv_vmbus_channel_msg_header	header;
-	uint32_t	child_rel_id;
+	uint32_t			child_rel_id;
 } hv_vmbus_channel_relid_released;
 
 typedef struct {
-	hv_vmbus_channel_msg_header header;
-	uint32_t	vmbus_version_requested;
-	uint32_t	padding2;
-	uint64_t	interrupt_page;
-	uint64_t	monitor_page_1;
-	uint64_t	monitor_page_2;
+	hv_vmbus_channel_msg_header	header;
+	uint32_t			vmbus_version_requested;
+	uint32_t			padding2;
+	uint64_t			interrupt_page;
+	uint64_t			monitor_page_1;
+	uint64_t			monitor_page_2;
 } hv_vmbus_channel_initiate_contact;
 
 typedef struct {
@@ -816,11 +816,6 @@ typedef struct hv_util_service {
 	int  			(*util_init)(struct hv_util_service *);
 	void			(*util_deinit)(void);
 } hv_util_service;
-
-void		hv_vmbus_prep_negotiate_resp(
-				struct hv_vmbus_icmsg_hdr*	 icmsghdrp,
-				struct hv_vmbus_icmsg_negotiate* negop,
-				uint8_t *buf);
 
 int		hv_vmbus_channel_recv_packet(
 				hv_vmbus_channel*	channel,

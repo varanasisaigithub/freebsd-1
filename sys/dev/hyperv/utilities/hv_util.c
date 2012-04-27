@@ -111,14 +111,12 @@ static  struct hv_vmbus_util_service  service_table[] = {
 	},
 };
  
-
 struct hv_ictimesync_data {
 	uint64_t    parenttime;
 	uint64_t    childtime;
 	uint64_t    roundtriptime;
         uint8_t	    flags;
 } __packed;
-
 
 static int hv_timesync_init(struct hv_vmbus_util_service *serv)
 {
@@ -127,7 +125,6 @@ static int hv_timesync_init(struct hv_vmbus_util_service *serv)
 	    return (ENOMEM);
 	return (0);
 }
-
 
 static void
 hv_negotiate_version(
@@ -162,6 +159,9 @@ static void hv_kvp_cb(void *context)
 {
 }
 
+/**
+ * Set host time based on time sync message from host
+ */
 static void
 hv_set_host_time(void *context)
 {
@@ -185,7 +185,7 @@ hv_set_host_time(void *context)
 	mtx_unlock(&Giant);
 }
 
-/*
+/**
  * Synchronize time with host after reboot, restore, etc.
  *
  * ICTIMESYNCFLAG_SYNC flag bit indicates reboot, restore events of the VM.
@@ -214,7 +214,7 @@ void hv_adj_guesttime(uint64_t hosttime, uint8_t flags)
 	}
 }
 
-/*
+/**
  * Time Sync Channel message handler
  */
 static void
@@ -255,6 +255,9 @@ hv_timesync_cb(void *context)
 	}
 }
 
+/**
+ * Shutdown
+ */
 static void
 hv_shutdown_cb(void *context)
 {
@@ -316,6 +319,9 @@ hv_shutdown_cb(void *context)
 	    shutdown_nice(RB_POWEROFF);
 }
 
+/**
+ * Process heartbeat message
+ */
 static void
 hv_heartbeat_cb(void *context)
 {

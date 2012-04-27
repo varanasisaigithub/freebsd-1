@@ -108,7 +108,7 @@ struct storvsc_softc {
 };
 
 
-/*
+/**
  * HyperV storvsc timeout testing cases:
  * a. IO returned after first timeout;
  * b. IO returned after second timeout and queue freeze;
@@ -193,7 +193,7 @@ MODULE_DEPEND(storvsc, vmbus, 1, 1, 1);
 
 extern int ata_disk_enable;
 
-/*
+/**
  * The host is capable of sending messages to us that are 
  * completely unsolicited. So, we need to address the race
  * condition where we may be in the process of unloading the
@@ -479,15 +479,9 @@ cleanup:
 	return (ret);
 }
 
-/*++
-
-Name: 
-	hv_storvsc_io_request()
-
-Description:
-	Function to initiate an I/O request
-
---*/
+/**
+ * Function to initiate an I/O request
+ */
 static int
 hv_storvsc_io_request(struct hv_device *device,
 					  struct hv_storvsc_request *request)
@@ -544,9 +538,7 @@ hv_storvsc_io_request(struct hv_device *device,
 }
 
 
-/*
- * hv_storvsc_on_iocompletion
- *
+/**
  * Process IO_COMPLETION_OPERATION and ready
  * the result to be completed for upper layer
  * processing by the CAM layer.

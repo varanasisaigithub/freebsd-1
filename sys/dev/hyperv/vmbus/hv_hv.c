@@ -198,8 +198,8 @@ hv_vmbus_init(void)
 	/*
 	 * Write our OS info
 	 */
-	hv_vmbus_write_msr(HV_X64_MSR_GUEST_OS_ID, HV_LINUX_GUEST_ID);
-	hv_vmbus_g_context.guest_id = HV_LINUX_GUEST_ID;
+	hv_vmbus_write_msr(HV_X64_MSR_GUEST_OS_ID, HV_FREEBSD_GUEST_ID);
+	hv_vmbus_g_context.guest_id = HV_FREEBSD_GUEST_ID;
 
 	/*
 	 * See if the hypercall page is already set
@@ -278,7 +278,7 @@ hv_vmbus_cleanup(void)
 	    hv_vmbus_g_context.signal_event_param = NULL;
 	}
 
-	if (hv_vmbus_g_context.guest_id == HV_LINUX_GUEST_ID) {
+	if (hv_vmbus_g_context.guest_id == HV_FREEBSD_GUEST_ID) {
 	    if (hv_vmbus_g_context.hypercall_page) {
 		hypercallMsr.as_uint64_t = 0;
 		hv_vmbus_write_msr(HV_X64_MSR_HYPERCALL, hypercallMsr.as_uint64_t);

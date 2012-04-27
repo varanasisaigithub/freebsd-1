@@ -35,8 +35,6 @@
  *   K. Y. Srinivasan <kys@microsoft.com>
  */
 
-
-
 #include <sys/param.h>
 #include <sys/bus.h>
 #include <sys/kernel.h>
@@ -64,7 +62,7 @@
 #include "hv_vmbus_priv.h"
 
 
-#define VMBUS_IRQ				0x5
+#define VMBUS_IRQ	0x5
 
 static struct intr_event *hv_msg_intr_event;
 static struct intr_event *hv_event_intr_event;
@@ -84,10 +82,10 @@ static int vmbus_inited;
 static void
 vmbus_msg_swintr(void *dummy)
 {
-	int cpu;
-	void *page_addr;
-	hv_vmbus_message *msg;
-	hv_vmbus_message *copied;
+	int 			cpu;
+	void*			page_addr;
+	hv_vmbus_message*	msg;
+	hv_vmbus_message*	copied;
 
 	cpu = PCPU_GET(cpuid);
 	page_addr = hv_vmbus_g_context.syn_ic_msg_page[cpu];
@@ -147,10 +145,10 @@ vmbus_msg_swintr(void *dummy)
 static int
 hv_vmbus_isr(void *unused) 
 {
-	int 			cpu;
-	hv_vmbus_message*	msg;
-	HV_SYNIC_EVENT_FLAGS*	event;
-	void*			page_addr;
+	int				cpu;
+	hv_vmbus_message*		msg;
+	hv_vmbus_synic_event_flags*	event;
+	void*				page_addr;
 
 	cpu = PCPU_GET(cpuid);
 
@@ -163,7 +161,7 @@ hv_vmbus_isr(void *unused)
 	 */
 
 	page_addr = hv_vmbus_g_context.syn_ic_event_page[cpu];
-	event = (HV_SYNIC_EVENT_FLAGS*) page_addr + HV_VMBUS_MESSAGE_SINT;
+	event = (hv_vmbus_synic_event_flags*) page_addr + HV_VMBUS_MESSAGE_SINT;
 
 	/* Since we are a child, we only need to check bit 0 */
 	if (synch_test_and_clear_bit(0, &event->flags32[0])) {
@@ -480,7 +478,6 @@ vmbus_init(void)
 static void
 vmbus_bus_exit(void)
 {
-
 	hv_vmbus_release_unattached_channels();
 	hv_vmbus_disconnect();
 
@@ -503,7 +500,6 @@ static void
 vmbus_exit(void)
 {
 	vmbus_bus_exit();
-
 }
 
 static int
@@ -542,7 +538,8 @@ vmbus_modevent(module_t mod, int what, void *arg)
 }
 
 static device_method_t vmbus_methods[] = {
-	/* Device interface */DEVMETHOD(device_identify, vmbus_identify),
+	/** Device interface */
+	DEVMETHOD(device_identify, vmbus_identify),
 	DEVMETHOD(device_probe, vmbus_probe),
 	DEVMETHOD(device_attach, vmbus_attach),
 	DEVMETHOD(device_detach, vmbus_detach),
@@ -550,7 +547,7 @@ static device_method_t vmbus_methods[] = {
 	DEVMETHOD(device_suspend, bus_generic_suspend),
 	DEVMETHOD(device_resume, bus_generic_resume),
 
-	/* Bus interface */DEVMETHOD(bus_add_child, bus_generic_add_child),
+	/** Bus interface */DEVMETHOD(bus_add_child, bus_generic_add_child),
 	DEVMETHOD(bus_print_child, vmbus_print_child),
 	DEVMETHOD(bus_read_ivar, vmbus_read_ivar),
 	DEVMETHOD(bus_write_ivar, vmbus_write_ivar),

@@ -174,24 +174,22 @@ typedef struct hv_vmbus_channel_packet_multipage_buffer {
 	hv_vmbus_multipage_buffer	range;
 } hv_vmbus_channel_packet_multipage_buffer;
 
-#pragma pack(pop)
-
-
 enum {
 	HV_VMBUS_MESSAGE_CONNECTION_ID	= 1,
 	HV_VMBUS_MESSAGE_PORT_ID	= 1,
 	HV_VMBUS_EVENT_CONNECTION_ID	= 2,
 	HV_VMBUS_EVENT_PORT_ID		= 2,
 	HV_VMBUS_MONITOR_CONNECTION_ID	= 3,
-	HV_VMBUS_MONITOR_PORT_ID		= 3,
+	HV_VMBUS_MONITOR_PORT_ID	= 3,
 	HV_VMBUS_MESSAGE_SINT		= 2
 };
 
 #define HV_PRESENT_BIT		0x80000000
 
-#define HV_LINUX_GUEST_ID_LO	0x00000000
-#define HV_LINUX_GUEST_ID_HI	0xB16B00B5
-#define HV_LINUX_GUEST_ID	(((uint64_t)HV_LINUX_GUEST_ID_HI << 32) | HV_LINUX_GUEST_ID_LO)
+#define HV_FREEBSD_GUEST_ID_LO	0x00000000
+#define HV_FREEBSD_GUEST_ID_HI	0xC27C00C6
+#define HV_FREEBSD_GUEST_ID	(((uint64_t)HV_FREEBSD_GUEST_ID_HI << 32) | \
+				HV_FREEBSD_GUEST_ID_LO)
 
 #define HV_HYPERCALL_PARAM_ALIGN sizeof(uint64_t)
 
@@ -223,7 +221,7 @@ typedef struct {
 
 typedef struct {
 	uint64_t	guest_id;
-	void		*hypercall_page;
+	void*		hypercall_page;
 	bool		syn_ic_initialized;
 	/*
 	 * This is used as an input param to HV_CALL_SIGNAL_EVENT hypercall.
@@ -329,8 +327,6 @@ typedef struct {
 		uint64_t	payload[HV_MESSAGE_PAYLOAD_QWORD_COUNT];
 	} u ;
 } hv_vmbus_message;
-
-
 
 /**
  *  Maximum channels is determined by the size of the interrupt
@@ -568,14 +564,15 @@ typedef struct {
 	uint64_t		payload[HV_MESSAGE_PAYLOAD_QWORD_COUNT];
 } hv_vmbus_input_post_message;
 
-
 /**
  * Define the synthetic interrupt controller event flags format
  */
 typedef union {
 	uint8_t		flags8[HV_EVENT_FLAGS_BYTE_COUNT];
 	uint32_t	flags32[HV_EVENT_FLAGS_DWORD_COUNT];
-} HV_SYNIC_EVENT_FLAGS;
+} hv_vmbus_synic_event_flags;
+
+#pragma pack(pop)
 
 /**
  * Define synthetic interrupt controller model specific registers
