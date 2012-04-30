@@ -311,7 +311,8 @@ vmbus_probe(device_t dev) {
 }
 
 /**
- * @brief Main vmbus driver initialization routine. Here, we
+ * @brief Main vmbus driver initialization routine.
+ * Here, we
  * - initialize the vmbus driver context
  * - setup various driver entry points
  * - invoke the vmbus hv main init routine

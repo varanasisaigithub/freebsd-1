@@ -48,73 +48,82 @@
 
 #include "hyperv.h"
 
-#define HV_SHUT_DOWN	0
-#define HV_TIME_SYNCH	1
-#define HV_HEART_BEAT	2
-#define HV_KVP		3
+#define HV_SHUT_DOWN		0
+#define HV_TIME_SYNCH		1
+#define HV_HEART_BEAT		2
+#define HV_KVP			3
+#define HV_MAX_UTIL_SERVICES	4
 
 #define HV_NANO_SEC	1000000000L	/* 10^ 9 nanosecs = 1 sec */
-
 
 #define HV_WLTIMEDELTA			116444736000000000L /* in 100ns unit */
 #define HV_ICTIMESYNCFLAG_PROBE		0
 #define HV_ICTIMESYNCFLAG_SYNC		1
 #define HV_ICTIMESYNCFLAG_SAMPLE	2
 
-#define HV_MAX_UTIL_SERVICES		4
-
-struct hv_vmbus_util_service {
-	hv_guid			guid;
-        uint8_t*		recv_buffer;
-        char*			name;
-        struct hv_work_queue*	workq;
-        void			(*cb)(void *);
-        int			(*init)(struct hv_vmbus_util_service *);
-        void			(*deinit)(void);
-};
+typedef struct hv_vmbus_service {
+	hv_guid			guid;		/** Hyper-V GUID	   */
+        char*			name;		/** name of service	   */
+        hv_work_queue*		work_queue;	/** background work queue  */
+				/**
+				 * function to initialize service
+				 */
+        int			(*init)(struct hv_vmbus_service *);
+				/**
+				 * function to process Hyper-V messages
+				 */
+        void			(*callback)(void *);
+} hv_vmbus_service;
 
 static void hv_shutdown_cb(void *context);
 static void hv_heartbeat_cb(void *context);
 static void hv_timesync_cb(void *context);
 static void hv_kvp_cb(void *context);
 
-static int hv_timesync_init(struct hv_vmbus_util_service *serv);
+static int hv_timesync_init(hv_vmbus_service *serv);
 
-/*
+/**
  * Note: GUID codes below are predefined by the host hypervisor
  * (Hyper-V and Azure)interface and required for correct operation.
  */
-static  struct hv_vmbus_util_service  service_table[] = {
+static hv_vmbus_service service_table[] = {
 	/* Shutdown Service */
 	{ .guid.data = {0x31, 0x60, 0x0B, 0X0E, 0x13, 0x52, 0x34, 0x49,
 			0x81, 0x8B, 0x38, 0XD9, 0x0C, 0xED, 0x39, 0xDB},
-	  .cb = hv_shutdown_cb,
 	  .name  = "Hyper-V Shutdown Service\n",
+	  .callback = hv_shutdown_cb,
 	},
 
         /* Time Synch Service */
         { .guid.data = {0x30, 0xe6, 0x27, 0x95, 0xae, 0xd0, 0x7b, 0x49,
 			0xad, 0xce, 0xe8, 0x0a, 0xb0, 0x17, 0x5c, 0xaf},
-	  .cb = hv_timesync_cb,
 	  .name = "Hyper-V Time Synch Service\n",
 	  .init = hv_timesync_init,
+	  .callback = hv_timesync_cb,
 	},
 
         /* Heartbeat Service */
         { .guid.data = {0x39, 0x4f, 0x16, 0x57, 0x15, 0x91, 0x78, 0x4e,
 			0xab, 0x55, 0x38, 0x2f, 0x3b, 0xd5, 0x42, 0x2d},
-          .cb = hv_heartbeat_cb,
 	  .name = "Hyper-V Heartbeat Service\n",
+          .callback = hv_heartbeat_cb,
+
 	},
 
         /* KVP (Key Value Pair) Service */
         { .guid.data = {0xe7, 0xf4, 0xa0, 0xa9, 0x45, 0x5a, 0x96, 0x4d,
 			0xb8, 0x27, 0x8a, 0x84, 0x1e, 0x8c, 0x3,  0xe6},
-	  .cb = hv_kvp_cb,
 	  .name = "Hyper-V KVP Service\n",
+	  .callback = hv_kvp_cb,
 	},
 };
- 
+
+/**
+ * Receive buffer pointers, there is one buffer per utility service. The
+ * buffer is allocated during attach().
+ */
+static uint8_t* receive_buffer[HV_MAX_UTIL_SERVICES];
+
 struct hv_ictimesync_data {
 	uint64_t    parenttime;
 	uint64_t    childtime;
@@ -122,10 +131,10 @@ struct hv_ictimesync_data {
         uint8_t	    flags;
 } __packed;
 
-static int hv_timesync_init(struct hv_vmbus_util_service *serv)
+static int hv_timesync_init(hv_vmbus_service *serv)
 {
-	serv->workq = hv_work_queue_create("Time Sync");
-	if (serv->workq == NULL)
+	serv->work_queue = hv_work_queue_create("Time Sync");
+	if (serv->work_queue == NULL)
 	    return (ENOMEM);
 	return (0);
 }
@@ -190,7 +199,7 @@ hv_set_host_time(void *context)
 }
 
 /**
- * Synchronize time with host after reboot, restore, etc.
+ * @brief Synchronize time with host after reboot, restore, etc.
  *
  * ICTIMESYNCFLAG_SYNC flag bit indicates reboot, restore events of the VM.
  * After reboot the flag ICTIMESYNCFLAG_SYNC is included in the first time
@@ -206,14 +215,14 @@ void hv_adj_guesttime(uint64_t hosttime, uint8_t flags)
 	static int scnt = 50;
 
 	if ((flags & HV_ICTIMESYNCFLAG_SYNC) != 0) {
-	    hv_queue_work_item(service_table[HV_TIME_SYNCH].workq,
+	    hv_queue_work_item(service_table[HV_TIME_SYNCH].work_queue,
 		hv_set_host_time, (void *) hosttime);
 	    return;
 	}
 
 	if ((flags & HV_ICTIMESYNCFLAG_SAMPLE) != 0 && scnt > 0) {
 	    scnt--;
-	    hv_queue_work_item(service_table[HV_TIME_SYNCH].workq,
+	    hv_queue_work_item(service_table[HV_TIME_SYNCH].work_queue,
 		hv_set_host_time, (void *) hosttime);
 	}
 }
@@ -232,7 +241,7 @@ hv_timesync_cb(void *context)
 	uint8_t*		time_buf;
 	struct hv_ictimesync_data* timedatap;
 
-	time_buf = service_table[HV_TIME_SYNCH].recv_buffer;
+	time_buf = receive_buffer[HV_TIME_SYNCH];
 
 	ret = hv_vmbus_channel_recv_packet(channel, time_buf,
 	PAGE_SIZE, &recvlen, &requestid);
@@ -274,7 +283,7 @@ hv_shutdown_cb(void *context)
 	int				ret;
 	hv_vmbus_shutdown_msg_data*	shutdown_msg;
 
-	buf = service_table[HV_SHUT_DOWN].recv_buffer;
+	buf = receive_buffer[HV_SHUT_DOWN];
 
 	ret = hv_vmbus_channel_recv_packet(channel, buf, PAGE_SIZE,
 					    &recv_len, &request_id);
@@ -338,7 +347,7 @@ hv_heartbeat_cb(void *context)
 	struct hv_vmbus_heartbeat_msg_data*	heartbeat_msg;
 	struct hv_vmbus_icmsg_hdr*		icmsghdrp;
 
-	buf = service_table[HV_HEART_BEAT].recv_buffer;
+	buf = receive_buffer[HV_HEART_BEAT];
 
 	ret = hv_vmbus_channel_recv_packet(channel, buf, PAGE_SIZE, &recvlen,
 					    &requestid);
@@ -390,21 +399,25 @@ static int
 hv_util_attach(device_t dev)
 {
 	struct hv_device*		hv_dev;
-	struct hv_vmbus_util_service*	service;
+	struct hv_vmbus_service*	service;
 	int				ret;
+	size_t				receive_buffer_offset;
 
 	hv_dev = vmbus_get_devctx(dev);
 	service = device_get_softc(dev);
+	receive_buffer_offset = service - &service_table[0];
 
 	printf("Hyper-V Service attaching: %s\n", service->name);
-	service->recv_buffer = malloc(PAGE_SIZE, M_DEVBUF, M_WAITOK | M_ZERO);
-	if (service->recv_buffer == NULL) {
-	    printf("Error VMBUS: malloc faled to allocate a receive recv_buffer"
+	receive_buffer[receive_buffer_offset] =
+		malloc(PAGE_SIZE, M_DEVBUF, M_WAITOK | M_ZERO);
+
+	if (receive_buffer[receive_buffer_offset] == NULL) {
+	    printf("Error VMBUS: malloc failed to allocate receive_buffer"
 		    "(hv_util_attach)!\n");
 	    return ENOMEM;
 	}
 
-	if (service->init) {
+	if (service->init != NULL) {
 	    ret = service->init(service);
 	    if (ret) {
 		ret = ENODEV;
@@ -413,21 +426,18 @@ hv_util_attach(device_t dev)
 	}
 
 	ret = hv_vmbus_channel_open(hv_dev->channel, 2 * PAGE_SIZE,
-	    2 * PAGE_SIZE, NULL, 0,
-	    service->cb, hv_dev->channel);
+		    2 * PAGE_SIZE, NULL, 0,
+		    service->callback, hv_dev->channel);
 
 	if (ret)
-	    goto error1;
+	    goto error0;
 
 	return (0);
 
-	error1:
-
-	if (service->deinit)
-	    service->deinit();
-
 	error0:
-	    free(service->recv_buffer, M_DEVBUF);
+
+	    free(receive_buffer[receive_buffer_offset], M_DEVBUF);
+	    receive_buffer[receive_buffer_offset] = NULL;
 
 	return (ret);
 }
@@ -436,20 +446,20 @@ static int
 hv_util_detach(device_t dev)
 {
 	struct hv_device*		hv_dev;
-	struct hv_vmbus_util_service*	service;
-	
+	struct hv_vmbus_service*	service;
+	size_t				receive_buffer_offset;
+
 	hv_dev = vmbus_get_devctx(dev);
 
 	hv_vmbus_channel_close(hv_dev->channel);
 	service = device_get_softc(dev);
+	receive_buffer_offset = service - &service_table[0];
 
-	if (service->deinit)
-	    service->deinit();
+	if (service->work_queue != NULL)
+	    hv_work_queue_close(service->work_queue);
 
-	if (service->workq)
-	    hv_work_queue_close(service->workq);
-
-	free(service->recv_buffer, M_DEVBUF);
+	free(receive_buffer[receive_buffer_offset], M_DEVBUF);
+	receive_buffer[receive_buffer_offset] = NULL;
 
 	return (0);
 }
@@ -458,9 +468,9 @@ static void hv_util_init(void)
 {
 }
 
-static int hv_util_modevent(module_t mod, int what, void *arg)
+static int hv_util_modevent(module_t mod, int event, void *arg)
 {
-	switch (what) {
+	switch (event) {
         case MOD_LOAD:
                 break;
         case MOD_UNLOAD:
