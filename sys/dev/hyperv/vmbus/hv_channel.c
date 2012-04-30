@@ -891,7 +891,7 @@ hv_vmbus_channel_recv_packet(
 	*buffer_actual_len = 0;
 	*request_id = 0;
 
-	ret = hv_ring_buffer_beek(&channel->inbound, &desc,
+	ret = hv_ring_buffer_peek(&channel->inbound, &desc,
 		sizeof(hv_vm_packet_descriptor));
 	if (ret != 0)
 		return (0);
@@ -932,7 +932,7 @@ hv_vmbus_channel_recv_packet_raw(
 	*buffer_actual_len = 0;
 	*request_id = 0;
 
-	ret = hv_ring_buffer_beek(
+	ret = hv_ring_buffer_peek(
 		&channel->inbound, &desc,
 		sizeof(hv_vm_packet_descriptor));
 

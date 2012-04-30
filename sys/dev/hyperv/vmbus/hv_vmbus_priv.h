@@ -643,7 +643,7 @@ int			hv_ring_buffer_write(
 				hv_vmbus_sg_buffer_list		sg_buffers[],
 				uint32_t			sg_buffer_count);
 
-int			hv_ring_buffer_beek(
+int			hv_ring_buffer_peek(
 				hv_vmbus_ring_buffer_info	*ring_info,
 				void				*buffer,
 				uint32_t			buffer_len);

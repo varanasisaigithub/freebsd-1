@@ -308,7 +308,7 @@ hv_ring_buffer_write(
  * Read without advancing the read index
  */
 int
-hv_ring_buffer_beek(
+hv_ring_buffer_peek(
 	hv_vmbus_ring_buffer_info*	in_ring_info,
 	void*				buffer,
 	uint32_t			buffer_len)

@@ -102,6 +102,21 @@ typedef unsigned char bool;
 
 #define HV_MAX_PIPE_USER_DEFINED_BYTES	116
 
+
+#define HV_MAX_PAGE_BUFFER_COUNT	16
+#define HV_MAX_MULTIPAGE_BUFFER_COUNT	32
+
+#define HV_ALIGN_UP(value, align)					\
+		(((value) & (align-1)) ?				\
+		    (((value) + (align-1)) & ~(align-1) ) : (value))
+
+#define HV_ALIGN_DOWN(value, align) ( (value) & ~(align-1) )
+
+#define HV_NUM_PAGES_SPANNED(addr, len)					\
+		((HV_ALIGN_UP(addr+len, PAGE_SIZE) -			\
+		    HV_ALIGN_DOWN(addr, PAGE_SIZE)) >> PAGE_SHIFT )
+
+
 typedef struct hv_bound {
 	int interrupt_mask;
 	int read_index;
@@ -725,6 +740,18 @@ typedef struct {
 	uint8_t			buffer[0];	/** doubles as interrupt mask */
 } hv_vmbus_ring_buffer;
 
+typedef struct {
+	int		length;
+	int		offset;
+	uint64_t	pfn;
+} hv_vmbus_page_buffer;
+
+typedef struct {
+	int		length;
+	int		offset;
+	uint64_t	pfn_array[HV_MAX_MULTIPAGE_BUFFER_COUNT];
+} hv_vmbus_multipage_buffer;
+
 #pragma pack(pop)
 
 typedef struct {
@@ -785,30 +812,6 @@ typedef struct hv_device {
 	hv_vmbus_channel*   channel;
 } hv_device;
 
-typedef struct {
-	int		length;
-	int		offset;
-	uint64_t	pfn;
-} hv_vmbus_page_buffer;
-
-#define HV_MAX_PAGE_BUFFER_COUNT	16
-#define HV_MAX_MULTIPAGE_BUFFER_COUNT	32
-
-#define HV_ALIGN_UP(value, align)					\
-		(((value) & (align-1)) ?				\
-		    (((value) + (align-1)) & ~(align-1) ) : (value))
-
-#define HV_ALIGN_DOWN(value, align) ( (value) & ~(align-1) )
-
-#define HV_NUM_PAGES_SPANNED(addr, len)					\
-		((HV_ALIGN_UP(addr+len, PAGE_SIZE) -			\
-		    HV_ALIGN_DOWN(addr, PAGE_SIZE)) >> PAGE_SHIFT )
-
-typedef struct {
-	int		length;
-	int		offset;
-	uint64_t	pfn_array[HV_MAX_MULTIPAGE_BUFFER_COUNT];
-} hv_vmbus_multipage_buffer;
 
 
 int		hv_vmbus_channel_recv_packet(
