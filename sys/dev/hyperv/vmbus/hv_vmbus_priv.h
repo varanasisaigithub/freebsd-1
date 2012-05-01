@@ -428,7 +428,6 @@ typedef union {
 
 typedef union {
 	uint32_t as_uint32_t;
-
 	struct {
 		uint32_t group_enable :4;
 		uint32_t rsvd_z :28;
@@ -658,7 +657,7 @@ uint32_t		hv_vmbus_get_ring_buffer_interrupt_mask(
 				hv_vmbus_ring_buffer_info	*ring_info);
 
 void			hv_vmbus_dump_ring_info(
-				hv_vmbus_ring_buffer_info*	ring_info,
+				hv_vmbus_ring_buffer_info	*ring_info,
 				char				*prefix);
 
 void			hv_vmbus_ring_buffer_get_debug_info(
@@ -674,32 +673,32 @@ int			hv_vmbus_init(void);
 void			hv_vmbus_cleanup(void);
 
 uint16_t		hv_vmbus_post_msg_via_msg_ipc(
-				hv_vmbus_connection_id	connectionId,
-				hv_vmbus_msg_type	messageType,
+				hv_vmbus_connection_id	connection_id,
+				hv_vmbus_msg_type	message_type,
 				void			*payload,
-				size_t			payloadSize);
+				size_t			payload_size);
 
 uint16_t		hv_vmbus_signal_event(void);
-void			hv_vmbus_synic_init(void *irqArg);
+void			hv_vmbus_synic_init(void *irq_arg);
 void			hv_vmbus_synic_cleanup(void *arg);
 int			hv_vmbus_query_hypervisor_presence(void);
 
 struct hv_device*	hv_vmbus_child_device_create(
-				hv_guid			deviceType,
-				hv_guid			deviceInstance,
+				hv_guid			device_type,
+				hv_guid			device_instance,
 				hv_vmbus_channel	*channel);
 
 int			hv_vmbus_child_device_register(struct hv_device *child_dev);
 int			hv_vmbus_child_device_unregister(struct hv_device *child_dev);
-hv_vmbus_channel*	hv_vmbus_get_channel_from_rel_id(uint32_t relId);
+hv_vmbus_channel*	hv_vmbus_get_channel_from_rel_id(uint32_t rel_id);
 
 /**
  * Connection interfaces
  */
 int			hv_vmbus_connect(void);
 int			hv_vmbus_disconnect(void);
-int			hv_vmbus_post_message(void *buffer, size_t bufSize);
-int			hv_vmbus_set_event(uint32_t childRelId);
+int			hv_vmbus_post_message(void *buffer, size_t buf_size);
+int			hv_vmbus_set_event(uint32_t child_rel_id);
 void			hv_vmbus_on_events(void *);
 
 /**

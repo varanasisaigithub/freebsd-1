@@ -270,7 +270,7 @@ hv_vmbus_init(void)
 void
 hv_vmbus_cleanup(void) 
 {
-	hv_vmbus_x64_msr_hypercall_contents hypercallMsr;
+	hv_vmbus_x64_msr_hypercall_contents hypercall_msr;
 
 	if (hv_vmbus_g_context.signal_event_buffer) {
 	    free(hv_vmbus_g_context.signal_event_buffer, M_DEVBUF);
@@ -280,8 +280,8 @@ hv_vmbus_cleanup(void)
 
 	if (hv_vmbus_g_context.guest_id == HV_FREEBSD_GUEST_ID) {
 	    if (hv_vmbus_g_context.hypercall_page) {
-		hypercallMsr.as_uint64_t = 0;
-		hv_vmbus_write_msr(HV_X64_MSR_HYPERCALL, hypercallMsr.as_uint64_t);
+		hypercall_msr.as_uint64_t = 0;
+		hv_vmbus_write_msr(HV_X64_MSR_HYPERCALL, hypercall_msr.as_uint64_t);
 		free(hv_vmbus_g_context.hypercall_page, M_DEVBUF);
 		hv_vmbus_g_context.hypercall_page = NULL;
 	    }
@@ -293,21 +293,21 @@ hv_vmbus_cleanup(void)
  */
 hv_vmbus_status
 hv_vmbus_post_msg_via_msg_ipc(
-	hv_vmbus_connection_id	connectionId,
-	hv_vmbus_msg_type	messageType,
+	hv_vmbus_connection_id	connection_id,
+	hv_vmbus_msg_type	message_type,
 	void*			payload,
-	size_t			payloadSize)
+	size_t			payload_size)
 {
 	struct alignedinput {
 	    uint64_t alignment8;
 	    hv_vmbus_input_post_message msg;
 	};
 
-	hv_vmbus_input_post_message*	alignedMsg;
+	hv_vmbus_input_post_message*	aligned_msg;
 	hv_vmbus_status 		status;
 	size_t				addr;
 
-	if (payloadSize > HV_MESSAGE_PAYLOAD_BYTE_COUNT)
+	if (payload_size > HV_MESSAGE_PAYLOAD_BYTE_COUNT)
 	    return (EMSGSIZE);
 
 	addr = (size_t) malloc(sizeof(struct alignedinput), M_DEVBUF,
@@ -319,15 +319,15 @@ hv_vmbus_post_msg_via_msg_ipc(
 	}
 
 
-	alignedMsg = (hv_vmbus_input_post_message*)
+	aligned_msg = (hv_vmbus_input_post_message*)
 	    (HV_ALIGN_UP(addr, HV_HYPERCALL_PARAM_ALIGN));
 
-	alignedMsg->connection_id = connectionId;
-	alignedMsg->message_type = messageType;
-	alignedMsg->payload_size = payloadSize;
-	memcpy((void*) alignedMsg->payload, payload, payloadSize);
+	aligned_msg->connection_id = connection_id;
+	aligned_msg->message_type = message_type;
+	aligned_msg->payload_size = payload_size;
+	memcpy((void*) aligned_msg->payload, payload, payload_size);
 
-	status = hv_vmbus_do_hypercall(HV_CALL_POST_MESSAGE, alignedMsg, 0) & 0xFFFF;
+	status = hv_vmbus_do_hypercall(HV_CALL_POST_MESSAGE, aligned_msg, 0) & 0xFFFF;
 
 	free((void *) addr, M_DEVBUF);
 	return (status);
@@ -354,7 +354,7 @@ hv_vmbus_signal_event()
  * hv_vmbus_synic_init
  */
 void
-hv_vmbus_synic_init(void *irqArg) 
+hv_vmbus_synic_init(void *irq_arg) 
 
 {
 	int			cpu;
@@ -365,7 +365,7 @@ hv_vmbus_synic_init(void *irqArg)
 	hv_vmbus_synic_sint	shared_sint;
 	uint64_t		version;
 
-	irq_vector = *((uint32_t *) (irqArg));
+	irq_vector = *((uint32_t *) (irq_arg));
 	cpu = PCPU_GET(cpuid);
 
 	if (hv_vmbus_g_context.hypercall_page == NULL)
@@ -404,7 +404,7 @@ hv_vmbus_synic_init(void *irqArg)
 	    goto cleanup;
 	}
 
-	/*
+	/**
 	 * Setup the Synic's message page
 	 */
 
@@ -415,7 +415,7 @@ hv_vmbus_synic_init(void *irqArg)
 
 	hv_vmbus_write_msr(HV_X64_MSR_SIMP, simp.as_uint64_t);
 
-	/*
+	/**
 	 * Setup the Synic's event page
 	 */
 	siefp.as_uint64_t = hv_vmbus_read_msr(HV_X64_MSR_SIEFP);
@@ -433,7 +433,7 @@ hv_vmbus_synic_init(void *irqArg)
 	    HV_X64_MSR_SINT0 + HV_VMBUS_MESSAGE_SINT,
 	    shared_sint.as_uint64_t);
 
-	/* Enable the global synic bit */
+	/** Enable the global synic bit */
 	sctrl.as_uint64_t = hv_vmbus_read_msr(HV_X64_MSR_SCONTROL);
 	sctrl.enable = 1;
 
