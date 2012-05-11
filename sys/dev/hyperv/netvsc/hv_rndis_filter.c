@@ -38,6 +38,7 @@
 #include <sys/lock.h>
 #include <sys/mutex.h>
 #include <net/if_arp.h>
+#include <net/ethernet.h>
 #include <sys/types.h>
 #include <machine/atomic.h>
 #include <sys/sema.h>
@@ -45,7 +46,7 @@
 #include <vm/vm_param.h>
 #include <vm/pmap.h>
 
-#include "hyperv.h"
+#include <dev/hyperv/include/hyperv.h>
 #include "hv_net_vsc.h"
 #include "hv_rndis.h"
 
@@ -325,8 +326,9 @@ hv_rf_receive_data(rndis_device *device, rndis_msg *message, netvsc_packet *pkt)
 
 	/* Remove the rndis header and pass it back up the stack */
 	data_offset = RNDIS_HEADER_SIZE + rndis_pkt->data_offset;
-		
-	pkt->tot_data_buf_len       -= data_offset;
+
+	/* The L2 frame length, including CRC, which must be added. */
+	pkt->tot_data_buf_len        = rndis_pkt->data_length + ETHER_CRC_LEN;
 	pkt->page_buffers[0].offset += data_offset;
 	pkt->page_buffers[0].length -= data_offset;
 

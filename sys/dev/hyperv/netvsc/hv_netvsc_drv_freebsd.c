@@ -79,7 +79,7 @@
 
 #include <machine/intr_machdep.h>
 
-#include "hyperv.h"
+#include <dev/hyperv/include/hyperv.h>
 #include "hv_net_vsc.h"
 #include "hv_rndis.h"
 

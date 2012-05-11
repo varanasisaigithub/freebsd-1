@@ -46,7 +46,7 @@
 #include <sys/reboot.h>
 #include <sys/timetc.h>
 
-#include "hyperv.h"
+#include <dev/hyperv/include/hyperv.h>
 
 #define HV_SHUT_DOWN		0
 #define HV_TIME_SYNCH		1

@@ -45,7 +45,7 @@
 #include <vm/vm_param.h>
 #include <vm/pmap.h>
 
-#include "hyperv.h"
+#include <dev/hyperv/include/hyperv.h>
 #include "hv_vmbus_priv.h"
 
 static int 	vmbus_channel_create_gpadl_header(

@@ -41,7 +41,7 @@
 #include <sys/mutex.h>
 #include <sys/sema.h>
 
-#include "../include/hyperv.h"
+#include <dev/hyperv/include/hyperv.h>
 
 
 #define NVSP_INVALID_PROTOCOL_VERSION           (0xFFFFFFFF)

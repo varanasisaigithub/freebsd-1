@@ -42,7 +42,8 @@
 #include <sys/mutex.h>
 #include <sys/sema.h>
 
-#include "hyperv.h"
+#include <dev/hyperv/include/hyperv.h>
+
 
 /**
  *  Status codes for hypervisor operations.

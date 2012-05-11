@@ -58,7 +58,7 @@
 #include <cam/scsi/scsi_message.h>
 
 
-#include "hyperv.h"
+#include <dev/hyperv/include/hyperv.h>
 #include "hv_vstorage.h"
 
 #define MAX_MULTIPAGE_BUFFER_PACKET	(4096)

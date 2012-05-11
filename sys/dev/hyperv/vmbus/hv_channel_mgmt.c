@@ -36,7 +36,7 @@
 #include <sys/param.h>
 #include <sys/mbuf.h>
 
-#include "hyperv.h"
+#include <dev/hyperv/include/hyperv.h>
 #include "hv_vmbus_priv.h"
 
 typedef void (*hv_pfn_channel_msg_handler)(hv_vmbus_channel_msg_header* msg);

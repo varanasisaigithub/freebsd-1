@@ -38,7 +38,7 @@
 #include <sys/lock.h>
 #include <sys/mutex.h>
 
-#include "hyperv.h"
+#include <dev/hyperv/include/hyperv.h>
 #include "hv_vmbus_priv.h"
 
 /* Amount of space to write to */
