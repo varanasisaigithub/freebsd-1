@@ -284,11 +284,15 @@ hv_vmbus_child_device_register(struct hv_device *child_dev)
 int
 hv_vmbus_child_device_unregister(struct hv_device *child_dev)
 {
+	int ret = 0;
 	/*
 	 * XXXKYS: Ensure that this is the opposite of
 	 * device_add_child()
 	 */
-	return(device_delete_child(vmbus_devp, child_dev->device));
+	mtx_lock(&Giant);
+	ret = device_delete_child(vmbus_devp, child_dev->device);
+	mtx_unlock(&Giant);
+	return(ret);
 }
 
 static void vmbus_identify(driver_t *driver, device_t parent) {

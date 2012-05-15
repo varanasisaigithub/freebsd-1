@@ -436,7 +436,7 @@ typedef struct {
 typedef struct
 {
     hv_vmbus_channel_msg_header	header;
-    uint32_t				child_rel_id;
+    uint32_t			child_rel_id;
 } hv_vmbus_channel_rescind_offer;
 
 
