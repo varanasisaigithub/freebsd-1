@@ -606,6 +606,7 @@ extern devclass_t ata_devclass;
 extern int ata_wc;
 extern int ata_setmax;
 extern int ata_dma_check_80pin;
+extern int ata_disk_enable;
 
 /* public prototypes */
 /* ata-all.c: */

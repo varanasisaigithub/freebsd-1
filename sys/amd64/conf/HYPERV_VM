@@ -1,0 +1,10 @@
+# $FreeBSD$
+#
+include		GENERIC
+ident		HYPERV
+
+makeoptions	MODULES_OVERRIDE=""
+
+# Hyper-V VM support
+options 	HYPERV
+

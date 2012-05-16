@@ -80,11 +80,12 @@ ad_probe(device_t dev)
 {
     struct ata_device *atadev = device_get_softc(dev);
 
-    if (!(atadev->param.config & ATA_PROTO_ATAPI) ||
+    if (ata_disk_enable &&
+        (!(atadev->param.config & ATA_PROTO_ATAPI) ||
 	(atadev->param.config == ATA_CFA_MAGIC1) ||
 	(atadev->param.config == ATA_CFA_MAGIC2) ||
-	(atadev->param.config == ATA_CFA_MAGIC3))
-	return 0;
+	(atadev->param.config == ATA_CFA_MAGIC3)))
+	return 0; 
     else
 	return ENXIO;
 }

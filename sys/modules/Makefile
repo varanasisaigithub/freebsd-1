@@ -119,6 +119,7 @@ SUBDIR=	${_3dfx} \
 	${_hptmv} \
 	${_hptrr} \
 	hwpmc \
+	${_hyperv} \
 	${_i2c} \
 	${_ibcs2} \
 	${_ichwd} \
@@ -641,6 +642,7 @@ _hptiop=	hptiop
 _hptmv=		hptmv
 _hptrr=		hptrr
 .endif
+_hyperv=	hyperv
 _i2c=		i2c
 _ichwd=		ichwd
 _ida=		ida

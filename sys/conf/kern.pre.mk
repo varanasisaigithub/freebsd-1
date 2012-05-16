@@ -74,6 +74,11 @@ INCLUDES+= -I$S/contrib/ngatm
 # ... and the same for twa
 INCLUDES+= -I$S/dev/twa
 
+#
+# Hyper-V
+#
+INCLUDES+= -I$S/ -I$S/dev/hyperv/include -I$S/dev/hyperv/vmbus -I$S/dev/hyperv/netvsc
+
 # ... and the same for XFS
 INCLUDES+= -I$S/gnu/fs/xfs/FreeBSD -I$S/gnu/fs/xfs/FreeBSD/support -I$S/gnu/fs/xfs
 
