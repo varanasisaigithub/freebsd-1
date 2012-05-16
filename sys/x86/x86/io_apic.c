@@ -41,6 +41,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/module.h>
 #include <sys/mutex.h>
 #include <sys/sysctl.h>
+#include <sys/interrupt.h>
 
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
@@ -366,6 +367,10 @@ ioapic_assign_cpu(struct intsrc *isrc, u_int apic_id)
 
 	intpin->io_cpu = apic_id;
 	intpin->io_vector = new_vector;
+
+	if (isrc->is_event)
+	    isrc->is_event->ie_vector = new_vector;
+
 	if (isrc->is_handlers > 0)
 		apic_enable_vector(intpin->io_cpu, intpin->io_vector);
 	if (bootverbose) {
