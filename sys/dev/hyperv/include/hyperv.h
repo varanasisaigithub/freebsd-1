@@ -55,14 +55,22 @@
 #include <amd64/include/xen/synch_bitops.h>
 #include <amd64/include/atomic.h>
 
-typedef unsigned char bool;
+/*
+ * For backward compatibility in FreeBSD 8.x
+ */
+
+typedef unsigned char hv_small_bool;
+
+#if !defined(__bool_true_false_are_defined)
 
 #ifndef false
-#define false  0
+#define false	0
 #endif
 
 #ifndef true
-#define true  1
+#define true	1
+#endif
+
 #endif
 
 #define HV_S_OK			0x00000000
@@ -242,7 +250,7 @@ typedef struct {
 typedef struct {
 	hv_vm_packet_descriptor	d;
 	uint16_t		transfer_page_set_id;
-	bool			sender_owns_set;
+	hv_small_bool		sender_owns_set;
 	uint8_t			reserved;
 	uint32_t		range_count;
 	hv_vm_transfer_page	ranges[1];
@@ -416,7 +424,7 @@ typedef struct {
  */
 typedef struct {
 	hv_vmbus_channel_msg_header	header;
-	bool				version_supported;
+	hv_small_bool			version_supported;
 } hv_vmbus_channel_version_supported;
 
 /*
@@ -427,7 +435,7 @@ typedef struct {
 	hv_vmbus_channel_offer		offer;
 	uint32_t			child_rel_id;
 	uint8_t				monitor_id;
-	bool				monitor_allocated;
+	hv_small_bool			monitor_allocated;
 } hv_vmbus_channel_offer_channel;
 
 /**
@@ -582,8 +590,8 @@ typedef struct {
 } hv_vmbus_channel_initiate_contact;
 
 typedef struct {
-	hv_vmbus_channel_msg_header header;
-	bool		version_supported;
+	hv_vmbus_channel_msg_header	header;
+	hv_small_bool			version_supported;
 } hv_vmbus_channel_version_response;
 
 typedef hv_vmbus_channel_msg_header hv_vmbus_channel_unload;

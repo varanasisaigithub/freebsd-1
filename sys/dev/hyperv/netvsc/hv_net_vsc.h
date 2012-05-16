@@ -387,7 +387,7 @@ typedef struct netvsc_dev_ {
 	/* Holds rndis device info */
 	void					*extension;
 
-	bool					destroy;
+	hv_small_bool				destroy;
 	/* Negotiated NVSP version */
 	uint32_t				nvsp_version;
 } netvsc_dev;
@@ -414,10 +414,10 @@ typedef struct netvsc_packet_ {
 	 * List used when enqueued on &net_dev->rx_packet_list,
 	 * and when enqueued within the netvsc code
 	 */
-	STAILQ_ENTRY(netvsc_packet_) mylist_entry;
-	struct hv_device           *device;
-	bool                       is_data_pkt;      /* One byte */
-	xfer_page_packet           *xfer_page_pkt;
+	STAILQ_ENTRY(netvsc_packet_)	mylist_entry;
+	struct hv_device		*device;
+	hv_small_bool			is_data_pkt;      /* One byte */
+	xfer_page_packet		*xfer_page_pkt;
 
 	/* Completion */
 	union {
@@ -450,15 +450,15 @@ typedef struct netvsc_driver_object_ {
 } netvsc_driver_object;
 
 typedef struct {
-	uint8_t         mac_addr[6];  /* Assumption unsigned long */
-	bool            link_state;
+	uint8_t		mac_addr[6];  /* Assumption unsigned long */
+	hv_small_bool	link_state;
 } netvsc_device_info;
 
 /*
  * Device-specific softc structure
  */
 typedef struct hn_softc {
-	struct ifnet    *hn_ifp;
+	struct ifnet	*hn_ifp;
 	struct arpcom   arpcom;
 	device_t        hn_dev;
 	uint8_t         hn_unit;

@@ -224,7 +224,7 @@ typedef struct {
 typedef struct {
 	uint64_t	guest_id;
 	void*		hypercall_page;
-	bool		syn_ic_initialized;
+	hv_small_bool	syn_ic_initialized;
 	/*
 	 * This is used as an input param to HV_CALL_SIGNAL_EVENT hypercall.
 	 * The input param is immutable  in our usage and

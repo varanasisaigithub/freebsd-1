@@ -252,7 +252,7 @@ hv_rf_receive_response(rndis_device *device, rndis_msg *response)
 {
 	rndis_request *request = NULL;
 	rndis_request *next_request;
-	bool found = FALSE;
+	hv_small_bool found = FALSE;
 
 	mtx_lock_spin(&device->req_lock);
 	request = STAILQ_FIRST(&device->myrequest_list);

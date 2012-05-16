@@ -288,7 +288,7 @@ vmbus_channel_process_offer(void *context)
 {
 	int			ret;
 	hv_vmbus_channel*	new_channel;
-	bool			f_new;
+	boolean_t		f_new;
 	hv_vmbus_channel*	channel;
 
 	new_channel = (hv_vmbus_channel*) context;

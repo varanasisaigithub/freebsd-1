@@ -1005,7 +1005,7 @@ hv_nv_on_receive_completion(void *context)
 	struct hv_device *device = (struct hv_device *)packet->device;
 	netvsc_dev    *net_dev;
 	uint64_t       tid = 0;
-	bool send_rx_completion = false;
+	hv_small_bool send_rx_completion = false;
 
 	/*
 	 * Even though it seems logical to do a hv_nv_get_outbound_net_device()
