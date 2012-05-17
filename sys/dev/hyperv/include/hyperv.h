@@ -27,6 +27,12 @@
  */
 
 /*
+ * Ported from lis21 code drop
+ *
+ * HyperV definitions for messages that are sent between instances of the
+ * Channel Management Library in separate partitions, or in some cases,
+ * back to itself.
+ *
  * Authors:
  *   Haiyang Zhang <haiyangz@microsoft.com>
  *   Hank Janssen  <hjanssen@microsoft.com>

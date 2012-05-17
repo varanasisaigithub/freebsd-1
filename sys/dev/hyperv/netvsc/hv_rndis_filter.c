@@ -1,7 +1,7 @@
 /*-
  * Copyright (c) 2012 Microsoft Corp.
  * Copyright (c) 2012 NetApp Inc.
- * Copyright (c) 2012 Citrix Inc.
+ * Copyright (c) 2010-2012 Citrix Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,7 +26,12 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* Authors:
+/*
+ * Ported from lis21 code drop
+ *
+ * HyperV RNDIS (remote network driver interface specification) filter code
+ *
+ * Authors:
  *   Haiyang Zhang <haiyangz@microsoft.com>
  *   Hank Janssen  <hjanssen@microsoft.com>
  *   K. Y. Srinivasan <kys@microsoft.com>
@@ -74,7 +79,7 @@ typedef struct rndis_request_ {
 
 	/* Simplify allocation by having a netvsc packet inline */
 	netvsc_packet			pkt;
-	hv_vmbus_page_buffer			buffer;
+	hv_vmbus_page_buffer		buffer;
 	/* Fixme:  We assumed a fixed size request here. */
 	rndis_msg			request_msg;
 } rndis_request;
@@ -184,7 +189,7 @@ hv_rndis_request(rndis_device *device, uint32_t message_type,
 	set = &rndis_mesg->msg.set_request;
 	set->request_id = atomic_fetchadd_int(&device->new_request_id, 1);
 	/* Increment to get the new value (call above returns old value) */
-	set->request_id += 1; /* KYS need to add 1! */
+	set->request_id += 1;
 
 	/* Add to the request list */
 	mtx_lock_spin(&device->req_lock);
@@ -230,7 +235,7 @@ hv_rf_send_request(rndis_device *device, rndis_request *request)
 	packet->page_buf_count = 1;
 
 	packet->page_buffers[0].pfn =
-		hv_get_phys_addr(&request->request_msg) >> PAGE_SHIFT;
+	    hv_get_phys_addr(&request->request_msg) >> PAGE_SHIFT;
 	packet->page_buffers[0].length = request->request_msg.msg_len;
 	packet->page_buffers[0].offset =
 	    (unsigned long)&request->request_msg & (PAGE_SIZE - 1);
@@ -574,6 +579,8 @@ exit:
 int
 hv_rndis_filter_init(netvsc_driver_object *driver)
 {
+	// Fixme:  Find out if these are necessary
+	// Fixme:  We may be able to eliminate the entire pre-init
 	driver->request_ext_size = sizeof(rndis_filter_packet);
 	driver->additional_request_page_buf_cnt = 1; /* For rndis header */
 
@@ -654,7 +661,8 @@ hv_rf_halt_device(rndis_device *device)
 	/* Set up the rndis set */
 	halt = &request->request_msg.msg.halt_request;
 	halt->request_id = atomic_fetchadd_int(&device->new_request_id, 1);
-	halt->request_id += 1; /* KYS need to add 1! */
+	/* Increment to get the new value (call above returns old value) */
+	halt->request_id += 1;
 	
 	/* Ignore return since this msg is optional. */
 	hv_rf_send_request(device, request);
@@ -736,7 +744,7 @@ hv_rf_on_device_add(struct hv_device *device, void *additl_info)
 	 * Let the inner driver handle this first to create the netvsc channel
 	 * NOTE! Once the channel is created, we may get a receive callback 
 	 * (hv_rf_on_receive()) before this call is completed.
-	 * Earlier code used a function pointer here.
+	 * Note:  Earlier code used a function pointer here.
 	 */
 	net_dev = hv_nv_on_device_add(device, additl_info);
 	if (!net_dev) {
@@ -764,7 +772,7 @@ hv_rf_on_device_add(struct hv_device *device, void *additl_info)
 	/* Get the mac address */
 	ret = hv_rf_query_device_mac(rndis_dev);
 	if (ret != 0) {
-		/* TODO: shutdown rndis device and the channel */
+		/* TODO: shut down rndis device and the channel */
 	}
 	
 	memcpy(dev_info->mac_addr, rndis_dev->hw_mac_addr, HW_MACADDR_LEN);
@@ -782,7 +790,7 @@ hv_rf_on_device_add(struct hv_device *device, void *additl_info)
 int
 hv_rf_on_device_remove(struct hv_device *device)
 {
-	hn_softc_t *sc = device_get_softc(device->device);	
+	hn_softc_t *sc = device_get_softc(device->device);
 	netvsc_dev *net_dev = sc->net_dev;
 	rndis_device *rndis_dev = (rndis_device *)net_dev->extension;
 
@@ -850,8 +858,7 @@ hv_rf_on_send(struct hv_device *device, netvsc_packet *pkt)
 	rndis_pkt->data_length = pkt->tot_data_buf_len;
 
 	pkt->is_data_pkt = TRUE;
-	pkt->page_buffers[0].pfn =
-		hv_get_phys_addr(rndis_mesg) >> PAGE_SHIFT;
+	pkt->page_buffers[0].pfn = hv_get_phys_addr(rndis_mesg) >> PAGE_SHIFT;
 	pkt->page_buffers[0].offset =
 	    (unsigned long)rndis_mesg & (PAGE_SIZE - 1);
 	pkt->page_buffers[0].length = rndis_msg_size;

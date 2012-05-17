@@ -1,7 +1,7 @@
 /*-
  * Copyright (c) 2012 Microsoft Corp.
  * Copyright (c) 2012 NetApp Inc.
- * Copyright (c) 2012 Citrix Inc.
+ * Copyright (c) 2010-2012 Citrix Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,6 +27,8 @@
  */
 
 /*
+ * HyperV FreeBSD netvsc driver implementation
+ *
  * Authors:
  *   Haiyang Zhang <haiyangz@microsoft.com>
  *   Hank Janssen  <hjanssen@microsoft.com>
@@ -162,7 +164,7 @@ netvsc_drv_init(void)
 static void
 netvsc_init(void)
 {
-	printf("Netvsc initializing....");
+	printf("Netvsc initializing... ");
 
 	/*
 	 * XXXKYS: cleanup initialization
@@ -171,7 +173,7 @@ netvsc_init(void)
 		g_netvsc_drv.drv_inited = 1;
 		netvsc_drv_init();
 	} else {
-		printf("Already inited!!\n");
+		printf("Already initialized!\n");
 	}
 }
 
@@ -182,6 +184,7 @@ static const hv_guid g_net_vsc_device_type = {
 };
 
 /*
+ * Standard probe entry point.
  *
  */
 static int
@@ -201,7 +204,10 @@ netvsc_probe(device_t dev)
 }
 
 /*
+ * Standard attach entry point.
  *
+ * Called when the driver is loaded.  It allocates needed resources,
+ * and initializes the "hardware" and software.
  */
 static int
 netvsc_attach(device_t dev)
@@ -228,15 +234,6 @@ netvsc_attach(device_t dev)
 
 	sc->hn_dev_obj = device_ctx;
 
-	ret = hv_rf_on_device_add(device_ctx, &device_info);
-	if (ret != 0) {
-		return (ret);
-	}
-
-	if (device_info.link_state == 0) {
-		sc->hn_carrier = 1;
-	}
-
 	ifp = sc->hn_ifp = sc->arpcom.ac_ifp = if_alloc(IFT_ETHER);
 	ifp->if_softc = sc;
 
@@ -246,13 +243,23 @@ netvsc_attach(device_t dev)
 
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 	ifp->if_ioctl = hn_ioctl;
-	ifp->if_output = ether_output;
 	ifp->if_start = hn_start;
-	ifp->if_init = (void*)hn_ifinit;
+	ifp->if_init = hn_ifinit;
+	/* needed by hv_rf_on_device_add() code */
 	ifp->if_mtu = ETHERMTU;
 	IFQ_SET_MAXLEN(&ifp->if_snd, 512);
 	ifp->if_snd.ifq_drv_maxlen = 511;
 	IFQ_SET_READY(&ifp->if_snd);
+
+	ret = hv_rf_on_device_add(device_ctx, &device_info);
+	if (ret != 0) {
+		if_free(ifp);
+
+		return (ret);
+	}
+	if (device_info.link_state == 0) {
+		sc->hn_carrier = 1;
+	}
 
 	ether_ifattach(ifp, device_info.mac_addr);
 
@@ -266,6 +273,7 @@ static int
 netvsc_detach(device_t dev)
 {
 	struct hv_device *hv_device = vmbus_get_devctx(dev); 
+
 	printf("netvsc_detach\n");
 
 	/*
@@ -527,7 +535,8 @@ netvsc_recv_callback(struct hv_device *device_ctx, netvsc_packet *packet)
 }
 
 /*
- *
+ * Standard ioctl entry point.  Called when the user wants to configure
+ * the interface.
  */
 static int
 hn_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
@@ -643,7 +652,7 @@ hn_stop(hn_softc_t *sc)
 }
 
 /*
- *
+ * FreeBSD transmit entry point
  */
 static void
 hn_start(struct ifnet *ifp)

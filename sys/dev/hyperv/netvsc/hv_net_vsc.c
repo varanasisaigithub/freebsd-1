@@ -1,7 +1,7 @@
 /*-
  * Copyright (c) 2012 Microsoft Corp.
  * Copyright (c) 2012 NetApp Inc.
- * Copyright (c) 2012 Citrix Inc.
+ * Copyright (c) 2010-2012 Citrix Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,6 +27,10 @@
  */
 
 /*
+ * Ported from lis21 code drop
+ *
+ * HyperV vmbus network VSC (virtual services client) module
+ *
  * Authors:
  *   Haiyang Zhang <haiyangz@microsoft.com>
  *   Hank Janssen  <hjanssen@microsoft.com>
@@ -177,13 +181,10 @@ hv_nv_init_rx_buffer_with_net_vsp(struct hv_device *device)
 
 	/* Send the gpadl notification request */
 
-	ret = hv_vmbus_channel_send_packet(
-		device->channel,
-		init_pkt, sizeof(nvsp_msg),
-		(uint64_t)init_pkt,
-		HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
-		HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
-
+	ret = hv_vmbus_channel_send_packet(device->channel, init_pkt,
+	    sizeof(nvsp_msg), (uint64_t)init_pkt,
+	    HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
+	    HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	if (ret != 0) {
 		goto cleanup;
 	}
@@ -279,12 +280,10 @@ hv_nv_init_send_buffer_with_net_vsp(struct hv_device *device)
 
 	/* Send the gpadl notification request */
 
-	ret = hv_vmbus_channel_send_packet(
-		device->channel,
-		 init_pkt, sizeof(nvsp_msg), (uint64_t)init_pkt,
-		 HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
-		 HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
-
+	ret = hv_vmbus_channel_send_packet(device->channel, init_pkt,
+	    sizeof(nvsp_msg), (uint64_t)init_pkt,
+	    HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
+	    HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	if (ret != 0) {
 		goto cleanup;
 	}
@@ -293,7 +292,7 @@ hv_nv_init_send_buffer_with_net_vsp(struct hv_device *device)
 
 	/* Check the response */
 	if (init_pkt->msgs.vers_1_msgs.send_send_buf_complete.status
-						       != nvsp_status_success) {
+						      != nvsp_status_success) {
 		ret = EINVAL;
 		goto cleanup;
 	}
@@ -334,10 +333,9 @@ hv_nv_destroy_rx_buffer(netvsc_dev *net_dev)
 		revoke_pkt->msgs.vers_1_msgs.revoke_rx_buf.id =
 		    NETVSC_RECEIVE_BUFFER_ID;
 
-		ret = hv_vmbus_channel_send_packet(
-			net_dev->dev->channel,
-			revoke_pkt, sizeof(nvsp_msg),
-			(uint64_t)revoke_pkt, HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
+		ret = hv_vmbus_channel_send_packet(net_dev->dev->channel,
+		    revoke_pkt, sizeof(nvsp_msg),
+		    (uint64_t)revoke_pkt, HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
 
 		/*
 		 * If we failed here, we might as well return and have a leak 
@@ -402,11 +400,9 @@ hv_nv_destroy_send_buffer(netvsc_dev *net_dev)
 		revoke_pkt->msgs.vers_1_msgs.revoke_send_buf.id =
 		    NETVSC_SEND_BUFFER_ID;
 
-		ret = hv_vmbus_channel_send_packet(
-			net_dev->dev->channel,
-			revoke_pkt, sizeof(nvsp_msg),
-			(uint64_t)revoke_pkt, HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
-
+		ret = hv_vmbus_channel_send_packet(net_dev->dev->channel,
+		    revoke_pkt, sizeof(nvsp_msg),
+		    (uint64_t)revoke_pkt, HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
 		/*
 		 * If we failed here, we might as well return and have a leak 
 		 * rather than continue and a bugchk
@@ -442,7 +438,7 @@ hv_nv_destroy_send_buffer(netvsc_dev *net_dev)
 
 
 /*
- * Attempt to negotiate the specified NVSP version
+ * Attempt to negotiate the caller-specified NVSP version
  *
  * For NVSP v2, Server 2008 R2 does not set
  * init_pkt->msgs.init_msgs.init_compl.negotiated_prot_vers
@@ -462,25 +458,59 @@ hv_nv_negotiate_nvsp_protocol(struct hv_device *device, netvsc_dev *net_dev,
 	/*
 	 * Specify parameter as the only acceptable protocol version
 	 */
-	init_pkt->msgs.init_msgs.init.min_protocol_version = nvsp_ver;
-	init_pkt->msgs.init_msgs.init.max_protocol_version = nvsp_ver;
+	init_pkt->msgs.init_msgs.init.p1.protocol_version = nvsp_ver;
+	init_pkt->msgs.init_msgs.init.protocol_version_2 = nvsp_ver;
 
 	/* Send the init request */
-	ret = hv_vmbus_channel_send_packet(
-			device->channel,
-			init_pkt, sizeof(nvsp_msg),
-			(uint64_t)init_pkt, HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
-			HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+	ret = hv_vmbus_channel_send_packet(device->channel, init_pkt,
+	    sizeof(nvsp_msg), (uint64_t)init_pkt,
+	    HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
+	    HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	if (ret != 0) {
 		return (-1);
 	}
-	
+
 	sema_wait(&net_dev->channel_init_sema);
 
 	if (init_pkt->msgs.init_msgs.init_compl.status != nvsp_status_success) {
 		return (EINVAL);
 	}
-	
+
+	return (0);
+}
+
+/*
+ * Send NDIS version 2 config packet containing MTU.
+ *
+ * Not valid for NDIS version 1.
+ */
+static int
+hv_nv_send_ndis_config(struct hv_device *device, uint32_t mtu)
+{
+	netvsc_dev *net_dev;
+	nvsp_msg *init_pkt;
+	int ret;
+
+	net_dev = hv_nv_get_outbound_net_device(device);
+	if (!net_dev) {
+		return (-ENODEV);
+	}
+
+	/*
+	 * Set up configuration packet, write MTU
+	 */
+	init_pkt = &net_dev->channel_init_packet;
+	memset(init_pkt, 0, sizeof(nvsp_msg));
+	init_pkt->hdr.msg_type = nvsp_msg_2_type_send_ndis_config;
+	init_pkt->msgs.vers_2_msgs.send_ndis_config.mtu = mtu;
+
+	/* Send the configuration packet */
+	ret = hv_vmbus_channel_send_packet(device->channel, init_pkt,
+	    sizeof(nvsp_msg), (uint64_t)init_pkt, HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
+	if (ret != 0) {
+		return (-EINVAL);
+	}
+
 	return (0);
 }
 
@@ -490,11 +520,14 @@ hv_nv_negotiate_nvsp_protocol(struct hv_device *device, netvsc_dev *net_dev,
 static int
 hv_nv_connect_to_vsp(struct hv_device *device)
 {
-	int ret = 0;
 	netvsc_dev *net_dev;
 	nvsp_msg *init_pkt;
 	uint32_t nvsp_vers;
 	uint32_t ndis_version;
+	int ret = 0;
+	device_t dev = device->device;
+	hn_softc_t *sc = device_get_softc(dev);
+	struct ifnet *ifp = sc->arpcom.ac_ifp;
 
 	net_dev = hv_nv_get_outbound_net_device(device);
 	if (!net_dev) {
@@ -518,6 +551,14 @@ hv_nv_connect_to_vsp(struct hv_device *device)
 	net_dev->nvsp_version = nvsp_vers;
 
 	/*
+	 * Set the MTU if supported by this NVSP protocol version
+	 * This needs to be right after the NVSP init message per Haiyang
+	 */
+	if (nvsp_vers >= NVSP_PROTOCOL_VERSION_2) {
+		ret = hv_nv_send_ndis_config(device, ifp->if_mtu);
+	}
+
+	/*
 	 * Send the NDIS version
 	 */
 	init_pkt = &net_dev->channel_init_packet;
@@ -537,10 +578,9 @@ hv_nv_connect_to_vsp(struct hv_device *device)
 
 	/* Send the init request */
 
-	ret = hv_vmbus_channel_send_packet(
-			device->channel,
-			init_pkt, sizeof(nvsp_msg),
-			(uint64_t)init_pkt, HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
+	ret = hv_vmbus_channel_send_packet(device->channel, init_pkt,
+	    sizeof(nvsp_msg),
+	    (uint64_t)init_pkt, HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
 	if (ret != 0) {
 		goto cleanup;
 	}
@@ -789,11 +829,10 @@ hv_nv_on_send(struct hv_device *device, netvsc_packet *pkt)
 		    pkt->page_buffers, pkt->page_buf_count,
 		    &send_msg, sizeof(nvsp_msg), (uint64_t)pkt);
 	} else {
-		ret = hv_vmbus_channel_send_packet(
-			device->channel,
-			&send_msg, sizeof(nvsp_msg), (uint64_t)pkt,
-			HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
-			HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+		ret = hv_vmbus_channel_send_packet(device->channel,
+		    &send_msg, sizeof(nvsp_msg), (uint64_t)pkt,
+		    HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
+		    HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	}
 
 	atomic_add_int(&net_dev->num_outstanding_sends, 1);
@@ -974,11 +1013,8 @@ hv_nv_send_receive_completion(struct hv_device *device, uint64_t tid)
 
 retry_send_cmplt:
 	/* Send the completion */
-	ret = hv_vmbus_channel_send_packet(
-		device->channel,
-		&rx_comp_msg, sizeof(nvsp_msg), tid,
-		HV_VMBUS_PACKET_TYPE_COMPLETION, 0);
-
+	ret = hv_vmbus_channel_send_packet(device->channel, &rx_comp_msg,
+	    sizeof(nvsp_msg), tid, HV_VMBUS_PACKET_TYPE_COMPLETION, 0);
 	if (ret == 0) {
 		/* success */
 		/* no-op */

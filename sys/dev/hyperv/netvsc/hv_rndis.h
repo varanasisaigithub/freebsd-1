@@ -1,7 +1,7 @@
 /*-
  * Copyright (c) 2012 Microsoft Corp.
  * Copyright (c) 2012 NetApp Inc.
- * Copyright (c) 2012 Citrix Inc.
+ * Copyright (c) 2010-2012 Citrix Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,6 +27,13 @@
  */
 
 /*
+ * Ported from lis21 code drop
+ *
+ * Updated from unencumbered RNDIS.H, provided by Anandeep Pannu, 04/10/12
+ *
+ * HyperV remote NDIS (network driver interface specification)
+ * message structures
+ *
  * Authors:
  *   Haiyang Zhang <haiyangz@microsoft.com>
  *   Hank Janssen  <hjanssen@microsoft.com>
@@ -34,6 +41,7 @@
 
 #ifndef __HV_RNDIS_H__
 #define __HV_RNDIS_H__
+
 
 /*
  * NDIS protocol version numbers
@@ -270,6 +278,12 @@
 #define RNDIS_OID_802_3_XMIT_HEARTBEAT_FAILURE          0x01020205
 #define RNDIS_OID_802_3_XMIT_TIMES_CRS_LOST             0x01020206
 #define RNDIS_OID_802_3_XMIT_LATE_COLLISIONS            0x01020207
+
+
+/*
+ * RNDIS MP custom OID for test
+ */
+#define OID_RNDISMP_GET_RECEIVE_BUFFERS                 0xFFA0C90D // Query only
 
 
 /*
@@ -519,6 +533,24 @@ typedef struct rndis_packet_ {
     uint32_t                                reserved;
 } rndis_packet;
 
+typedef struct rndis_packet_ex_ {
+    uint32_t                                data_offset;
+    uint32_t                                data_length;
+    uint32_t                                oob_data_offset;
+    uint32_t                                oob_data_length;
+    uint32_t                                num_oob_data_elements;
+    uint32_t                                per_pkt_info_offset;
+    uint32_t                                per_pkt_info_length;
+    /* RNDIS handle */
+    uint32_t                                vc_handle;
+    uint32_t                                reserved;
+    uint64_t                                data_buf_id;
+    uint32_t                                data_buf_offset;
+    uint64_t                                next_header_buf_id;
+    uint32_t                                next_header_byte_offset;
+    uint32_t                                next_header_byte_count;
+} rndis_packet_ex;
+
 /*
  * Optional Out of Band data associated with a Data message.
  */
@@ -754,12 +786,13 @@ typedef union rndis_msg_container_ {
     rcondis_mp_delete_vc_complete           co_miniport_delete_vc_complete;
     rcondis_mp_activate_vc_complete         co_miniport_activate_vc_complete;
     rcondis_mp_deactivate_vc_complete       co_miniport_deactivate_vc_complete;
+    rndis_packet_ex                         packet_ex;
 } rndis_msg_container;
 
 /*
  * Remote NDIS message format
  */
-typedef struct _rndis_msg {
+typedef struct rndis_msg_ {
     uint32_t                                ndis_msg_type;
 
     /*
@@ -822,6 +855,27 @@ typedef struct _rndis_msg {
 
 
 
+/*
+ * Structures used in OID_RNDISMP_GET_RECEIVE_BUFFERS
+ */
+
+#define RNDISMP_RECEIVE_BUFFER_ELEM_FLAG_VMQ_RECEIVE_BUFFER 0x00000001
+
+typedef struct rndismp_rx_buf_elem_ {
+    uint32_t                            flags;
+    uint32_t                            length;
+    uint64_t                            rx_buf_id;
+    uint32_t                            gpadl_handle;
+    void                                *rx_buf;
+} rndismp_rx_buf_elem;
+
+typedef struct rndismp_rx_bufs_info_ {
+    uint32_t                            num_rx_bufs;
+    rndismp_rx_buf_elem                 rx_buf_elems[1];
+} rndismp_rx_bufs_info;
+
+
+
 #define RNDIS_HEADER_SIZE (sizeof(rndis_msg) - sizeof(rndis_msg_container))
 
 #define NDIS_PACKET_TYPE_DIRECTED	0x00000001
@@ -841,16 +895,16 @@ typedef struct _rndis_msg {
 /*
  * Externs
  */
-int  hv_rndis_filter_init(netvsc_driver_object *driver);
+extern int  hv_rndis_filter_init(netvsc_driver_object *driver);
 
-int  hv_rf_on_receive(struct hv_device *device, netvsc_packet *pkt);
+extern int  hv_rf_on_receive(struct hv_device *device, netvsc_packet *pkt);
 
-int  hv_rf_on_device_add(struct hv_device *device, void *additl_info);
-int  hv_rf_on_device_remove(struct hv_device *device);
+extern int  hv_rf_on_device_add(struct hv_device *device, void *additl_info);
+extern int  hv_rf_on_device_remove(struct hv_device *device);
 
-int  hv_rf_on_open(struct hv_device *device);
-int  hv_rf_on_close(struct hv_device *device);
-int  hv_rf_on_send(struct hv_device *device, netvsc_packet *pkt);
+extern int  hv_rf_on_open(struct hv_device *device);
+extern int  hv_rf_on_close(struct hv_device *device);
+extern int  hv_rf_on_send(struct hv_device *device, netvsc_packet *pkt);
 
 #endif  /* __HV_RNDIS_H__ */
 
