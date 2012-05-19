@@ -278,13 +278,16 @@ hv_vmbus_channel_open(
 		goto cleanup;
 
 	if (open_info->response.open_result.status == 0) {
-		printf("VMBUS: channel <%p> open success.", new_channel);
+		printf("VMBUS: channel <%p> open success.\n", new_channel);
 	} else {
-		printf("Error VMBUS: channel <%p> open failed - %d!",
+		printf("Error VMBUS: channel <%p> open failed - %d!\n",
 			new_channel, open_info->response.open_result.status);
 	}
 
-	cleanup:
+	/* Channel has been successfully opened */
+	new_channel->state = HV_CHANNEL_OPEN_STATE;
+
+cleanup:
 	mtx_lock_spin(&hv_vmbus_g_connection.channel_msg_lock);
 	TAILQ_REMOVE(
 		&hv_vmbus_g_connection.channel_msg_anchor,
@@ -659,9 +662,10 @@ hv_vmbus_channel_close(hv_vmbus_channel *channel)
 	free(info, M_DEVBUF);
 
 	/*
-	 *  If we are closing the channel during an error path in
-	 *  opening the channel, don't free the channel
-	 *  since the caller will free the channel
+	 * If we are closing the channel during an error path in
+	 * opening the channel, don't free the channel since the
+	 * caller will free the channel.  Also allows the channel
+	 * to be removed nondestructively.
 	 */
 	if (channel->state == HV_CHANNEL_OPEN_STATE) {
 		mtx_lock_spin(&hv_vmbus_g_connection.channel_lock);
@@ -673,7 +677,6 @@ hv_vmbus_channel_close(hv_vmbus_channel *channel)
 
 		hv_vmbus_free_vmbus_channel(channel);
 	}
-
 }
 
 /**

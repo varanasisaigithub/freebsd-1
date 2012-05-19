@@ -366,7 +366,8 @@ vmbus_channel_process_offer(void *context)
 	    /*
 	     * This state is used to indicate a successful open
 	     * so that when we do close the channel normally,
-	     * we can cleanup properly
+	     * we can clean up properly.
+	     * Fixme:  Now set in hv_vmbus_channel_open().
 	     */
 	    new_channel->state = HV_CHANNEL_OPEN_STATE;
 
@@ -386,11 +387,13 @@ vmbus_channel_on_offer(hv_vmbus_channel_msg_header* hdr)
 
 	offer = (hv_vmbus_channel_offer_channel*) hdr;
 
-	hv_guid *guidType;
-	hv_guid *guidInstance;
+	// Fixme:  Not used
+	//hv_guid *guidType;
+	//hv_guid *guidInstance;
 
-	guidType = &offer->offer.interface_type;
-	guidInstance = &offer->offer.interface_instance;
+	// Fixme:  Not used
+	//guidType = &offer->offer.interface_type;
+	//guidInstance = &offer->offer.interface_instance;
 
 	/* Allocate the channel object and save this offer */
 	new_channel = hv_vmbus_allocate_channel();

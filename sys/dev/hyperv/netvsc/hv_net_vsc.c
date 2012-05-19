@@ -83,7 +83,7 @@ hv_nv_alloc_net_device(struct hv_device *device)
 	}
 
 	net_dev->dev = device;
-	net_dev->destroy = false;
+	net_dev->destroy = FALSE;
 	sc->net_dev = net_dev;
 
 	return (net_dev);
@@ -92,7 +92,7 @@ hv_nv_alloc_net_device(struct hv_device *device)
 /*
  *
  */
-static inline netvsc_dev *
+netvsc_dev *
 hv_nv_get_outbound_net_device(struct hv_device *device)
 {
 	hn_softc_t *sc = device_get_softc(device->device);
@@ -711,7 +711,7 @@ cleanup:
  * Net VSC on device remove
  */
 int
-hv_nv_on_device_remove(struct hv_device *device)
+hv_nv_on_device_remove(struct hv_device *device, bool destroy_channel)
 {
 	netvsc_packet *net_vsc_pkt;
 	netvsc_packet *next_net_vsc_pkt;
@@ -720,7 +720,7 @@ hv_nv_on_device_remove(struct hv_device *device)
 	
 	/* Stop outbound traffic ie sends and receives completions */
 	mtx_lock(&device->channel->inbound_lock);
-	net_dev->destroy = true;
+	net_dev->destroy = TRUE;
 	mtx_unlock(&device->channel->inbound_lock);
 
 	/* Wait for all send completions */
@@ -733,6 +733,11 @@ hv_nv_on_device_remove(struct hv_device *device)
 	/* At this point, no one should be accessing net_dev except in here */
 
 	/* Now, we can close the channel safely */
+
+	if (!destroy_channel) {
+		device->channel->state =
+		    HV_CHANNEL_CLOSING_NONDESTRUCTIVE_STATE;
+	}
 
 	hv_vmbus_channel_close(device->channel);
 
@@ -1041,7 +1046,7 @@ hv_nv_on_receive_completion(void *context)
 	struct hv_device *device = (struct hv_device *)packet->device;
 	netvsc_dev    *net_dev;
 	uint64_t       tid = 0;
-	bool send_rx_completion = false;
+	bool send_rx_completion = FALSE;
 
 	/*
 	 * Even though it seems logical to do a hv_nv_get_outbound_net_device()
@@ -1064,7 +1069,7 @@ hv_nv_on_receive_completion(void *context)
 	 * Return the xfer page packet itself to the free list.
 	 */
 	if (packet->xfer_page_pkt->count == 0) {
-		send_rx_completion = true;
+		send_rx_completion = TRUE;
 		tid = packet->compl.rx.rx_completion_tid;
 		STAILQ_INSERT_TAIL(&net_dev->myrx_packet_list,
 		    (netvsc_packet *)(packet->xfer_page_pkt), mylist_entry);

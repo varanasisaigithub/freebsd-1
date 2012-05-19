@@ -788,7 +788,7 @@ hv_rf_on_device_add(struct hv_device *device, void *additl_info)
  * RNDIS filter on device remove
  */
 int
-hv_rf_on_device_remove(struct hv_device *device)
+hv_rf_on_device_remove(struct hv_device *device, bool destroy_channel)
 {
 	hn_softc_t *sc = device_get_softc(device->device);
 	netvsc_dev *net_dev = sc->net_dev;
@@ -801,7 +801,7 @@ hv_rf_on_device_remove(struct hv_device *device)
 	net_dev->extension = NULL;
 
 	/* Pass control to inner driver to remove the device */
-	hv_nv_on_device_remove(device);
+	hv_nv_on_device_remove(device, destroy_channel);
 
 	return (0);
 }

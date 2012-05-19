@@ -267,7 +267,7 @@ netvsc_attach(device_t dev)
 }
 
 /*
- *
+ * Standard detach entry point
  */
 static int
 netvsc_detach(device_t dev)
@@ -287,13 +287,13 @@ netvsc_detach(device_t dev)
 	 * the netdevice.
 	 */
 
-	hv_rf_on_device_remove(hv_device);
+	hv_rf_on_device_remove(hv_device, HV_RF_NV_DESTROY_CHANNEL);
 
 	return (0);
 }
 
 /*
- *
+ * Standard shutdown entry point
  */
 static int
 netvsc_shutdown(device_t dev)
@@ -520,16 +520,15 @@ netvsc_recv_callback(struct hv_device *device_ctx, netvsc_packet *packet)
 	m_new->m_pkthdr.rcvif = ifp;
 
 	/*
-	 * Fixme:  Moved completion back to hv_nv_on_receive(), so all
+	 * Moved completion back to hv_nv_on_receive(), so all
 	 * messages (not just data messages) will trigger a response.
 	 */
 	/* hv_nv_on_receive_completion(packet->compl.rx.rx_completion_context); */
 
 	ifp->if_ipackets++;
-	/* Fixme:  Is the lock held? */
-/*	SN_UNLOCK(sc);	*/
+
+	/* We're not holding the lock here, so don't release it */
 	(*ifp->if_input)(ifp, m_new);
-/*	SN_LOCK(sc);	*/
 
 	return (0);
 }
@@ -542,18 +541,42 @@ static int
 hn_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 {
 	hn_softc_t *sc = ifp->if_softc;
-	struct ifreq *ifr = (struct ifreq *) data;
-
+	struct ifreq *ifr = (struct ifreq *)data;
 	int mask, error = 0;
+	netvsc_device_info device_info;
+	struct hv_device *hn_dev;
 
 	switch(cmd) {
+
 	case SIOCSIFADDR:
 	case SIOCGIFADDR:
 		error = ether_ioctl(ifp, cmd, data);
 		break;
 	case SIOCSIFMTU:
+		hn_dev = vmbus_get_devctx(sc->hn_dev);
+
+		SN_LOCK(sc);
+
+		/* Obtain and record requested MTU */
 		ifp->if_mtu = ifr->ifr_mtu;
-		hn_ifinit(sc);
+
+		/*
+		 * We must remove and add back the device to cause the new
+		 * MTU to take effect.  This includes tearing down, but not
+		 * deleting the channel, then bringing it back up.
+		 */
+		error = hv_rf_on_device_remove(hn_dev, HV_RF_NV_RETAIN_CHANNEL);
+		if (error) {
+			break;
+		}
+		error = hv_rf_on_device_add(hn_dev, &device_info);
+		if (error) {
+			break;
+		}
+
+		hn_ifinit_locked(sc);
+
+		SN_UNLOCK(sc);
 		break;
 	case SIOCSIFFLAGS:
 		SN_LOCK(sc);
@@ -626,7 +649,7 @@ hn_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 		error = ether_ioctl(ifp, cmd, data);
 		break;
 	}
-    
+
 	return (error);
 }
 

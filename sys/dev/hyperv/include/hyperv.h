@@ -774,6 +774,7 @@ typedef enum {
 	HV_CHANNEL_OFFER_STATE,
 	HV_CHANNEL_OPENING_STATE,
 	HV_CHANNEL_OPEN_STATE,
+	HV_CHANNEL_CLOSING_NONDESTRUCTIVE_STATE,
 } hv_vmbus_channel_state;
 
 typedef struct hv_vmbus_channel {
