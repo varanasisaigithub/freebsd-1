@@ -26,6 +26,13 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+/*
+ * StorVSC driver for Hyper-V.  This driver presents a SCSI HBA interface
+ * to the Comman Access Method (CAM) layer.  CAM control blocks (CCB's) are
+ * converted into VSCSI protocol messages which are delivered to the parent
+ * partition StorVSP driver over the Hyper-V VMBUS.
+ */
+
 #include <sys/param.h>
 #include <sys/proc.h>
 #include <sys/condvar.h>
@@ -61,7 +68,6 @@
 #include <dev/hyperv/include/hyperv.h>
 #include "hv_vstorage.h"
 
-#define MAX_MULTIPAGE_BUFFER_PACKET	(4096)
 #define STORVSC_RINGBUFFER_SIZE		(20*PAGE_SIZE)
 #define STORVSC_MAX_LUNS_PER_TARGET	(64)
 #define STORVSC_MAX_IO_REQUESTS		(STORVSC_MAX_LUNS_PER_TARGET * 2)
@@ -118,6 +124,13 @@ struct storvsc_softc {
  * "sg_wr_mode -v -p 08 -c 0,1a -m 0,ff /dev/daX".
  */ 
 #define HVS_TIMEOUT_TEST 0
+
+/*
+ * Bus/adapter reset functionality on the Hyper-V host is
+ * buggy and it will be disabled until
+ * it can be further tested.
+ */
+#define HVS_HOST_RESET 0
 
 struct storvsc_driver_props {
 	char		*drv_name;
@@ -246,6 +259,12 @@ get_stor_device(struct hv_device *device,
 	return sc;
 }
 
+/**
+ * @brief initialize channel connection to parent partition
+ *
+ * @param dev  a Hyper-V device pointer
+ * @returns  0 on success, non-zero error on failure
+ */
 static int
 hv_storvsc_channel_init(struct hv_device *dev)
 {
@@ -254,7 +273,7 @@ hv_storvsc_channel_init(struct hv_device *dev)
 	struct vstor_packet *vstor_packet;
 	struct storvsc_softc *sc;
 
-	sc = get_stor_device(dev, true);
+	sc = get_stor_device(dev, TRUE);
 	if (sc == NULL) {
 		return ENODEV;
 	}
@@ -303,7 +322,9 @@ hv_storvsc_channel_init(struct hv_device *dev)
 	vstor_packet->flags = REQUEST_COMPLETION_FLAG;
 
 	vstor_packet->version.major_minor = VMSTOR_PROTOCOL_VERSION_CURRENT;
-	FILL_VMSTOR_REVISION(vstor_packet->version.revision);
+
+	/* revision is only significant for Windows guests */
+	vstor_packet->version.revision = 0;
 
 	ret = hv_vmbus_channel_send_packet(
 			dev->channel,
@@ -350,7 +371,7 @@ hv_storvsc_channel_init(struct hv_device *dev)
 
 	ret = sema_timedwait(&request->synch_sema, 500); /* KYS 5 seconds */
 
-	if (ret) {
+	if (ret != 0) {
 		goto cleanup;
 	}
 
@@ -392,7 +413,14 @@ cleanup:
 	return (ret);
 }
 
-
+/**
+ * @brief Open channel connection to paraent partition StorVSP driver
+ *
+ * Open and initialize channel connection to parent partition StorVSP driver.
+ *
+ * @param pointer to a Hyper-V device
+ * @returns 0 on success, non-zero error on failure
+ */
 static int
 hv_storvsc_connect_vsp(struct hv_device *dev)
 {	
@@ -419,7 +447,7 @@ hv_storvsc_connect_vsp(struct hv_device *dev)
 
 
 	if (ret != 0) {
-		return -1;
+		return ret;
 	}
 
 	ret = hv_storvsc_channel_init(dev);
@@ -437,7 +465,7 @@ hv_storvsc_host_reset(struct hv_device *dev)
 	struct hv_storvsc_request *request;
 	struct vstor_packet *vstor_packet;
 
-	sc = get_stor_device(dev, true);
+	sc = get_stor_device(dev, TRUE);
 	if (sc == NULL) {
 		return ENODEV;
 	}
@@ -480,7 +508,11 @@ cleanup:
 }
 
 /**
- * Function to initiate an I/O request
+ * @brief Function to initiate an I/O request
+ *
+ * @param device Hyper-V device pointer
+ * @param request pointer to a request structure
+ * @returns 0 on success, non-zero error on failure
  */
 static int
 hv_storvsc_io_request(struct hv_device *device,
@@ -490,11 +522,10 @@ hv_storvsc_io_request(struct hv_device *device,
 	struct vstor_packet *vstor_packet = &request->vstor_packet;
 	int ret = 0;
 
-	sc = get_stor_device(device, true);
+	sc = get_stor_device(device, TRUE);
 
 	if (sc == NULL) {
-		printf("Unable to get stor device context...device being destroyed?");
-		return -2;
+		return ENODEV;
 	}
 
 	vstor_packet->flags |= REQUEST_COMPLETION_FLAG;
@@ -530,9 +561,9 @@ hv_storvsc_io_request(struct hv_device *device,
 
 	if (ret != 0) {
 		printf("Unable to send packet %p ret %d", vstor_packet, ret);
+	} else {
+		atomic_add_int(&sc->hs_num_out_reqs, 1);
 	}
-
-	atomic_add_int(&sc->hs_num_out_reqs, 1);
 
 	return (ret);
 }
@@ -544,14 +575,11 @@ hv_storvsc_io_request(struct hv_device *device,
  * processing by the CAM layer.
  */
 static void
-hv_storvsc_on_iocompletion(struct storvsc_softc* sc,
+hv_storvsc_on_iocompletion(struct storvsc_softc *sc,
 			   struct vstor_packet *vstor_packet,
 			   struct hv_storvsc_request *request)
 {
 	struct vmscsi_req *vm_srb;
-
-	KASSERT(sc != NULL, ("softc != NULL"));
-	KASSERT(request != NULL, ("request != NULL"));
 
 	vm_srb = &vstor_packet->vm_srb;
 
@@ -590,7 +618,7 @@ hv_storvsc_on_channel_callback(void *context)
 	struct hv_storvsc_request *request;
 	struct vstor_packet *vstor_packet;
 
-	sc = get_stor_device(device, false);
+	sc = get_stor_device(device, FALSE);
 	if (sc == NULL) {
 		return;
 	}
@@ -634,6 +662,16 @@ hv_storvsc_on_channel_callback(void *context)
 	}
 }
 
+/**
+ * @brief callback function for completing a single LUN scan
+ *
+ * This function is responsible for waking up the executer of
+ * the scan LUN CCB action (cam_periph_runccb.)  cam_periph_ccbwait
+ * sleeps on the mutex being signaled.
+ *
+ * @param periph a pointer to a CAM peripheral
+ * @param done_ccb pointer to CAM control block
+ */
 static void
 storvsc_xptdone(struct cam_periph *periph, union ccb *done_ccb)
 {
@@ -641,13 +679,15 @@ storvsc_xptdone(struct cam_periph *periph, union ccb *done_ccb)
 }
 
 /**
- * @brief scan_for_luns
+ * @brief scan for attached logical unit numbers (LUNs)
  *
  * In Hyper-V there is no backend changed device operation which
  * presents FreeBSD with a list of devices to connect.  The result is
  * that we have to scan for a list of luns in the storvsc_attach()
  * routine.  There is only one SCSI target, so scan for the maximum
  * number of luns.
+ *
+ * @param pointer to softc
  */
 static void
 scan_for_luns(struct storvsc_softc *sc)
@@ -660,18 +700,7 @@ scan_for_luns(struct storvsc_softc *sc)
 	int error;
 
 	request_ccb = malloc(sizeof(union ccb), M_CAMXPT, M_WAITOK);
-	if (request_ccb == NULL) {
-		xpt_print(path, "scan_for_lunsX: can't compile path, 0x%p "
-					 "can't continue\n", sc->hs_path);
-		return;
-	}
 	my_path = malloc(sizeof(*my_path), M_CAMXPT, M_WAITOK);
-	if (my_path == NULL) {
-		xpt_print(path, "scan_for_luns: can't allocate path, "
-				  "can't continue\n");
-		free(request_ccb, M_CAMXPT);
-		return;
-	}
 
 	mtx_lock(&sc->hs_lock);
 	do {
@@ -709,6 +738,17 @@ scan_for_luns(struct storvsc_softc *sc)
 	free(my_path, M_CAMXPT);
 }
 
+/**
+ * @brief StorVSC probe function
+ *
+ * Device probe function.  Returns 0 if the input device is a StorVSC
+ * device.  Otherwise, a ENXIO is returned.  If the input device is
+ * for BlkVSC (paravirtual IDE) device and this support is disabled in
+ * favor of the emulated ATA/IDE device, return ENXIO.
+ *
+ * @param a device
+ * @returns 0 on success, ENXIO if not a matcing StorVSC device
+ */
 static int
 storvsc_probe(device_t dev)
 {
@@ -729,6 +769,16 @@ storvsc_probe(device_t dev)
 	return (ret);
 }
 
+/**
+ * @brief StorVSC attach function
+ *
+ * Function responsible for allocating per-device structures,
+ * setting up CAM interfaces and scanning for available LUNs to
+ * be used for SCSI device peripherals.
+ *
+ * @param a device
+ * @returns 0 on success or an error on failure
+ */
 static int
 storvsc_attach(device_t dev)
 {
@@ -754,7 +804,7 @@ storvsc_attach(device_t dev)
 	stor_type = storvsc_get_storage_type(dev);
 
 	if (stor_type == DRIVER_UNKNOWN) {
-		return ENODEV;
+		ret = ENODEV;
 		goto cleanup;
 	}
 
@@ -774,19 +824,13 @@ storvsc_attach(device_t dev)
 	for (i = 0; i < sc->hs_drv_props->drv_max_ios_per_target; ++i) {
 		reqp = malloc(sizeof(struct hv_storvsc_request),
 				 M_DEVBUF, M_WAITOK|M_ZERO);
-		if (reqp == NULL) {
-			ret = ENOMEM;
-			printf("Cannot alloc struct hv_storvsc_request\n");
-			goto cleanup;
-		}
-
 		reqp->softc = sc;
 
 		LIST_INSERT_HEAD(&sc->hs_free_list, reqp, link);
 	}
 
-	sc->hs_destroy = false;
-	sc->hs_drain_notify = false;
+	sc->hs_destroy = FALSE;
+	sc->hs_drain_notify = FALSE;
 	sema_init(&sc->hs_drain_sema, 0, "Store Drain Sema");
 
 	ret = hv_storvsc_connect_vsp(hv_dev);
@@ -795,12 +839,12 @@ storvsc_attach(device_t dev)
 	}
 
 	/*
-	 *  Create the device queue.
+	 * Create the device queue.
 	 * Hyper-V maps each target to one SCSI HBA
 	 */
 	devq = cam_simq_alloc(sc->hs_drv_props->drv_max_ios_per_target);
 	if (devq == NULL) {
-		printf("Failed to alloc device queue\n");
+		device_printf(dev, "Failed to alloc device queue\n");
 		ret = ENOMEM;
 		goto cleanup;
 	}
@@ -815,7 +859,7 @@ storvsc_attach(device_t dev)
 				devq);
 
 	if (sc->hs_sim == NULL) {
-		printf("Failed to alloc sim\n");
+		device_printf(dev, "Failed to alloc sim\n");
 		cam_simq_free(devq);
 		ret = ENOMEM;
 		goto cleanup;
@@ -823,9 +867,9 @@ storvsc_attach(device_t dev)
 
 	mtx_lock(&sc->hs_lock);
 	if (xpt_bus_register(sc->hs_sim, dev, 0) != CAM_SUCCESS) {
-		cam_sim_free(sc->hs_sim, /*free_devq*/true);
+		cam_sim_free(sc->hs_sim, /*free_devq*/TRUE);
 		mtx_unlock(&sc->hs_lock);
-		printf("Unable to register SCSI bus\n");
+		device_printf(dev, "Unable to register SCSI bus\n");
 		ret = ENXIO;
 		goto cleanup;
 	}
@@ -834,9 +878,9 @@ storvsc_attach(device_t dev)
 		 cam_sim_path(sc->hs_sim),
 		CAM_TARGET_WILDCARD, CAM_LUN_WILDCARD) != CAM_REQ_CMP) {
 		xpt_bus_deregister(cam_sim_path(sc->hs_sim));
-		cam_sim_free(sc->hs_sim, /*free_devq*/true);
+		cam_sim_free(sc->hs_sim, /*free_devq*/TRUE);
 		mtx_unlock(&sc->hs_lock);
-		printf("Unable to create path\n");
+		device_printf(dev, "Unable to create path\n");
 		ret = ENXIO;
 		goto cleanup;
 	}
@@ -861,6 +905,16 @@ cleanup:
 	return (ret);
 }
 
+/**
+ * @brief StorVSC device detach function
+ *
+ * This function is responsible for safely detaching a
+ * StorVSC device.  This includes waiting for inbound responses
+ * to complete and freeing associated per-device structures.
+ *
+ * @param dev a device
+ * returns 0 on success
+ */
 static int
 storvsc_detach(device_t dev)
 {
@@ -873,18 +927,17 @@ storvsc_detach(device_t dev)
 	mtx_unlock(&hv_device->channel->inbound_lock);
 
 	/*
-	 * At this point, all outbound traffic should be disable. We
+	 * At this point, all outbound traffic should be disabled. We
 	 * only allow inbound traffic (responses) to proceed so that
 	 * outstanding requests can be completed.
 	 */
 
-	sc->hs_drain_notify = true;
+	sc->hs_drain_notify = TRUE;
 	sema_wait(&sc->hs_drain_sema);
-	sc->hs_drain_notify = false;
+	sc->hs_drain_notify = FALSE;
 
 	/*
-	 * Since we have already drained, we don't need to busy wait
-	 * as was done in final_release_stor_device().
+	 * Since we have already drained, we don't need to busy wait.
 	 * The call to close the channel will reset the callback
 	 * under the protection of the incoming channel lock.
 	 */
@@ -903,6 +956,17 @@ storvsc_detach(device_t dev)
 }
 
 #if HVS_TIMEOUT_TEST
+/**
+ * @brief unit test for timed out operations
+ *
+ * This function provides unit testing capability to simulate
+ * timed out operations.  Recompilation with HV_TIMEOUT_TEST=1
+ * is required.
+ *
+ * @param reqp pointer to a request structure
+ * @param opcode SCSI operation being performed
+ * @param wait if 1, wait for I/O to complete
+ */
 static void
 storvsc_timeout_test(struct hv_storvsc_request *reqp,
 		uint8_t opcode, int wait)
@@ -919,7 +983,7 @@ storvsc_timeout_test(struct hv_storvsc_request *reqp,
 		mtx_lock(&reqp->event.mtx);
 	}
 	ret = hv_storvsc_io_request(sc->hs_dev, reqp);
-	if (ret == -1) {
+	if (ret != 0) {
 		if (wait) {
 			mtx_unlock(&reqp->event.mtx);
 		}
@@ -963,6 +1027,13 @@ storvsc_timeout_test(struct hv_storvsc_request *reqp,
 }
 #endif /* HVS_TIMEOUT_TEST */
 
+/**
+ * @brief timeout handler for requests
+ *
+ * This function is called as a result of a callout expiring.
+ *
+ * @param arg pointer to a request
+ */
 static void
 storvsc_timeout(void *arg)
 {
@@ -973,8 +1044,8 @@ storvsc_timeout(void *arg)
 	if (reqp->retries == 0) {
 		mtx_lock(&sc->hs_lock);
 		xpt_print(ccb->ccb_h.path,
-				"%u: IO timed out (req = 0x%p), wait for another %u seconds.\n",
-				ticks, reqp, ccb->ccb_h.timeout / 1000);
+				  "%u: IO timed out (req=0x%p), wait for another %u secs.\n",
+				  ticks, reqp, ccb->ccb_h.timeout / 1000);
 		cam_error_print(ccb, CAM_ESF_ALL, CAM_EPF_ALL);
 		mtx_unlock(&sc->hs_lock);
 
@@ -1005,6 +1076,14 @@ storvsc_timeout(void *arg)
 #endif
 }
 
+/**
+ * @brief StorVSC device poll function
+ *
+ * This function is responsible for servicing requests when
+ * interrupts are disabled (i.e when we are dumping core.)
+ *
+ * @param sim a pointer to a CAM SCSI interface module
+ */
 static void
 storvsc_poll(struct cam_sim *sim)
 {
@@ -1016,6 +1095,21 @@ storvsc_poll(struct cam_sim *sim)
 	mtx_lock(&sc->hs_lock);
 }
 
+/**
+ * @brief StorVSC device action function
+ *
+ * This function is responsible for handling SCSI operations which
+ * are passed from the CAM layer.  The requests are in the form of
+ * CAM control blocks which indicate the action being performed.
+ * Not all actions require converting the request to a VSCSI protocol
+ * message - these actions can be responded to by this driver.
+ * Requests which are destined for a backend storage device are converted
+ * to a VSCSI protocol message and sent on the channel connection associated
+ * with this device.
+ *
+ * @param sim pointer to a CAM SCSI interface module
+ * @param ccb pointer to a CAM control block
+ */
 static void
 storvsc_action(struct cam_sim *sim, union ccb *ccb)
 {
@@ -1081,9 +1175,10 @@ storvsc_action(struct cam_sim *sim, union ccb *ccb)
 	}
 	case  XPT_RESET_BUS:
 	case  XPT_RESET_DEV:{
-
+#if HVS_HOST_RESET
 		if ((res = hv_storvsc_host_reset(sc->hs_dev)) != 0) {
-			printf("hv_storvsc_host_reset failed with %d\n", res);
+			xpt_print(ccb->ccb_h.path,
+					  "hv_storvsc_host_reset failed with %d\n", res);
 			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
 			xpt_done(ccb);
 			return;
@@ -1091,13 +1186,15 @@ storvsc_action(struct cam_sim *sim, union ccb *ccb)
 		ccb->ccb_h.status = CAM_REQ_CMP;
 		xpt_done(ccb);
 		return;
-
-		printf("hv_storvsc: %s reset not supported.\n",
-				(ccb->ccb_h.func_code == XPT_RESET_BUS)?
-				"bus" : "dev");
-		ccb->ccb_h.status = CAM_PROVIDE_FAIL;
+#else
+		xpt_print(ccb->ccb_h.path,
+				  "%s reset not supported.\n",
+				  (ccb->ccb_h.func_code == XPT_RESET_BUS)?
+				  "bus" : "dev");
+		ccb->ccb_h.status = CAM_REQ_INVALID;
 		xpt_done(ccb);
 		return;
+#endif	/* HVS_HOST_RESET */
 	}
 	case XPT_SCSI_IO:
 	case XPT_IMMED_NOTIFY: {
@@ -1113,7 +1210,6 @@ storvsc_action(struct cam_sim *sim, union ccb *ccb)
 				sc->hs_frozen = 1;
 				xpt_freeze_simq(sim, /* count*/1);
 			}
-			printf("No free requests on sc 0x%p\n", sc);
 			xpt_done(ccb);
 			return;
 		}
@@ -1147,8 +1243,9 @@ storvsc_action(struct cam_sim *sim, union ccb *ccb)
 #endif /* HVS_TIMEOUT_TEST */
 		}
 
-		if ((res = hv_storvsc_io_request(sc->hs_dev, reqp)) == -1) {
-			printf("hv_storvsc_io_request failed with %d\n", res);
+		if ((res = hv_storvsc_io_request(sc->hs_dev, reqp)) != 0) {
+			xpt_print(ccb->ccb_h.path,
+					  "hv_storvsc_io_request failed with %d\n", res);
 			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
 			storvsc_free_request(sc, reqp);
 			xpt_done(ccb);
@@ -1164,6 +1261,16 @@ storvsc_action(struct cam_sim *sim, union ccb *ccb)
 	}
 }
 
+/**
+ * @brief Fill in a request structure based on a CAM control block
+ *
+ * Fills in a request structure based on the contents of a CAM control
+ * block.  The request structure holds the payload information for
+ * VSCSI protocol request.
+ *
+ * @param ccb pointer to a CAM contorl block
+ * @param reqp pointer to a request structure
+ */
 static void
 create_storvsc_request(union ccb *ccb, struct hv_storvsc_request *reqp)
 {
@@ -1204,7 +1311,8 @@ create_storvsc_request(union ccb *ccb, struct hv_storvsc_request *reqp)
 	reqp->sense_info_len = csio->sense_len;
 
 	reqp->ccb = ccb;
-	KASSERT((ccb->ccb_h.flags & CAM_SCATTER_VALID) == 0, ("ccb is scatter gather valid\n"));
+	KASSERT((ccb->ccb_h.flags & CAM_SCATTER_VALID) == 0,
+			("ccb is scatter gather valid\n"));
 
 	if (csio->dxfer_len != 0) {
 		reqp->data_buf.length = csio->dxfer_len;
@@ -1227,12 +1335,14 @@ create_storvsc_request(union ccb *ccb, struct hv_storvsc_request *reqp)
 	}
 }
 
-/*
- * storvsc_io_done
+/**
+ * @brief completion function before returning to CAM
  *
  * I/O process has been completed and the result needs
  * to be passed to the CAM layer.
  * Free resources related to this request.
+ *
+ * @param reqp pointer to a request structure
  */
 static void
 storvsc_io_done(struct hv_storvsc_request *reqp)
@@ -1303,7 +1413,15 @@ storvsc_io_done(struct hv_storvsc_request *reqp)
 	xpt_done(ccb);
 	mtx_unlock(&sc->hs_lock);
 }
-	
+
+/**
+ * @brief Free a request structure
+ *
+ * Free a request structure by returning it to the free list
+ *
+ * @param sc pointer to a softc
+ * @param reqp pointer to a request structure
+ */	
 static void
 storvsc_free_request(struct storvsc_softc *sc, struct hv_storvsc_request *reqp)
 {
@@ -1311,6 +1429,15 @@ storvsc_free_request(struct storvsc_softc *sc, struct hv_storvsc_request *reqp)
 	LIST_INSERT_HEAD(&sc->hs_free_list, reqp, link);
 }
 
+/**
+ * @brief Determine type of storage device from GUID
+ *
+ * Using the type GUID, determine if this is a StorVSC (paravirtual
+ * SCSI or BlkVSC (paravirtual IDE) device.
+ *
+ * @param dev a device
+ * returns an enum
+ */
 static enum hv_storage_type
 storvsc_get_storage_type(device_t dev)
 {

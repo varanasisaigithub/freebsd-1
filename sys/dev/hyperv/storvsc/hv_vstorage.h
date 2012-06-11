@@ -26,33 +26,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/*
- * Authors:
- *   Haiyang Zhang <haiyangz@microsoft.com>
- *   Hank Janssen  <hjanssen@microsoft.com>
- */
-
-/*
- * hv_vstorage.h revision number.  This is used in the case of a version match,
- * to alert the user that structure sizes may be mismatched even though the
- * protocol versions match.
- */
-
 #ifndef __HV_VSTORAGE_H__
 #define __HV_VSTORAGE_H__
-
-#define REVISION_STRING(REVISION_) #REVISION_
-#define FILL_VMSTOR_REVISION(RESULT_LVALUE_)                     \
-{                                                                \
-    char *rev_str = REVISION_STRING($Revision: 6 $) + 11; \
-    RESULT_LVALUE_ = 0;                                          \
-    while (*rev_str >= '0' && *rev_str <= '9')     \
-    {                                                            \
-        RESULT_LVALUE_ *= 10;                                    \
-        RESULT_LVALUE_ += *rev_str - '0';                 \
-        rev_str++;                                        \
-    }                                                            \
-}
 
 /*
  * Major/minor macros.  Minor version is in LSB, meaning that earlier flat
@@ -78,20 +53,6 @@
 
 #define VMSTOR_PROTOCOL_VERSION_CURRENT	VMSTOR_PROTOCOL_VERSION(2, 0)
 
-
-/*
- *  This will get replaced with the max transfer length that is possible on
- *  the host adapter.
- *  The max transfer length will be published when we offer a vmbus channel.
- */
-
-#define MAX_TRANSFER_LENGTH	0x40000
-
-#define DEFAULT_PACKET_SIZE	(sizeof(hv_vm_data_gpa_direct) + 	\
-				sizeof(struct vstor_packet) +		\
-				(sizeof(uint64_t) *			\
-				(MAX_TRANSFER_LENGTH / PAGE_SIZE)))
-
 /**
  *  Packet structure ops describing virtual storage requests.
  */
@@ -113,14 +74,14 @@ enum vstor_packet_ops {
 /*
  *  Platform neutral description of a scsi request -
  *  this remains the same across the write regardless of 32/64 bit
- *  note: it's patterned off the SCSI_PASS_THROUGH structure
+ *  note: it's patterned off the Windows DDK SCSI_PASS_THROUGH structure
  */
-
-#pragma pack(push,1)
 
 #define CDB16GENERIC_LENGTH			0x10
 #define SENSE_BUFFER_SIZE			0x12
 #define MAX_DATA_BUFFER_LENGTH_WITH_PADDING	0x14
+
+#pragma pack(push,1)
 
 struct vmscsi_req {
 	uint16_t length;
@@ -154,8 +115,7 @@ struct vmscsi_req {
  *  properties of the channel.
  */
 
-struct vmstor_chan_props
-{
+struct vmstor_chan_props {
 	uint16_t proto_ver;
 	uint8_t  path_id;
 	uint8_t  target_id;
@@ -181,17 +141,12 @@ struct vmstor_chan_props
 
 struct vmstor_proto_ver
 {
-	/*(
+	/**
 	 * Major (MSW) and minor (LSW) version numbers.
 	 */
 	uint16_t major_minor;
 
-	/**
-	 * Revision number is auto-incremented whenever this file is changed
-	 * (See FILL_VMSTOR_REVISION macro above).  Mismatch does not definitely
-	 * indicate incompatibility--but it does indicate mismatched builds.
-	 */
-	uint16_t revision;
+	uint16_t revision;			/* always zero */
 };
 
 /**
@@ -221,7 +176,8 @@ struct vstor_packet {
 	union
 	{
 	    /**
-	     * Structure used to forward SCSI commands from the client to the server.
+	     * Structure used to forward SCSI commands from the client to
+	     * the server.
 	     */
 	    struct vmscsi_req vm_srb;
 
@@ -242,18 +198,16 @@ struct vstor_packet {
 /**
  * SRB (SCSI Request Block) Status Codes
  */
-
 #define SRB_STATUS_PENDING		0x00
 #define SRB_STATUS_SUCCESS		0x01
 #define SRB_STATUS_ABORTED		0x02
-#define SRB_STATUS_ABORT_FAILED		0x03
+#define SRB_STATUS_ABORT_FAILED	0x03
 #define SRB_STATUS_ERROR 		0x04
 #define SRB_STATUS_BUSY			0x05
 
 /**
  * SRB Status Masks (can be combined with above status codes)
  */
-
 #define SRB_STATUS_QUEUE_FROZEN		0x40
 #define SRB_STATUS_AUTOSENSE_VALID	0x80
 
@@ -266,13 +220,11 @@ struct vstor_packet {
  *  This flag indicates that the server should send back a completion for this
  *  packet.
  */
-
 #define REQUEST_COMPLETION_FLAG	0x1
 
 /**
  *  This is the set of flags that the vsc can set in any packets it sends
  */
-
 #define VSC_LEGAL_FLAGS (REQUEST_COMPLETION_FLAG)
 
 
