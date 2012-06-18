@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2009-2012 Microsoft Corp.
  * Copyright (c) 2012 NetApp Inc.
  * Copyright (c) 2012 Citrix Inc.
  * All rights reserved.
@@ -26,15 +26,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/*
- *  Created on: Dec 15, 2011
- *  Consolidation done on March 5th, 2012
- *      Author: Larry Melia
- *	Author: K. Y. Srinivasan
- */
-
 /**
- * A common driver for all hyper-V util services.*
+ * A common driver for all hyper-V util services.
  */
 
 #include <sys/param.h>

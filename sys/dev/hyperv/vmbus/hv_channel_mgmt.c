@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2009-2012 Microsoft Corp.
  * Copyright (c) 2012 NetApp Inc.
  * Copyright (c) 2012 Citrix Inc.
  * All rights reserved.
@@ -25,13 +25,6 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
-/* Authors:
- *   Haiyang Zhang <haiyangz@microsoft.com>
- *   Hank Janssen  <hjanssen@microsoft.com>
- *   K. Y. Srinivasan <kys@microsoft.com>
- */
-
 
 #include <sys/param.h>
 #include <sys/mbuf.h>
@@ -193,7 +186,7 @@ hv_work_queue_close(struct hv_work_queue *wq)
 }
 
 /**
- * Create work item
+ * @brief Create work item
  */
 int
 hv_queue_work_item(struct hv_work_queue *wq, void (*callback)(void *), void *context)
@@ -215,7 +208,7 @@ hv_queue_work_item(struct hv_work_queue *wq, void (*callback)(void *), void *con
 }
 
 /**
- * Rescind the offer by initiating a device removal
+ * @brief Rescind the offer by initiating a device removal
  */
 static void
 vmbus_channel_process_rescind_offer(void *context)
@@ -225,7 +218,7 @@ vmbus_channel_process_rescind_offer(void *context)
 }
 
 /**
- * Allocate and initialize a vmbus channel object
+ * @brief Allocate and initialize a vmbus channel object
  */
 hv_vmbus_channel*
 hv_vmbus_allocate_channel(void)
@@ -255,7 +248,7 @@ hv_vmbus_allocate_channel(void)
 }
 
 /**
- * Release the vmbus channel object itself
+ * @brief Release the vmbus channel object itself
  */
 static inline void
 ReleaseVmbusChannel(void *context)
@@ -266,7 +259,7 @@ ReleaseVmbusChannel(void *context)
 }
 
 /**
- * Release the resources used by the vmbus channel object
+ * @brief Release the resources used by the vmbus channel object
  */
 void
 hv_vmbus_free_vmbus_channel(hv_vmbus_channel* channel)
@@ -281,14 +274,14 @@ hv_vmbus_free_vmbus_channel(hv_vmbus_channel* channel)
 }
 
 /**
- * Process the offer by creating a channel/device associated with this offer
+ * @brief Process the offer by creating a channel/device associated with this offer
  */
 static void
 vmbus_channel_process_offer(void *context)
 {
 	int			ret;
 	hv_vmbus_channel*	new_channel;
-	bool			f_new;
+	boolean_t			f_new;
 	hv_vmbus_channel*	channel;
 
 	new_channel = (hv_vmbus_channel*) context;
@@ -374,6 +367,8 @@ vmbus_channel_process_offer(void *context)
 }
 
 /**
+ * @brief Handler for channel offers from Hyper-V/Azure
+ *
  * Handler for channel offers from vmbus in parent partition. We ignore all offers except
  * network and storage offers. For each network and storage offers, we create a channel object
  * and queue a work item to the channel object to process the offer synchronously
@@ -410,7 +405,9 @@ vmbus_channel_on_offer(hv_vmbus_channel_msg_header* hdr)
 }
 
 /**
- * Rescind offer handler. We queue a work item to process this offer
+ * @brief Rescind offer handler.
+ *
+ * We queue a work item to process this offer
  * synchronously
  */
 static void
@@ -430,7 +427,8 @@ vmbus_channel_on_offer_rescind(hv_vmbus_channel_msg_header* hdr)
 }
 
 /**
- * This is invoked when all offers have been delivered.
+ *
+ * @brief Invoked when all offers have been delivered.
  */
 static void
 vmbus_channel_on_offers_delivered(hv_vmbus_channel_msg_header* hdr)
@@ -438,7 +436,9 @@ vmbus_channel_on_offers_delivered(hv_vmbus_channel_msg_header* hdr)
 }
 
 /**
- * Open result handler. This is invoked when we received a response
+ * @brief Open result handler.
+ *
+ * This is invoked when we received a response
  * to our channel open request. Find the matching request, copy the
  * response and signal the requesting thread.
  */
@@ -478,7 +478,9 @@ vmbus_channel_on_open_result(hv_vmbus_channel_msg_header* hdr)
 }
 
 /**
- * GPADL created handler. This is invoked when we received a response
+ * @brief GPADL created handler.
+ *
+ * This is invoked when we received a response
  * to our gpadl create request. Find the matching request, copy the
  * response and signal the requesting thread.
  */
@@ -518,7 +520,9 @@ vmbus_channel_on_gpadl_created(hv_vmbus_channel_msg_header* hdr)
 }
 
 /**
- * GPADL torndown handler. This is invoked when we received a respons
+ * @brief GPADL torndown handler.
+ *
+ * This is invoked when we received a respons
  * to our gpadl teardown request. Find the matching request, copy the
  * response and signal the requesting thread
  */
@@ -557,7 +561,9 @@ vmbus_channel_on_gpadl_torndown(hv_vmbus_channel_msg_header* hdr)
 }
 
 /**
- * Version response handler. This is invoked when we received a response
+ * @brief Version response handler.
+ *
+ * This is invoked when we received a response
  * to our initiate contact request. Find the matching request, copy th
  * response and signal the requesting thread.
  */
@@ -590,7 +596,8 @@ vmbus_channel_on_version_response(hv_vmbus_channel_msg_header* hdr)
 }
 
 /**
- * Handler for channel protocol messages.
+ * @brief Handler for channel protocol messages.
+ *
  * This is invoked in the vmbus worker thread context.
  */
 void
@@ -618,7 +625,7 @@ hv_vmbus_on_channel_message(void *context)
 }
 
 /**
- *  Send a request to get all our pending offers.
+ *  @brief Send a request to get all our pending offers.
  */
 int
 hv_vmbus_request_channel_offers(void)
@@ -651,7 +658,7 @@ hv_vmbus_request_channel_offers(void)
 }
 
 /**
- * Release channels that are unattached/unconnected ie (no drivers associated)
+ * @brief Release channels that are unattached/unconnected (i.e., no drivers associated)
  */
 void
 hv_vmbus_release_unattached_channels(void) 

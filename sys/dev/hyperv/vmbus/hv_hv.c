@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2009-2012 Microsoft Corp.
  * Copyright (c) 2012 NetApp Inc.
  * Copyright (c) 2012 Citrix Inc.
  * All rights reserved.
@@ -27,12 +27,7 @@
  */
 
 /**
- * Implements low-level interactions with windows hypervisor
- * <p/>
- * Authors:
- *   Haiyang Zhang <haiyangz@microsoft.com>
- *   Hank Janssen  <hjanssen@microsoft.com>
- *   K. Y. Srinivasan <kys@microsoft.com>
+ * Implements low-level interactions with Hypver-V/Azure
  */
 
 #include <sys/types.h>
@@ -55,7 +50,7 @@ static inline void do_cpuid_inline(unsigned int op, unsigned int *eax,
 }
 
 /**
- *  Globals
+ * Globals
  */
 hv_vmbus_context hv_vmbus_g_context = {
 	.syn_ic_initialized = false,
@@ -64,7 +59,7 @@ hv_vmbus_context hv_vmbus_g_context = {
 	.signal_event_buffer = NULL, };
 
 /**
- *  Query the cpuid for presence of windows hypervisor
+ * @brief Query the cpuid for presence of windows hypervisor
  */
 int
 hv_vmbus_query_hypervisor_presence(void) 
@@ -86,7 +81,7 @@ hv_vmbus_query_hypervisor_presence(void)
 }
 
 /**
- * Get version of the windows hypervisor
+ * @brief Get version of the windows hypervisor
  */
 static int
 hv_vmbus_get_hypervisor_version(void) 
@@ -130,7 +125,7 @@ hv_vmbus_get_hypervisor_version(void)
 }
 
 /**
- * Invoke the specified hypercall
+ * @brief Invoke the specified hypercall
  */
 static uint64_t
 hv_vmbus_do_hypercall(uint64_t control, void* input, void* output)
@@ -169,7 +164,9 @@ hv_vmbus_do_hypercall(uint64_t control, void* input, void* output)
 }
 
 /**
- *  Main initialization routine. This routine must be called
+ *  @brief Main initialization routine.
+ *
+ *  This routine must be called
  *  before any other routines in here are called
  */
 int
@@ -265,7 +262,7 @@ hv_vmbus_init(void)
 }
 
 /**
- * Cleanup routine, called normally during driver unloading or exiting
+ * @brief Cleanup routine, called normally during driver unloading or exiting
  */
 void
 hv_vmbus_cleanup(void) 
@@ -289,7 +286,7 @@ hv_vmbus_cleanup(void)
 }
 
 /**
- * Post a message using the hypervisor message IPC. This involves a hypercall.
+ * @brief Post a message using the hypervisor message IPC. (This involves a hypercall.)
  */
 hv_vmbus_status
 hv_vmbus_post_msg_via_msg_ipc(
@@ -334,8 +331,8 @@ hv_vmbus_post_msg_via_msg_ipc(
 }
 
 /**
- * Signal an event on the specified connection using the hypervisor
- * event IPC. This involves a hypercall.
+ * @brief Signal an event on the specified connection using the hypervisor
+ * event IPC. (This involves a hypercall.)
  */
 hv_vmbus_status
 hv_vmbus_signal_event()
@@ -351,7 +348,7 @@ hv_vmbus_signal_event()
 }
 
 /**
- * hv_vmbus_synic_init
+ * @brief hv_vmbus_synic_init
  */
 void
 hv_vmbus_synic_init(void *irq_arg) 
@@ -404,7 +401,7 @@ hv_vmbus_synic_init(void *irq_arg)
 	    goto cleanup;
 	}
 
-	/**
+	/*
 	 * Setup the Synic's message page
 	 */
 
@@ -415,7 +412,7 @@ hv_vmbus_synic_init(void *irq_arg)
 
 	hv_vmbus_write_msr(HV_X64_MSR_SIMP, simp.as_uint64_t);
 
-	/**
+	/*
 	 * Setup the Synic's event page
 	 */
 	siefp.as_uint64_t = hv_vmbus_read_msr(HV_X64_MSR_SIEFP);
@@ -433,7 +430,7 @@ hv_vmbus_synic_init(void *irq_arg)
 	    HV_X64_MSR_SINT0 + HV_VMBUS_MESSAGE_SINT,
 	    shared_sint.as_uint64_t);
 
-	/** Enable the global synic bit */
+	/* Enable the global synic bit */
 	sctrl.as_uint64_t = hv_vmbus_read_msr(HV_X64_MSR_SCONTROL);
 	sctrl.enable = 1;
 
@@ -449,7 +446,7 @@ hv_vmbus_synic_init(void *irq_arg)
 }
 
 /**
- * Cleanup routine for hv_vmbus_synic_init()
+ * @brief Cleanup routine for hv_vmbus_synic_init()
  */
 void hv_vmbus_synic_cleanup(void *arg)
 {
@@ -469,7 +466,7 @@ void hv_vmbus_synic_cleanup(void *arg)
 
 	shared_sint.masked = 1;
 
-	/**
+	/*
 	 * Disable the interrupt
 	 */
 	hv_vmbus_write_msr(

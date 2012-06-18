@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2009-2012 Microsoft Corp.
  * Copyright (c) 2012 NetApp Inc.
  * Copyright (c) 2012 Citrix Inc.
  * All rights reserved.
@@ -26,17 +26,10 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/*
- * Ported from lis21 code drop
- *
+/**
  * HyperV definitions for messages that are sent between instances of the
  * Channel Management Library in separate partitions, or in some cases,
  * back to itself.
- *
- * Authors:
- *   Haiyang Zhang <haiyangz@microsoft.com>
- *   Hank Janssen  <hjanssen@microsoft.com>
- *   K. Y. Srinivasan <kys@microsoft.com>
  */
 
 #ifndef __HYPERV_H__
@@ -61,14 +54,19 @@
 #include <amd64/include/xen/synch_bitops.h>
 #include <amd64/include/atomic.h>
 
+typedef unsigned char hv_small_bool;
+
+/*
+ * For backward compatibility prior to FreeBSD 9.x
+ */
+#if !defined(__bool_true_false_are_defined)
 typedef unsigned char bool;
-
 #ifndef false
-#define false  0
+#define false	0
 #endif
-
 #ifndef true
-#define true  1
+#define true	1
+#endif
 #endif
 
 #define HV_S_OK			0x00000000
@@ -76,14 +74,14 @@ typedef unsigned char bool;
 #define HV_ERROR_NOT_SUPPORTED	0x80070032
 #define HV_ERROR_MACHINE_LOCKED	0x800704F7
 
-/**
+/*
  * A revision number of vmbus that is used for ensuring both ends on a
  * partition are using compatible versions.
  */
 
 #define HV_VMBUS_REVISION_NUMBER	13
 
-/**
+/*
  * Make maximum size of pipe payload of 16K
  */
 
@@ -96,13 +94,13 @@ typedef unsigned char bool;
 #define HV_VMBUS_PIPE_TYPE_BYTE		0x00000000
 #define HV_VMBUS_PIPE_TYPE_MESSAGE	0x00000004
 
-/**
+/*
  * The size of the user defined data buffer for non-pipe offers
  */
 
 #define HV_MAX_USER_DEFINED_BYTES	120
 
-/**
+/*
  *  The size of the user defined data buffer for pipe offers
  */
 
@@ -152,7 +150,8 @@ typedef struct hv_devinfo {
 typedef struct hv_guid {
 	 unsigned char data[16];
 } hv_guid;
-/**
+
+/*
  * At the center of the Channel Management library is
  * the Channel Offer. This struct contains the
  * fundamental information about an offer.
@@ -168,14 +167,14 @@ typedef struct hv_vmbus_channel_offer {
 	uint16_t	mmio_megabytes;		  /* in bytes * 1024 * 1024 */
 	union
 	{
-        /**
+        /*
          * Non-pipes: The user has HV_MAX_USER_DEFINED_BYTES bytes.
          */
 		struct {
 			uint8_t	user_defined[HV_MAX_USER_DEFINED_BYTES];
 		} standard;
 
-        /**
+        /*
          * Pipes: The following structure is an integrated pipe protocol, which
          *        is implemented on top of standard user-defined data. pipe clients
          *        have HV_MAX_PIPE_USER_DEFINED_BYTES left for their own use.
@@ -203,7 +202,7 @@ typedef struct {
 		volatile int64_t	in_out;
 	} rio;
 
-	/**
+	/*
 	 * If the receiving endpoint sets this to some non-zero
 	 * value, the sending endpoint should not send any interrupts.
 	 */
@@ -218,7 +217,7 @@ typedef struct {
 		uint8_t reserved[PAGE_SIZE];
 	} rctl;
 
-	/**
+	/*
 	 * Beginning of the ring data.  Note: It must be guaranteed that
 	 * this data does not share a page with the control structure.
 	 */
@@ -248,7 +247,7 @@ typedef struct {
 typedef struct {
 	hv_vm_packet_descriptor	d;
 	uint16_t		transfer_page_set_id;
-	bool			sender_owns_set;
+	hv_small_bool			sender_owns_set;
 	uint8_t			reserved;
 	uint32_t		range_count;
 	hv_vm_transfer_page	ranges[1];
@@ -267,7 +266,7 @@ typedef struct {
 	uint16_t		reserved;
 } hv_vm_add_remove_transfer_page_set;
 
-/**
+/*
  * This structure defines a range in guest
  * physical space that can be made
  * to look virtually contiguous.
@@ -279,7 +278,7 @@ typedef struct {
 	uint64_t pfn_array[0];
 } hv_gpa_range;
 
-/**
+/*
  * This is the format for an Establish Gpadl packet, which contains a handle
  * by which this GPADL will be known and a set of GPA ranges associated with
  * it.  This can be converted to a MDL by the guest OS.  If there are multiple
@@ -294,7 +293,7 @@ typedef struct {
 	hv_gpa_range		range[1];
 } hv_vm_establish_gpadl;
 
-/**
+/*
  * This is the format for a Teardown Gpadl packet, which indicates that the
  * GPADL handle in the Establish Gpadl packet will never be referenced again.
  */
@@ -306,7 +305,7 @@ typedef struct {
 	uint32_t		reserved;
 } hv_vm_teardown_gpadl;
 
-/**
+/*
  * This is the format for a GPA-Direct packet, which contains a set of GPA
  * ranges, in addition to commands and/or data.
  */
@@ -318,7 +317,7 @@ typedef struct {
 	hv_gpa_range		range[1];
 } hv_vm_data_gpa_direct;
 
-/**
+/*
  * This is the format for a Additional data Packet.
  */
 typedef struct {
@@ -409,7 +408,7 @@ typedef struct {
 	uint32_t			padding;
 } hv_vmbus_channel_msg_header;
 
-/**
+/*
  * Query VMBus Version parameters
  */
 typedef struct {
@@ -422,7 +421,7 @@ typedef struct {
  */
 typedef struct {
 	hv_vmbus_channel_msg_header	header;
-	bool				version_supported;
+	hv_small_bool				version_supported;
 } hv_vmbus_channel_version_supported;
 
 /*
@@ -433,10 +432,10 @@ typedef struct {
 	hv_vmbus_channel_offer		offer;
 	uint32_t			child_rel_id;
 	uint8_t				monitor_id;
-	bool				monitor_allocated;
+	hv_small_bool				monitor_allocated;
 } hv_vmbus_channel_offer_channel;
 
-/**
+/*
  * Rescind Offer parameters
  */
 typedef struct
@@ -459,7 +458,7 @@ typedef struct
  */
 
 
-/**
+/*
  * Open Channel parameters
  */
 typedef struct
@@ -486,7 +485,7 @@ typedef struct
      */
     hv_gpadl_handle	server_context_area_gpadl_handle;
 
-    /**
+    /*
      * The upstream ring buffer begins at offset zero in the memory described
      * by ring_buffer_gpadl_handle. The downstream ring buffer follows it at this
      * offset (in pages).
@@ -502,7 +501,7 @@ typedef struct
 
 typedef uint32_t hv_nt_status;
 
-/**
+/*
  * Open Channel Result parameters
  */
 typedef struct
@@ -513,7 +512,7 @@ typedef struct
 	hv_nt_status			status;
 } hv_vmbus_channel_open_result;
 
-/**
+/*
  * Close channel parameters
  */
 typedef struct
@@ -522,14 +521,14 @@ typedef struct
 	uint32_t			child_rel_id;
 } hv_vmbus_channel_close_channel;
 
-/**
+/*
  * Channel Message GPADL
  */
 #define HV_GPADL_TYPE_RING_BUFFER	1
 #define HV_GPADL_TYPE_SERVER_SAVE_AREA	2
 #define HV_GPADL_TYPE_TRANSACTION	8
 
-/**
+/*
  * The number of PFNs in a GPADL message is defined by the number of pages
  * that would be spanned by byte_count and byte_offset.  If the implied number
  * of PFNs won't fit in this packet, there will be a follow-up packet that
@@ -545,7 +544,7 @@ typedef struct {
 	hv_gpa_range			range[0];
 } hv_vmbus_channel_gpadl_header;
 
-/**
+/*
  * This is the follow-up packet that contains more PFNs
  */
 typedef struct {
@@ -589,7 +588,7 @@ typedef struct {
 
 typedef struct {
 	hv_vmbus_channel_msg_header header;
-	bool		version_supported;
+	hv_small_bool		version_supported;
 } hv_vmbus_channel_version_response;
 
 typedef hv_vmbus_channel_msg_header hv_vmbus_channel_unload;
@@ -668,8 +667,8 @@ HV_VMBUS_ACCESSOR(type, TYPE,  const char *)
 HV_VMBUS_ACCESSOR(devctx, DEVCTX,  struct hv_device *)
 
 
-/**
- * Common defintes for Hyper-V ICs
+/*
+ * Common defines for Hyper-V ICs
  */
 #define HV_ICMSGTYPE_NEGOTIATE		0
 #define HV_ICMSGTYPE_HEARTBEAT		1
@@ -723,23 +722,23 @@ typedef struct hv_vmbus_heartbeat_msg_data {
 } hv_vmbus_heartbeat_msg_data;
 
 typedef struct {
-	/**
+	/*
 	 * offset in bytes from the start of ring data below
 	 */
 	volatile uint32_t       write_index;
-	/**
+	/*
 	 * offset in bytes from the start of ring data below
 	 */
 	volatile uint32_t       read_index;
-	/**
+	/*
 	 * NOTE: The interrupt_mask field is used only for channels, but
 	 * vmbus connection also uses this data structure
 	 */
 	volatile uint32_t       interrupt_mask;
-	/** pad it to PAGE_SIZE so that data starts on a page */
+	/* pad it to PAGE_SIZE so that data starts on a page */
 	uint8_t                 reserved[4084];
 
-	/**
+	/*
 	 * WARNING: Ring data starts here + ring_data_start_offset
 	 *  !!! DO NOT place any fields below this !!!
 	 */
@@ -881,7 +880,7 @@ int		hv_vmbus_channel_teardown_gpdal(
 				hv_vmbus_channel*	channel,
 				uint32_t		gpadl_handle);
 
-/**
+/*
  * Work abstraction defines
  */
 typedef struct hv_work_queue {
@@ -906,7 +905,7 @@ int			hv_queue_work_item(
 				void		(*callback)(void *),
 				void*		context);
 /**
- * Get physical address from virtual
+ * @brief Get physical address from virtual
  */
 static inline unsigned long
 hv_get_phys_addr(void *virt)

@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2009-2012 Microsoft Corp.
  * Copyright (c) 2012 NetApp Inc.
  * Copyright (c) 2012 Citrix Inc.
  * All rights reserved.
@@ -24,12 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-
-/* Authors:
- *   Haiyang Zhang <haiyangz@microsoft.com>
- *   Hank Janssen  <hjanssen@microsoft.com>
- *   K. Y. Srinivasan <kys@microsoft.com>
  */
 
 #include <sys/types.h>
@@ -59,7 +53,7 @@ static int 	vmbus_channel_create_gpadl_header(
 static void 	vmbus_channel_set_event(hv_vmbus_channel* channel);
 
 /**
- *  Trigger an event notification on the specified channel
+ *  @brief Trigger an event notification on the specified channel
  */
 static void
 vmbus_channel_set_event(hv_vmbus_channel *channel)
@@ -85,91 +79,8 @@ vmbus_channel_set_event(hv_vmbus_channel *channel)
 }
 
 /**
- * Retrieve various channel debug info
+ * @brief Retrieve various channel debug info
  */
-void
-hv_vmbus_channel_get_debug_info(
-	hv_vmbus_channel*		channel,
-	hv_vmbus_channel_debug_info*	debug_info)
-{
-
-	hv_vmbus_monitor_page*	monitor_page;
-	uint8_t			monitor_group;
-	uint8_t			monitor_offset;
-
-	monitor_group = (uint8_t) channel->offer_msg.monitor_id / 32;
-	monitor_offset = (uint8_t) channel->offer_msg.monitor_id % 32;
-
-	/* uint32_t monitorBit	= 1 << monitor_offset; */
-
-	debug_info->rel_id = channel->offer_msg.child_rel_id;
-	debug_info->state = channel->state;
-	memcpy(&debug_info->interface_type,
-		&channel->offer_msg.offer.interface_type, sizeof(hv_guid));
-	memcpy(&debug_info->interface_instance,
-		&channel->offer_msg.offer.interface_instance, sizeof(hv_guid));
-
-	monitor_page = (hv_vmbus_monitor_page*) hv_vmbus_g_connection.monitor_pages;
-
-	debug_info->monitor_id = channel->offer_msg.monitor_id;
-
-	debug_info->server_monitor_pending =
-		monitor_page->trigger_group[monitor_group].pending;
-	debug_info->server_monitor_latency =
-		monitor_page->latency[monitor_group][monitor_offset];
-	debug_info->server_monitor_connection_id =
-		monitor_page->parameter[monitor_group][monitor_offset].connection_id.u.id;
-
-	monitor_page++;
-
-	debug_info->client_monitor_pending =
-		monitor_page->trigger_group[monitor_group].pending;
-	debug_info->client_monitor_latency =
-		monitor_page->latency[monitor_group][monitor_offset];
-	debug_info->client_monitor_connection_id =
-		monitor_page->parameter[monitor_group][monitor_offset].connection_id.u.id;
-
-	hv_vmbus_ring_buffer_get_debug_info(&channel->inbound, &debug_info->inbound);
-	hv_vmbus_ring_buffer_get_debug_info(&channel->outbound, &debug_info->outbound);
-}
-
-void
-hv_vmbus_get_channel_info(struct hv_device* dev, struct hv_devinfo* p)
-{
-	hv_vmbus_channel_debug_info di;
-
-	if (dev->channel) {
-		hv_vmbus_channel_get_debug_info(dev->channel, &di);
-
-		p->channel_id = di.rel_id;
-		p->channel_state = di.state;
-		memcpy(&p->channel_type, &di.interface_type, sizeof(hv_guid));
-		memcpy(&p->channel_instance, &di.interface_instance,
-			sizeof(hv_guid));
-
-		p->monitor_id = di.monitor_id;
-
-		p->server_monitor_pending = di.server_monitor_pending;
-		p->server_monitor_latency = di.server_monitor_latency;
-		p->server_monitor_connection_id = di.server_monitor_connection_id;
-
-		p->client_monitor_pending = di.client_monitor_pending;
-		p->client_monitor_latency = di.client_monitor_latency;
-		p->client_monitor_connection_id = di.client_monitor_connection_id;
-
-		p->in_bound.interrupt_mask = di.inbound.current_interrupt_mask;
-		p->in_bound.read_index = di.inbound.current_read_index;
-		p->in_bound.write_index = di.inbound.current_write_index;
-		p->in_bound.bytes_avail_to_read = di.inbound.bytes_avail_to_read;
-		p->in_bound.bytes_avail_to_write = di.inbound.bytes_avail_to_write;
-
-		p->out_bound.interrupt_mask = di.outbound.current_interrupt_mask;
-		p->out_bound.read_index = di.outbound.current_read_index;
-		p->out_bound.write_index = di.outbound.current_write_index;
-		p->out_bound.bytes_avail_to_read = di.outbound.bytes_avail_to_read;
-		p->out_bound.bytes_avail_to_write = di.outbound.bytes_avail_to_write;
-	}
-}
 
 /**
  *  Open the specified channel

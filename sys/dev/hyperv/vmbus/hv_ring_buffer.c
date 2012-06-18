@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2009-2012 Microsoft Corp.
  * Copyright (c) 2012 NetApp Inc.
  * Copyright (c) 2012 Citrix Inc.
  * All rights reserved.
@@ -26,13 +26,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/*
- * Authors:
- *   Haiyang Zhang <haiyangz@microsoft.com>
- *   Hank Janssen  <hjanssen@microsoft.com>
- *   K. Y. Srinivasan <kys@microsoft.com>
- */
-
 
 #include <sys/param.h>
 #include <sys/lock.h>
@@ -46,7 +39,7 @@
 				((z) - ((w) - (r))):((r) - (w))
 
 /**
- * Get number of bytes available to read and to write to
+ * @brief Get number of bytes available to read and to write to
  * for the specified ring buffer
  */
 static inline void
@@ -68,7 +61,7 @@ get_ring_buffer_avail_bytes(
 }
 
 /**
- * Get the next write location for the specified ring buffer
+ * @brief Get the next write location for the specified ring buffer
  */
 static inline uint32_t
 get_next_write_location(hv_vmbus_ring_buffer_info* ring_info) 
@@ -78,7 +71,7 @@ get_next_write_location(hv_vmbus_ring_buffer_info* ring_info)
 }
 
 /**
- * Set the next write location for the specified ring buffer
+ * @brief Set the next write location for the specified ring buffer
  */
 static inline void
 set_next_write_location(
@@ -89,7 +82,7 @@ set_next_write_location(
 }
 
 /**
- * Get the next read location for the specified ring buffer
+ * @brief Get the next read location for the specified ring buffer
  */
 static inline uint32_t
 get_next_read_location(hv_vmbus_ring_buffer_info* ring_info) 
@@ -99,7 +92,7 @@ get_next_read_location(hv_vmbus_ring_buffer_info* ring_info)
 }
 
 /**
- * Get the next read location + offset for the specified ring buffer.
+ * @brief Get the next read location + offset for the specified ring buffer.
  * This allows the caller to skip.
  */
 static inline uint32_t
@@ -114,7 +107,7 @@ get_next_read_location_with_offset(
 }
 
 /**
- * Set the next read location for the specified ring buffer
+ * @brief Set the next read location for the specified ring buffer
  */
 static inline void
 set_next_read_location(
@@ -125,7 +118,7 @@ set_next_read_location(
 }
 
 /**
- * Get the start of the ring buffer
+ * @brief Get the start of the ring buffer
  */
 static inline void *
 get_ring_buffer(hv_vmbus_ring_buffer_info* ring_info) 
@@ -134,7 +127,7 @@ get_ring_buffer(hv_vmbus_ring_buffer_info* ring_info)
 }
 
 /**
- * Get the size of the ring buffer
+ * @brief Get the size of the ring buffer.
  */
 static inline uint32_t
 get_ring_buffer_size(hv_vmbus_ring_buffer_info* ring_info) 
@@ -143,7 +136,7 @@ get_ring_buffer_size(hv_vmbus_ring_buffer_info* ring_info)
 }
 
 /**
- * Get the read and write indices as uint64_t of the specified ring buffer
+ * Get the read and write indices as uint64_t of the specified ring buffer.
  */
 static inline uint64_t
 get_ring_buffer_indices(hv_vmbus_ring_buffer_info* ring_info) 
@@ -164,7 +157,7 @@ static uint32_t copy_from_ring_buffer(
 			uint32_t			start_read_offset);
 
 /**
- * Get various debug metrics for the specified ring buffer
+ * @brief Get various debug metrics for the specified ring buffer.
  */
 void
 hv_vmbus_ring_buffer_get_debug_info(
@@ -191,7 +184,7 @@ hv_vmbus_ring_buffer_get_debug_info(
 }
 
 /**
- * Get the interrupt mask for the specified ring buffer
+ * @brief Get the interrupt mask for the specified ring buffer.
  */
 uint32_t
 hv_vmbus_get_ring_buffer_interrupt_mask(hv_vmbus_ring_buffer_info *rbi) 
@@ -200,7 +193,7 @@ hv_vmbus_get_ring_buffer_interrupt_mask(hv_vmbus_ring_buffer_info *rbi)
 }
 
 /**
- * Initialize the ring buffer
+ * @brief Initialize the ring buffer.
  */
 int
 hv_vmbus_ring_buffer_init(
@@ -223,7 +216,7 @@ hv_vmbus_ring_buffer_init(
 }
 
 /**
- * Cleanup the ring buffer
+ * @brief Cleanup the ring buffer.
  */
 void hv_ring_buffer_cleanup(hv_vmbus_ring_buffer_info* ring_info) 
 {
@@ -231,7 +224,7 @@ void hv_ring_buffer_cleanup(hv_vmbus_ring_buffer_info* ring_info)
 }
 
 /**
- * Write to the ring buffer
+ * @brief Write to the ring buffer.
  */
 int
 hv_ring_buffer_write(
@@ -305,7 +298,7 @@ hv_ring_buffer_write(
 }
 
 /**
- * Read without advancing the read index
+ * @brief Read without advancing the read index.
  */
 int
 hv_ring_buffer_peek(
@@ -344,7 +337,7 @@ hv_ring_buffer_peek(
 }
 
 /**
- * Read and advance the read index
+ * @brief Read and advance the read index.
  */
 int
 hv_ring_buffer_read(
@@ -408,7 +401,8 @@ hv_ring_buffer_read(
 }
 
 /**
- * Helper routine to copy from source to ring buffer.
+ * @brief Helper routine to copy from source to ring buffer.
+ *
  * Assume there is enough room. Handles wrap-around in dest case only!
  */
 uint32_t
@@ -438,7 +432,8 @@ copy_to_ring_buffer(
 }
 
 /**
- * Helper routine to copy to source from ring buffer.
+ * @brief Helper routine to copy to source from ring buffer.
+ *
  * Assume there is enough room. Handles wrap-around in src case only!
  */
 uint32_t

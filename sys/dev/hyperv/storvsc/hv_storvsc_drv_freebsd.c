@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2009-2012 Microsoft Corp.
  * Copyright (c) 2012 NetApp Inc.
  * Copyright (c) 2012 Citrix Inc.
  * All rights reserved.
@@ -26,7 +26,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/*
+/**
  * StorVSC driver for Hyper-V.  This driver presents a SCSI HBA interface
  * to the Comman Access Method (CAM) layer.  CAM control blocks (CCB's) are
  * converted into VSCSI protocol messages which are delivered to the parent

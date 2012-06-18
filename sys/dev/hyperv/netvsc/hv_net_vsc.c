@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2009-2012 Microsoft Corp.
  * Copyright (c) 2012 NetApp Inc.
  * Copyright (c) 2010-2012 Citrix Inc.
  * All rights reserved.
@@ -26,15 +26,9 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/*
- * Ported from lis21 code drop
- *
+/**
  * HyperV vmbus network VSC (virtual services client) module
  *
- * Authors:
- *   Haiyang Zhang <haiyangz@microsoft.com>
- *   Hank Janssen  <hjanssen@microsoft.com>
- *   K. Y. Srinivasan <kys@microsoft.com>
  */
 
 
@@ -1041,7 +1035,7 @@ hv_nv_on_receive_completion(void *context)
 	struct hv_device *device = (struct hv_device *)packet->device;
 	netvsc_dev    *net_dev;
 	uint64_t       tid = 0;
-	bool send_rx_completion = false;
+	boolean_t send_rx_completion = false;
 
 	/*
 	 * Even though it seems logical to do a hv_nv_get_outbound_net_device()
