@@ -455,7 +455,7 @@ hv_storvsc_connect_vsp(struct hv_device *dev)
 	return (ret);
 }
 
-
+#if HVS_HOST_RESET
 static int
 hv_storvsc_host_reset(struct hv_device *dev)
 {
@@ -506,6 +506,7 @@ cleanup:
 	sema_destroy(&request->synch_sema);
 	return (ret);
 }
+#endif /* HVS_HOST_RESET */
 
 /**
  * @brief Function to initiate an I/O request
