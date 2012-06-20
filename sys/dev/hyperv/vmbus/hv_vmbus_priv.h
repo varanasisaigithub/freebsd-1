@@ -138,8 +138,6 @@ typedef struct hv_vmbus_channel_msg_info {
 	unsigned char 				msg[0];
 } hv_vmbus_channel_msg_info;
 
-#pragma pack(push,1)
-
 /*
  * The format must be the same as hv_vm_data_gpa_direct
  */
@@ -152,7 +150,7 @@ typedef struct hv_vmbus_channel_packet_page_buffer {
 	uint32_t		reserved;
 	uint32_t		range_count;
 	hv_vmbus_page_buffer	range[HV_MAX_PAGE_BUFFER_COUNT];
-} hv_vmbus_channel_packet_page_buffer;
+} __packed hv_vmbus_channel_packet_page_buffer;
 
 /*
  * The format must be the same as hv_vm_data_gpa_direct
@@ -166,9 +164,7 @@ typedef struct hv_vmbus_channel_packet_multipage_buffer {
 	uint32_t 			reserved;
 	uint32_t			range_count; /* Always 1 in this case */
 	hv_vmbus_multipage_buffer	range;
-} hv_vmbus_channel_packet_multipage_buffer;
-
-#pragma pack(pop)
+} __packed hv_vmbus_channel_packet_multipage_buffer;
 
 enum {
 	HV_VMBUS_MESSAGE_CONNECTION_ID	= 1,
@@ -199,7 +195,7 @@ typedef union {
 		uint32_t	reserved:8;
 	} u;
 
-} hv_vmbus_connection_id;
+} __packed hv_vmbus_connection_id;
 
 /*
  * Definition of the hv_vmbus_signal_event hypercall input structure
@@ -208,17 +204,17 @@ typedef struct {
 	hv_vmbus_connection_id	connection_id;
 	uint16_t		flag_number;
 	uint16_t		rsvd_z;
-} hv_vmbus_input_signal_event;
+} __packed hv_vmbus_input_signal_event;
 
 typedef struct {
 	uint64_t			align8;
 	hv_vmbus_input_signal_event	event;
-} hv_vmbus_input_signal_event_buffer;
+} __packed hv_vmbus_input_signal_event_buffer;
 
 typedef struct {
 	uint64_t	guest_id;
 	void*		hypercall_page;
-	hv_small_bool		syn_ic_initialized;
+	hv_small_bool	syn_ic_initialized;
 	/*
 	 * This is used as an input param to HV_CALL_SIGNAL_EVENT hypercall.
 	 * The input param is immutable  in our usage and

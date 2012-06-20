@@ -285,7 +285,7 @@ vmbus_channel_process_offer(void *context)
 	hv_vmbus_channel*	channel;
 
 	new_channel = (hv_vmbus_channel*) context;
-	f_new = true;
+	f_new = TRUE;
 	channel = NULL;
 
 	/*
@@ -305,7 +305,7 @@ vmbus_channel_process_offer(void *context)
 		    &channel->offer_msg.offer.interface_instance,
 		    &new_channel->offer_msg.offer.interface_instance,
 		    sizeof(hv_guid))) {
-		f_new = false;
+		f_new = FALSE;
 		break;
 	    }
 	}

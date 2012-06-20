@@ -53,7 +53,7 @@ static inline void do_cpuid_inline(unsigned int op, unsigned int *eax,
  * Globals
  */
 hv_vmbus_context hv_vmbus_g_context = {
-	.syn_ic_initialized = false,
+	.syn_ic_initialized = FALSE,
 	.hypercall_page = NULL,
 	.signal_event_param = NULL,
 	.signal_event_buffer = NULL, };
@@ -423,8 +423,8 @@ hv_vmbus_synic_init(void *irq_arg)
 	hv_vmbus_write_msr(HV_X64_MSR_SIEFP, siefp.as_uint64_t);
 
 	shared_sint.vector = irq_vector; /*HV_SHARED_SINT_IDT_VECTOR + 0x20; */
-	shared_sint.masked = false;
-	shared_sint.auto_eoi = false;
+	shared_sint.masked = FALSE;
+	shared_sint.auto_eoi = FALSE;
 
 	hv_vmbus_write_msr(
 	    HV_X64_MSR_SINT0 + HV_VMBUS_MESSAGE_SINT,
@@ -436,7 +436,7 @@ hv_vmbus_synic_init(void *irq_arg)
 
 	hv_vmbus_write_msr(HV_X64_MSR_SCONTROL, sctrl.as_uint64_t);
 
-	hv_vmbus_g_context.syn_ic_initialized = true;
+	hv_vmbus_g_context.syn_ic_initialized = TRUE;
 
 	return;
 

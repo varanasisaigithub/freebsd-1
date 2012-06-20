@@ -142,7 +142,7 @@ typedef enum nvsp_status_ {
 
 typedef struct nvsp_msg_hdr_ {
 	uint32_t                                msg_type;
-} __attribute__((packed)) nvsp_msg_hdr;
+} __packed nvsp_msg_hdr;
 
 /*
  * Init Messages
@@ -169,7 +169,7 @@ typedef struct nvsp_msg_init_ {
 	} p1;
 	/* Formerly max_protocol_version */
 	uint32_t                                protocol_version_2;
-} __attribute__((packed)) nvsp_msg_init;
+} __packed nvsp_msg_init;
 
 /*
  * This message is used by the VSP to complete the initialization
@@ -181,12 +181,12 @@ typedef struct nvsp_msg_init_complete_ {
 	uint32_t                                negotiated_prot_vers;
 	uint32_t                                max_mdl_chain_len;
 	uint32_t                                status;
-} __attribute__((packed)) nvsp_msg_init_complete;
+} __packed nvsp_msg_init_complete;
 
 typedef union nvsp_msg_init_uber_ {
 	nvsp_msg_init                           init;
 	nvsp_msg_init_complete                  init_compl;
-} __attribute__((packed)) nvsp_msg_init_uber;
+} __packed nvsp_msg_init_uber;
 
 /*
  * Version 1 Messages
@@ -201,7 +201,7 @@ typedef struct nvsp_1_msg_send_ndis_version_ {
 	uint32_t                                ndis_major_vers;
 	/* Deprecated */
 	uint32_t                                ndis_minor_vers;
-} __attribute__((packed)) nvsp_1_msg_send_ndis_version;
+} __packed nvsp_1_msg_send_ndis_version;
 
 /*
  * This message is used by the VSC to send a receive buffer
@@ -211,14 +211,14 @@ typedef struct nvsp_1_msg_send_ndis_version_ {
 typedef struct nvsp_1_msg_send_rx_buf_ {
 	uint32_t                                gpadl_handle;
 	uint16_t                                id;
-} __attribute__((packed)) nvsp_1_msg_send_rx_buf;
+} __packed nvsp_1_msg_send_rx_buf;
 
 typedef struct nvsp_1_rx_buf_section_ {
 	uint32_t                                offset;
 	uint32_t                                sub_allocation_size;
 	uint32_t                                num_sub_allocations;
 	uint32_t                                end_offset;
-} __attribute__((packed)) nvsp_1_rx_buf_section;
+} __packed nvsp_1_rx_buf_section;
 
 /*
  * This message is used by the VSP to acknowledge a receive 
@@ -247,7 +247,7 @@ typedef struct nvsp_1_msg_send_rx_buf_complete_ {
 	 */
 	nvsp_1_rx_buf_section                   sections[1];
 
-} __attribute__((packed)) nvsp_1_msg_send_rx_buf_complete;
+} __packed nvsp_1_msg_send_rx_buf_complete;
 
 /*
  * This message is sent by the VSC to revoke the receive buffer.
@@ -256,7 +256,7 @@ typedef struct nvsp_1_msg_send_rx_buf_complete_ {
  */
 typedef struct nvsp_1_msg_revoke_rx_buf_ {
 	uint16_t                                id;
-} __attribute__((packed)) nvsp_1_msg_revoke_rx_buf;
+} __packed nvsp_1_msg_revoke_rx_buf;
 
 /*
  * This message is used by the VSC to send a send buffer
@@ -266,7 +266,7 @@ typedef struct nvsp_1_msg_revoke_rx_buf_ {
 typedef struct nvsp_1_msg_send_send_buf_ {
 	uint32_t                                gpadl_handle;
 	uint16_t                                id;
-} __attribute__((packed)) nvsp_1_msg_send_send_buf;
+} __packed nvsp_1_msg_send_send_buf;
 
 /*
  * This message is used by the VSP to acknowledge a send 
@@ -283,7 +283,7 @@ typedef struct nvsp_1_msg_send_send_buf_complete_ {
 	 * the cost of GPA-direct buffers decreases.
 	 */
 	uint32_t                                section_size;
-} __attribute__((packed)) nvsp_1_msg_send_send_buf_complete;
+} __packed nvsp_1_msg_send_send_buf_complete;
 
 /*
  * This message is sent by the VSC to revoke the send buffer.
@@ -292,7 +292,7 @@ typedef struct nvsp_1_msg_send_send_buf_complete_ {
  */
 typedef struct nvsp_1_msg_revoke_send_buf_ {
 	uint16_t                                id;
-} __attribute__((packed)) nvsp_1_msg_revoke_send_buf;
+} __packed nvsp_1_msg_revoke_send_buf;
 
 /*
  * This message is used by both the VSP and the VSC to send
@@ -317,7 +317,7 @@ typedef struct nvsp_1_msg_send_rndis_pkt_ {
 	 */
 	uint32_t                                send_buf_section_idx;
 	uint32_t                                send_buf_section_size;
-} __attribute__((packed)) nvsp_1_msg_send_rndis_pkt;
+} __packed nvsp_1_msg_send_rndis_pkt;
 
 /*
  * This message is used by both the VSP and the VSC to complete
@@ -327,7 +327,7 @@ typedef struct nvsp_1_msg_send_rndis_pkt_ {
  */
 typedef struct nvsp_1_msg_send_rndis_pkt_complete_ {
 	uint32_t                                status;
-} __attribute__((packed)) nvsp_1_msg_send_rndis_pkt_complete;
+} __packed nvsp_1_msg_send_rndis_pkt_complete;
 
 
 /*
@@ -347,13 +347,13 @@ typedef struct nvsp_2_netvsc_capabilities_ {
 			uint64_t                chimney : 1;
 		} u2;
 	} u1;
-} __attribute__((packed)) nvsp_2_netvsc_capabilities;
+} __packed nvsp_2_netvsc_capabilities;
 
 typedef struct nvsp_2_msg_send_ndis_config_ {
 	uint32_t                                mtu;
 	uint32_t                                reserved;
 	nvsp_2_netvsc_capabilities              capabilities;
-} __attribute__((packed)) nvsp_2_msg_send_ndis_config;
+} __packed nvsp_2_msg_send_ndis_config;
 
 /*
  * NvspMessage2TypeSendChimneyDelegatedBuffer
@@ -376,7 +376,7 @@ typedef struct nvsp_2_msg_send_chimney_buf_
 	uint16_t                                revision;
 
 	uint32_t                                gpadl_handle;
-} __attribute__((packed)) nvsp_2_msg_send_chimney_buf;
+} __packed nvsp_2_msg_send_chimney_buf;
 
 
 /* Unsupported chimney revision 0 (only present in WIN7 beta) */
@@ -410,14 +410,14 @@ typedef struct nvsp_2_msg_send_chimney_buf_complete_ {
 	 */
 	uint32_t                                send_quota;
 	uint32_t                                rx_quota;
-} __attribute__((packed)) nvsp_2_msg_send_chimney_buf_complete;
+} __packed nvsp_2_msg_send_chimney_buf_complete;
 
 /*
  * NvspMessage2TypeRevokeChimneyDelegatedBuffer
  */
 typedef struct nvsp_2_msg_revoke_chimney_buf_ {
 	uint32_t                                gpadl_handle;
-} __attribute__((packed)) nvsp_2_msg_revoke_chimney_buf;
+} __packed nvsp_2_msg_revoke_chimney_buf;
 
 
 #define NVSP_CHIMNEY_OBJECT_TYPE_NEIGHBOR       0
@@ -431,14 +431,14 @@ typedef struct nvsp_2_msg_revoke_chimney_buf_ {
 typedef struct nvsp_2_msg_alloc_chimney_handle_ {
 	uint64_t                                vsc_context;
 	uint32_t                                object_type;
-} __attribute__((packed)) nvsp_2_msg_alloc_chimney_handle;
+} __packed nvsp_2_msg_alloc_chimney_handle;
 
 /*
  * NvspMessage2TypeAllocateChimneyHandleComplete
  */
 typedef struct nvsp_2_msg_alloc_chimney_handle_complete_ {
 	uint32_t                                vsp_handle;
-} __attribute__((packed)) nvsp_2_msg_alloc_chimney_handle_complete;
+} __packed nvsp_2_msg_alloc_chimney_handle_complete;
 
 
 /*
@@ -449,7 +449,7 @@ typedef struct nvsp_2_msg_resume_chimney_rx_indication {
 	 * Handle identifying the offloaded connection
 	 */
 	uint32_t                                vsp_tcp_handle;
-} __attribute__((packed)) nvsp_2_msg_resume_chimney_rx_indication;
+} __packed nvsp_2_msg_resume_chimney_rx_indication;
 
 
 #define NVSP_2_MSG_TERMINATE_CHIMNEY_FLAGS_FIRST_STAGE      (0x01u)
@@ -498,7 +498,7 @@ typedef struct nvsp_2_msg_terminate_chimney_ {
 		 */
 		uint64_t                        last_accepted_rx_seq_no;
 	} f0;
-} __attribute__((packed)) nvsp_2_msg_terminate_chimney;
+} __packed nvsp_2_msg_terminate_chimney;
 
 
 #define NVSP_TERMINATE_CHIMNEY_COMPLETE_FLAG_DATA_CORRUPTED     0x0000001u
@@ -509,7 +509,7 @@ typedef struct nvsp_2_msg_terminate_chimney_ {
 typedef struct nvsp_2_msg_terminate_chimney_complete_ {
 	uint64_t                                vsc_context;
 	uint32_t                                flags;
-} __attribute__((packed)) nvsp_2_msg_terminate_chimney_complete;
+} __packed nvsp_2_msg_terminate_chimney_complete;
 
 /*
  * NvspMessage2TypeIndicateChimneyEvent
@@ -535,7 +535,7 @@ typedef struct nvsp_2_msg_indicate_chimney_event_ {
 	 * If 0, the event indication is global.
 	 */
 	uint64_t                                vsc_tcp_context;
-} __attribute__((packed)) nvsp_2_msg_indicate_chimney_event;
+} __packed nvsp_2_msg_indicate_chimney_event;
 
 
 #define NVSP_1_CHIMNEY_SEND_INVALID_OOB_INDEX       0xffffu
@@ -584,7 +584,7 @@ typedef struct nvsp_2_msg_send_chimney_pkt_ {
     uint16_t                                    disconnect_flags;
 
     uint32_t                                    seq_no;
-} __attribute__((packed)) nvsp_2_msg_send_chimney_pkt;
+} __packed nvsp_2_msg_send_chimney_pkt;
 
 /*
  * NvspMessage2TypeSendChimneyPacketComplete
@@ -599,7 +599,7 @@ typedef struct nvsp_2_msg_send_chimney_pkt_complete_ {
      * Number of bytes that have been sent to the peer (and ACKed by the peer).
      */
     uint32_t                                    bytes_transferred;
-} __attribute__((packed)) nvsp_2_msg_send_chimney_pkt_complete;
+} __packed nvsp_2_msg_send_chimney_pkt_complete;
 
 
 #define NVSP_1_CHIMNEY_RECV_FLAG_NO_PUSH        0x0001u
@@ -639,7 +639,7 @@ typedef struct nvsp_2_msg_post_chimney_rx_request_ {
 	 * The SeqNo is per TCP connection and starts from 0.
 	 */
 	uint32_t                                seq_no;
-} __attribute__((packed)) nvsp_2_msg_post_chimney_rx_request;
+} __packed nvsp_2_msg_post_chimney_rx_request;
 
 /*
  * NvspMessage2TypePostChimneyRecvRequestComplete
@@ -655,7 +655,7 @@ typedef struct nvsp_2_msg_post_chimney_rx_request_complete_ {
 	 * the peer).
 	 */
 	uint32_t                                bytes_xferred;
-} __attribute__((packed)) nvsp_2_msg_post_chimney_rx_request_complete;
+} __packed nvsp_2_msg_post_chimney_rx_request_complete;
 
 /*
  * NvspMessage2TypeAllocateReceiveBuffer
@@ -671,7 +671,7 @@ typedef struct nvsp_2_msg_alloc_rx_buf_ {
 	 * be allocated
 	 */
 	uint32_t                                length;
-} __attribute__((packed)) nvsp_2_msg_alloc_rx_buf;
+} __packed nvsp_2_msg_alloc_rx_buf;
 
 /*
  * NvspMessage2TypeAllocateReceiveBufferComplete
@@ -697,7 +697,7 @@ typedef struct nvsp_2_msg_alloc_rx_buf_complete_ {
 	 * NvspMessage2SendVmqRndisPacket
 	 */
 	uint64_t                                rx_buf_id;
-} __attribute__((packed)) nvsp_2_msg_alloc_rx_buf_complete;
+} __packed nvsp_2_msg_alloc_rx_buf_complete;
 
 /*
  * NvspMessage2TypeFreeReceiveBuffer
@@ -708,7 +708,7 @@ typedef struct nvsp_2_msg_free_rx_buf_ {
 	 * NvspMessage2TypeAllocateReceiveBufferComplete message
 	 */
 	uint64_t                                rx_buf_id;
-} __attribute__((packed)) nvsp_2_msg_free_rx_buf;
+} __packed nvsp_2_msg_free_rx_buf;
 
 /*
  * This structure is used in defining the buffers in
@@ -733,7 +733,7 @@ typedef struct nvsp_xfer_page_range_ {
 	 * Offset in bytes from the beginning of the buffer
 	 */
 	uint32_t                                byte_offset;
-} __attribute__((packed)) nvsp_xfer_page_range;
+} __packed nvsp_xfer_page_range;
 
 /*
  * NvspMessage2SendVmqRndisPacket
@@ -755,7 +755,7 @@ typedef struct nvsp_2_msg_send_vmq_rndis_pkt_ {
 	 * embedded in the RNDIS header itself
 	 */
 	nvsp_xfer_page_range                    range;
-} __attribute__((packed)) nvsp_2_msg_send_vmq_rndis_pkt;
+} __packed nvsp_2_msg_send_vmq_rndis_pkt;
 
 /*
  * This message is used by the VSC to complete
@@ -766,7 +766,7 @@ typedef struct nvsp_2_msg_send_vmq_rndis_pkt_ {
 typedef struct nvsp_2_msg_send_vmq_rndis_pkt_complete_
 {
 	uint32_t                                status;
-} __attribute__((packed)) nvsp_2_msg_send_vmq_rndis_pkt_complete;
+} __packed nvsp_2_msg_send_vmq_rndis_pkt_complete;
 
 
 typedef union nvsp_1_msg_uber_ {
@@ -782,7 +782,7 @@ typedef union nvsp_1_msg_uber_ {
 
 	nvsp_1_msg_send_rndis_pkt               send_rndis_pkt;
 	nvsp_1_msg_send_rndis_pkt_complete      send_rndis_pkt_complete;
-} __attribute__((packed)) nvsp_1_msg_uber;
+} __packed nvsp_1_msg_uber;
 
 
 typedef union nvsp_2_msg_uber_ {
@@ -811,14 +811,14 @@ typedef union nvsp_2_msg_uber_ {
 	nvsp_2_msg_send_vmq_rndis_pkt_complete  send_vmq_rndis_pkt_complete;
 	nvsp_2_msg_alloc_chimney_handle         alloc_chimney_handle;
 	nvsp_2_msg_alloc_chimney_handle_complete alloc_chimney_handle_complete;
-} __attribute__((packed)) nvsp_2_msg_uber;
+} __packed nvsp_2_msg_uber;
 
 
 typedef union nvsp_all_msgs_ {
 	nvsp_msg_init_uber                      init_msgs;
 	nvsp_1_msg_uber                         vers_1_msgs;
 	nvsp_2_msg_uber                         vers_2_msgs;
-} __attribute__((packed)) nvsp_all_msgs;
+} __packed nvsp_all_msgs;
 
 /*
  * ALL Messages
@@ -826,7 +826,7 @@ typedef union nvsp_all_msgs_ {
 typedef struct nvsp_msg_ {
 	nvsp_msg_hdr                            hdr; 
 	nvsp_all_msgs                           msgs;
-} __attribute__((packed)) nvsp_msg;
+} __packed nvsp_msg;
 
 
 /*

@@ -923,7 +923,7 @@ storvsc_detach(device_t dev)
 	struct hv_device *hv_device = vmbus_get_devctx(dev);
 
 	mtx_lock(&hv_device->channel->inbound_lock);
-	sc->hs_destroy = true;
+	sc->hs_destroy = TRUE;
 	mtx_unlock(&hv_device->channel->inbound_lock);
 
 	/*

@@ -81,8 +81,6 @@ enum vstor_packet_ops {
 #define SENSE_BUFFER_SIZE			0x12
 #define MAX_DATA_BUFFER_LENGTH_WITH_PADDING	0x14
 
-#pragma pack(push,1)
-
 struct vmscsi_req {
 	uint16_t length;
 	uint8_t  srb_status;
@@ -108,7 +106,7 @@ struct vmscsi_req {
 	    uint8_t reserved_array[MAX_DATA_BUFFER_LENGTH_WITH_PADDING];
 	};
 
-};
+} __packed;
 
 /**
  *  This structure is sent during the initialization phase to get the different
@@ -133,7 +131,7 @@ struct vmstor_chan_props {
 	 */
 	uint64_t unique_id;
 
-};
+} __packed;
 
 /**
  *  This structure is sent during the storage protocol negotiations.
@@ -147,7 +145,7 @@ struct vmstor_proto_ver
 	uint16_t major_minor;
 
 	uint16_t revision;			/* always zero */
-};
+} __packed;
 
 /**
  * Channel Property Flags
@@ -192,7 +190,7 @@ struct vstor_packet {
 	    struct vmstor_proto_ver version;
 	};
 
-};
+} __packed;
 
 
 /**
@@ -226,8 +224,5 @@ struct vstor_packet {
  *  This is the set of flags that the vsc can set in any packets it sends
  */
 #define VSC_LEGAL_FLAGS (REQUEST_COMPLETION_FLAG)
-
-
-#pragma pack(pop)
 
 #endif /* __HV_VSTORAGE_H__ */

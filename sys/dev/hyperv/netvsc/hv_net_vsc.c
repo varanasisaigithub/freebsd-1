@@ -77,7 +77,7 @@ hv_nv_alloc_net_device(struct hv_device *device)
 	}
 
 	net_dev->dev = device;
-	net_dev->destroy = false;
+	net_dev->destroy = FALSE;
 	sc->net_dev = net_dev;
 
 	return (net_dev);
@@ -714,7 +714,7 @@ hv_nv_on_device_remove(struct hv_device *device)
 	
 	/* Stop outbound traffic ie sends and receives completions */
 	mtx_lock(&device->channel->inbound_lock);
-	net_dev->destroy = true;
+	net_dev->destroy = TRUE;
 	mtx_unlock(&device->channel->inbound_lock);
 
 	/* Wait for all send completions */
@@ -1035,7 +1035,7 @@ hv_nv_on_receive_completion(void *context)
 	struct hv_device *device = (struct hv_device *)packet->device;
 	netvsc_dev    *net_dev;
 	uint64_t       tid = 0;
-	boolean_t send_rx_completion = false;
+	boolean_t send_rx_completion = FALSE;
 
 	/*
 	 * Even though it seems logical to do a hv_nv_get_outbound_net_device()
@@ -1058,7 +1058,7 @@ hv_nv_on_receive_completion(void *context)
 	 * Return the xfer page packet itself to the free list.
 	 */
 	if (packet->xfer_page_pkt->count == 0) {
-		send_rx_completion = true;
+		send_rx_completion = TRUE;
 		tid = packet->compl.rx.rx_completion_tid;
 		STAILQ_INSERT_TAIL(&net_dev->myrx_packet_list,
 		    (netvsc_packet *)(packet->xfer_page_pkt), mylist_entry);
