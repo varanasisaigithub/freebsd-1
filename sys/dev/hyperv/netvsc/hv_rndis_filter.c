@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2009-2012 Microsoft Corp.
  * Copyright (c) 2012 NetApp Inc.
  * Copyright (c) 2010-2012 Citrix Inc.
  * All rights reserved.
@@ -24,17 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-
-/*
- * Ported from lis21 code drop
- *
- * HyperV RNDIS (remote network driver interface specification) filter code
- *
- * Authors:
- *   Haiyang Zhang <haiyangz@microsoft.com>
- *   Hank Janssen  <hjanssen@microsoft.com>
- *   K. Y. Srinivasan <kys@microsoft.com>
  */
 
 #include <sys/param.h>
@@ -258,7 +247,7 @@ hv_rf_receive_response(rndis_device *device, rndis_msg *response)
 {
 	rndis_request *request = NULL;
 	rndis_request *next_request;
-	bool found = FALSE;
+	boolean_t found = FALSE;
 
 	mtx_lock_spin(&device->req_lock);
 	request = STAILQ_FIRST(&device->myrequest_list);

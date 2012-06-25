@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2009-2012 Microsoft Corp.
  * Copyright (c) 2012 NetApp Inc.
  * Copyright (c) 2010-2012 Citrix Inc.
  * All rights reserved.
@@ -26,22 +26,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/*
- * Ported from lis21 code drop
- *
- * Updated from unencumbered RNDIS.H, provided by Anandeep Pannu, 04/10/12
- *
- * HyperV remote NDIS (network driver interface specification)
- * message structures
- *
- * Authors:
- *   Haiyang Zhang <haiyangz@microsoft.com>
- *   Hank Janssen  <hjanssen@microsoft.com>
- */
-
 #ifndef __HV_RNDIS_H__
 #define __HV_RNDIS_H__
-
 
 /*
  * NDIS protocol version numbers

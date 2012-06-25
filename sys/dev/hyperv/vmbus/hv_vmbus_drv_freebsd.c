@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2009-2012 Microsoft Corp.
  * Copyright (c) 2012 NetApp Inc.
  * Copyright (c) 2012 Citrix Inc.
  * All rights reserved.
@@ -27,12 +27,7 @@
  */
 
 /**
- * @brief VM Bus Driver Implementation
- *
- * Authors:
- *   Haiyang Zhang <haiyangz@microsoft.com>
- *   Hank Janssen  <hjanssen@microsoft.com>
- *   K. Y. Srinivasan <kys@microsoft.com>
+ * VM Bus Driver Implementation
  */
 
 #include <sys/param.h>
@@ -58,7 +53,6 @@
 #include <machine/intr_machdep.h>
 #include <sys/pcpu.h>
 
-#include <dev/hyperv/include/hyperv.h>
 #include "hv_vmbus_priv.h"
 
 
@@ -76,8 +70,8 @@ static int vmbus_irq = VMBUS_IRQ;
 static int vmbus_inited;
 
 /**
- * Software interrupt thread routine to handle channel messages from
- * the hypervisior
+ * @brief Software interrupt thread routine to handle channel messages from
+ * the hypervisor.
  */
 static void
 vmbus_msg_swintr(void *dummy)
@@ -316,6 +310,7 @@ vmbus_probe(device_t dev) {
 
 /**
  * @brief Main vmbus driver initialization routine.
+ *
  * Here, we
  * - initialize the vmbus driver context
  * - setup various driver entry points

@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2009-2012 Microsoft Corp.
  * Copyright (c) 2012 NetApp Inc.
  * Copyright (c) 2012 Citrix Inc.
  * All rights reserved.
@@ -26,29 +26,19 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/*
- * Authors:
- *   Haiyang Zhang <haiyangz@microsoft.com>
- *   Hank Janssen  <hjanssen@microsoft.com>
- *   K. Y. Srinivasan <kys@microsoft.com>
- */
-
-#include <sys/types.h>
-#include <machine/bus.h>
-#include <sys/malloc.h>
 #include <sys/param.h>
+#include <sys/malloc.h>
 #include <sys/systm.h>
 #include <sys/lock.h>
 #include <sys/mutex.h>
-
+#include <machine/bus.h>
 #include <vm/vm.h>
 #include <vm/vm_param.h>
 #include <vm/pmap.h>
 
-#include <dev/hyperv/include/hyperv.h>
 #include "hv_vmbus_priv.h"
 
-/**
+/*
  * Globals
  */
 hv_vmbus_connection hv_vmbus_g_connection =

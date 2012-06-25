@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2009-2012 Microsoft Corp.
  * Copyright (c) 2012 NetApp Inc.
  * Copyright (c) 2012 Citrix Inc.
  * All rights reserved.
@@ -26,21 +26,13 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/*
- *  Created on: Dec 15, 2011
- *  Consolidation done on March 5th, 2012
- *      Author: Larry Melia
- *	Author: K. Y. Srinivasan
- */
-
 /**
- * A common driver for all hyper-V util services.*
+ * A common driver for all hyper-V util services.
  */
 
 #include <sys/param.h>
 #include <sys/kernel.h>
 #include <sys/bus.h>
-#include <sys/types.h>
 #include <sys/malloc.h>
 #include <sys/module.h>
 #include <sys/reboot.h>
@@ -62,14 +54,15 @@
 #define HV_ICTIMESYNCFLAG_SAMPLE	2
 
 typedef struct hv_vmbus_service {
-	hv_guid			guid;		/** Hyper-V GUID	   */
-        char*			name;		/** name of service	   */
-        hv_work_queue*		work_queue;	/** background work queue  */
-				/**
+	hv_guid			guid;		/* Hyper-V GUID		*/
+        char*			name;		/* name of service	*/
+        boolean_t		enabled;	/* service enabled	*/
+        hv_work_queue*		work_queue;	/* background work queue */
+				/*
 				 * function to initialize service
 				 */
         int			(*init)(struct hv_vmbus_service *);
-				/**
+				/*
 				 * function to process Hyper-V messages
 				 */
         void			(*callback)(void *);
@@ -91,6 +84,7 @@ static hv_vmbus_service service_table[] = {
 	{ .guid.data = {0x31, 0x60, 0x0B, 0X0E, 0x13, 0x52, 0x34, 0x49,
 			0x81, 0x8B, 0x38, 0XD9, 0x0C, 0xED, 0x39, 0xDB},
 	  .name  = "Hyper-V Shutdown Service\n",
+	  .enabled = TRUE,
 	  .callback = hv_shutdown_cb,
 	},
 
@@ -98,6 +92,7 @@ static hv_vmbus_service service_table[] = {
         { .guid.data = {0x30, 0xe6, 0x27, 0x95, 0xae, 0xd0, 0x7b, 0x49,
 			0xad, 0xce, 0xe8, 0x0a, 0xb0, 0x17, 0x5c, 0xaf},
 	  .name = "Hyper-V Time Synch Service\n",
+	  .enabled = TRUE,
 	  .init = hv_timesync_init,
 	  .callback = hv_timesync_cb,
 	},
@@ -106,6 +101,7 @@ static hv_vmbus_service service_table[] = {
         { .guid.data = {0x39, 0x4f, 0x16, 0x57, 0x15, 0x91, 0x78, 0x4e,
 			0xab, 0x55, 0x38, 0x2f, 0x3b, 0xd5, 0x42, 0x2d},
 	  .name = "Hyper-V Heartbeat Service\n",
+	  .enabled = TRUE,
           .callback = hv_heartbeat_cb,
 
 	},
@@ -114,6 +110,7 @@ static hv_vmbus_service service_table[] = {
         { .guid.data = {0xe7, 0xf4, 0xa0, 0xa9, 0x45, 0x5a, 0x96, 0x4d,
 			0xb8, 0x27, 0x8a, 0x84, 0x1e, 0x8c, 0x3,  0xe6},
 	  .name = "Hyper-V KVP Service\n",
+	  .enabled = FALSE,
 	  .callback = hv_kvp_cb,
 	},
 };
@@ -236,7 +233,7 @@ hv_timesync_cb(void *context)
 	hv_vmbus_channel*	channel = context;
 	hv_vmbus_icmsg_hdr*	icmsghdrp;
 	uint32_t		recvlen;
-	uint64_t		requestid;
+	uint64_t		requestId;
 	int			ret;
 	uint8_t*		time_buf;
 	struct hv_ictimesync_data* timedatap;
@@ -244,7 +241,7 @@ hv_timesync_cb(void *context)
 	time_buf = receive_buffer[HV_TIME_SYNCH];
 
 	ret = hv_vmbus_channel_recv_packet(channel, time_buf,
-	PAGE_SIZE, &recvlen, &requestid);
+					    PAGE_SIZE, &recvlen, &requestId);
 
 	if ((ret == 0) && recvlen > 0) {
 	    icmsghdrp = (struct hv_vmbus_icmsg_hdr *) &time_buf[
@@ -263,7 +260,7 @@ hv_timesync_cb(void *context)
 		| HV_ICMSGHDRFLAG_RESPONSE;
 
 	    hv_vmbus_channel_send_packet(channel, time_buf,
-		recvlen, requestid,
+		recvlen, requestId,
 		HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
 	}
 }
@@ -307,13 +304,14 @@ hv_shutdown_cb(void *context)
 		    case 1:
 			icmsghdrp->status = HV_S_OK;
 			execute_shutdown = 1;
+			/*
 			printf("Shutdown request received -"
 			    " graceful shutdown initiated\n");
+			 */
 			break;
 		    default:
 			icmsghdrp->status = HV_E_FAIL;
 			execute_shutdown = 0;
-
 			printf("Shutdown request received -"
 			    " Invalid request\n");
 			break;
@@ -386,7 +384,7 @@ hv_util_probe(device_t dev)
 
 	for (i = 0; i < HV_MAX_UTIL_SERVICES; i++) {
 	    const char *p = vmbus_get_type(dev);
-	    if (!memcmp(p, &service_table[i].guid, sizeof(hv_guid))) {
+	    if (service_table[i].enabled && !memcmp(p, &service_table[i].guid, sizeof(hv_guid))) {
 		device_set_softc(dev, (void *) (&service_table[i]));
 		rtn_value = 0;
 	    }
@@ -406,16 +404,9 @@ hv_util_attach(device_t dev)
 	hv_dev = vmbus_get_devctx(dev);
 	service = device_get_softc(dev);
 	receive_buffer_offset = service - &service_table[0];
-
-	printf("Hyper-V Service attaching: %s\n", service->name);
+	device_printf(dev, "Hyper-V Service attaching: %s\n", service->name);
 	receive_buffer[receive_buffer_offset] =
 		malloc(PAGE_SIZE, M_DEVBUF, M_WAITOK | M_ZERO);
-
-	if (receive_buffer[receive_buffer_offset] == NULL) {
-	    printf("Error VMBUS: malloc failed to allocate receive_buffer"
-		    "(hv_util_attach)!\n");
-	    return ENOMEM;
-	}
 
 	if (service->init != NULL) {
 	    ret = service->init(service);

@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2012 Microsoft Corp.
+ * Copyright (c) 2009-2012 Microsoft Corp.
  * Copyright (c) 2012 NetApp Inc.
  * Copyright (c) 2012 Citrix Inc.
  * All rights reserved.
@@ -26,17 +26,9 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/*
- * Authors:
- *   Haiyang Zhang <haiyangz@microsoft.com>
- *   Hank Janssen  <hjanssen@microsoft.com>
- *   K. Y. Srinivasan <kys@microsoft.com>
- */
-
 #ifndef __HYPERV_PRIV_H__
 #define __HYPERV_PRIV_H__
 
-#include <sys/types.h>
 #include <sys/param.h>
 #include <sys/lock.h>
 #include <sys/mutex.h>
@@ -45,7 +37,7 @@
 #include <dev/hyperv/include/hyperv.h>
 
 
-/**
+/*
  *  Status codes for hypervisor operations.
  */
 
@@ -56,8 +48,8 @@ typedef uint16_t hv_vmbus_status;
 #define HV_MESSAGE_PAYLOAD_QWORD_COUNT  (30)
 #define HV_ANY_VP                       (0xFFFFFFFF)
 
-/**
- * Define synthetic interrupt controller flag constants.
+/*
+ * Synthetic interrupt controller flag constants.
  */
 
 #define HV_EVENT_FLAGS_COUNT        (256 * 8)
@@ -111,7 +103,7 @@ typedef union {
 	hv_vmbus_channel_version_response	version_response;
 } hv_vmbus_channel_msg_response;
 
-/**
+/*
  * Represents each channel msg on the vmbus connection
  * This is a variable-size data structure depending on
  * the msg type itself
@@ -145,9 +137,7 @@ typedef struct hv_vmbus_channel_msg_info {
 	unsigned char 				msg[0];
 } hv_vmbus_channel_msg_info;
 
-#pragma pack(push,1)
-
-/**
+/*
  * The format must be the same as hv_vm_data_gpa_direct
  */
 typedef struct hv_vmbus_channel_packet_page_buffer {
@@ -159,9 +149,9 @@ typedef struct hv_vmbus_channel_packet_page_buffer {
 	uint32_t		reserved;
 	uint32_t		range_count;
 	hv_vmbus_page_buffer	range[HV_MAX_PAGE_BUFFER_COUNT];
-} hv_vmbus_channel_packet_page_buffer;
+} __packed hv_vmbus_channel_packet_page_buffer;
 
-/**
+/*
  * The format must be the same as hv_vm_data_gpa_direct
  */
 typedef struct hv_vmbus_channel_packet_multipage_buffer {
@@ -173,9 +163,7 @@ typedef struct hv_vmbus_channel_packet_multipage_buffer {
 	uint32_t 			reserved;
 	uint32_t			range_count; /* Always 1 in this case */
 	hv_vmbus_multipage_buffer	range;
-} hv_vmbus_channel_packet_multipage_buffer;
-
-#pragma pack(pop)
+} __packed hv_vmbus_channel_packet_multipage_buffer;
 
 enum {
 	HV_VMBUS_MESSAGE_CONNECTION_ID	= 1,
@@ -196,7 +184,7 @@ enum {
 
 #define HV_HYPERCALL_PARAM_ALIGN sizeof(uint64_t)
 
-/**
+/*
  *  Connection identifier type
  */
 typedef union {
@@ -206,26 +194,26 @@ typedef union {
 		uint32_t	reserved:8;
 	} u;
 
-} hv_vmbus_connection_id;
+} __packed hv_vmbus_connection_id;
 
-/**
+/*
  * Definition of the hv_vmbus_signal_event hypercall input structure
  */
 typedef struct {
 	hv_vmbus_connection_id	connection_id;
 	uint16_t		flag_number;
 	uint16_t		rsvd_z;
-} hv_vmbus_input_signal_event;
+} __packed hv_vmbus_input_signal_event;
 
 typedef struct {
 	uint64_t			align8;
 	hv_vmbus_input_signal_event	event;
-} hv_vmbus_input_signal_event_buffer;
+} __packed hv_vmbus_input_signal_event_buffer;
 
 typedef struct {
 	uint64_t	guest_id;
 	void*		hypercall_page;
-	bool		syn_ic_initialized;
+	hv_bool_uint8_t	syn_ic_initialized;
 	/*
 	 * This is used as an input param to HV_CALL_SIGNAL_EVENT hypercall.
 	 * The input param is immutable  in our usage and
@@ -241,7 +229,7 @@ typedef struct {
 	hv_vmbus_handle	syn_ic_event_page[MAXCPU];
 } hv_vmbus_context;
 
-/**
+/*
  * Define hypervisor message types
  */
 typedef enum {
@@ -283,7 +271,7 @@ typedef enum {
 
 } hv_vmbus_msg_type;
 
-/**
+/*
  * Define port identifier type
  */
 typedef union _hv_vmbus_port_id {
@@ -294,7 +282,7 @@ typedef union _hv_vmbus_port_id {
 	} u ;
 } hv_vmbus_port_id;
 
-/**
+/*
  * Define synthetic interrupt controller message flag
  */
 typedef union {
@@ -307,7 +295,7 @@ typedef union {
 
 typedef uint64_t hv_vmbus_partition_id;
 
-/**
+/*
  * Define synthetic interrupt controller message header
  */
 typedef struct {
@@ -321,7 +309,7 @@ typedef struct {
 	} u;
 } hv_vmbus_msg_header;
 
-/**
+/*
  *  Define synthetic interrupt controller message format
  */
 typedef struct {
@@ -331,7 +319,7 @@ typedef struct {
 	} u ;
 } hv_vmbus_message;
 
-/**
+/*
  *  Maximum channels is determined by the size of the interrupt
  *  page which is PAGE_SIZE. 1/2 of PAGE_SIZE is for
  *  send endpoint interrupt and the other is receive
@@ -341,12 +329,12 @@ typedef struct {
  */
 #define HV_MAX_NUM_CHANNELS			(PAGE_SIZE >> 1) << 3
 
-/**
- * The value here must be in multiple of 32
+/*
+ * (The value here must be in multiple of 32)
  */
 #define HV_MAX_NUM_CHANNELS_SUPPORTED		256
 
-/**
+/*
  * VM Bus connection states
  */
 typedef enum {
@@ -392,7 +380,7 @@ typedef struct {
 	struct sema				control_sema;
 } hv_vmbus_connection;
 
-/**
+/*
  * Declare the MSR used to identify the guest OS
  */
 #define HV_X64_MSR_GUEST_OS_ID	0x40000000
@@ -413,7 +401,7 @@ typedef union {
 	};
 } hv_vmbus_x64_msr_guest_os_id_contents;
 
-/**
+/*
  *  Declare the MSR used to setup pages used to communicate with the hypervisor
  */
 #define HV_X64_MSR_HYPERCALL	0x40000001
@@ -449,7 +437,7 @@ typedef struct {
 	uint16_t		rsvd_z;
 } hv_vmbus_monitor_parameter;
 
-/**
+/*
  * hv_vmbus_monitor_page Layout
  * ------------------------------------------------------
  * | 0   | trigger_state (4 bytes) | Rsvd1 (4 bytes)     |
@@ -488,7 +476,7 @@ typedef struct {
 	uint8_t				rsvd_z4[1984];
 } hv_vmbus_monitor_page;
 
-/**
+/*
  * The below CPUID leaves are present if VersionAndFeatures.HypervisorPresent
  * is set by CPUID(HV_CPU_ID_FUNCTION_VERSION_AND_FEATURES).
  */
@@ -507,7 +495,7 @@ typedef enum {
 
 } hv_vmbus_cpuid_function;
 
-/**
+/*
  * Define the format of the SIMP register
  */
 typedef union {
@@ -519,7 +507,7 @@ typedef union {
 	};
 } hv_vmbus_synic_simp;
 
-/**
+/*
  * Define the format of the SIEFP register
  */
 typedef union {
@@ -531,7 +519,7 @@ typedef union {
 	};
 } hv_vmbus_synic_siefp;
 
-/**
+/*
  * Define synthetic interrupt source
  */
 typedef union {
@@ -545,7 +533,7 @@ typedef union {
 	};
 } hv_vmbus_synic_sint;
 
-/**
+/*
  * Define syn_ic control register
  */
 typedef union _hv_vmbus_synic_scontrol {
@@ -556,8 +544,8 @@ typedef union _hv_vmbus_synic_scontrol {
     };
 } hv_vmbus_synic_scontrol;
 
-/**
- *  Definition of the hv_vmbus_post_message hypercall input structure
+/*
+ *  Define the hv_vmbus_post_message hypercall input structure
  */
 typedef struct {
 	hv_vmbus_connection_id	connection_id;
@@ -567,7 +555,7 @@ typedef struct {
 	uint64_t		payload[HV_MESSAGE_PAYLOAD_QWORD_COUNT];
 } hv_vmbus_input_post_message;
 
-/**
+/*
  * Define the synthetic interrupt controller event flags format
  */
 typedef union {
@@ -576,7 +564,7 @@ typedef union {
 } hv_vmbus_synic_event_flags;
 
 
-/**
+/*
  * Define synthetic interrupt controller model specific registers
  */
 #define HV_X64_MSR_SCONTROL   (0x40000080)
@@ -602,7 +590,7 @@ typedef union {
 #define HV_X64_MSR_SINT14     (0x4000009E)
 #define HV_X64_MSR_SINT15     (0x4000009F)
 
-/**
+/*
  * Declare the various hypercall operations
  */
 typedef enum {
@@ -618,17 +606,9 @@ extern hv_vmbus_context		hv_vmbus_g_context;
 extern hv_vmbus_connection	hv_vmbus_g_connection;
 
 
-/**
+/*
  * Private, VM Bus functions
  */
-
-void			hv_vmbus_channel_get_debug_info(
-				hv_vmbus_channel		*channel,
-				hv_vmbus_channel_debug_info	*debug_info);
-
-void			hv_vmbus_get_channel_info(
-				struct hv_device		*dev,
-				struct hv_devinfo		*info);
 
 int			hv_vmbus_ring_buffer_init(
 				hv_vmbus_ring_buffer_info	*ring_info,
@@ -660,10 +640,6 @@ uint32_t		hv_vmbus_get_ring_buffer_interrupt_mask(
 void			hv_vmbus_dump_ring_info(
 				hv_vmbus_ring_buffer_info	*ring_info,
 				char				*prefix);
-
-void			hv_vmbus_ring_buffer_get_debug_info(
-				hv_vmbus_ring_buffer_info	*ring_info,
-				hv_vmbus_ring_buffer_debug_info	*debug_info);
 
 hv_vmbus_channel*	hv_vmbus_allocate_channel(void);
 void			hv_vmbus_free_vmbus_channel(hv_vmbus_channel *channel);
@@ -702,7 +678,7 @@ int			hv_vmbus_post_message(void *buffer, size_t buf_size);
 int			hv_vmbus_set_event(uint32_t child_rel_id);
 void			hv_vmbus_on_events(void *);
 
-/**
+/*
  * static inline functions
  * (with some helper macros for reading/writing to model specific registers)
  */
