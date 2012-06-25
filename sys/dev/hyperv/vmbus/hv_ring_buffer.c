@@ -31,7 +31,6 @@
 #include <sys/lock.h>
 #include <sys/mutex.h>
 
-#include <dev/hyperv/include/hyperv.h>
 #include "hv_vmbus_priv.h"
 
 /* Amount of space to write to */
@@ -156,32 +155,6 @@ static uint32_t copy_from_ring_buffer(
 			uint32_t			dest_len,
 			uint32_t			start_read_offset);
 
-/**
- * @brief Get various debug metrics for the specified ring buffer.
- */
-void
-hv_vmbus_ring_buffer_get_debug_info(
-		hv_vmbus_ring_buffer_info*		ring_info,
-		hv_vmbus_ring_buffer_debug_info*	debug_info)
-{
-	uint32_t bytesAvailToWrite;
-	uint32_t bytesAvailToRead;
-
-	if (ring_info->ring_buffer) {
-	    get_ring_buffer_avail_bytes(ring_info, &bytesAvailToRead,
-		&bytesAvailToWrite);
-
-	    debug_info->bytes_avail_to_read = bytesAvailToRead;
-	    debug_info->bytes_avail_to_write = bytesAvailToWrite;
-	    debug_info->current_read_index =
-		    ring_info->ring_buffer->read_index;
-	    debug_info->current_write_index =
-		    ring_info->ring_buffer->write_index;
-
-	    debug_info->current_interrupt_mask =
-		ring_info->ring_buffer->interrupt_mask;
-	}
-}
 
 /**
  * @brief Get the interrupt mask for the specified ring buffer.

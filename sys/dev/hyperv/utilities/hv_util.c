@@ -33,7 +33,6 @@
 #include <sys/param.h>
 #include <sys/kernel.h>
 #include <sys/bus.h>
-#include <sys/types.h>
 #include <sys/malloc.h>
 #include <sys/module.h>
 #include <sys/reboot.h>
@@ -59,11 +58,11 @@ typedef struct hv_vmbus_service {
         char*			name;		/* name of service	*/
         boolean_t		enabled;	/* service enabled	*/
         hv_work_queue*		work_queue;	/* background work queue */
-				/**
+				/*
 				 * function to initialize service
 				 */
         int			(*init)(struct hv_vmbus_service *);
-				/**
+				/*
 				 * function to process Hyper-V messages
 				 */
         void			(*callback)(void *);
@@ -234,7 +233,7 @@ hv_timesync_cb(void *context)
 	hv_vmbus_channel*	channel = context;
 	hv_vmbus_icmsg_hdr*	icmsghdrp;
 	uint32_t		recvlen;
-	uint64_t		requestid;
+	uint64_t		requestId;
 	int			ret;
 	uint8_t*		time_buf;
 	struct hv_ictimesync_data* timedatap;
@@ -242,7 +241,7 @@ hv_timesync_cb(void *context)
 	time_buf = receive_buffer[HV_TIME_SYNCH];
 
 	ret = hv_vmbus_channel_recv_packet(channel, time_buf,
-	PAGE_SIZE, &recvlen, &requestid);
+					    PAGE_SIZE, &recvlen, &requestId);
 
 	if ((ret == 0) && recvlen > 0) {
 	    icmsghdrp = (struct hv_vmbus_icmsg_hdr *) &time_buf[
@@ -261,7 +260,7 @@ hv_timesync_cb(void *context)
 		| HV_ICMSGHDRFLAG_RESPONSE;
 
 	    hv_vmbus_channel_send_packet(channel, time_buf,
-		recvlen, requestid,
+		recvlen, requestId,
 		HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
 	}
 }
@@ -305,13 +304,14 @@ hv_shutdown_cb(void *context)
 		    case 1:
 			icmsghdrp->status = HV_S_OK;
 			execute_shutdown = 1;
+			/*
 			printf("Shutdown request received -"
 			    " graceful shutdown initiated\n");
+			 */
 			break;
 		    default:
 			icmsghdrp->status = HV_E_FAIL;
 			execute_shutdown = 0;
-
 			printf("Shutdown request received -"
 			    " Invalid request\n");
 			break;
@@ -404,16 +404,9 @@ hv_util_attach(device_t dev)
 	hv_dev = vmbus_get_devctx(dev);
 	service = device_get_softc(dev);
 	receive_buffer_offset = service - &service_table[0];
-
-	printf("Hyper-V Service attaching: %s\n", service->name);
+	device_printf(dev, "Hyper-V Service attaching: %s\n", service->name);
 	receive_buffer[receive_buffer_offset] =
 		malloc(PAGE_SIZE, M_DEVBUF, M_WAITOK | M_ZERO);
-
-	if (receive_buffer[receive_buffer_offset] == NULL) {
-	    printf("Error VMBUS: malloc failed to allocate receive_buffer"
-		    "(hv_util_attach)!\n");
-	    return ENOMEM;
-	}
 
 	if (service->init != NULL) {
 	    ret = service->init(service);

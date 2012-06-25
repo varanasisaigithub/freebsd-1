@@ -30,17 +30,14 @@
  * Implements low-level interactions with Hypver-V/Azure
  */
 
-#include <sys/types.h>
-#include <machine/bus.h>
-#include <sys/malloc.h>
 #include <sys/param.h>
+#include <sys/malloc.h>
 #include <sys/pcpu.h>
-
+#include <machine/bus.h>
 #include <vm/vm.h>
 #include <vm/vm_param.h>
 #include <vm/pmap.h>
 
-#include <dev/hyperv/include/hyperv.h>
 #include "hv_vmbus_priv.h"
 
 static inline void do_cpuid_inline(unsigned int op, unsigned int *eax,

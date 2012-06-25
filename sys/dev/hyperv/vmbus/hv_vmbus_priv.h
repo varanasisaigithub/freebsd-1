@@ -29,7 +29,6 @@
 #ifndef __HYPERV_PRIV_H__
 #define __HYPERV_PRIV_H__
 
-#include <sys/types.h>
 #include <sys/param.h>
 #include <sys/lock.h>
 #include <sys/mutex.h>
@@ -214,7 +213,7 @@ typedef struct {
 typedef struct {
 	uint64_t	guest_id;
 	void*		hypercall_page;
-	hv_small_bool	syn_ic_initialized;
+	hv_bool_uint8_t	syn_ic_initialized;
 	/*
 	 * This is used as an input param to HV_CALL_SIGNAL_EVENT hypercall.
 	 * The input param is immutable  in our usage and
@@ -641,10 +640,6 @@ uint32_t		hv_vmbus_get_ring_buffer_interrupt_mask(
 void			hv_vmbus_dump_ring_info(
 				hv_vmbus_ring_buffer_info	*ring_info,
 				char				*prefix);
-
-void			hv_vmbus_ring_buffer_get_debug_info(
-				hv_vmbus_ring_buffer_info	*ring_info,
-				hv_vmbus_ring_buffer_debug_info	*debug_info);
 
 hv_vmbus_channel*	hv_vmbus_allocate_channel(void);
 void			hv_vmbus_free_vmbus_channel(hv_vmbus_channel *channel);

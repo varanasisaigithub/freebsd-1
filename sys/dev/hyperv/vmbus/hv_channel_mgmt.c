@@ -29,7 +29,6 @@
 #include <sys/param.h>
 #include <sys/mbuf.h>
 
-#include <dev/hyperv/include/hyperv.h>
 #include "hv_vmbus_priv.h"
 
 typedef void (*hv_pfn_channel_msg_handler)(hv_vmbus_channel_msg_header* msg);
@@ -266,7 +265,8 @@ hv_vmbus_free_vmbus_channel(hv_vmbus_channel* channel)
 {
 	mtx_destroy(&channel->inbound_lock);
 	/*
-	 * We have to release the channel's workqueue/thread in the vmbus's workqueue/thread context
+	 * We have to release the channel's workqueue/thread in
+	 *  the vmbus's workqueue/thread context
 	 * ie we can't destroy ourselves
 	 */
 	hv_queue_work_item(hv_vmbus_g_connection.work_queue, ReleaseVmbusChannel,
@@ -353,7 +353,6 @@ vmbus_channel_process_offer(void *context)
 		new_channel,
 		list_entry);
 	    mtx_unlock_spin(&hv_vmbus_g_connection.channel_lock);
-
 	    hv_vmbus_free_vmbus_channel(new_channel);
 	} else {
 	    /*

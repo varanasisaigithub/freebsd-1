@@ -38,7 +38,6 @@
 #include <sys/lock.h>
 #include <net/if.h>
 #include <net/if_arp.h>
-#include <sys/types.h>
 #include <machine/bus.h>
 #include <machine/atomic.h>
 

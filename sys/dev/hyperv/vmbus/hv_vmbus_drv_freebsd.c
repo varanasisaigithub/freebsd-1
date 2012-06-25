@@ -53,7 +53,6 @@
 #include <machine/intr_machdep.h>
 #include <sys/pcpu.h>
 
-#include <dev/hyperv/include/hyperv.h>
 #include "hv_vmbus_priv.h"
 
 

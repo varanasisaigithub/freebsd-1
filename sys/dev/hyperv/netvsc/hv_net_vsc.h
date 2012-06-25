@@ -888,7 +888,7 @@ typedef struct netvsc_dev_ {
 	/* Holds rndis device info */
 	void					*extension;
 
-	hv_small_bool					destroy;
+	hv_bool_uint8_t				destroy;
 	/* Negotiated NVSP version */
 	uint32_t				nvsp_version;
 } netvsc_dev;
@@ -917,7 +917,7 @@ typedef struct netvsc_packet_ {
 	 */
 	STAILQ_ENTRY(netvsc_packet_) mylist_entry;
 	struct hv_device           *device;
-	hv_small_bool                       is_data_pkt;      /* One byte */
+	hv_bool_uint8_t             is_data_pkt;      /* One byte */
 	xfer_page_packet           *xfer_page_pkt;
 
 	/* Completion */
@@ -951,8 +951,8 @@ typedef struct netvsc_driver_object_ {
 } netvsc_driver_object;
 
 typedef struct {
-	uint8_t         mac_addr[6];  /* Assumption unsigned long */
-	hv_small_bool            link_state;
+	uint8_t		mac_addr[6];  /* Assumption unsigned long */
+	hv_bool_uint8_t	link_state;
 } netvsc_device_info;
 
 /*

@@ -35,14 +35,13 @@
 #ifndef __HYPERV_H__
 #define __HYPERV_H__
 
+#include <sys/param.h>
 #include <sys/mbuf.h>
 #include <sys/queue.h>
 #include <sys/malloc.h>
 #include <sys/kthread.h>
 #include <sys/taskqueue.h>
-#include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/types.h>
 #include <sys/lock.h>
 #include <sys/sema.h>
 #include <sys/mutex.h>
@@ -54,7 +53,7 @@
 #include <amd64/include/xen/synch_bitops.h>
 #include <amd64/include/atomic.h>
 
-typedef unsigned char hv_small_bool;
+typedef uint8_t	hv_bool_uint8_t;
 
 #define HV_S_OK			0x00000000
 #define HV_E_FAIL		0x80004005
@@ -107,31 +106,6 @@ typedef unsigned char hv_small_bool;
 		((HV_ALIGN_UP(addr+len, PAGE_SIZE) -			\
 		    HV_ALIGN_DOWN(addr, PAGE_SIZE)) >> PAGE_SHIFT )
 
-
-typedef struct hv_bound {
-	int interrupt_mask;
-	int read_index;
-	int write_index;
-	int bytes_avail_to_read;
-	int bytes_avail_to_write;
-} hv_bound;
-
-typedef struct hv_devinfo {
-	int channel_id;
-	int channel_state;
-	int channel_type;
-	int channel_instance;
-	int monitor_id;
-	int server_monitor_pending;
-	int server_monitor_latency;
-	int server_monitor_connection_id;
-	int client_monitor_pending;
-	int client_monitor_latency;
-	int client_monitor_connection_id;
-	hv_bound in_bound, out_bound;
-} hv_devinfo;
-
-
 typedef struct hv_guid {
 	 unsigned char data[16];
 } __packed hv_guid;
@@ -177,39 +151,6 @@ typedef struct hv_vmbus_channel_offer {
 typedef uint32_t hv_gpadl_handle;
 
 typedef struct {
-	union {
-		struct {
-			/* offset in bytes from the ring base */
-			volatile uint32_t  in;
-			/* offset in bytes from the ring base */
-			volatile uint32_t  out;
-		} __packed io;
-		volatile int64_t	in_out;
-	} rio;
-
-	/*
-	 * If the receiving endpoint sets this to some non-zero
-	 * value, the sending endpoint should not send any interrupts.
-	 */
-	volatile uint32_t interrupt_mask;
-} __packed hv_vm_rcb;
-
-typedef struct {
-	union {
-		struct {
-			hv_vm_rcb control;
-		} __packed ctl;
-		uint8_t reserved[PAGE_SIZE];
-	} rctl;
-
-	/*
-	 * Beginning of the ring data.  Note: It must be guaranteed that
-	 * this data does not share a page with the control structure.
-	 */
-	uint8_t data[1];
-} __packed hv_vm_ring;
-
-typedef struct {
 	uint16_t type;
 	uint16_t data_offset8;
 	uint16_t length8;
@@ -232,7 +173,7 @@ typedef struct {
 typedef struct {
 	hv_vm_packet_descriptor	d;
 	uint16_t		transfer_page_set_id;
-	hv_small_bool			sender_owns_set;
+	hv_bool_uint8_t		sender_owns_set;
 	uint8_t			reserved;
 	uint32_t		range_count;
 	hv_vm_transfer_page	ranges[1];
@@ -323,23 +264,6 @@ typedef union {
 	hv_vm_data_gpa_direct               data_gpa_direct_header;
 } __packed hv_vm_packet_largest_possible_header;
 
-#define HV_VMPACKET_DATA_START_ADDRESS(__packet)			\
-		(void *)(((PUCHAR)__packet) +				\
-		((hv_vm_packet_descriptor *)__packet)->data_offset8 * 8)
-
-#define HV_VMPACKET_DATA_LENGTH(__packet)				\
-		((((hv_vm_packet_descriptor *)__packet)->length8 -	\
-		((hv_vm_packet_descriptor *)__packet)->data_offset8) * 8)
-
-#define HV_VMPACKET_TRANSFER_MODE(__packet)				\
-		((hv_vm_packet_descriptor *)__packet)->type
-
-typedef enum {
-	HV_VMBUS_SERVER_ENDPOINT = 0,
-	HV_VMBUS_CLIENT_ENDPOINT,
-	HV_VMBUS_ENDPOINT_MAXIMUM
-} __packed hv_endpoint_type;
-
 typedef enum {
 	HV_VMBUS_PACKET_TYPE_INVALID				= 0x0,
 	HV_VMBUS_PACKET_TYPES_SYNCH				= 0x1,
@@ -406,7 +330,7 @@ typedef struct {
  */
 typedef struct {
 	hv_vmbus_channel_msg_header	header;
-	hv_small_bool				version_supported;
+	hv_bool_uint8_t			version_supported;
 } __packed hv_vmbus_channel_version_supported;
 
 /*
@@ -417,7 +341,7 @@ typedef struct {
 	hv_vmbus_channel_offer		offer;
 	uint32_t			child_rel_id;
 	uint8_t				monitor_id;
-	hv_small_bool				monitor_allocated;
+	hv_bool_uint8_t			monitor_allocated;
 } __packed hv_vmbus_channel_offer_channel;
 
 /*
@@ -573,7 +497,7 @@ typedef struct {
 
 typedef struct {
 	hv_vmbus_channel_msg_header header;
-	hv_small_bool		version_supported;
+	hv_bool_uint8_t		version_supported;
 } __packed hv_vmbus_channel_version_response;
 
 typedef hv_vmbus_channel_msg_header hv_vmbus_channel_unload;
@@ -609,9 +533,6 @@ typedef hv_vmbus_channel_msg_header hv_vmbus_channel_unload;
 */
 
 #define HW_MACADDR_LEN	6
-
-#define HV_LOWORD(dw)	((unsigned short) (dw))
-#define HV_HIWORD(dw)	((unsigned short) (((unsigned int) (dw) >> 16) & 0xFFFF))
 
 /*
  * Fixme:  Added to quiet "typeof" errors involving hv_vmbus.h when
