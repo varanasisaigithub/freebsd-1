@@ -339,7 +339,7 @@ netvsc_xmit_completion(void *context)
 
 	free(buf, M_DEVBUF);
 
-	if (mb) {
+	if (mb != NULL) {
 		m_freem(mb);
 	}
 }
@@ -473,7 +473,7 @@ netvsc_linkstatus_callback(struct hv_device *device_obj, uint32_t status)
 {
 	hn_softc_t *sc = device_get_softc(device_obj->device);
 
-	if (!sc) {
+	if (sc == NULL) {
 		return;
 	}
 
@@ -494,12 +494,11 @@ int
 netvsc_recv_callback(struct hv_device *device_ctx, netvsc_packet *packet)
 {
 	hn_softc_t *sc = (hn_softc_t *)device_get_softc(device_ctx->device);
-
 	struct mbuf *m_new;
 	struct ifnet *ifp = sc->hn_ifp;
 	int i;
 
-	if (!sc) {
+	if (sc == NULL) {
 		return (0); /* TODO: KYS how can this be! */
 	}
 	

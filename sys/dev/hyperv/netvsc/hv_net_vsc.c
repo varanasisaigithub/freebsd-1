@@ -71,7 +71,7 @@ hv_nv_alloc_net_device(struct hv_device *device)
 	hn_softc_t *sc = device_get_softc(device->device);
 
 	net_dev = malloc(sizeof(netvsc_dev), M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (!net_dev) {
+	if (net_dev == NULL) {
 		return (NULL);
 	}
 
@@ -91,7 +91,7 @@ hv_nv_get_outbound_net_device(struct hv_device *device)
 	hn_softc_t *sc = device_get_softc(device->device);
 	netvsc_dev *net_dev = sc->net_dev;;
 
-	if (net_dev && net_dev->destroy) {
+	if ((net_dev != NULL) && net_dev->destroy) {
 		return (NULL);
 	}
 
@@ -107,7 +107,7 @@ hv_nv_get_inbound_net_device(struct hv_device *device)
 	hn_softc_t *sc = device_get_softc(device->device);
 	netvsc_dev *net_dev = sc->net_dev;;
 
-	if (!net_dev) {
+	if (net_dev == NULL) {
 		return (net_dev);
 	}
 	/*
@@ -142,7 +142,7 @@ hv_nv_init_rx_buffer_with_net_vsp(struct hv_device *device)
 
 	net_dev->rx_buf = contigmalloc(net_dev->rx_buf_size, M_DEVBUF,
 	    M_ZERO, 0UL, BUS_SPACE_MAXADDR, PAGE_SIZE, 0);
-	if (!net_dev->rx_buf) {
+	if (net_dev->rx_buf == NULL) {
 		ret = ENOMEM;
 		goto cleanup;
 	}
@@ -241,8 +241,7 @@ hv_nv_init_send_buffer_with_net_vsp(struct hv_device *device)
 
 	net_dev->send_buf  = contigmalloc(net_dev->send_buf_size, M_DEVBUF,
 	    M_ZERO, 0UL, BUS_SPACE_MAXADDR, PAGE_SIZE, 0);
-
-	if (!net_dev->send_buf) {
+	if (net_dev->send_buf == NULL) {
 		ret = ENOMEM;
 		goto cleanup;
 	}
@@ -1043,7 +1042,7 @@ hv_nv_on_receive_completion(void *context)
 	 * outbound traffic already.
 	 */
 	net_dev = hv_nv_get_inbound_net_device(device);
-	if (!net_dev) {
+	if (net_dev == NULL) {
 		return;
 	}
 	
@@ -1100,14 +1099,13 @@ hv_nv_on_channel_callback(void *context)
 	buffer = packet;
 
 	net_dev = hv_nv_get_inbound_net_device(device);
-	if (!net_dev) {
+	if (net_dev == NULL) {
 		goto out;
 	}
 
 	do {
 		ret = hv_vmbus_channel_recv_packet_raw(device->channel,
 		    buffer, bufferlen, &bytes_rxed, &request_id);
-
 		if (ret == 0) {
 			if (bytes_rxed > 0) {
 				desc = (hv_vm_packet_descriptor *)buffer;
