@@ -39,8 +39,7 @@
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/lock.h>
-#include <sys/mutex.h>
-#include <sys/sema.h>
+#include <sys/sx.h>
 
 #include <dev/hyperv/include/hyperv.h>
 
@@ -917,7 +916,7 @@ typedef struct netvsc_packet_ {
 	 */
 	STAILQ_ENTRY(netvsc_packet_) mylist_entry;
 	struct hv_device           *device;
-	hv_bool_uint8_t             is_data_pkt;      /* One byte */
+	hv_bool_uint8_t            is_data_pkt;      /* One byte */
 	xfer_page_packet           *xfer_page_pkt;
 
 	/* Completion */
@@ -965,7 +964,7 @@ typedef struct hn_softc {
 	uint8_t         hn_unit;
 	int             hn_carrier;
 	int             hn_if_flags;
-	struct mtx      hn_lock;
+	struct sx       hn_lock;
 /*	vm_offset_t     hn_vaddr;		*/
 	int             hn_initdone;
 /*	int             hn_xc;			*/

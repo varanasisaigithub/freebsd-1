@@ -1,7 +1,7 @@
 /*-
+ * Copyright (c) 2010-2012 Citrix Inc.
  * Copyright (c) 2009-2012 Microsoft Corp.
  * Copyright (c) 2012 NetApp Inc.
- * Copyright (c) 2010-2012 Citrix Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -133,12 +133,13 @@ struct netvsc_driver_context {
 	uint32_t		drv_inited;
 };
 
+/* Now sx spin lock, as mutexes do not play well with semaphores */
 #define SN_LOCK_INIT(_sc, _name) \
-	    mtx_init(&(_sc)->hn_lock, _name, MTX_NETWORK_LOCK, MTX_DEF)
-#define SN_LOCK(_sc)		mtx_lock(&(_sc)->hn_lock)
-#define SN_LOCK_ASSERT(_sc)	mtx_assert(&(_sc)->hn_lock, MA_OWNED)
-#define SN_UNLOCK(_sc)		mtx_unlock(&(_sc)->hn_lock)
-#define SN_LOCK_DESTROY(_sc)	mtx_destroy(&(_sc)->hn_lock)
+	    sx_init_flags(&(_sc)->hn_lock, _name, SX_NOADAPTIVE)
+#define SN_LOCK(_sc)		sx_xlock(&(_sc)->hn_lock)
+#define SN_LOCK_ASSERT(_sc)	sx_assert(&(_sc)->hn_lock, SA_XLOCKED)
+#define SN_UNLOCK(_sc)		sx_xunlock(&(_sc)->hn_lock)
+#define SN_LOCK_DESTROY(_sc)	sx_destroy(&(_sc)->hn_lock)
 
 
 /*
@@ -384,9 +385,11 @@ hn_start_locked(struct ifnet *ifp)
 		num_frags += net_drv_obj->additional_request_page_buf_cnt;
 
 		/* Allocate a netvsc packet based on # of frags. */
+		/* Changed to M_NOWAIT to avoid sleep under spin lock */
 		buf = malloc(HV_NV_PACKET_OFFSET_IN_BUF +
-		    sizeof(netvsc_packet) + (num_frags * sizeof(hv_vmbus_page_buffer)) + 
-		    net_drv_obj->request_ext_size, M_DEVBUF, M_ZERO | M_WAITOK);
+		    sizeof(netvsc_packet) +
+		    (num_frags * sizeof(hv_vmbus_page_buffer)) + 
+		    net_drv_obj->request_ext_size, M_DEVBUF, M_ZERO | M_NOWAIT);
 		if (buf == NULL) {
 			return (ENOMEM);
 		}
@@ -395,7 +398,8 @@ hn_start_locked(struct ifnet *ifp)
 		*(vm_offset_t *)buf = HV_NV_SC_PTR_OFFSET_IN_BUF;
 
 		packet->extension = (void *)((unsigned long)packet +
-		    sizeof(netvsc_packet) + (num_frags * sizeof(hv_vmbus_page_buffer)));
+		    sizeof(netvsc_packet) +
+		    (num_frags * sizeof(hv_vmbus_page_buffer)));
 
 		/* Set up the rndis header */
 		packet->page_buf_count = num_frags;
@@ -427,9 +431,8 @@ hn_start_locked(struct ifnet *ifp)
 		packet->compl.send.send_completion_tid = (uint64_t)m_head;
 
 retry_send:
-		critical_enter(); /* Fixme: KYS: Why? */
+		/* Removed critical_enter(), does not appear necessary */
 		ret = hv_rf_on_send(device_ctx, packet);
-		critical_exit();
 
 		if (ret == 0) {
 			ifp->if_opackets++;
@@ -679,7 +682,7 @@ hn_start(struct ifnet *ifp)
 
 	sc = ifp->if_softc;
 	SN_LOCK(sc);
-	(void)hn_start_locked(ifp);
+	hn_start_locked(ifp);
 	SN_UNLOCK(sc);
 }
 
