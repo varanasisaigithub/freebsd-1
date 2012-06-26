@@ -57,8 +57,10 @@ static int  hv_nv_destroy_rx_buffer(netvsc_dev *net_dev);
 static int  hv_nv_connect_to_vsp(struct hv_device *device);
 static void hv_nv_on_send_completion(struct hv_device *device,
 				     hv_vm_packet_descriptor *pkt);
-static void hv_nv_on_receive(struct hv_device *device, hv_vm_packet_descriptor *pkt);
-static void hv_nv_send_receive_completion(struct hv_device *device, uint64_t tid);
+static void hv_nv_on_receive(struct hv_device *device,
+			     hv_vm_packet_descriptor *pkt);
+static void hv_nv_send_receive_completion(struct hv_device *device,
+					  uint64_t tid);
 
 
 /*
@@ -789,13 +791,15 @@ hv_nv_on_send_completion(struct hv_device *device, hv_vm_packet_descriptor *pkt)
 
 /*
  * Net VSC on send
+ * Sends a packet on the specified Hyper-V device.
+ * Returns 0 on success, non-zero on failure.
  */
 int
 hv_nv_on_send(struct hv_device *device, netvsc_packet *pkt)
 {
 	netvsc_dev *net_dev;
 	nvsp_msg send_msg;
-	int ret = 0;
+	int ret;
 
 	net_dev = hv_nv_get_outbound_net_device(device);
 	if (!net_dev) {
@@ -827,7 +831,10 @@ hv_nv_on_send(struct hv_device *device, netvsc_packet *pkt)
 		    HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	}
 
-	atomic_add_int(&net_dev->num_outstanding_sends, 1);
+	/* Record outstanding send only if send_packet() succeeded */
+	if (ret == 0) {
+		atomic_add_int(&net_dev->num_outstanding_sends, 1);
+	}
 
 	return (ret);
 }
@@ -875,7 +882,8 @@ hv_nv_on_receive(struct hv_device *device, hv_vm_packet_descriptor *pkt)
 	
 	vm_xfer_page_pkt = (hv_vm_transfer_page_packet_header *)pkt;
 
-	if (vm_xfer_page_pkt->transfer_page_set_id != NETVSC_RECEIVE_BUFFER_ID) {
+	if (vm_xfer_page_pkt->transfer_page_set_id !=
+						    NETVSC_RECEIVE_BUFFER_ID) {
 		return;
 	}
 

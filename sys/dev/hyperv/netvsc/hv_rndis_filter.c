@@ -213,7 +213,7 @@ hv_put_rndis_request(rndis_device *device, rndis_request *request)
 static int
 hv_rf_send_request(rndis_device *device, rndis_request *request)
 {
-	int ret = 0;
+	int ret;
 	netvsc_packet *packet;
 
 	/* Set up the packet to send it */
