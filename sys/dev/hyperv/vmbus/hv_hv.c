@@ -247,7 +247,7 @@ hv_vmbus_init(void)
 	return (0);
 
 	cleanup:
-	if (virt_addr) {
+	if (virt_addr != NULL) {
 	    if (hypercall_msr.enable) {
 		hypercall_msr.as_uint64_t = 0;
 		hv_vmbus_write_msr(HV_X64_MSR_HYPERCALL, hypercall_msr.as_uint64_t);
@@ -266,14 +266,14 @@ hv_vmbus_cleanup(void)
 {
 	hv_vmbus_x64_msr_hypercall_contents hypercall_msr;
 
-	if (hv_vmbus_g_context.signal_event_buffer) {
+	if (hv_vmbus_g_context.signal_event_buffer != NULL) {
 	    free(hv_vmbus_g_context.signal_event_buffer, M_DEVBUF);
 	    hv_vmbus_g_context.signal_event_buffer = NULL;
 	    hv_vmbus_g_context.signal_event_param = NULL;
 	}
 
 	if (hv_vmbus_g_context.guest_id == HV_FREEBSD_GUEST_ID) {
-	    if (hv_vmbus_g_context.hypercall_page) {
+	    if (hv_vmbus_g_context.hypercall_page != NULL) {
 		hypercall_msr.as_uint64_t = 0;
 		hv_vmbus_write_msr(HV_X64_MSR_HYPERCALL, hypercall_msr.as_uint64_t);
 		free(hv_vmbus_g_context.hypercall_page, M_DEVBUF);

@@ -214,7 +214,7 @@ hv_vmbus_connect(void) {
 	mtx_destroy(&hv_vmbus_g_connection.channel_lock);
 	mtx_destroy(&hv_vmbus_g_connection.channel_msg_lock);
 
-	if (hv_vmbus_g_connection.interrupt_page) {
+	if (hv_vmbus_g_connection.interrupt_page != NULL) {
 		contigfree(
 			hv_vmbus_g_connection.interrupt_page,
 			PAGE_SIZE,
@@ -222,7 +222,7 @@ hv_vmbus_connect(void) {
 		hv_vmbus_g_connection.interrupt_page = NULL;
 	}
 
-	if (hv_vmbus_g_connection.monitor_pages) {
+	if (hv_vmbus_g_connection.monitor_pages != NULL) {
 		contigfree(
 			hv_vmbus_g_connection.monitor_pages,
 			2 * PAGE_SIZE,
@@ -357,7 +357,7 @@ hv_vmbus_on_events(void *arg)
 	/*
 	 * Check events
 	 */
-	if (recv_interrupt_page) {
+	if (recv_interrupt_page != NULL) {
 	    for (dword = 0; dword < maxdword; dword++) {
 		if (recv_interrupt_page[dword]) {
 		    for (bit = 0; bit < 32; bit++) {
