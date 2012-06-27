@@ -57,8 +57,10 @@ static int  hv_nv_destroy_rx_buffer(netvsc_dev *net_dev);
 static int  hv_nv_connect_to_vsp(struct hv_device *device);
 static void hv_nv_on_send_completion(struct hv_device *device,
 				     hv_vm_packet_descriptor *pkt);
-static void hv_nv_on_receive(struct hv_device *device, hv_vm_packet_descriptor *pkt);
-static void hv_nv_send_receive_completion(struct hv_device *device, uint64_t tid);
+static void hv_nv_on_receive(struct hv_device *device,
+			     hv_vm_packet_descriptor *pkt);
+static void hv_nv_send_receive_completion(struct hv_device *device,
+					  uint64_t tid);
 
 
 /*
@@ -71,7 +73,7 @@ hv_nv_alloc_net_device(struct hv_device *device)
 	hn_softc_t *sc = device_get_softc(device->device);
 
 	net_dev = malloc(sizeof(netvsc_dev), M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (!net_dev) {
+	if (net_dev == NULL) {
 		return (NULL);
 	}
 
@@ -91,7 +93,7 @@ hv_nv_get_outbound_net_device(struct hv_device *device)
 	hn_softc_t *sc = device_get_softc(device->device);
 	netvsc_dev *net_dev = sc->net_dev;;
 
-	if (net_dev && net_dev->destroy) {
+	if ((net_dev != NULL) && net_dev->destroy) {
 		return (NULL);
 	}
 
@@ -107,7 +109,7 @@ hv_nv_get_inbound_net_device(struct hv_device *device)
 	hn_softc_t *sc = device_get_softc(device->device);
 	netvsc_dev *net_dev = sc->net_dev;;
 
-	if (!net_dev) {
+	if (net_dev == NULL) {
 		return (net_dev);
 	}
 	/*
@@ -142,7 +144,7 @@ hv_nv_init_rx_buffer_with_net_vsp(struct hv_device *device)
 
 	net_dev->rx_buf = contigmalloc(net_dev->rx_buf_size, M_DEVBUF,
 	    M_ZERO, 0UL, BUS_SPACE_MAXADDR, PAGE_SIZE, 0);
-	if (!net_dev->rx_buf) {
+	if (net_dev->rx_buf == NULL) {
 		ret = ENOMEM;
 		goto cleanup;
 	}
@@ -241,8 +243,7 @@ hv_nv_init_send_buffer_with_net_vsp(struct hv_device *device)
 
 	net_dev->send_buf  = contigmalloc(net_dev->send_buf_size, M_DEVBUF,
 	    M_ZERO, 0UL, BUS_SPACE_MAXADDR, PAGE_SIZE, 0);
-
-	if (!net_dev->send_buf) {
+	if (net_dev->send_buf == NULL) {
 		ret = ENOMEM;
 		goto cleanup;
 	}
@@ -790,13 +791,15 @@ hv_nv_on_send_completion(struct hv_device *device, hv_vm_packet_descriptor *pkt)
 
 /*
  * Net VSC on send
+ * Sends a packet on the specified Hyper-V device.
+ * Returns 0 on success, non-zero on failure.
  */
 int
 hv_nv_on_send(struct hv_device *device, netvsc_packet *pkt)
 {
 	netvsc_dev *net_dev;
 	nvsp_msg send_msg;
-	int ret = 0;
+	int ret;
 
 	net_dev = hv_nv_get_outbound_net_device(device);
 	if (!net_dev) {
@@ -828,7 +831,10 @@ hv_nv_on_send(struct hv_device *device, netvsc_packet *pkt)
 		    HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	}
 
-	atomic_add_int(&net_dev->num_outstanding_sends, 1);
+	/* Record outstanding send only if send_packet() succeeded */
+	if (ret == 0) {
+		atomic_add_int(&net_dev->num_outstanding_sends, 1);
+	}
 
 	return (ret);
 }
@@ -876,7 +882,8 @@ hv_nv_on_receive(struct hv_device *device, hv_vm_packet_descriptor *pkt)
 	
 	vm_xfer_page_pkt = (hv_vm_transfer_page_packet_header *)pkt;
 
-	if (vm_xfer_page_pkt->transfer_page_set_id != NETVSC_RECEIVE_BUFFER_ID) {
+	if (vm_xfer_page_pkt->transfer_page_set_id !=
+						    NETVSC_RECEIVE_BUFFER_ID) {
 		return;
 	}
 
@@ -1043,7 +1050,7 @@ hv_nv_on_receive_completion(void *context)
 	 * outbound traffic already.
 	 */
 	net_dev = hv_nv_get_inbound_net_device(device);
-	if (!net_dev) {
+	if (net_dev == NULL) {
 		return;
 	}
 	
@@ -1100,14 +1107,13 @@ hv_nv_on_channel_callback(void *context)
 	buffer = packet;
 
 	net_dev = hv_nv_get_inbound_net_device(device);
-	if (!net_dev) {
+	if (net_dev == NULL) {
 		goto out;
 	}
 
 	do {
 		ret = hv_vmbus_channel_recv_packet_raw(device->channel,
 		    buffer, bufferlen, &bytes_rxed, &request_id);
-
 		if (ret == 0) {
 			if (bytes_rxed > 0) {
 				desc = (hv_vm_packet_descriptor *)buffer;

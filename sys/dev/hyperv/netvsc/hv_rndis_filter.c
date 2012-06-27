@@ -124,7 +124,7 @@ hv_get_rndis_device(void)
 	rndis_device *device;
 
 	device = malloc(sizeof(rndis_device), M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (!device) {
+	if (device == NULL) {
 		return (NULL);
 	}
 
@@ -160,7 +160,7 @@ hv_rndis_request(rndis_device *device, uint32_t message_type,
 	rndis_set_request *set;
 
 	request = malloc(sizeof(rndis_request), M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (!request) {
+	if (request == NULL) {
 		return (NULL);
 	}
 
@@ -213,7 +213,7 @@ hv_put_rndis_request(rndis_device *device, rndis_request *request)
 static int
 hv_rf_send_request(rndis_device *device, rndis_request *request)
 {
-	int ret = 0;
+	int ret;
 	netvsc_packet *packet;
 
 	/* Set up the packet to send it */
@@ -344,7 +344,7 @@ hv_rf_on_receive(struct hv_device *device, netvsc_packet *pkt)
 	rndis_msg *rndis_hdr;
 
 	/* Make sure the rndis device state is initialized */
-	if (!net_dev->extension) {
+	if (net_dev->extension == NULL) {
 		return (ENODEV);
 	}
 
@@ -417,7 +417,7 @@ hv_rf_query_device(rndis_device *device, uint32_t oid, void *result,
 		   uint32_t *result_size)
 {
 	rndis_request *request;
-	uint32_t inresultSize = *result_size;
+	uint32_t in_result_size = *result_size;
 	rndis_query_request *query;
 	rndis_query_complete *query_complete;
 	int ret = 0;
@@ -425,7 +425,7 @@ hv_rf_query_device(rndis_device *device, uint32_t oid, void *result,
 	*result_size = 0;
 	request = hv_rndis_request(device, REMOTE_NDIS_QUERY_MSG,
 	    RNDIS_MESSAGE_SIZE(rndis_query_request));
-	if (!request) {
+	if (request == NULL) {
 		ret = -1;
 		goto cleanup;
 	}
@@ -449,20 +449,19 @@ hv_rf_query_device(rndis_device *device, uint32_t oid, void *result,
 	/* Copy the response back */
 	query_complete = &request->response_msg.msg.query_complete;
 	
-	if (query_complete->info_buffer_length > inresultSize) {
+	if (query_complete->info_buffer_length > in_result_size) {
 		ret = EINVAL;
 		goto cleanup;
 	}
 
-	memcpy(result, 
-	    (void *)((unsigned long)query_complete +
+	memcpy(result, (void *)((unsigned long)query_complete +
 	    query_complete->info_buffer_offset),
 	    query_complete->info_buffer_length);
 
 	*result_size = query_complete->info_buffer_length;
 
 cleanup:
-	if (request) {
+	if (request != NULL) {
 		hv_put_rndis_request(device, request);
 	}
 
@@ -507,7 +506,7 @@ hv_rf_set_packet_filter(rndis_device *device, uint32_t new_filter)
 
 	request = hv_rndis_request(device, REMOTE_NDIS_SET_MSG,
 	    RNDIS_MESSAGE_SIZE(rndis_set_request) + sizeof(uint32_t));
-	if (!request) {
+	if (request == NULL) {
 		ret = -1;
 		goto cleanup;
 	}
@@ -555,7 +554,7 @@ hv_rf_set_packet_filter(rndis_device *device, uint32_t new_filter)
 	}
 
 cleanup:
-	if (request) {
+	if (request != NULL) {
 		hv_put_rndis_request(device, request);
 	}
 exit:
@@ -643,7 +642,7 @@ hv_rf_halt_device(rndis_device *device)
 	/* Attempt to do a rndis device halt */
 	request = hv_rndis_request(device, REMOTE_NDIS_HALT_MSG,
 	    RNDIS_MESSAGE_SIZE(rndis_halt_request));
-	if (!request) {
+	if (request == NULL) {
 		goto cleanup;
 	}
 
@@ -659,7 +658,7 @@ hv_rf_halt_device(rndis_device *device)
 	device->state = RNDIS_DEV_UNINITIALIZED;
 
 cleanup:
-	if (request) {
+	if (request != NULL) {
 		hv_put_rndis_request(device, request);
 	}
 }
@@ -725,7 +724,7 @@ hv_rf_on_device_add(struct hv_device *device, void *additl_info)
 	netvsc_device_info *dev_info = (netvsc_device_info *)additl_info;
 
 	rndis_dev = hv_get_rndis_device();
-	if (!rndis_dev) {
+	if (rndis_dev == NULL) {
 		return (ENOMEM);
 	}
 
