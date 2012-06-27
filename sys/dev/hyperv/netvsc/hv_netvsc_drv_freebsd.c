@@ -357,10 +357,10 @@ hn_start_locked(struct ifnet *ifp)
 	netvsc_packet *packet;
 	struct mbuf *m_head, *m;
 	int i;
-	int num_frags = 0;
+	int num_frags;
+	int len;
+	int xlen;
 	int retries = 0;
-	int len = 0;
-	int xlen = 0;
 	int ret = 0;
 
 	while (!IFQ_DRV_IS_EMPTY(&sc->hn_ifp->if_snd)) {
@@ -381,15 +381,32 @@ hn_start_locked(struct ifnet *ifp)
 			}
 		}
 
-		/* Add 1 for skb->data and any additional ones requested */
+		/*
+		 * Reserve the number of pages requested.  Currently,
+		 * one page is reserved for the message in the RNDIS
+		 * filter packet
+		 */
 		num_frags += net_drv_obj->additional_request_page_buf_cnt;
 
-		/* Allocate a netvsc packet based on # of frags. */
-		/* Changed to M_NOWAIT to avoid sleep under spin lock */
+		if (num_frags > NETVSC_PACKET_MAXPAGE) {
+			/* Exceeds # page_buffers in netvsc_packet */
+			return (EINVAL);
+		}
+
+		/*
+		 * Allocate a buffer with space for a netvsc packet plus a
+		 * couple of reserved areas.  First comes a (currently 16
+		 * bytes, currently unused) reserved data area.  Second is
+		 * the netvsc_packet, which includes (currently 4) page
+		 * buffers.  Third is an area reserved for an
+		 * rndis_filter_packet struct.
+		 * Changed malloc to M_NOWAIT to avoid sleep under spin lock.
+		 * No longer reserving extra space for page buffers, as they
+		 * are already part of the netvsc_packet.
+		 */
 		buf = malloc(HV_NV_PACKET_OFFSET_IN_BUF +
-		    sizeof(netvsc_packet) +
-		    (num_frags * sizeof(hv_vmbus_page_buffer)) + 
-		    net_drv_obj->request_ext_size, M_DEVBUF, M_ZERO | M_NOWAIT);
+		    sizeof(netvsc_packet) + net_drv_obj->request_ext_size,
+		    M_DEVBUF, M_ZERO | M_NOWAIT);
 		if (buf == NULL) {
 			return (ENOMEM);
 		}
@@ -397,9 +414,12 @@ hn_start_locked(struct ifnet *ifp)
 		packet = (netvsc_packet *)(buf + HV_NV_PACKET_OFFSET_IN_BUF);
 		*(vm_offset_t *)buf = HV_NV_SC_PTR_OFFSET_IN_BUF;
 
-		packet->extension = (void *)((unsigned long)packet +
-		    sizeof(netvsc_packet) +
-		    (num_frags * sizeof(hv_vmbus_page_buffer)));
+		/*
+		 * extension points to the area reserved for the
+		 * rndis_filter_packet, which is placed just after
+		 * the netvsc_packet.
+		 */
+		packet->extension = packet + 1;
 
 		/* Set up the rndis header */
 		packet->page_buf_count = num_frags;
@@ -408,8 +428,8 @@ hn_start_locked(struct ifnet *ifp)
 		packet->tot_data_buf_len = len;
 
 		/*
-		 * Start filling in the page buffers starting at
-		 * AdditionalRequestPageBufferCount offset
+		 * Fill the page buffers with mbuf info starting at index
+		 * additional_request_page_buf_cnt.
 		 */
 		i = net_drv_obj->additional_request_page_buf_cnt;
 		for (m = m_head; m != NULL; m = m->m_next) {
@@ -540,10 +560,9 @@ netvsc_recv_callback(struct hv_device *device_ctx, netvsc_packet *packet)
 	m_new->m_pkthdr.rcvif = ifp;
 
 	/*
-	 * Fixme:  Moved completion back to hv_nv_on_receive(), so all
+	 * Note:  Moved RX completion back to hv_nv_on_receive() so all
 	 * messages (not just data messages) will trigger a response.
 	 */
-	/* hv_nv_on_receive_completion(packet->compl.rx.rx_completion_context); */
 
 	ifp->if_ipackets++;
 	/* Fixme:  Is the lock held? */
