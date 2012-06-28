@@ -705,7 +705,7 @@ cleanup:
  * Net VSC on device remove
  */
 int
-hv_nv_on_device_remove(struct hv_device *device)
+hv_nv_on_device_remove(struct hv_device *device, boolean_t destroy_channel)
 {
 	netvsc_packet *net_vsc_pkt;
 	netvsc_packet *next_net_vsc_pkt;
@@ -727,6 +727,11 @@ hv_nv_on_device_remove(struct hv_device *device)
 	/* At this point, no one should be accessing net_dev except in here */
 
 	/* Now, we can close the channel safely */
+
+	if (!destroy_channel) {
+		device->channel->state =
+		    HV_CHANNEL_CLOSING_NONDESTRUCTIVE_STATE;
+	}
 
 	hv_vmbus_channel_close(device->channel);
 

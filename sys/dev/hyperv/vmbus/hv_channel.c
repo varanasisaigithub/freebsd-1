@@ -186,9 +186,9 @@ hv_vmbus_channel_open(
 		goto cleanup;
 
 	if (open_info->response.open_result.status == 0) {
-		printf("VMBUS: channel <%p> open success.", new_channel);
+		printf("VMBUS: channel <%p> open success.\n", new_channel);
 	} else {
-		printf("Error VMBUS: channel <%p> open failed - %d!",
+		printf("Error VMBUS: channel <%p> open failed - %d!\n",
 			new_channel, open_info->response.open_result.status);
 	}
 

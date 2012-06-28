@@ -358,7 +358,7 @@ vmbus_channel_process_offer(void *context)
 	    /*
 	     * This state is used to indicate a successful open
 	     * so that when we do close the channel normally,
-	     * we can cleanup properly
+	     * we can clean up properly
 	     */
 	    new_channel->state = HV_CHANNEL_OPEN_STATE;
 

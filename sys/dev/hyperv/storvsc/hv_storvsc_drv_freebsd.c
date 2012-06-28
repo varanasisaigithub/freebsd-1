@@ -28,7 +28,7 @@
 
 /**
  * StorVSC driver for Hyper-V.  This driver presents a SCSI HBA interface
- * to the Comman Access Method (CAM) layer.  CAM control blocks (CCB's) are
+ * to the Comman Access Method (CAM) layer.  CAM control blocks (CCBs) are
  * converted into VSCSI protocol messages which are delivered to the parent
  * partition StorVSP driver over the Hyper-V VMBUS.
  */

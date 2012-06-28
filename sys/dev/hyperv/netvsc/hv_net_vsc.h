@@ -965,15 +965,9 @@ typedef struct hn_softc {
 	int             hn_carrier;
 	int             hn_if_flags;
 	struct sx       hn_lock;
-/*	vm_offset_t     hn_vaddr;		*/
 	int             hn_initdone;
-/*	int             hn_xc;			*/
-	struct hv_device   *hn_dev_obj;
+	struct hv_device  *hn_dev_obj;
 	netvsc_dev  	*net_dev;
-/*	int             hn_cb_status;		*/
-/*	uint64_t        hn_sts_err_tx_nobufs;	*/
-/*	uint64_t        hn_sts_err_tx_enxio; 	*/ /* device not ready to xmit */
-/*	uint64_t        hn_sts_err_tx_eio;	*/ /* device not ready to xmit */
 } hn_softc_t;
 
 
@@ -988,7 +982,8 @@ extern void netvsc_linkstatus_callback(struct hv_device *device_obj,
 extern int  netvsc_recv_callback(struct hv_device *device_obj,
 				 netvsc_packet *packet);
 extern netvsc_dev *hv_nv_on_device_add(struct hv_device *device, void *additional_info);
-extern int  hv_nv_on_device_remove(struct hv_device *device);
+extern int  hv_nv_on_device_remove(struct hv_device *device,
+				   boolean_t destroy_channel);
 extern int  hv_nv_on_send(struct hv_device *device, netvsc_packet *pkt);
 
 #endif  /* __HV_NET_VSC_H__ */
