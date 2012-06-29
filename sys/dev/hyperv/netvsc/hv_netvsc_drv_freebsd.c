@@ -102,6 +102,8 @@
 #include <dev/hyperv/include/hyperv.h>
 #include "hv_net_vsc.h"
 #include "hv_rndis.h"
+#include "hv_rndis_filter.h"
+
 
 /* Short for Hyper-V network interface */
 #define NETVSC_DEVNAME    "hn"
@@ -117,19 +119,9 @@
 
 /*
  * Data types
- * XXXKYS: Rename the device and driver structures
  */
-struct net_device_context {
-	/* points back to our device context */
-	struct hv_device  *device_ctx;
-/*	struct net_device_stats stats;	*/
-};
 
-/*
- * XXXKYS: May want to combine this with netvsc_driver_object
- */
-struct netvsc_driver_context {
-	netvsc_driver_object    drv_obj;
+struct hv_netvsc_driver_context {
 	uint32_t		drv_inited;
 };
 
@@ -148,9 +140,9 @@ struct netvsc_driver_context {
 
 int hv_promisc_mode = 0;    /* normal mode by default */
 
-
 /* The one and only one */
-static struct netvsc_driver_context g_netvsc_drv;
+static struct hv_netvsc_driver_context g_netvsc_drv;
+
 
 /*
  * Forward declarations
@@ -161,19 +153,16 @@ static void hn_ifinit(void *xsc);
 static int  hn_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data);
 static int  hn_start_locked(struct ifnet *ifp);
 static void hn_start(struct ifnet *ifp);
-
 static void netvsc_xmit_completion(void *context);
+
 
 /*
  * NetVsc driver initialization
+ * Note:  Filter init is no longer required
  */
 static int
 netvsc_drv_init(void)
 {
-	netvsc_driver_object *driver = &g_netvsc_drv.drv_obj;
-
-        hv_rndis_filter_init(driver);
-
 	return (0);
 }
 
@@ -351,7 +340,6 @@ static int
 hn_start_locked(struct ifnet *ifp)
 {
 	hn_softc_t *sc = ifp->if_softc;
-	netvsc_driver_object *net_drv_obj = &g_netvsc_drv.drv_obj;
 	struct hv_device *device_ctx = vmbus_get_devctx(sc->hn_dev);
 	uint8_t *buf;
 	netvsc_packet *packet;
@@ -386,7 +374,7 @@ hn_start_locked(struct ifnet *ifp)
 		 * one page is reserved for the message in the RNDIS
 		 * filter packet
 		 */
-		num_frags += net_drv_obj->additional_request_page_buf_cnt;
+		num_frags += HV_RF_NUM_TX_RESERVED_PAGE_BUFS;
 
 		if (num_frags > NETVSC_PACKET_MAXPAGE) {
 			/* Exceeds # page_buffers in netvsc_packet */
@@ -405,7 +393,7 @@ hn_start_locked(struct ifnet *ifp)
 		 * are already part of the netvsc_packet.
 		 */
 		buf = malloc(HV_NV_PACKET_OFFSET_IN_BUF +
-		    sizeof(netvsc_packet) + net_drv_obj->request_ext_size,
+		    sizeof(netvsc_packet) + sizeof(rndis_filter_packet),
 		    M_DEVBUF, M_ZERO | M_NOWAIT);
 		if (buf == NULL) {
 			return (ENOMEM);
@@ -429,9 +417,9 @@ hn_start_locked(struct ifnet *ifp)
 
 		/*
 		 * Fill the page buffers with mbuf info starting at index
-		 * additional_request_page_buf_cnt.
+		 * HV_RF_NUM_TX_RESERVED_PAGE_BUFS.
 		 */
-		i = net_drv_obj->additional_request_page_buf_cnt;
+		i = HV_RF_NUM_TX_RESERVED_PAGE_BUFS;
 		for (m = m_head; m != NULL; m = m->m_next) {
 			if (m->m_len) {
 				vm_offset_t paddr =

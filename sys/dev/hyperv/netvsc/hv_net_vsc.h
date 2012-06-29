@@ -1,7 +1,7 @@
 /*-
  * Copyright (c) 2009-2012 Microsoft Corp.
- * Copyright (c) 2012 NetApp Inc.
  * Copyright (c) 2010-2012 Citrix Inc.
+ * Copyright (c) 2012 NetApp Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -940,14 +940,6 @@ typedef struct netvsc_packet_ {
 	uint32_t	page_buf_count;
 	hv_vmbus_page_buffer	page_buffers[NETVSC_PACKET_MAXPAGE];
 } netvsc_packet;
-
-
-typedef struct netvsc_driver_object_ {
-	uint32_t	ring_buf_size;
-	uint32_t	request_ext_size;
-	uint32_t	additional_request_page_buf_cnt;
-	void		*context;
-} netvsc_driver_object;
 
 typedef struct {
 	uint8_t		mac_addr[6];  /* Assumption unsigned long */

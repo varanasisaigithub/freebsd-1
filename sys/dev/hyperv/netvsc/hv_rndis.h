@@ -1,7 +1,7 @@
 /*-
  * Copyright (c) 2009-2012 Microsoft Corp.
- * Copyright (c) 2012 NetApp Inc.
  * Copyright (c) 2010-2012 Citrix Inc.
+ * Copyright (c) 2012 NetApp Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -878,26 +878,6 @@ typedef struct rndismp_rx_bufs_info_ {
 #define NDIS_PACKET_TYPE_FUNCTIONAL	0x00000400
 #define NDIS_PACKET_TYPE_MAC_FRAME	0x00000800
 
-
-/* Destroy or preserve channel on filter/netvsc teardown */
-#define HV_RF_NV_DESTROY_CHANNEL	TRUE
-#define HV_RF_NV_RETAIN_CHANNEL		FALSE
-
-
-/*
- * Externs
- */
-extern int  hv_rndis_filter_init(netvsc_driver_object *driver);
-
-extern int  hv_rf_on_receive(struct hv_device *device, netvsc_packet *pkt);
-
-extern int  hv_rf_on_device_add(struct hv_device *device, void *additl_info);
-extern int  hv_rf_on_device_remove(struct hv_device *device,
-				   boolean_t destroy_channel);
-
-extern int  hv_rf_on_open(struct hv_device *device);
-extern int  hv_rf_on_close(struct hv_device *device);
-extern int  hv_rf_on_send(struct hv_device *device, netvsc_packet *pkt);
 
 #endif  /* __HV_RNDIS_H__ */
 

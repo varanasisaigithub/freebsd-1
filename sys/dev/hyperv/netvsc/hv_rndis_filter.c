@@ -1,7 +1,7 @@
 /*-
  * Copyright (c) 2009-2012 Microsoft Corp.
- * Copyright (c) 2012 NetApp Inc.
  * Copyright (c) 2010-2012 Citrix Inc.
+ * Copyright (c) 2012 NetApp Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,56 +43,8 @@
 #include <dev/hyperv/include/hyperv.h>
 #include "hv_net_vsc.h"
 #include "hv_rndis.h"
+#include "hv_rndis_filter.h"
 
-/*
- * Data types
- */
-
-typedef enum {
-	RNDIS_DEV_UNINITIALIZED = 0,
-	RNDIS_DEV_INITIALIZING,
-	RNDIS_DEV_INITIALIZED,
-	RNDIS_DEV_DATAINITIALIZED,
-} rndis_device_state;
-
-typedef struct rndis_request_ {
-	STAILQ_ENTRY(rndis_request_)	mylist_entry;
-	struct sema			wait_sema;	
-
-	/*
-	 * Fixme:  We assumed a fixed size response here.  If we do ever
-	 * need to handle a bigger response, we can either define a max
-	 * response message or add a response buffer variable above this field
-	 */
-	rndis_msg			response_msg;
-
-	/* Simplify allocation by having a netvsc packet inline */
-	netvsc_packet			pkt;
-	hv_vmbus_page_buffer		buffer;
-	/* Fixme:  We assumed a fixed size request here. */
-	rndis_msg			request_msg;
-} rndis_request;
-
-typedef struct rndis_device_ {
-	netvsc_dev			*net_dev;
-
-	rndis_device_state		state;
-	uint32_t			link_status;
-	uint32_t			new_request_id;
-
-	struct mtx			req_lock;
-
-	STAILQ_HEAD(RQ, rndis_request_)	myrequest_list;
-
-	uint8_t				hw_mac_addr[HW_MACADDR_LEN];
-} rndis_device;
-
-typedef struct rndis_filter_packet_ {
-	void				*completion_context;
-	pfn_on_send_rx_completion	on_completion;
-
-	rndis_msg			message;
-} rndis_filter_packet;
 
 /*
  * Forward declarations
@@ -390,9 +342,7 @@ hv_rf_on_receive(struct hv_device *device, netvsc_packet *pkt)
 	case REMOTE_NDIS_INITIALIZE_CMPLT:
 	case REMOTE_NDIS_QUERY_CMPLT:
 	case REMOTE_NDIS_SET_CMPLT:
-	/* Fixme:  Restored this case */
 	case REMOTE_NDIS_RESET_CMPLT:
-	/* Fixme:  Restored this case */
 	case REMOTE_NDIS_KEEPALIVE_CMPLT:
 		hv_rf_receive_response(rndis_dev, &rndis_mesg);
 		break;
@@ -559,20 +509,6 @@ cleanup:
 	}
 exit:
 	return (ret);
-}
-
-/*
- * RNDIS filter init
- */
-int
-hv_rndis_filter_init(netvsc_driver_object *driver)
-{
-	// Fixme:  Find out if these are necessary
-	// Fixme:  We may be able to eliminate the entire pre-init
-	driver->request_ext_size = sizeof(rndis_filter_packet);
-	driver->additional_request_page_buf_cnt = 1; /* For rndis header */
-
-	return (0);
 }
 
 /*

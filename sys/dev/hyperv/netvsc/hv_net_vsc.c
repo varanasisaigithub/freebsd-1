@@ -1,7 +1,7 @@
 /*-
  * Copyright (c) 2009-2012 Microsoft Corp.
- * Copyright (c) 2012 NetApp Inc.
  * Copyright (c) 2010-2012 Citrix Inc.
+ * Copyright (c) 2012 NetApp Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -44,6 +44,7 @@
 #include <dev/hyperv/include/hyperv.h>
 #include "hv_net_vsc.h"
 #include "hv_rndis.h"
+#include "hv_rndis_filter.h"
 
 
 /*
