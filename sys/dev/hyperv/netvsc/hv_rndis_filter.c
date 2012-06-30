@@ -444,6 +444,9 @@ hv_rf_query_device_link_status(rndis_device *device)
 
 /*
  * RNDIS filter set packet filter
+ * Sends an rndis request with the new filter, then waits for a response
+ * from the host.
+ * Returns zero on success, non-zero on failure.
  */
 static int
 hv_rf_set_packet_filter(rndis_device *device, uint32_t new_filter)
@@ -476,31 +479,25 @@ hv_rf_set_packet_filter(rndis_device *device, uint32_t new_filter)
 	}
 
 	/*
-	 * XXXKYS: For some reason timed waits don't appear to work;
-	 * need to check this.
-	 *
-	 * Fixme:  Replaced with correct sema_wait() call
-	 * Address filter hang fixed elsewhere
-	 * Fixme:  Remove the unnecessary return checking code
+	 * Wait for the response from the host.  Another thread will signal
+	 * us when the response has arrived.  In the failure case,
+	 * sema_timedwait() returns a non-zero status after waiting 5 seconds.
 	 */
-	/*ret = sema_timedwait(&request->wait_sema, 500); */ /* Fixme: KYS 5 seconds */
-
-	sema_wait(&request->wait_sema);
-	/* Fixme:  Kludge */
-	ret = 1;
-
-	if (!ret) {
+	ret = sema_timedwait(&request->wait_sema, 500);
+	if (ret == 0) {
+		/* Response received, check status */
+		set_complete = &request->response_msg.msg.set_complete;
+		status = set_complete->status;
+		if (status != RNDIS_STATUS_SUCCESS) {
+			/* Bad response status, return error */
+			ret = -2;
+		}
+	} else {
 		/*
 		 * We cannot deallocate the request since we may still
 		 * receive a send completion for it.
 		 */
 		goto exit;
-	} else {
-		if (ret > 0) {
-			ret = 0;
-		}
-		set_complete = &request->response_msg.msg.set_complete;
-		status = set_complete->status;
 	}
 
 cleanup:
@@ -605,7 +602,7 @@ cleanup:
 static int
 hv_rf_open_device(rndis_device *device)
 {
-	int ret = 0;
+	int ret;
 
 	if (device->state != RNDIS_DEV_INITIALIZED) {
 		return (0);
