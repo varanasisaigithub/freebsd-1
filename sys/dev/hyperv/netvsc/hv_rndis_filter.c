@@ -181,7 +181,7 @@ hv_rf_send_request(rndis_device *device, rndis_request *request)
 	packet->page_buffers[0].offset =
 	    (unsigned long)&request->request_msg & (PAGE_SIZE - 1);
 
-	packet->compl.send.send_completion_context = request; /* packet; */
+	packet->compl.send.send_completion_context = request; /* packet */
 	packet->compl.send.on_send_completion =
 	    hv_rf_on_send_request_completion;
 	packet->compl.send.send_completion_tid = (unsigned long)device;
@@ -793,7 +793,13 @@ hv_rf_on_send(struct hv_device *device, netvsc_packet *pkt)
 	pkt->compl.send.on_send_completion = hv_rf_on_send_completion;
 	pkt->compl.send.send_completion_context = filter_pkt;
 
+	/*
+	 * Invoke netvsc send.  If return status is bad, the caller now
+	 * resets the context pointers before retrying.
+	 */
 	ret = hv_nv_on_send(device, pkt);
+#ifdef REMOVED
+	// Fixme:  Resetting of pointers is now done by caller
 	if (ret != 0) {
 		/*
 		 * Reset the completion to originals to allow retries from above
@@ -804,6 +810,7 @@ hv_rf_on_send(struct hv_device *device, netvsc_packet *pkt)
 		pkt->compl.send.send_completion_context =
 		    filter_pkt->completion_context;
 	}
+#endif
 
 	return (ret);
 }

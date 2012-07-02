@@ -433,12 +433,12 @@ hn_start_locked(struct ifnet *ifp)
 			}
 		}
 
+retry_send:
 		/* Set the completion routine */
 		packet->compl.send.on_send_completion = netvsc_xmit_completion;
 		packet->compl.send.send_completion_context = packet;
 		packet->compl.send.send_completion_tid = (uint64_t)m_head;
 
-retry_send:
 		/* Removed critical_enter(), does not appear necessary */
 		ret = hv_rf_on_send(device_ctx, packet);
 
