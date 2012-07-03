@@ -968,11 +968,13 @@ typedef struct hn_softc {
  */
 extern int hv_promisc_mode;
 
-extern void hv_nv_on_receive_completion(void *context);
 extern void netvsc_linkstatus_callback(struct hv_device *device_obj,
 				       uint32_t status);
 extern int  netvsc_recv_callback(struct hv_device *device_obj,
 				 netvsc_packet *packet);
+extern void netvsc_xmit_completion(void *context);
+
+extern void hv_nv_on_receive_completion(void *context);
 extern netvsc_dev *hv_nv_on_device_add(struct hv_device *device, void *additional_info);
 extern int  hv_nv_on_device_remove(struct hv_device *device,
 				   boolean_t destroy_channel);

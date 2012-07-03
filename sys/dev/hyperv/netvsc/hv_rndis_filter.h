@@ -90,6 +90,7 @@ typedef struct rndis_device_ {
 
 typedef struct rndis_filter_packet_ {
 	void				*completion_context;
+	/* No longer used */
 	pfn_on_send_rx_completion	on_completion;
 
 	rndis_msg			message;

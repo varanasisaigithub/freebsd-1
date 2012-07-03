@@ -784,8 +784,7 @@ hv_rf_on_send(struct hv_device *device, netvsc_packet *pkt)
 	    (unsigned long)rndis_mesg & (PAGE_SIZE - 1);
 	pkt->page_buffers[0].length = rndis_msg_size;
 
-	/* Save the packet send completion and context */
-	filter_pkt->on_completion = pkt->compl.send.on_send_completion;
+	/* Save the packet context */
 	filter_pkt->completion_context =
 	    pkt->compl.send.send_completion_context;
 
@@ -798,19 +797,6 @@ hv_rf_on_send(struct hv_device *device, netvsc_packet *pkt)
 	 * resets the context pointers before retrying.
 	 */
 	ret = hv_nv_on_send(device, pkt);
-#ifdef REMOVED
-	// Fixme:  Resetting of pointers is now done by caller
-	if (ret != 0) {
-		/*
-		 * Reset the completion to originals to allow retries from above
-		 * Fixme:  Research how to eliminate this function pointer.
-		 */
-		pkt->compl.send.on_send_completion =
-		    filter_pkt->on_completion;
-		pkt->compl.send.send_completion_context =
-		    filter_pkt->completion_context;
-	}
-#endif
 
 	return (ret);
 }
@@ -824,7 +810,7 @@ hv_rf_on_send_completion(void *context)
 	rndis_filter_packet *filter_pkt = (rndis_filter_packet *)context;
 
 	/* Pass it back to the original handler */
-	filter_pkt->on_completion(filter_pkt->completion_context);
+	netvsc_xmit_completion(filter_pkt->completion_context);
 }
 
 /*

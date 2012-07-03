@@ -153,7 +153,6 @@ static void hn_ifinit(void *xsc);
 static int  hn_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data);
 static int  hn_start_locked(struct ifnet *ifp);
 static void hn_start(struct ifnet *ifp);
-static void netvsc_xmit_completion(void *context);
 
 
 /*
@@ -316,7 +315,7 @@ netvsc_shutdown(device_t dev)
  * pointer.  The sc pointer is not currently needed in this function, and
  * it is not presently populated by the TX function.
  */
-static void
+void
 netvsc_xmit_completion(void *context)
 {
 	netvsc_packet *packet = (netvsc_packet *)context;
