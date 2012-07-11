@@ -57,7 +57,6 @@ vmbus_channel_set_event(hv_vmbus_channel *channel)
 {
 	hv_vmbus_monitor_page *monitor_page;
 
-
 	if (channel->offer_msg.monitor_allocated) {
 		/* Each uint32_t represents 32 channels */
 		synch_set_bit((channel->offer_msg.child_rel_id & 31),
@@ -76,11 +75,7 @@ vmbus_channel_set_event(hv_vmbus_channel *channel)
 }
 
 /**
- * @brief Retrieve various channel debug info
- */
-
-/**
- *  Open the specified channel
+ * @brief Open the specified channel
  */
 int
 hv_vmbus_channel_open(
@@ -104,11 +99,10 @@ hv_vmbus_channel_open(
 	/* Allocate the ring buffer */
 	out = contigmalloc((send_ring_buffer_size + recv_ring_buffer_size),
 		M_DEVBUF, M_ZERO, 0UL, BUS_SPACE_MAXADDR, PAGE_SIZE, 0);
-
-	if (out == NULL) {
-	    printf("Error VMBUS: malloc failed to allocate Ring Buffer\n");
+	KASSERT(out != NULL,
+	    ("Error VMBUS: contigmalloc failed to allocate Ring Buffer!"));
+	if (out == NULL)
 	    return (ENOMEM);
-	}
 
 	in = ((uint8_t *) out + send_ring_buffer_size);
 
@@ -144,17 +138,16 @@ hv_vmbus_channel_open(
 			sizeof(hv_vmbus_channel_open_channel),
 		M_DEVBUF,
 		M_NOWAIT);
-
-	if (open_info == NULL) {
-	    printf("Error VMBUS: malloc failed to allocate Open Channel message\n");
+	KASSERT(open_info != NULL,
+	    ("Error VMBUS: malloc failed to allocate Open Channel message!"));
+	if (open_info == NULL)
 	    return (ENOMEM);
-	}
 
 	sema_init(&open_info->wait_sema, 0, "Open Info Sema");
 
 	open_msg = (hv_vmbus_channel_open_channel*) open_info->msg;
 	open_msg->header.message_type = HV_CHANNEL_MESSAGE_OPEN_CHANNEL;
-	open_msg->open_id = new_channel->offer_msg.child_rel_id; /* FIXME */
+	open_msg->open_id = new_channel->offer_msg.child_rel_id;
 	open_msg->child_rel_id = new_channel->offer_msg.child_rel_id;
 	open_msg->ring_buffer_gpadl_handle =
 		new_channel->ring_buffer_gpadl_handle;
@@ -174,20 +167,21 @@ hv_vmbus_channel_open(
 	mtx_unlock_spin(&hv_vmbus_g_connection.channel_msg_lock);
 
 	ret = hv_vmbus_post_message(
-		open_msg,
-		sizeof(hv_vmbus_channel_open_channel));
+		open_msg, sizeof(hv_vmbus_channel_open_channel));
 
 	if (ret != 0)
-		goto cleanup;
+	    goto cleanup;
 
 	ret = sema_timedwait(&open_info->wait_sema, 500); /* KYS 5 seconds */
 
 	if (ret)
-		goto cleanup;
+	    goto cleanup;
 
 	if (open_info->response.open_result.status == 0) {
+	    if(bootverbose)
 		printf("VMBUS: channel <%p> open success.\n", new_channel);
 	} else {
+	    if(bootverbose)
 		printf("Error VMBUS: channel <%p> open failed - %d!\n",
 			new_channel, open_info->response.open_result.status);
 	}
@@ -206,7 +200,7 @@ hv_vmbus_channel_open(
 }
 
 /**
- * Create a gpadl for the specified buffer
+ * @brief Create a gpadl for the specified buffer
  */
 static int
 vmbus_channel_create_gpadl_header(
@@ -232,120 +226,120 @@ vmbus_channel_create_gpadl_header(
 
 	/*do we need a gpadl body msg */
 	pfnSize = HV_MAX_SIZE_CHANNEL_MESSAGE
-		- sizeof(hv_vmbus_channel_gpadl_header)
-		- sizeof(hv_gpa_range);
+	    - sizeof(hv_vmbus_channel_gpadl_header)
+	    - sizeof(hv_gpa_range);
 	pfnCount = pfnSize / sizeof(uint64_t);
 
-	if (page_count > pfnCount) { 	/* if(we need a gpadl body)	*/
-					/* fill in the header		*/
-		msg_size = sizeof(hv_vmbus_channel_msg_info)
-			+ sizeof(hv_vmbus_channel_gpadl_header)
-			+ sizeof(hv_gpa_range)
-			+ pfnCount * sizeof(uint64_t);
-		msg_header = malloc(msg_size, M_DEVBUF, M_NOWAIT | M_ZERO);
-		if(msg_header == NULL) {
-		    printf("Error VMBUS: malloc failed to allocate Gpadl Message!\n");
+	if (page_count > pfnCount) { /* if(we need a gpadl body)	*/
+	    /* fill in the header		*/
+	    msg_size = sizeof(hv_vmbus_channel_msg_info)
+		+ sizeof(hv_vmbus_channel_gpadl_header)
+		+ sizeof(hv_gpa_range)
+		+ pfnCount * sizeof(uint64_t);
+	    msg_header = malloc(msg_size, M_DEVBUF, M_NOWAIT | M_ZERO);
+	    KASSERT(
+		msg_header != NULL,
+		("Error VMBUS: malloc failed to allocate Gpadl Message!"));
+	    if (msg_header == NULL)
+		return (ENOMEM);
+
+	    TAILQ_INIT(&msg_header->sub_msg_list_anchor);
+	    msg_header->message_size = msg_size;
+
+	    gpa_header = (hv_vmbus_channel_gpadl_header*) msg_header->msg;
+	    gpa_header->range_count = 1;
+	    gpa_header->range_buf_len = sizeof(hv_gpa_range)
+		+ page_count * sizeof(uint64_t);
+	    gpa_header->range[0].byte_offset = 0;
+	    gpa_header->range[0].byte_count = size;
+	    for (i = 0; i < pfnCount; i++) {
+		gpa_header->range[0].pfn_array[i] = pfn + i;
+	    }
+	    *msg_info = msg_header;
+	    *message_count = 1;
+
+	    pfnSum = pfnCount;
+	    pfnLeft = page_count - pfnCount;
+
+	    /*
+	     *  figure out how many pfns we can fit
+	     */
+	    pfnSize = HV_MAX_SIZE_CHANNEL_MESSAGE
+		- sizeof(hv_vmbus_channel_gpadl_body);
+	    pfnCount = pfnSize / sizeof(uint64_t);
+
+	    /*
+	     * fill in the body
+	     */
+	    while (pfnLeft) {
+		if (pfnLeft > pfnCount) {
+		    pfnCurr = pfnCount;
+		} else {
+		    pfnCurr = pfnLeft;
+		}
+
+		msg_size = sizeof(hv_vmbus_channel_msg_info) +
+		    sizeof(hv_vmbus_channel_gpadl_body) +
+		    pfnCurr * sizeof(uint64_t);
+		msg_body = malloc(msg_size, M_DEVBUF, M_NOWAIT | M_ZERO);
+		KASSERT(
+		    msg_body != NULL,
+		    ("Error VMBUS: malloc failed to allocate Gpadl msg_body!"));
+		if (msg_body == NULL)
 		    return (ENOMEM);
-		}
-		TAILQ_INIT(&msg_header->sub_msg_list_anchor);
-		msg_header->message_size = msg_size;
 
-		gpa_header = (hv_vmbus_channel_gpadl_header*) msg_header->msg;
-		gpa_header->range_count = 1;
-		gpa_header->range_buf_len = sizeof(hv_gpa_range)
-			+ page_count * sizeof(uint64_t);
-		gpa_header->range[0].byte_offset = 0;
-		gpa_header->range[0].byte_count = size;
-		for (i = 0; i < pfnCount; i++) {
-			gpa_header->range[0].pfn_array[i] = pfn + i;
-		}
-		*msg_info = msg_header;
-		*message_count = 1;
-
-		pfnSum = pfnCount;
-		pfnLeft = page_count - pfnCount;
-
+		msg_body->message_size = msg_size;
+		(*message_count)++;
+		gpadl_body =
+		    (hv_vmbus_channel_gpadl_body*) msg_body->msg;
 		/*
-		 *  figure out how many pfns we can fit
+		 * gpadl_body->gpadl = kbuffer;
 		 */
-		pfnSize = HV_MAX_SIZE_CHANNEL_MESSAGE
-			- sizeof(hv_vmbus_channel_gpadl_body);
-		pfnCount = pfnSize / sizeof(uint64_t);
-
-		/*
-		 * fill in the body
-		 */
-		while (pfnLeft) {
-			if (pfnLeft > pfnCount) {
-				pfnCurr = pfnCount;
-			} else {
-				pfnCurr = pfnLeft;
-			}
-
-			msg_size = sizeof(hv_vmbus_channel_msg_info) +
-				sizeof(hv_vmbus_channel_gpadl_body) +
-				pfnCurr * sizeof(uint64_t);
-			msg_body = malloc(
-				msg_size,
-				M_DEVBUF,
-				M_NOWAIT | M_ZERO);
-			if(msg_header == NULL) {
-			    printf("Error VMBUS: malloc failed to allocate Gpadl Message!");
-			    return (ENOMEM);
-			}
-			msg_body->message_size = msg_size;
-			(*message_count)++;
-			gpadl_body =
-				(hv_vmbus_channel_gpadl_body*) msg_body->msg;
-			/*
-			 * FIXME: Gpadl is uint32_t and we are using a pointer
-			 * which could be 64-bit
-			 *
-			 * gpadl_body->gpadl = kbuffer;
-			 */
-			for (i = 0; i < pfnCurr; i++) {
-				gpadl_body->pfn[i] = pfn + pfnSum + i;
-			}
-
-			TAILQ_INSERT_TAIL(
-				&msg_header->sub_msg_list_anchor,
-				msg_body,
-				msg_list_entry);
-			pfnSum += pfnCurr;
-			pfnLeft -= pfnCurr;
-		}
-	} else {	/* else everything fits in a header */
-
-		msg_size = sizeof(hv_vmbus_channel_msg_info)  +
-			sizeof(hv_vmbus_channel_gpadl_header) +
-			sizeof(hv_gpa_range) +
-			page_count * sizeof(uint64_t);
-		msg_header = malloc(msg_size, M_DEVBUF, M_NOWAIT | M_ZERO);
-		if(msg_header == NULL) {
-		    printf("Error VMBUS: malloc failed to allocate Gpadl Message!");
-		    return (ENOMEM);
-		}
-		msg_header->message_size = msg_size;
-
-		gpa_header = (hv_vmbus_channel_gpadl_header*) msg_header->msg;
-		gpa_header->range_count = 1;
-		gpa_header->range_buf_len = sizeof(hv_gpa_range) +
-			page_count * sizeof(uint64_t);
-		gpa_header->range[0].byte_offset = 0;
-		gpa_header->range[0].byte_count = size;
-		for (i = 0; i < page_count; i++) {
-			gpa_header->range[0].pfn_array[i] = pfn + i;
+		for (i = 0; i < pfnCurr; i++) {
+		    gpadl_body->pfn[i] = pfn + pfnSum + i;
 		}
 
-		*msg_info = msg_header;
-		*message_count = 1;
+		TAILQ_INSERT_TAIL(
+		    &msg_header->sub_msg_list_anchor,
+		    msg_body,
+		    msg_list_entry);
+		pfnSum += pfnCurr;
+		pfnLeft -= pfnCurr;
+	    }
+	} else { /* else everything fits in a header */
+
+	    msg_size = sizeof(hv_vmbus_channel_msg_info) +
+		sizeof(hv_vmbus_channel_gpadl_header) +
+		sizeof(hv_gpa_range) +
+		page_count * sizeof(uint64_t);
+	    msg_header = malloc(msg_size, M_DEVBUF, M_NOWAIT | M_ZERO);
+	    KASSERT(
+		msg_header != NULL,
+		("Error VMBUS: malloc failed to allocate Gpadl Message!"));
+	    if (msg_header == NULL)
+		return (ENOMEM);
+
+	    msg_header->message_size = msg_size;
+
+	    gpa_header = (hv_vmbus_channel_gpadl_header*) msg_header->msg;
+	    gpa_header->range_count = 1;
+	    gpa_header->range_buf_len = sizeof(hv_gpa_range) +
+		page_count * sizeof(uint64_t);
+	    gpa_header->range[0].byte_offset = 0;
+	    gpa_header->range[0].byte_count = size;
+	    for (i = 0; i < page_count; i++) {
+		gpa_header->range[0].pfn_array[i] = pfn + i;
+	    }
+
+	    *msg_info = msg_header;
+	    *message_count = 1;
 	}
 
 	return (0);
 }
 
 /**
- * Establish a GPADL for the specified buffer
+ * @brief Establish a GPADL for the specified buffer
  */
 int
 hv_vmbus_channel_establish_gpadl(
@@ -364,17 +358,14 @@ hv_vmbus_channel_establish_gpadl(
 	hv_vmbus_channel_msg_info*	curr;
 	uint32_t			next_gpadl_handle;
 
-	int retrycnt = 0; /* Fixme:  NetScaler */
-
-	/* Fixme:  NetScaler:  Used in error message only */
-	int mcnt = 0;
-
 	next_gpadl_handle = hv_vmbus_g_connection.next_gpadl_handle;
 	atomic_add_int((int*) &hv_vmbus_g_connection.next_gpadl_handle, 1);
 
 	ret = vmbus_channel_create_gpadl_header(contig_buffer, size, &msg_info, &msg_count);
+
 	if(ret != 0) { /* if(allocation failed) return immediately */
-	    /* FIXME: probably should reverse atomic_add_int above */
+	    /* reverse atomic_add_int above */
+	    atomic_subtract_int((int*) &hv_vmbus_g_connection.next_gpadl_handle, 1);
 	    return ret;
 	}
 
@@ -401,10 +392,8 @@ hv_vmbus_channel_establish_gpadl(
 	    goto cleanup;
 	}
 
-	mcnt = 1;
 	if (msg_count > 1) {
 	    TAILQ_FOREACH(curr, &msg_info->sub_msg_list_anchor, msg_list_entry) {
-		mcnt++;
 		sub_msg_info = curr;
 		gpadl_body =
 		    (hv_vmbus_channel_gpadl_body*) sub_msg_info->msg;
@@ -413,31 +402,18 @@ hv_vmbus_channel_establish_gpadl(
 		    HV_CHANNEL_MESSAGE_GPADL_BODY;
 		gpadl_body->gpadl = next_gpadl_handle;
 
-		retry: ret =
-		    hv_vmbus_post_message(
+		ret = hv_vmbus_post_message(
 			gpadl_body,
 			sub_msg_info->message_size
 			    - (uint32_t) sizeof(hv_vmbus_channel_msg_info));
-		/* Fixme:  NetScaler */
-		if (ret != 0) {
-		    if ((ret == HV_STATUS_INSUFFICIENT_BUFFERS)
-			&& (retrycnt < 5)) {
-			printf(
-			    "Error VMBUS: Failed to send GPADL body (%d): %x, retry: %d\n",
-			    mcnt,
-			    (unsigned int) ret,
-			    retrycnt);
-			DELAY(5000);
-			retrycnt++;
-			goto retry;
-		    }
-		}
+		if(ret != 0) /* if (the post message failed) give up and clean up */
+		    goto cleanup;
 	    }
 	}
 
 	ret = sema_timedwait(&msg_info->wait_sema, 500); /* KYS 5 seconds*/
-	if (ret)
-		goto cleanup;
+	if (ret != 0)
+	    goto cleanup;
 
 	*gpadl_handle = gpadl_msg->gpadl;
 
@@ -454,7 +430,7 @@ cleanup:
 }
 
 /**
- * Teardown the specified GPADL handle
+ * @brief Teardown the specified GPADL handle
  */
 int
 hv_vmbus_channel_teardown_gpdal(
@@ -469,9 +445,9 @@ hv_vmbus_channel_teardown_gpdal(
 		malloc(	sizeof(hv_vmbus_channel_msg_info) +
 			sizeof(hv_vmbus_channel_gpadl_teardown),
 				M_DEVBUF, M_NOWAIT);
-
+	KASSERT(info != NULL,
+	    ("Error VMBUS: malloc failed to allocate Gpadl Teardown Msg!"));
 	if (info == NULL) {
-	    printf("Error VMBUS: malloc failed to allocate Gpadl Teardown Message!\n");
 	    ret = ENOMEM;
 	    goto cleanup;
 	}
@@ -490,7 +466,7 @@ hv_vmbus_channel_teardown_gpdal(
 
 	ret = hv_vmbus_post_message(msg, sizeof(hv_vmbus_channel_gpadl_teardown));
 	if (ret != 0) 
-		goto cleanup;
+	    goto cleanup;
 	
 	ret = sema_timedwait(&info->wait_sema, 500); /* KYS 5 seconds */
 
@@ -508,7 +484,7 @@ cleanup:
 }
 
 /**
- *  Close the specified channel
+ * @brief Close the specified channel
  */
 void
 hv_vmbus_channel_close(hv_vmbus_channel *channel)
@@ -528,24 +504,16 @@ hv_vmbus_channel_close(hv_vmbus_channel *channel)
 		malloc(	sizeof(hv_vmbus_channel_msg_info) +
 			sizeof(hv_vmbus_channel_close_channel),
 				M_DEVBUF, M_NOWAIT);
-
-	KASSERT(info != NULL, ("malloc failed")); /* KYS: eliminate this error */
-	if(info == NULL) {
-	    /* FIXME: need to replace malloc with preallocated buffers*/
-	    printf("Error VMBUS: malloc failed to allocate Channel Close Message!\n");
+	KASSERT(info != NULL, ("VMBUS: malloc failed hv_vmbus_channel_close!"));
+	if(info == NULL)
 	    return;
-	}
+
 	msg = (hv_vmbus_channel_close_channel*) info->msg;
 	msg->header.message_type = HV_CHANNEL_MESSAGE_CLOSE_CHANNEL;
 	msg->child_rel_id = channel->offer_msg.child_rel_id;
 
 	ret = hv_vmbus_post_message(
-		msg,
-		sizeof(hv_vmbus_channel_close_channel));
-
-	if (ret != 0) {
-		/* TODO: handle bad post message */
-	}
+		msg, sizeof(hv_vmbus_channel_close_channel));
 
 	/* Tear down the gpadl for the channel's ring buffer */
 	if (channel->ring_buffer_gpadl_handle) {
@@ -585,7 +553,7 @@ hv_vmbus_channel_close(hv_vmbus_channel *channel)
 }
 
 /**
- * Send the specified buffer on the given channel
+ * @brief Send the specified buffer on the given channel
  */
 int
 hv_vmbus_channel_send_packet(
@@ -636,7 +604,7 @@ hv_vmbus_channel_send_packet(
 }
 
 /**
- * Send a range of single-page buffer packets using
+ * @brief Send a range of single-page buffer packets using
  * a GPADL Direct packet type
  */
 int
@@ -706,7 +674,7 @@ hv_vmbus_channel_send_packet_pagebuffer(
 }
 
 /**
- *  Send a multi-page buffer packet using a GPADL Direct packet type
+ * @brief Send a multi-page buffer packet using a GPADL Direct packet type
  */
 int
 hv_vmbus_channel_send_packet_multipagebuffer(
@@ -781,7 +749,7 @@ hv_vmbus_channel_send_packet_multipagebuffer(
 }
 
 /**
- * Retrieve the user packet on the specified channel
+ * @brief Retrieve the user packet on the specified channel
  */
 int
 hv_vmbus_channel_recv_packet(
@@ -822,7 +790,7 @@ hv_vmbus_channel_recv_packet(
 }
 
 /**
- * Retrieve the raw packet on the specified channel
+ * @brief Retrieve the raw packet on the specified channel
  */
 int
 hv_vmbus_channel_recv_packet_raw(

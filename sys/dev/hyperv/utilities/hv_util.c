@@ -304,10 +304,9 @@ hv_shutdown_cb(void *context)
 		    case 1:
 			icmsghdrp->status = HV_S_OK;
 			execute_shutdown = 1;
-			/*
-			printf("Shutdown request received -"
-			    " graceful shutdown initiated\n");
-			 */
+			if(bootverbose)
+			    printf("Shutdown request received -"
+				    " graceful shutdown initiated\n");
 			break;
 		    default:
 			icmsghdrp->status = HV_E_FAIL;

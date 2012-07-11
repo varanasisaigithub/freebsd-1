@@ -85,10 +85,10 @@ hv_vmbus_connect(void) {
 					M_NOWAIT | M_ZERO, 0UL,
 					BUS_SPACE_MAXADDR,
 					PAGE_SIZE, 0);
-
+	KASSERT(hv_vmbus_g_connection.interrupt_page != NULL,
+	    ("Error VMBUS: malloc failed to allocate Channel"
+		" Request Event message!"));
 	if (hv_vmbus_g_connection.interrupt_page == NULL) {
-	    printf("Error VMBUS: malloc failed to allocate Channel Request Event message"
-		    "(hv_vmbus_connect)!\n");
 	    ret = ENOMEM;
 	    goto cleanup;
 	}
@@ -112,10 +112,9 @@ hv_vmbus_connect(void) {
 		BUS_SPACE_MAXADDR,
 		PAGE_SIZE,
 		0);
-
+	KASSERT(hv_vmbus_g_connection.monitor_pages != NULL,
+	    ("Error VMBUS: malloc failed to allocate Monitor Pages!"));
 	if (hv_vmbus_g_connection.monitor_pages == NULL) {
-	    printf("Error VMBUS: malloc failed to allocate Monitor Pages"
-		    "(hv_vmbus_connect)!\n");
 	    ret = ENOMEM;
 	    goto cleanup;
 	}
@@ -124,9 +123,9 @@ hv_vmbus_connect(void) {
 		malloc(sizeof(hv_vmbus_channel_msg_info) +
 			sizeof(hv_vmbus_channel_initiate_contact),
 			M_DEVBUF, M_NOWAIT | M_ZERO);
-
+	KASSERT(msg_info != NULL,
+	    ("Error VMBUS: malloc failed for Initiate Contact message!"));
 	if (msg_info == NULL) {
-	    printf("Error VMBUS: malloc failed for Initiate Contact message!\n");
 	    ret = ENOMEM;
 	    goto cleanup;
 	}
@@ -246,18 +245,17 @@ hv_vmbus_disconnect(void) {
 	int			 ret = 0;
 	hv_vmbus_channel_unload* msg;
 
-	msg = malloc(sizeof(hv_vmbus_channel_unload), M_DEVBUF, M_NOWAIT | M_ZERO);
-
-	if (msg == NULL) {
-	    printf("Error VMBUS: malloc failed to allocate Channel Unload Message!\n");
+	msg = malloc(sizeof(hv_vmbus_channel_unload),
+	    M_DEVBUF, M_NOWAIT | M_ZERO);
+	KASSERT(msg != NULL,
+	    ("Error VMBUS: malloc failed to allocate Channel Unload Msg!"));
+	if (msg == NULL)
 	    return (ENOMEM);
-	}
 
 	msg->message_type = HV_CHANNEL_MESSAGE_UNLOAD;
 
 	ret = hv_vmbus_post_message(msg, sizeof(hv_vmbus_channel_unload));
 
-	KASSERT(ret == 0, ("Message Post Failed\n"));
 
 	contigfree(hv_vmbus_g_connection.interrupt_page, PAGE_SIZE, M_DEVBUF);
 
@@ -390,17 +388,26 @@ hv_vmbus_on_events(void *arg)
 int hv_vmbus_post_message(void *buffer, size_t bufferLen) {
 	int ret = 0;
 	hv_vmbus_connection_id connId;
-	int retries = 0;
+	unsigned retries = 0;
 
-	while (retries < 3) {
+	/* NetScalar delays from previous code was consoldated here */
+	static int delayAmount[] = {100, 100, 100, 500, 500, 5000, 5000, 5000};
+
+	/* for(each entry in delayAmount) try to post message,
+	 *  delay a little bit before retrying
+	 */
+	for (retries = 0;
+	    retries < sizeof(delayAmount)/sizeof(delayAmount[0]); retries++) {
 	    connId.as_uint32_t = 0;
 	    connId.u.id = HV_VMBUS_MESSAGE_CONNECTION_ID;
 	    ret = hv_vmbus_post_msg_via_msg_ipc(connId, 1, buffer, bufferLen);
 	    if (ret != HV_STATUS_INSUFFICIENT_BUFFERS)
-		return (ret);
-	    retries++;
-	    DELAY(100); /* TODO: KYS We should use a blocking wait call */
+		break;
+	    /* TODO: KYS We should use a blocking wait call */
+	    DELAY(delayAmount[retries]);
 	}
+
+	KASSERT(ret != 0, ("Error VMBUS: Message Post Failed\n"));
 
 	return (ret);
 }

@@ -115,10 +115,9 @@ hv_work_queue_create(char* name)
 	struct hv_work_queue*	wq;
 
 	wq = malloc(sizeof(struct hv_work_queue), M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (wq == NULL) {
-	    printf("Error VMBUS: Failed to allocate work_queue\n");
+	KASSERT(wq != NULL, ("Error VMBUS: Failed to allocate work_queue\n"));
+	if (wq == NULL)
 	    return (NULL);
-	}
 
 	/*
 	 * We use work abstraction to handle messages
@@ -192,10 +191,9 @@ hv_queue_work_item(struct hv_work_queue *wq, void (*callback)(void *), void *con
 {
 	struct hv_work_item *w = malloc(sizeof(struct hv_work_item),
 					M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (w == NULL) {
-	    printf("Error VMBUS: Failed to allocate WorkItem\n");
+	KASSERT(w != NULL, ("Error VMBUS: Failed to allocate WorkItem\n"));
+	if (w == NULL)
 	    return (ENOMEM);
-	}
 
 	w->callback = callback;
 	w->context = context;
@@ -228,10 +226,9 @@ hv_vmbus_allocate_channel(void)
 					sizeof(hv_vmbus_channel),
 					M_DEVBUF,
 					M_NOWAIT | M_ZERO);
-	if (channel == NULL) {
-	    printf("Error VMBUS: Failed to allocate channel\n");
+	KASSERT(channel != NULL, ("Error VMBUS: Failed to allocate channel!"));
+	if (channel == NULL)
 	    return (NULL);
-	}
 
 	mtx_init(&channel->inbound_lock, "channel inbound", NULL, MTX_DEF);
 
@@ -269,8 +266,8 @@ hv_vmbus_free_vmbus_channel(hv_vmbus_channel* channel)
 	 *  the vmbus's workqueue/thread context
 	 * ie we can't destroy ourselves
 	 */
-	hv_queue_work_item(hv_vmbus_g_connection.work_queue, ReleaseVmbusChannel,
-		(void*) channel);
+	hv_queue_work_item(hv_vmbus_g_connection.work_queue,
+	    ReleaseVmbusChannel, (void *) channel);
 }
 
 /**
@@ -281,7 +278,7 @@ vmbus_channel_process_offer(void *context)
 {
 	int			ret;
 	hv_vmbus_channel*	new_channel;
-	boolean_t			f_new;
+	boolean_t		f_new;
 	hv_vmbus_channel*	channel;
 
 	new_channel = (hv_vmbus_channel*) context;
@@ -296,7 +293,6 @@ vmbus_channel_process_offer(void *context)
 	TAILQ_FOREACH(channel, &hv_vmbus_g_connection.channel_anchor,
 	    list_entry)
 	{
-
 	    if (!memcmp(
 		&channel->offer_msg.offer.interface_type,
 		&new_channel->offer_msg.offer.interface_type,
@@ -316,7 +312,6 @@ vmbus_channel_process_offer(void *context)
 		&hv_vmbus_g_connection.channel_anchor,
 		new_channel,
 		list_entry);
-
 	}
 	mtx_unlock_spin(&hv_vmbus_g_connection.channel_lock);
 
@@ -638,7 +633,8 @@ hv_vmbus_request_channel_offers(void)
 		sizeof(hv_vmbus_channel_msg_header), M_DEVBUF, M_NOWAIT);
 
 	if (msg_info == NULL) {
-	    printf("Error VMBUS: malloc failed for Request Offers\n");
+	    if(bootverbose)
+		printf("Error VMBUS: malloc failed for Request Offers\n");
 	    return (ENOMEM);
 	}
 
@@ -646,9 +642,6 @@ hv_vmbus_request_channel_offers(void)
 	msg->message_type = HV_CHANNEL_MESSAGE_REQUEST_OFFERS;
 
 	ret = hv_vmbus_post_message(msg, sizeof(hv_vmbus_channel_msg_header));
-
-	if (ret != 0) 
-	    printf("Error VMBUS: Request Offers PostMessage failed\n");
 
 	if (msg_info)
 	    free(msg_info, M_DEVBUF);
