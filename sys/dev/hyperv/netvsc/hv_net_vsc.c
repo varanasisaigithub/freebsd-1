@@ -812,17 +812,6 @@ hv_nv_on_send(struct hv_device *device, netvsc_packet *pkt)
 		return (ENODEV);
 	}
 
-#ifdef DEBUG_NETVSC_TX
-printf("TX: dat %d len %d pbc %d, {%d %d 0x%lx} {%d %d 0x%lx} {%d %d 0x%lx}\n",
-    pkt->is_data_pkt, pkt->tot_data_buf_len, pkt->page_buf_count,
-    pkt->page_buffers[0].length, pkt->page_buffers[0].offset,
-    pkt->page_buffers[0].pfn,
-    pkt->page_buffers[1].length, pkt->page_buffers[1].offset,
-    pkt->page_buffers[1].pfn,
-    pkt->page_buffers[2].length, pkt->page_buffers[2].offset,
-    pkt->page_buffers[2].pfn);
-#endif
-
 	send_msg.hdr.msg_type = nvsp_msg_1_type_send_rndis_pkt;
 	if (pkt->is_data_pkt) {
 		/* 0 is RMC_DATA */
@@ -996,18 +985,6 @@ hv_nv_on_receive(struct hv_device *device, hv_vm_packet_descriptor *pkt)
 		 * page boundary.  For this reason, the original code to
 		 * check for and handle page crossings has been removed.
 		 */
-
-#ifdef DEBUG_NETVSC_RX
-printf("*RX:  dat %d len %d pbc %d {%d %d 0x%lx} {%d %d 0x%lx} {%d %d 0x%lx}\n",
-    net_vsc_pkt->is_data_pkt, net_vsc_pkt->tot_data_buf_len,
-    net_vsc_pkt->page_buf_count,
-    net_vsc_pkt->page_buffers[0].length, net_vsc_pkt->page_buffers[0].offset,
-    net_vsc_pkt->page_buffers[0].pfn,
-    net_vsc_pkt->page_buffers[1].length, net_vsc_pkt->page_buffers[1].offset,
-    net_vsc_pkt->page_buffers[1].pfn,
-    net_vsc_pkt->page_buffers[2].length, net_vsc_pkt->page_buffers[2].offset,
-    net_vsc_pkt->page_buffers[2].pfn);
-#endif
 
 		/*
 		 * Pass it to the upper layer.  The receive completion call

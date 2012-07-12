@@ -436,17 +436,6 @@ hn_start_locked(struct ifnet *ifp)
 			}
 		}
 
-#ifdef DEBUG_NETVSC_TX
-printf("ST: dat %d len %d pbc %d, {%d %d 0x%lx} {%d %d 0x%lx} {%d %d 0x%lx}\n",
-    packet->is_data_pkt, packet->tot_data_buf_len, packet->page_buf_count,
-    packet->page_buffers[0].length, packet->page_buffers[0].offset,
-    packet->page_buffers[0].pfn,
-    packet->page_buffers[1].length, packet->page_buffers[1].offset,
-    packet->page_buffers[1].pfn,
-    packet->page_buffers[2].length, packet->page_buffers[2].offset,
-    packet->page_buffers[2].pfn);
-#endif
-
 retry_send:
 		/* Set the completion routine */
 		packet->compl.send.on_send_completion = netvsc_xmit_completion;
@@ -612,17 +601,6 @@ netvsc_recv(struct hv_device *device_ctx, netvsc_packet *packet)
 		return (0);
 	}
 
-#ifdef DEBUG_NETVSC_RX
-printf("++RC: dat %d len %d pbc %d {%d %d 0x%lx} {%d %d 0x%lx} {%d %d 0x%lx}\n",
-    packet->is_data_pkt, packet->tot_data_buf_len, packet->page_buf_count,
-    packet->page_buffers[0].length, packet->page_buffers[0].offset,
-    packet->page_buffers[0].pfn,
-    packet->page_buffers[1].length, packet->page_buffers[1].offset,
-    packet->page_buffers[1].pfn,
-    packet->page_buffers[2].length, packet->page_buffers[2].offset,
-    packet->page_buffers[2].pfn);
-#endif
-
 	/*
 	 * Remove trailing junk from RX data buffer.
 	 * Fixme:  This will not work for multiple Hyper-V RX buffers.
@@ -647,26 +625,6 @@ printf("++RC: dat %d len %d pbc %d {%d %d 0x%lx} {%d %d 0x%lx} {%d %d 0x%lx}\n",
 	}
 
 	m_new->m_pkthdr.rcvif = ifp;
-
-#ifdef DEBUG_NETVSC_RX
-{
-	struct mbuf *m;
-	int num_frags = 0;
-	int len = 0;
-
-	printf("++++RC: l1 %d l2 %d: ",
-	    packet->page_buffers[0].length, m_new->m_pkthdr.len);
-
-	for (m = m_new; m != NULL; m = m->m_next) {
-		printf(" %d", m->m_len);
-		if (m->m_len != 0) {
-			num_frags++;
-			len += m->m_len;
-		}
-	}
-	printf(":  len %d nf %d clen %d\n", m_new->m_len, num_frags, len);
-}
-#endif
 
 	/*
 	 * Note:  Moved RX completion back to hv_nv_on_receive() so all
