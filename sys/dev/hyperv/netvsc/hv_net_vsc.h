@@ -850,6 +850,13 @@ typedef struct nvsp_msg_ {
 #define NETVSC_RECEIVE_PACKETLIST_COUNT		256
 
 /*
+ * Maximum MTU we permit to be configured for a netvsc interface.
+ * When the code was developed, a max MTU of 12232 was tested and
+ * proven to work.  9K is a reasonable maximum for an Ethernet.
+ */
+#define NETVSC_MAX_CONFIGURABLE_MTU		(9 * 1024)
+
+/*
  * Data types
  */
 
@@ -970,8 +977,7 @@ extern int hv_promisc_mode;
 
 extern void netvsc_linkstatus_callback(struct hv_device *device_obj,
 				       uint32_t status);
-extern int  netvsc_recv_callback(struct hv_device *device_obj,
-				 netvsc_packet *packet);
+extern int  netvsc_recv(struct hv_device *device_obj, netvsc_packet *packet);
 extern void netvsc_xmit_completion(void *context);
 
 extern void hv_nv_on_receive_completion(void *context);

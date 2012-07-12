@@ -270,17 +270,18 @@ hv_rf_receive_data(rndis_device *device, rndis_msg *message, netvsc_packet *pkt)
 	 * netvsc packet (ie tot_data_buf_len != message_length)
 	 */
 
-	/* Remove the rndis header and pass it back up the stack */
+	/* Remove rndis header, then pass data packet up the stack */
 	data_offset = RNDIS_HEADER_SIZE + rndis_pkt->data_offset;
 
-	/* The L2 frame length, including CRC, which must be added. */
-	pkt->tot_data_buf_len        = rndis_pkt->data_length + ETHER_CRC_LEN;
+	/* L2 frame length, with L2 header, not including CRC */
+	pkt->tot_data_buf_len        = rndis_pkt->data_length;
 	pkt->page_buffers[0].offset += data_offset;
+	/* Buffer length now L2 frame length plus trailing junk */
 	pkt->page_buffers[0].length -= data_offset;
 
 	pkt->is_data_pkt = TRUE;
 		
-	netvsc_recv_callback(device->net_dev->dev, pkt);
+	netvsc_recv(device->net_dev->dev, pkt);
 }
 
 /*
@@ -531,8 +532,11 @@ hv_rf_init_device(rndis_device *device)
 	init = &request->request_msg.msg.init_request;
 	init->major_version = RNDIS_MAJOR_VERSION;
 	init->minor_version = RNDIS_MINOR_VERSION;
-	/* Fixme:  Use 1536 - rounded ethernet frame size */
-	/* Fixme:  Magic number */
+	/*
+	 * Per the RNDIS document, this should be set to the max MTU
+	 * plus the header size.  However, 2048 works fine, so leaving
+	 * it as is.
+	 */
 	init->max_xfer_size = 2048;
 	
 	device->state = RNDIS_DEV_INITIALIZING;

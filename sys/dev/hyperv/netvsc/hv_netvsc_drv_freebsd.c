@@ -333,7 +333,7 @@ netvsc_xmit_completion(void *context)
 }
 
 /*
- * Start a transmit
+ * Start a transmit of one or more packets
  */
 static int
 hn_start_locked(struct ifnet *ifp)
@@ -375,8 +375,10 @@ hn_start_locked(struct ifnet *ifp)
 		 */
 		num_frags += HV_RF_NUM_TX_RESERVED_PAGE_BUFS;
 
+		/* If exceeds # page_buffers in netvsc_packet */
 		if (num_frags > NETVSC_PACKET_MAXPAGE) {
-			/* Exceeds # page_buffers in netvsc_packet */
+			m_freem(m);
+
 			return (EINVAL);
 		}
 
@@ -395,6 +397,8 @@ hn_start_locked(struct ifnet *ifp)
 		    sizeof(netvsc_packet) + sizeof(rndis_filter_packet),
 		    M_DEVBUF, M_ZERO | M_NOWAIT);
 		if (buf == NULL) {
+			m_freem(m);
+
 			return (ENOMEM);
 		}
 
@@ -431,6 +435,17 @@ hn_start_locked(struct ifnet *ifp)
 				i++;
 			}
 		}
+
+#ifdef DEBUG_NETVSC_TX
+printf("ST: dat %d len %d pbc %d, {%d %d 0x%lx} {%d %d 0x%lx} {%d %d 0x%lx}\n",
+    packet->is_data_pkt, packet->tot_data_buf_len, packet->page_buf_count,
+    packet->page_buffers[0].length, packet->page_buffers[0].offset,
+    packet->page_buffers[0].pfn,
+    packet->page_buffers[1].length, packet->page_buffers[1].offset,
+    packet->page_buffers[1].pfn,
+    packet->page_buffers[2].length, packet->page_buffers[2].offset,
+    packet->page_buffers[2].pfn);
+#endif
 
 retry_send:
 		/* Set the completion routine */
@@ -492,17 +507,76 @@ netvsc_linkstatus_callback(struct hv_device *device_obj, uint32_t status)
 }
 
 /*
- * RX Callback.  Called when we receive a data packet from the "wire" on the
+ * Append the specified data to the indicated mbuf chain,
+ * Extend the mbuf chain if the new data does not fit in
+ * existing space.
+ *
+ * This is a minor rewrite of m_append() from sys/kern/uipc_mbuf.c.
+ * There should be an equivalent in the kernel mbuf code,
+ * but there does not appear to be one yet.
+ *
+ * Differs from m_append() in that additional mbufs are
+ * allocated with cluster size MJUMPAGESIZE, and filled
+ * accordingly.
+ *
+ * Return 1 if able to complete the job; otherwise 0.
+ */
+static int
+hv_m_append(struct mbuf *m0, int len, c_caddr_t cp)
+{
+	struct mbuf *m, *n;
+	int remainder, space;
+
+	for (m = m0; m->m_next != NULL; m = m->m_next)
+		;
+	remainder = len;
+	space = M_TRAILINGSPACE(m);
+	if (space > 0) {
+		/*
+		 * Copy into available space.
+		 */
+		if (space > remainder)
+			space = remainder;
+		bcopy(cp, mtod(m, caddr_t) + m->m_len, space);
+		m->m_len += space;
+		cp += space;
+		remainder -= space;
+	}
+	while (remainder > 0) {
+		/*
+		 * Allocate a new mbuf; could check space
+		 * and allocate a cluster instead.
+		 */
+		n = m_getjcl(M_DONTWAIT, m->m_type, 0, MJUMPAGESIZE);
+		if (n == NULL)
+			break;
+		n->m_len = min(MJUMPAGESIZE, remainder);
+		bcopy(cp, mtod(n, caddr_t), n->m_len);
+		cp += n->m_len;
+		remainder -= n->m_len;
+		m->m_next = n;
+		m = n;
+	}
+	if (m0->m_flags & M_PKTHDR)
+		m0->m_pkthdr.len += len - remainder;
+
+	return (remainder == 0);
+}
+
+
+/*
+ * Called when we receive a data packet from the "wire" on the
  * specified device
  *
- * Fixme:  This is no longer used as a callback
+ * Note:  This is no longer used as a callback
  */
 int
-netvsc_recv_callback(struct hv_device *device_ctx, netvsc_packet *packet)
+netvsc_recv(struct hv_device *device_ctx, netvsc_packet *packet)
 {
 	hn_softc_t *sc = (hn_softc_t *)device_get_softc(device_ctx->device);
 	struct mbuf *m_new;
 	struct ifnet *ifp = sc->hn_ifp;
+	int size;
 	int i;
 
 	if (sc == NULL) {
@@ -514,19 +588,49 @@ netvsc_recv_callback(struct hv_device *device_ctx, netvsc_packet *packet)
 	if (!(ifp->if_drv_flags & IFF_DRV_RUNNING)) {
 		return (0);
 	}
-	if (packet->tot_data_buf_len > MCLBYTES) {
+
+	/*
+	 * Bail out if packet contains more data than configured MTU.
+	 */
+	if (packet->tot_data_buf_len > (ifp->if_mtu + ETHER_HDR_LEN)) {
 		return (0);
 	}
 
-	MGETHDR(m_new, M_DONTWAIT, MT_DATA);
+	/*
+	 * Get an mbuf with a cluster.  For packets 2K or less,
+	 * get a standard 2K cluster.  For anything larger, get a
+	 * 4K cluster.  Any buffers larger than 4K can cause problems
+	 * if looped around to the Hyper-V TX channel, so avoid them.
+	 */
+	size = MCLBYTES;
+	if (packet->tot_data_buf_len > MCLBYTES) {
+		/* 4096 */
+		size = MJUMPAGESIZE;
+	}
+	m_new = m_getjcl(M_DONTWAIT, MT_DATA, M_PKTHDR, size);
 	if (m_new == NULL) {
 		return (0);
 	}
-	MCLGET(m_new, M_DONTWAIT);
-	if ((m_new->m_flags & M_EXT) == 0) {
-		m_freem(m_new);
-		return (0);
-	}
+
+#ifdef DEBUG_NETVSC_RX
+printf("++RC: dat %d len %d pbc %d {%d %d 0x%lx} {%d %d 0x%lx} {%d %d 0x%lx}\n",
+    packet->is_data_pkt, packet->tot_data_buf_len, packet->page_buf_count,
+    packet->page_buffers[0].length, packet->page_buffers[0].offset,
+    packet->page_buffers[0].pfn,
+    packet->page_buffers[1].length, packet->page_buffers[1].offset,
+    packet->page_buffers[1].pfn,
+    packet->page_buffers[2].length, packet->page_buffers[2].offset,
+    packet->page_buffers[2].pfn);
+#endif
+
+	/*
+	 * Remove trailing junk from RX data buffer.
+	 * Fixme:  This will not work for multiple Hyper-V RX buffers.
+	 * Fortunately, the channel gathers all RX data into one buffer.
+	 *
+	 * L2 frame length, with L2 header, not including CRC
+	 */
+	packet->page_buffers[0].length = packet->tot_data_buf_len;
 
 	/*
 	 * Copy the received packet to one or more mbufs. 
@@ -538,13 +642,31 @@ netvsc_recv_callback(struct hv_device *device_ctx, netvsc_packet *packet)
 		uint8_t *vaddr = (uint8_t *)
 		    (packet->page_buffers[i].pfn << PAGE_SHIFT);
 
-		m_append(m_new, packet->page_buffers[i].length,
+		hv_m_append(m_new, packet->page_buffers[i].length,
 		    vaddr + packet->page_buffers[i].offset);
 	}
 
-	m_new->m_pkthdr.len = m_new->m_len = packet->tot_data_buf_len -
-	    ETHER_CRC_LEN;
 	m_new->m_pkthdr.rcvif = ifp;
+
+#ifdef DEBUG_NETVSC_RX
+{
+	struct mbuf *m;
+	int num_frags = 0;
+	int len = 0;
+
+	printf("++++RC: l1 %d l2 %d: ",
+	    packet->page_buffers[0].length, m_new->m_pkthdr.len);
+
+	for (m = m_new; m != NULL; m = m->m_next) {
+		printf(" %d", m->m_len);
+		if (m->m_len != 0) {
+			num_frags++;
+			len += m->m_len;
+		}
+	}
+	printf(":  len %d nf %d clen %d\n", m_new->m_len, num_frags, len);
+}
+#endif
 
 	/*
 	 * Note:  Moved RX completion back to hv_nv_on_receive() so all
@@ -583,6 +705,11 @@ hn_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 
 		SN_LOCK(sc);
 
+		if (ifr->ifr_mtu > NETVSC_MAX_CONFIGURABLE_MTU) {
+			error = EINVAL;
+			SN_UNLOCK(sc);
+			break;
+		}
 		/* Obtain and record requested MTU */
 		ifp->if_mtu = ifr->ifr_mtu;
 
@@ -593,10 +720,12 @@ hn_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 		 */
 		error = hv_rf_on_device_remove(hn_dev, HV_RF_NV_RETAIN_CHANNEL);
 		if (error) {
+			SN_UNLOCK(sc);
 			break;
 		}
 		error = hv_rf_on_device_add(hn_dev, &device_info);
 		if (error) {
+			SN_UNLOCK(sc);
 			break;
 		}
 
