@@ -178,7 +178,7 @@ hv_vmbus_ring_buffer_init(
 
 	ring_info->ring_buffer = (hv_vmbus_ring_buffer*) buffer;
 	ring_info->ring_buffer->read_index =
-	    ring_info->ring_buffer->write_index = 0;
+		ring_info->ring_buffer->write_index = 0;
 
 	ring_info->ring_size = buffer_len;
 	ring_info->ring_data_size = buffer_len - sizeof(hv_vmbus_ring_buffer);
@@ -214,7 +214,7 @@ hv_ring_buffer_write(
 	uint64_t prev_indices = 0;
 
 	for (i = 0; i < sg_buffer_count; i++) {
-	    total_bytes_to_write += sg_buffers[i].length;
+		total_bytes_to_write += sg_buffers[i].length;
 	}
 
 	total_bytes_to_write += sizeof(uint64_t);
@@ -222,7 +222,7 @@ hv_ring_buffer_write(
 	mtx_lock_spin(&out_ring_info->ring_lock);
 
 	get_ring_buffer_avail_bytes(out_ring_info, &byte_avail_to_read,
-	    &byte_avail_to_write);
+		&byte_avail_to_write);
 
 	/*
 	 * If there is only room for the packet, assume it is full.
@@ -232,8 +232,8 @@ hv_ring_buffer_write(
 
 	if (byte_avail_to_write <= total_bytes_to_write) {
 
-	    mtx_unlock_spin(&out_ring_info->ring_lock);
-	    return (EAGAIN);
+		mtx_unlock_spin(&out_ring_info->ring_lock);
+		return (EAGAIN);
 	}
 
 	/*
@@ -242,9 +242,9 @@ hv_ring_buffer_write(
 	next_write_location = get_next_write_location(out_ring_info);
 
 	for (i = 0; i < sg_buffer_count; i++) {
-	    next_write_location = copy_to_ring_buffer(out_ring_info,
-		next_write_location, (char *) sg_buffers[i].data,
-		sg_buffers[i].length);
+		next_write_location = copy_to_ring_buffer(out_ring_info,
+			next_write_location, (char *) sg_buffers[i].data,
+			sg_buffers[i].length);
 	}
 
 	/*
@@ -252,13 +252,15 @@ hv_ring_buffer_write(
 	 */
 	prev_indices = get_ring_buffer_indices(out_ring_info);
 
-	next_write_location = copy_to_ring_buffer(out_ring_info, next_write_location,
-	    (char *) &prev_indices, sizeof(uint64_t));
+	next_write_location = copy_to_ring_buffer(
+		out_ring_info,
+		next_write_location,
+		(char *) &prev_indices,
+		sizeof(uint64_t));
 
 	/*
 	 * Make sure we flush all writes before updating the writeIndex
-	 */
-	wmb();
+	 */wmb();
 
 	/*
 	 * Now, update the write location
@@ -292,8 +294,8 @@ hv_ring_buffer_peek(
 	 * Make sure there is something to read
 	 */
 	if (bytesAvailToRead < buffer_len) {
-	    mtx_unlock_spin(&in_ring_info->ring_lock);
-	    return (EAGAIN);
+		mtx_unlock_spin(&in_ring_info->ring_lock);
+		return (EAGAIN);
 	}
 
 	/*
@@ -301,7 +303,10 @@ hv_ring_buffer_peek(
 	 */
 	nextReadLocation = get_next_read_location(in_ring_info);
 
-	nextReadLocation = copy_from_ring_buffer(in_ring_info, (char *)buffer, buffer_len,
+	nextReadLocation = copy_from_ring_buffer(
+		in_ring_info,
+		(char *) buffer,
+		buffer_len,
 		nextReadLocation);
 
 	mtx_unlock_spin(&in_ring_info->ring_lock);
@@ -325,43 +330,42 @@ hv_ring_buffer_read(
 	uint64_t prev_indices = 0;
 
 	if (buffer_len <= 0)
-	    return (EINVAL);
+		return (EINVAL);
 
 	mtx_lock_spin(&in_ring_info->ring_lock);
 
 	get_ring_buffer_avail_bytes(
-	    in_ring_info, &bytes_avail_to_read,
-	    &bytes_avail_to_write);
+		in_ring_info, &bytes_avail_to_read,
+		&bytes_avail_to_write);
 
 	/*
 	 * Make sure there is something to read
 	 */
 	if (bytes_avail_to_read < buffer_len) {
-	    mtx_unlock_spin(&in_ring_info->ring_lock);
-	    return (EAGAIN);
+		mtx_unlock_spin(&in_ring_info->ring_lock);
+		return (EAGAIN);
 	}
 
 	next_read_location = get_next_read_location_with_offset(
-	    in_ring_info,
-	    offset);
+		in_ring_info,
+		offset);
 
 	next_read_location = copy_from_ring_buffer(
-	    in_ring_info,
-	    (char *) buffer,
-	    buffer_len,
-	    next_read_location);
+		in_ring_info,
+		(char *) buffer,
+		buffer_len,
+		next_read_location);
 
 	next_read_location = copy_from_ring_buffer(
-	    in_ring_info,
-	    (char *) &prev_indices,
-	    sizeof(uint64_t),
-	    next_read_location);
+		in_ring_info,
+		(char *) &prev_indices,
+		sizeof(uint64_t),
+		next_read_location);
 
 	/*
 	 * Make sure all reads are done before we update the read index since
 	 * the writer may start writing to the read area once the read index is updated
-	 */
-	wmb();
+	 */wmb();
 
 	/*
 	 * Update the read index
@@ -389,13 +393,13 @@ copy_to_ring_buffer(
 	uint32_t ring_buffer_size = get_ring_buffer_size(ring_info);
 	uint32_t fragLen;
 
-	if (src_len > ring_buffer_size - start_write_offset)  {
-	    /* wrap-around detected! */
-	    fragLen = ring_buffer_size - start_write_offset;
-	    memcpy(ring_buffer + start_write_offset, src, fragLen);
-	    memcpy(ring_buffer, src + fragLen, src_len - fragLen);
+	if (src_len > ring_buffer_size - start_write_offset) {
+		/* wrap-around detected! */
+		fragLen = ring_buffer_size - start_write_offset;
+		memcpy(ring_buffer + start_write_offset, src, fragLen);
+		memcpy(ring_buffer, src + fragLen, src_len - fragLen);
 	} else {
-	    memcpy(ring_buffer + start_write_offset, src, src_len);
+		memcpy(ring_buffer + start_write_offset, src, src_len);
 	}
 
 	start_write_offset += src_len;
@@ -421,12 +425,12 @@ copy_from_ring_buffer(
 	uint32_t ring_buffer_size = get_ring_buffer_size(ring_info);
 
 	if (dest_len > ring_buffer_size - start_read_offset) {
-	    /*  wrap-around detected at the src */
-	    fragLen = ring_buffer_size - start_read_offset;
-	    memcpy(dest, ring_buffer + start_read_offset, fragLen);
-	    memcpy(dest + fragLen, ring_buffer, dest_len - fragLen);
+		/*  wrap-around detected at the src */
+		fragLen = ring_buffer_size - start_read_offset;
+		memcpy(dest, ring_buffer + start_read_offset, fragLen);
+		memcpy(dest + fragLen, ring_buffer, dest_len - fragLen);
 	} else {
-	    memcpy(dest, ring_buffer + start_read_offset, dest_len);
+		memcpy(dest, ring_buffer + start_read_offset, dest_len);
 	}
 
 	start_read_offset += dest_len;

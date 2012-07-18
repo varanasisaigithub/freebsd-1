@@ -144,12 +144,12 @@ hv_negotiate_version(
     {
 	icmsghdrp->icmsgsize = 0x10;
 
-	negop = (struct hv_vmbus_icmsg_negotiate *)&buf[
+	negop = (struct hv_vmbus_icmsg_negotiate *) &buf[
 		sizeof(struct hv_vmbus_pipe_hdr) +
-		sizeof(struct hv_vmbus_icmsg_hdr)];
+			sizeof(struct hv_vmbus_icmsg_hdr)];
 
 	if (negop->icframe_vercnt == 2 &&
-	    negop->icversion_data[1].major == 3) {
+		negop->icversion_data[1].major == 3) {
 		negop->icversion_data[0].major = 3;
 		negop->icversion_data[0].minor = 0;
 		negop->icversion_data[1].major = 3;
@@ -212,15 +212,15 @@ void hv_adj_guesttime(uint64_t hosttime, uint8_t flags)
 	static int scnt = 50;
 
 	if ((flags & HV_ICTIMESYNCFLAG_SYNC) != 0) {
-	    hv_queue_work_item(service_table[HV_TIME_SYNCH].work_queue,
-		hv_set_host_time, (void *) hosttime);
-	    return;
+		hv_queue_work_item(service_table[HV_TIME_SYNCH].work_queue,
+			hv_set_host_time, (void *) hosttime);
+		return;
 	}
 
 	if ((flags & HV_ICTIMESYNCFLAG_SAMPLE) != 0 && scnt > 0) {
-	    scnt--;
-	    hv_queue_work_item(service_table[HV_TIME_SYNCH].work_queue,
-		hv_set_host_time, (void *) hosttime);
+		scnt--;
+		hv_queue_work_item(service_table[HV_TIME_SYNCH].work_queue,
+			hv_set_host_time, (void *) hosttime);
 	}
 }
 
@@ -241,27 +241,29 @@ hv_timesync_cb(void *context)
 	time_buf = receive_buffer[HV_TIME_SYNCH];
 
 	ret = hv_vmbus_channel_recv_packet(channel, time_buf,
-					    PAGE_SIZE, &recvlen, &requestId);
+		PAGE_SIZE, &recvlen, &requestId);
 
 	if ((ret == 0) && recvlen > 0) {
-	    icmsghdrp = (struct hv_vmbus_icmsg_hdr *) &time_buf[
-		sizeof(struct hv_vmbus_pipe_hdr)];
+		icmsghdrp = (struct hv_vmbus_icmsg_hdr *) &time_buf[
+			sizeof(struct hv_vmbus_pipe_hdr)];
 
-	    if (icmsghdrp->icmsgtype == HV_ICMSGTYPE_NEGOTIATE) {
-		hv_negotiate_version(icmsghdrp, NULL, time_buf);
-	    } else {
-		timedatap = (struct hv_ictimesync_data *) &time_buf[
-		    sizeof(struct hv_vmbus_pipe_hdr) +
-			sizeof(struct hv_vmbus_icmsg_hdr)];
-		hv_adj_guesttime(timedatap->parenttime, timedatap->flags);
-	    }
+		if (icmsghdrp->icmsgtype == HV_ICMSGTYPE_NEGOTIATE) {
+			hv_negotiate_version(icmsghdrp, NULL, time_buf);
+		} else {
+			timedatap = (struct hv_ictimesync_data *) &time_buf[
+				sizeof(struct hv_vmbus_pipe_hdr) +
+					sizeof(struct hv_vmbus_icmsg_hdr)];
+			hv_adj_guesttime(
+				timedatap->parenttime,
+				timedatap->flags);
+		}
 
-	    icmsghdrp->icflags = HV_ICMSGHDRFLAG_TRANSACTION
-		| HV_ICMSGHDRFLAG_RESPONSE;
+		icmsghdrp->icflags = HV_ICMSGHDRFLAG_TRANSACTION
+			| HV_ICMSGHDRFLAG_RESPONSE;
 
-	    hv_vmbus_channel_send_packet(channel, time_buf,
-		recvlen, requestId,
-		HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
+		hv_vmbus_channel_send_packet(channel, time_buf,
+			recvlen, requestId,
+			HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
 	}
 }
 
@@ -283,50 +285,51 @@ hv_shutdown_cb(void *context)
 	buf = receive_buffer[HV_SHUT_DOWN];
 
 	ret = hv_vmbus_channel_recv_packet(channel, buf, PAGE_SIZE,
-					    &recv_len, &request_id);
+		&recv_len, &request_id);
 
 	if ((ret == 0) && recv_len > 0) {
 
-	    icmsghdrp = (struct hv_vmbus_icmsg_hdr *)
-		&buf[sizeof(struct hv_vmbus_pipe_hdr)];
+		icmsghdrp = (struct hv_vmbus_icmsg_hdr *)
+			&buf[sizeof(struct hv_vmbus_pipe_hdr)];
 
-	    if (icmsghdrp->icmsgtype == HV_ICMSGTYPE_NEGOTIATE) {
-		hv_negotiate_version(icmsghdrp, NULL, buf);
+		if (icmsghdrp->icmsgtype == HV_ICMSGTYPE_NEGOTIATE) {
+			hv_negotiate_version(icmsghdrp, NULL, buf);
 
-	    } else {
-		shutdown_msg =
-		    (struct hv_vmbus_shutdown_msg_data *)
-		    &buf[sizeof(struct hv_vmbus_pipe_hdr) +
-			sizeof(struct hv_vmbus_icmsg_hdr)];
+		} else {
+			shutdown_msg =
+				(struct hv_vmbus_shutdown_msg_data *)
+				&buf[sizeof(struct hv_vmbus_pipe_hdr) +
+					sizeof(struct hv_vmbus_icmsg_hdr)];
 
-		switch (shutdown_msg->flags) {
-		    case 0:
-		    case 1:
-			icmsghdrp->status = HV_S_OK;
-			execute_shutdown = 1;
-			if(bootverbose)
-			    printf("Shutdown request received -"
-				    " graceful shutdown initiated\n");
-			break;
-		    default:
-			icmsghdrp->status = HV_E_FAIL;
-			execute_shutdown = 0;
-			printf("Shutdown request received -"
-			    " Invalid request\n");
-			break;
-		    }
-	    }
+			switch (shutdown_msg->flags) {
+			case 0:
+				case 1:
+				icmsghdrp->status = HV_S_OK;
+				execute_shutdown = 1;
+				if (bootverbose)
+					printf(
+						"Shutdown request received -"
+							" graceful shutdown initiated\n");
+				break;
+			default:
+				icmsghdrp->status = HV_E_FAIL;
+				execute_shutdown = 0;
+				printf("Shutdown request received -"
+					" Invalid request\n");
+				break;
+			}
+		}
 
-	    icmsghdrp->icflags = HV_ICMSGHDRFLAG_TRANSACTION |
-				 HV_ICMSGHDRFLAG_RESPONSE;
+		icmsghdrp->icflags = HV_ICMSGHDRFLAG_TRANSACTION |
+			HV_ICMSGHDRFLAG_RESPONSE;
 
-	    hv_vmbus_channel_send_packet(channel, buf,
-					recv_len, request_id,
-					HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
+		hv_vmbus_channel_send_packet(channel, buf,
+			recv_len, request_id,
+			HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
 	}
 
 	if (execute_shutdown)
-	    shutdown_nice(RB_POWEROFF);
+		shutdown_nice(RB_POWEROFF);
 }
 
 /**
@@ -347,30 +350,30 @@ hv_heartbeat_cb(void *context)
 	buf = receive_buffer[HV_HEART_BEAT];
 
 	ret = hv_vmbus_channel_recv_packet(channel, buf, PAGE_SIZE, &recvlen,
-					    &requestid);
+		&requestid);
 
 	if ((ret == 0) && recvlen > 0) {
 
-	    icmsghdrp = (struct hv_vmbus_icmsg_hdr *)
-		&buf[sizeof(struct hv_vmbus_pipe_hdr)];
+		icmsghdrp = (struct hv_vmbus_icmsg_hdr *)
+			&buf[sizeof(struct hv_vmbus_pipe_hdr)];
 
-	    if (icmsghdrp->icmsgtype == HV_ICMSGTYPE_NEGOTIATE) {
-		hv_negotiate_version(icmsghdrp, NULL, buf);
+		if (icmsghdrp->icmsgtype == HV_ICMSGTYPE_NEGOTIATE) {
+			hv_negotiate_version(icmsghdrp, NULL, buf);
 
-	    } else {
-		heartbeat_msg =
-		    (struct hv_vmbus_heartbeat_msg_data *)
-			&buf[sizeof(struct hv_vmbus_pipe_hdr) +
-			     sizeof(struct hv_vmbus_icmsg_hdr)];
+		} else {
+			heartbeat_msg =
+				(struct hv_vmbus_heartbeat_msg_data *)
+				&buf[sizeof(struct hv_vmbus_pipe_hdr) +
+					sizeof(struct hv_vmbus_icmsg_hdr)];
 
-		heartbeat_msg->seq_num += 1;
-	    }
+			heartbeat_msg->seq_num += 1;
+		}
 
-	    icmsghdrp->icflags = HV_ICMSGHDRFLAG_TRANSACTION |
-				 HV_ICMSGHDRFLAG_RESPONSE;
+		icmsghdrp->icflags = HV_ICMSGHDRFLAG_TRANSACTION |
+			HV_ICMSGHDRFLAG_RESPONSE;
 
-	    hv_vmbus_channel_send_packet(channel, buf, recvlen, requestid,
-		HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
+		hv_vmbus_channel_send_packet(channel, buf, recvlen, requestid,
+			HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
 	}
 }
 
@@ -382,11 +385,12 @@ hv_util_probe(device_t dev)
 	int rtn_value = ENXIO;
 
 	for (i = 0; i < HV_MAX_UTIL_SERVICES; i++) {
-	    const char *p = vmbus_get_type(dev);
-	    if (service_table[i].enabled && !memcmp(p, &service_table[i].guid, sizeof(hv_guid))) {
-		device_set_softc(dev, (void *) (&service_table[i]));
-		rtn_value = 0;
-	    }
+		const char *p = vmbus_get_type(dev);
+		if (service_table[i].enabled
+			&& !memcmp(p, &service_table[i].guid, sizeof(hv_guid))) {
+			device_set_softc(dev, (void *) (&service_table[i]));
+			rtn_value = 0;
+		}
 	}
 
 	return rtn_value;
@@ -408,26 +412,26 @@ hv_util_attach(device_t dev)
 		malloc(PAGE_SIZE, M_DEVBUF, M_WAITOK | M_ZERO);
 
 	if (service->init != NULL) {
-	    ret = service->init(service);
-	    if (ret) {
-		ret = ENODEV;
-		goto error0;
-	    }
+		ret = service->init(service);
+		if (ret) {
+			ret = ENODEV;
+			goto error0;
+		}
 	}
 
 	ret = hv_vmbus_channel_open(hv_dev->channel, 2 * PAGE_SIZE,
-		    2 * PAGE_SIZE, NULL, 0,
-		    service->callback, hv_dev->channel);
+		2 * PAGE_SIZE, NULL, 0,
+		service->callback, hv_dev->channel);
 
 	if (ret)
-	    goto error0;
+		goto error0;
 
 	return (0);
 
 	error0:
 
-	    free(receive_buffer[receive_buffer_offset], M_DEVBUF);
-	    receive_buffer[receive_buffer_offset] = NULL;
+	free(receive_buffer[receive_buffer_offset], M_DEVBUF);
+	receive_buffer[receive_buffer_offset] = NULL;
 
 	return (ret);
 }
@@ -435,9 +439,9 @@ hv_util_attach(device_t dev)
 static int
 hv_util_detach(device_t dev)
 {
-	struct hv_device*		hv_dev;
-	struct hv_vmbus_service*	service;
-	size_t				receive_buffer_offset;
+	struct hv_device* hv_dev;
+	struct hv_vmbus_service* service;
+	size_t receive_buffer_offset;
 
 	hv_dev = vmbus_get_devctx(dev);
 
@@ -446,7 +450,7 @@ hv_util_detach(device_t dev)
 	receive_buffer_offset = service - &service_table[0];
 
 	if (service->work_queue != NULL)
-	    hv_work_queue_close(service->work_queue);
+		hv_work_queue_close(service->work_queue);
 
 	free(receive_buffer[receive_buffer_offset], M_DEVBUF);
 	receive_buffer[receive_buffer_offset] = NULL;
@@ -461,14 +465,14 @@ static void hv_util_init(void)
 static int hv_util_modevent(module_t mod, int event, void *arg)
 {
 	switch (event) {
-        case MOD_LOAD:
-                break;
-        case MOD_UNLOAD:
-                break;
+	case MOD_LOAD:
+		break;
+	case MOD_UNLOAD:
+		break;
 	default:
 		break;
-        }
-        return (0);
+	}
+	return (0);
 }
 
 static device_method_t util_methods[] = {
