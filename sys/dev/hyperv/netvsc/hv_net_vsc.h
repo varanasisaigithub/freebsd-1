@@ -342,8 +342,12 @@ typedef struct nvsp_2_netvsc_capabilities_ {
 	union {
 		uint64_t                        as_uint64;
 		struct {
-			uint64_t                vmq     : 1;
-			uint64_t                chimney : 1;
+			uint64_t                vmq          : 1;
+			uint64_t                chimney      : 1;
+			uint64_t		sriov        : 1;
+			uint64_t		ieee8021q    : 1;
+			uint64_t		correlationid: 1;
+			uint64_t		teaming      : 1;
 		} u2;
 	} u1;
 } __packed nvsp_2_netvsc_capabilities;
