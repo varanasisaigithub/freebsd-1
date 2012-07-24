@@ -558,7 +558,6 @@ typedef struct rndis_per_packet_info_ {
 } rndis_per_packet_info;
 
 typedef enum ndis_perpkt_infotype_ {
-{
 	tcpip_chksum_info,
 	ipsec_info,
 	tcp_large_send_info,
