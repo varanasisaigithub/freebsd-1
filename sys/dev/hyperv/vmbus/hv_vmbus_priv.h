@@ -750,9 +750,9 @@ void hv_vmbus_write_msr(int msr, uint64_t val)
  */
 
 #define HV_FREEBSD_VENDOR_ID	0x8200
-#define HV_FREEBSD_GUEST_ID	generate_guest_id(0,0)
+#define HV_FREEBSD_GUEST_ID	hv_generate_guest_id(0,0)
 
-static inline  uint64_t generate_guest_id(
+static inline  uint64_t hv_generate_guest_id(
 	uint8_t distro_id_part1,
 	uint16_t distro_id_part2)
 {
