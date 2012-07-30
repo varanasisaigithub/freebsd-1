@@ -177,11 +177,6 @@ enum {
 
 #define HV_PRESENT_BIT		0x80000000
 
-#define HV_FREEBSD_GUEST_ID_LO	0x00000000
-#define HV_FREEBSD_GUEST_ID_HI	0xC27C00C6
-#define HV_FREEBSD_GUEST_ID	(((uint64_t)HV_FREEBSD_GUEST_ID_HI << 32) | \
-				HV_FREEBSD_GUEST_ID_LO)
-
 #define HV_HYPERCALL_PARAM_ALIGN sizeof(uint64_t)
 
 /*
@@ -730,5 +725,44 @@ void hv_vmbus_write_msr(int msr, uint64_t val)
 	HV_VMBUS_WRITE_MSR(msr, val);
 	return;
 }
+
+/*
+ * The guest OS needs to register the guest ID with the hypervisor.
+ * The guest ID is a 64 bit entity and the structure of this ID is
+ * specified in the Hyper-V specification:
+ *
+ * http://msdn.microsoft.com/en-us/library/windows/
+ * hardware/ff542653%28v=vs.85%29.aspx
+ *
+ * While the current guideline does not specify how FreeBSD guest ID(s)
+ * need to be generated, our plan is to publish the guidelines for
+ * FreeBSD and other guest operating systems that currently are hosted
+ * on Hyper-V. The implementation here conforms to this yet
+ * unpublished guidelines.
+ *
+ * Bit(s)
+ * 63 - Indicates if the OS is Open Source or not; 1 is Open Source
+ * 62:56 - Os Type; Linux is 0x100, FreeBSD is 0x200
+ * 55:48 - Distro specific identification
+ * 47:16 - FreeBSD kernel version number
+ * 15:0  - Distro specific identification
+ *
+ */
+
+#define HV_FREEBSD_VENDOR_ID	0x8200
+#define HV_FREEBSD_GUEST_ID	generate_guest_id(0,0)
+
+static inline  uint64_t generate_guest_id(
+	uint8_t distro_id_part1,
+	uint16_t distro_id_part2)
+{
+	uint64_t guest_id;
+	guest_id =  (((uint64_t)HV_FREEBSD_VENDOR_ID) << 48);
+	guest_id |= (((uint64_t)(distro_id_part1)) << 48);
+	guest_id |= (((uint64_t)(__FreeBSD_version)) << 16); /* in param.h */
+	guest_id |= ((uint64_t)(distro_id_part2));
+	return guest_id;
+}
+
 
 #endif  /* __HYPERV_PRIV_H__ */
