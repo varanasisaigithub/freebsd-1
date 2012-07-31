@@ -192,8 +192,9 @@ hv_vmbus_init(void)
 	/*
 	 * Write our OS info
 	 */
-	hv_vmbus_write_msr(HV_X64_MSR_GUEST_OS_ID, HV_FREEBSD_GUEST_ID);
-	hv_vmbus_g_context.guest_id = HV_FREEBSD_GUEST_ID;
+	uint64_t os_guest_info = HV_FREEBSD_GUEST_ID;
+	hv_vmbus_write_msr(HV_X64_MSR_GUEST_OS_ID, os_guest_info);
+	hv_vmbus_g_context.guest_id = os_guest_info;
 
 	/*
 	 * See if the hypercall page is already set
