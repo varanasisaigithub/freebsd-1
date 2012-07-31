@@ -125,13 +125,20 @@ struct hv_netvsc_driver_context {
 	uint32_t		drv_inited;
 };
 
-/* Now sx spin lock, as mutexes do not play well with semaphores */
-#define SN_LOCK_INIT(_sc, _name) \
-	    sx_init_flags(&(_sc)->hn_lock, _name, SX_NOADAPTIVE)
-#define SN_LOCK(_sc)		sx_xlock(&(_sc)->hn_lock)
-#define SN_LOCK_ASSERT(_sc)	sx_assert(&(_sc)->hn_lock, SA_XLOCKED)
-#define SN_UNLOCK(_sc)		sx_xunlock(&(_sc)->hn_lock)
-#define SN_LOCK_DESTROY(_sc)	sx_destroy(&(_sc)->hn_lock)
+/*
+ * Be aware that this sleepable mutex will exhibit WITNESS errors when
+ * certain TCP and ARP code paths are taken.  This appears to be a
+ * well-known condition, as all other drivers checked use a sleeping
+ * mutex to protect their transmit paths.
+ * Also Be aware that mutexes do not play well with semaphores, and there
+ * is a conflicting semaphore in a certain channel code path.
+ */
+#define NV_LOCK_INIT(_sc, _name) \
+	    mtx_init(&(_sc)->hn_lock, _name, MTX_NETWORK_LOCK, MTX_DEF)
+#define NV_LOCK(_sc)		mtx_lock(&(_sc)->hn_lock)
+#define NV_LOCK_ASSERT(_sc)	mtx_assert(&(_sc)->hn_lock, MA_OWNED)
+#define NV_UNLOCK(_sc)		mtx_unlock(&(_sc)->hn_lock)
+#define NV_LOCK_DESTROY(_sc)	mtx_destroy(&(_sc)->hn_lock)
 
 
 /*
@@ -237,7 +244,7 @@ netvsc_attach(device_t dev)
 	sc->hn_unit = unit;
 	sc->hn_dev = dev;
 
-	SN_LOCK_INIT(sc, "NetVSCLock");
+	NV_LOCK_INIT(sc, "NetVSCLock");
 
 	sc->hn_dev_obj = device_ctx;
 
@@ -661,11 +668,11 @@ hn_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 	case SIOCSIFMTU:
 		hn_dev = vmbus_get_devctx(sc->hn_dev);
 
-		SN_LOCK(sc);
+		NV_LOCK(sc);
 
 		if (ifr->ifr_mtu > NETVSC_MAX_CONFIGURABLE_MTU) {
 			error = EINVAL;
-			SN_UNLOCK(sc);
+			NV_UNLOCK(sc);
 			break;
 		}
 		/* Obtain and record requested MTU */
@@ -678,21 +685,21 @@ hn_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 		 */
 		error = hv_rf_on_device_remove(hn_dev, HV_RF_NV_RETAIN_CHANNEL);
 		if (error) {
-			SN_UNLOCK(sc);
+			NV_UNLOCK(sc);
 			break;
 		}
 		error = hv_rf_on_device_add(hn_dev, &device_info);
 		if (error) {
-			SN_UNLOCK(sc);
+			NV_UNLOCK(sc);
 			break;
 		}
 
 		hn_ifinit_locked(sc);
 
-		SN_UNLOCK(sc);
+		NV_UNLOCK(sc);
 		break;
 	case SIOCSIFFLAGS:
-		SN_LOCK(sc);
+		NV_LOCK(sc);
 		if (ifp->if_flags & IFF_UP) {
 			/*
 			 * If only the state of the PROMISC flag changed,
@@ -728,7 +735,7 @@ hn_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 			}
 		}
 		sc->hn_if_flags = ifp->if_flags;
-		SN_UNLOCK(sc);
+		NV_UNLOCK(sc);
 		error = 0;
 		break;
 	case SIOCSIFCAP:
@@ -747,9 +754,9 @@ hn_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 #ifdef notyet
 		/* Fixme:  Multicast mode? */
 		if (ifp->if_drv_flags & IFF_DRV_RUNNING) {
-			SN_LOCK(sc);
+			NV_LOCK(sc);
 			netvsc_setmulti(sc);
-			SN_UNLOCK(sc);
+			NV_UNLOCK(sc);
 			error = 0;
 		}
 #endif
@@ -776,7 +783,7 @@ hn_stop(hn_softc_t *sc)
 	int ret;
 	struct hv_device *device_ctx = vmbus_get_devctx(sc->hn_dev);
 
-	SN_LOCK_ASSERT(sc);
+	NV_LOCK_ASSERT(sc);
 	ifp = sc->hn_ifp;
 
 	printf(" Closing Device ...\n");
@@ -796,9 +803,9 @@ hn_start(struct ifnet *ifp)
 	hn_softc_t *sc;
 
 	sc = ifp->if_softc;
-	SN_LOCK(sc);
+	NV_LOCK(sc);
 	hn_start_locked(ifp);
-	SN_UNLOCK(sc);
+	NV_UNLOCK(sc);
 }
 
 /*
@@ -811,7 +818,7 @@ hn_ifinit_locked(hn_softc_t *sc)
 	struct hv_device *device_ctx = vmbus_get_devctx(sc->hn_dev);
 	int ret;
 
-	SN_LOCK_ASSERT(sc);
+	NV_LOCK_ASSERT(sc);
 
 	ifp = sc->hn_ifp;
 
@@ -839,9 +846,9 @@ hn_ifinit(void *xsc)
 {
 	hn_softc_t *sc = xsc;
 
-	SN_LOCK(sc);
+	NV_LOCK(sc);
 	hn_ifinit_locked(sc);
-	SN_UNLOCK(sc);
+	NV_UNLOCK(sc);
 }
 
 #ifdef LATER

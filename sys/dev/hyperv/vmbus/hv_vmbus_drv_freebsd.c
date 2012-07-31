@@ -85,40 +85,37 @@ vmbus_msg_swintr(void *dummy)
 	page_addr = hv_vmbus_g_context.syn_ic_msg_page[cpu];
 	msg = (hv_vmbus_message*) page_addr + HV_VMBUS_MESSAGE_SINT;
 	for (;;) {
-		if (msg->header.message_type == HV_MESSAGE_TYPE_NONE) {
-			break; /* no message */
-		} else {
-			copied = malloc(
-				sizeof(hv_vmbus_message),
-				M_DEVBUF,
-				M_NOWAIT);
-			KASSERT(
-				copied != NULL,
-				("Error VMBUS: malloc failed to allocate hv_vmbus_message!"));
-			if (copied == NULL)
-				continue;
-			memcpy(copied, msg, sizeof(hv_vmbus_message));
-			hv_queue_work_item(hv_vmbus_g_connection.work_queue,
-				hv_vmbus_on_channel_message, copied);
-		}
+	    if (msg->header.message_type == HV_MESSAGE_TYPE_NONE) {
+		break; /* no message */
+	    } else {
+		copied = malloc(sizeof(hv_vmbus_message), M_DEVBUF, M_NOWAIT);
+		KASSERT(copied != NULL,
+		    ("Error VMBUS: malloc failed to allocate hv_vmbus_message!"));
+		if (copied == NULL)
+		    continue;
+		memcpy(copied, msg, sizeof(hv_vmbus_message));
+		hv_queue_work_item(hv_vmbus_g_connection.work_queue,
+		    hv_vmbus_on_channel_message, copied);
+	    }
 
-		msg->header.message_type = HV_MESSAGE_TYPE_NONE;
+	    msg->header.message_type = HV_MESSAGE_TYPE_NONE;
 
+	    /*
+	     * Make sure the write to message_type (ie set to
+	     * HV_MESSAGE_TYPE_NONE) happens before we read the
+	     * message_pending and EOMing. Otherwise, the EOMing will
+	     * not deliver any more messages
+	     * since there is no empty slot
+	     */
+	    wmb();
+
+	    if (msg->header.message_flags.message_pending) {
 		/*
-		 * Make sure the write to message_type (ie set to
-		 * HV_MESSAGE_TYPE_NONE) happens before we read the
-		 * message_pending and EOMing. Otherwise, the EOMing will
-		 * not deliver any more messages
-		 * since there is no empty slot
-		 */wmb();
-
-		if (msg->header.message_flags.message_pending) {
-			/*
-			 * This will cause message queue rescan to possibly deliver
-			 * another msg from the hypervisor
-			 */
-			hv_vmbus_write_msr(HV_X64_MSR_EOM, 0);
-		}
+		 * This will cause message queue rescan to possibly deliver
+		 * another msg from the hypervisor
+		 */
+		hv_vmbus_write_msr(HV_X64_MSR_EOM, 0);
+	    }
 	}
 }
 
@@ -157,7 +154,7 @@ hv_vmbus_isr(void *unused)
 
 	page_addr = hv_vmbus_g_context.syn_ic_event_page[cpu];
 	event = (hv_vmbus_synic_event_flags*)
-		page_addr + HV_VMBUS_MESSAGE_SINT;
+		    page_addr + HV_VMBUS_MESSAGE_SINT;
 
 	/* Since we are a child, we only need to check bit 0 */
 	if (synch_test_and_clear_bit(0, &event->flags32[0])) {
@@ -233,11 +230,11 @@ hv_vmbus_child_device_create(
 	 * Allocate the new child device
 	 */
 	child_dev = malloc(sizeof(hv_device), M_DEVBUF,
-		M_NOWAIT | M_ZERO);
+			M_NOWAIT |  M_ZERO);
 	KASSERT(child_dev != NULL,
-		("Error VMBUS: malloc failed to allocate hv_device!"));
+	    ("Error VMBUS: malloc failed to allocate hv_device!"));
 	if (child_dev == NULL)
-		return (NULL);
+	    return (NULL);
 
 	child_dev->channel = channel;
 	memcpy(&child_dev->class_id, &type, sizeof(hv_guid));
@@ -252,9 +249,9 @@ print_dev_guid(struct hv_device *dev)
 	int i;
 	unsigned char guid_name[100];
 	for (i = 0; i < 32; i += 2)
-		sprintf(&guid_name[i], "%02x", dev->class_id.data[i / 2]);
-	if (bootverbose)
-		printf("VMBUS: Class ID: %s\n", guid_name);
+	    sprintf(&guid_name[i], "%02x", dev->class_id.data[i / 2]);
+	if(bootverbose)
+	    printf("VMBUS: Class ID: %s\n", guid_name);
 }
 
 int
@@ -264,6 +261,7 @@ hv_vmbus_child_device_register(struct hv_device *child_dev)
 	int ret = 0;
 
 	print_dev_guid(child_dev);
+
 
 	child = device_add_child(vmbus_devp, NULL, -1);
 	child_dev->device = child;
@@ -299,11 +297,11 @@ static void vmbus_identify(driver_t *driver, device_t parent) {
 
 static int
 vmbus_probe(device_t dev) {
-	if (bootverbose)
-		device_printf(dev, "VMBUS: probe\n");
+	if(bootverbose)
+	    device_printf(dev, "VMBUS: probe\n");
 
 	if (!hv_vmbus_query_hypervisor_presence())
-		return (ENXIO);
+	    return (ENXIO);
 
 	device_set_desc(dev, "Vmbus Devices");
 
@@ -330,24 +328,23 @@ vmbus_bus_init(void)
 	struct intsrc *isrc;
 
 	if (vmbus_inited)
-		return (0);
+	    return (0);
 
 	vmbus_inited = 1;
 
 	ret = hv_vmbus_init();
 
 	if (ret) {
-		if (bootverbose)
-			printf(
-			  "Error VMBUS: Hypervisor Initialization Failed!\n");
-		return (ret);
+	    if(bootverbose)
+		printf("Error VMBUS: Hypervisor Initialization Failed!\n");
+	    return (ret);
 	}
 
 	ret = swi_add(&hv_msg_intr_event, "hv_msg", vmbus_msg_swintr,
-		NULL, SWI_CLOCK, 0, &msg_swintr);
+	    NULL, SWI_CLOCK, 0, &msg_swintr);
 
 	if (ret)
-		goto cleanup;
+	    goto cleanup;
 
 	/*
 	 * Message SW interrupt handler checks a per-CPU page and
@@ -357,46 +354,46 @@ vmbus_bus_init(void)
 	ret = intr_event_bind(hv_msg_intr_event, 0);
 
 	if (ret)
-		goto cleanup1;
+	    goto cleanup1;
 
 	ret = swi_add(&hv_event_intr_event, "hv_event", hv_vmbus_on_events,
-		NULL, SWI_CLOCK, 0, &event_swintr);
+	    NULL, SWI_CLOCK, 0, &event_swintr);
 
 	if (ret)
-		goto cleanup1;
+	    goto cleanup1;
 
 	intr_res = bus_alloc_resource(vmbus_devp,
-		SYS_RES_IRQ, &vmbus_rid, vmbus_irq, vmbus_irq, 1, RF_ACTIVE);
+	    SYS_RES_IRQ, &vmbus_rid, vmbus_irq, vmbus_irq, 1, RF_ACTIVE);
 
 	if (intr_res == NULL) {
-		ret = ENOMEM; /* XXXKYS: Need a better errno */
-		goto cleanup2;
+	    ret = ENOMEM; /* XXXKYS: Need a better errno */
+	    goto cleanup2;
 	}
 
 	/*
 	 * Setup interrupt filter handler
 	 */
 	ret = bus_setup_intr(vmbus_devp, intr_res,
-		INTR_TYPE_NET | INTR_FAST | INTR_MPSAFE, hv_vmbus_isr, NULL,
-		NULL, &vmbus_cookiep);
+	    INTR_TYPE_NET | INTR_FAST | INTR_MPSAFE, hv_vmbus_isr, NULL,
+	    NULL, &vmbus_cookiep);
 
 	if (ret != 0)
-		goto cleanup3;
+	    goto cleanup3;
 
 	ret = bus_bind_intr(vmbus_devp, intr_res, 0);
 	if (ret != 0)
-		goto cleanup4;
+	    goto cleanup4;
 
 	isrc = intr_lookup_source(vmbus_irq);
 	if ((isrc == NULL) || (isrc->is_event == NULL)) {
-		ret = EINVAL;
-		goto cleanup4;
+	    ret = EINVAL;
+	    goto cleanup4;
 	}
 
 	vector = isrc->is_event->ie_vector;
 
-	if (bootverbose)
-		printf("VMBUS: irq 0x%x vector 0x%x\n", vmbus_irq, vector);
+	if(bootverbose)
+	    printf("VMBUS: irq 0x%x vector 0x%x\n", vmbus_irq, vector);
 
 	/**
 	 * Notify the hypervisor of our irq.
@@ -410,7 +407,7 @@ vmbus_bus_init(void)
 	ret = hv_vmbus_connect();
 
 	if (ret)
-		goto cleanup4;
+	    goto cleanup4;
 
 	hv_vmbus_request_channel_offers();
 	return (ret);
@@ -452,7 +449,7 @@ vmbus_attach(device_t dev)
 	 * initialization directly.
 	 */
 	if (!cold) {
-		vmbus_bus_init();
+	    vmbus_bus_init();
 	}
 
 	return (0);
@@ -468,7 +465,7 @@ vmbus_init(void)
 	 * initialization directly.
 	 */
 	if (!cold) {
-		vmbus_bus_init();
+	    vmbus_bus_init();
 	}
 }
 
@@ -509,15 +506,15 @@ vmbus_detach(device_t dev)
 static void
 vmbus_mod_load(void)
 {
-	if (bootverbose)
-		printf("VMBUS: load\n");
+	if(bootverbose)
+	    printf("VMBUS: load\n");
 }
 
 static void
 vmbus_mod_unload(void)
 {
-	if (bootverbose)
-		printf("VMBUS: unload\n");
+	if(bootverbose)
+	    printf("VMBUS: unload\n");
 }
 
 static int

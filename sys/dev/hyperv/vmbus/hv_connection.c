@@ -246,15 +246,16 @@ hv_vmbus_disconnect(void) {
 	hv_vmbus_channel_unload* msg;
 
 	msg = malloc(sizeof(hv_vmbus_channel_unload),
-		M_DEVBUF, M_NOWAIT | M_ZERO);
+	    M_DEVBUF, M_NOWAIT | M_ZERO);
 	KASSERT(msg != NULL,
-		("Error VMBUS: malloc failed to allocate Channel Unload Msg!"));
+	    ("Error VMBUS: malloc failed to allocate Channel Unload Msg!"));
 	if (msg == NULL)
-		return (ENOMEM);
+	    return (ENOMEM);
 
 	msg->message_type = HV_CHANNEL_MESSAGE_UNLOAD;
 
 	ret = hv_vmbus_post_message(msg, sizeof(hv_vmbus_channel_unload));
+
 
 	contigfree(hv_vmbus_g_connection.interrupt_page, PAGE_SIZE, M_DEVBUF);
 
@@ -282,17 +283,16 @@ hv_vmbus_get_channel_from_rel_id(uint32_t rel_id) {
 	/*
 	 * TODO:
 	 * Consider optimization where relids are stored in a fixed size array
-	 *  and channels are accessed without the need to take this lock or
-	 *  search the list.
+	 *  and channels are accessed without the need to take this lock or search
+	 *  the list.
 	 */
 	mtx_lock_spin(&hv_vmbus_g_connection.channel_lock);
-	TAILQ_FOREACH(channel, &hv_vmbus_g_connection.channel_anchor,
-		list_entry)
-		{
-			if (channel->offer_msg.child_rel_id == rel_id) {
-				foundChannel = channel;
-				break;
-		}
+	TAILQ_FOREACH(channel, &hv_vmbus_g_connection.channel_anchor, list_entry) {
+
+	    if (channel->offer_msg.child_rel_id == rel_id) {
+		foundChannel = channel;
+		break;
+	    }
 	}
 	mtx_unlock_spin(&hv_vmbus_g_connection.channel_lock);
 
@@ -356,29 +356,27 @@ hv_vmbus_on_events(void *arg)
 	 * Check events
 	 */
 	if (recv_interrupt_page != NULL) {
-		for (dword = 0; dword < maxdword; dword++) {
-			if (recv_interrupt_page[dword]) {
-				for (bit = 0; bit < 32; bit++) {
-					if (synch_test_and_clear_bit(
-						bit,
-						(uint32_t *) &recv_interrupt_page[dword])) {
-						rel_id = (dword << 5) + bit;
+	    for (dword = 0; dword < maxdword; dword++) {
+		if (recv_interrupt_page[dword]) {
+		    for (bit = 0; bit < 32; bit++) {
+			if (synch_test_and_clear_bit(bit,
+			    (uint32_t *) &recv_interrupt_page[dword])) {
+			    rel_id = (dword << 5) + bit;
 
-						if (rel_id == 0) {
-							/*
-							 * Special case -
-							 * vmbus channel protocol msg.
-							 */
-							continue;
-						} else {
-							VmbusProcessChannelEvent(
-								rel_id);
+			    if (rel_id == 0) {
+				/*
+				 * Special case -
+				 * vmbus channel protocol msg.
+				 */
+				continue;
+			    } else {
+				VmbusProcessChannelEvent(rel_id);
 
-						}
-					}
-				}
+			    }
 			}
+		    }
 		}
+	    }
 	}
 
 	return;
@@ -392,29 +390,24 @@ int hv_vmbus_post_message(void *buffer, size_t bufferLen) {
 	hv_vmbus_connection_id connId;
 	unsigned retries = 0;
 
-	/* NetScalar delays from previous code was consoldated here */
+	/* NetScaler delays from previous code were consolidated here */
 	static int delayAmount[] = {100, 100, 100, 500, 500, 5000, 5000, 5000};
 
 	/* for(each entry in delayAmount) try to post message,
 	 *  delay a little bit before retrying
 	 */
 	for (retries = 0;
-		retries < sizeof(delayAmount) / sizeof(delayAmount[0]);
-		retries++) {
-		connId.as_uint32_t = 0;
-		connId.u.id = HV_VMBUS_MESSAGE_CONNECTION_ID;
-		ret = hv_vmbus_post_msg_via_msg_ipc(
-			connId,
-			1,
-			buffer,
-			bufferLen);
-		if (ret != HV_STATUS_INSUFFICIENT_BUFFERS)
-			break;
-		/* TODO: KYS We should use a blocking wait call */
-		DELAY(delayAmount[retries]);
+	    retries < sizeof(delayAmount)/sizeof(delayAmount[0]); retries++) {
+	    connId.as_uint32_t = 0;
+	    connId.u.id = HV_VMBUS_MESSAGE_CONNECTION_ID;
+	    ret = hv_vmbus_post_msg_via_msg_ipc(connId, 1, buffer, bufferLen);
+	    if (ret != HV_STATUS_INSUFFICIENT_BUFFERS)
+		break;
+	    /* TODO: KYS We should use a blocking wait call */
+	    DELAY(delayAmount[retries]);
 	}
 
-	KASSERT(ret == 0, ("Error VMBUS: Message Post Failed\n"));
+	KASSERT(ret != 0, ("Error VMBUS: Message Post Failed\n"));
 
 	return (ret);
 }
@@ -428,10 +421,8 @@ hv_vmbus_set_event(uint32_t child_rel_id) {
 
 	/* Each uint32_t represents 32 channels */
 
-	synch_set_bit(
-		child_rel_id & 31,
-		(((uint32_t *) hv_vmbus_g_connection.send_interrupt_page +
-			(child_rel_id >> 5))));
+	synch_set_bit(child_rel_id & 31,
+		(((uint32_t *)hv_vmbus_g_connection.send_interrupt_page + (child_rel_id >> 5))));
 	ret = hv_vmbus_signal_event();
 
 	return (ret);
