@@ -407,7 +407,7 @@ int hv_vmbus_post_message(void *buffer, size_t bufferLen) {
 	    DELAY(delayAmount[retries]);
 	}
 
-	KASSERT(ret != 0, ("Error VMBUS: Message Post Failed\n"));
+	KASSERT(ret == 0, ("Error VMBUS: Message Post Failed\n"));
 
 	return (ret);
 }
