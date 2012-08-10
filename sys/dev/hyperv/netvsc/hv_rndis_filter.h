@@ -72,6 +72,8 @@ typedef struct rndis_request_ {
 	hv_vmbus_page_buffer		buffer;
 	/* Fixme:  We assumed a fixed size request here. */
 	rndis_msg			request_msg;
+	/* Fixme:  Poor man's semaphore. */
+	uint32_t			halt_complete_flag;
 } rndis_request;
 
 typedef struct rndis_device_ {

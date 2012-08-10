@@ -49,7 +49,8 @@
 /*
  * Forward declarations
  */
-static int  hv_rf_send_request(rndis_device *device, rndis_request *request);
+static int  hv_rf_send_request(rndis_device *device, rndis_request *request,
+			       uint32_t message_type);
 static void hv_rf_receive_response(rndis_device *device, rndis_msg *response);
 static void hv_rf_receive_indicate_status(rndis_device *device,
 					  rndis_msg *response);
@@ -65,6 +66,7 @@ static int  hv_rf_open_device(rndis_device *device);
 static int  hv_rf_close_device(rndis_device *device);
 static void hv_rf_on_send_completion(void *context);
 static void hv_rf_on_send_request_completion(void *context);
+static void hv_rf_on_send_request_halt_completion(void *context);
 
 
 /*
@@ -163,7 +165,8 @@ hv_put_rndis_request(rndis_device *device, rndis_request *request)
  *
  */
 static int
-hv_rf_send_request(rndis_device *device, rndis_request *request)
+hv_rf_send_request(rndis_device *device, rndis_request *request,
+		   uint32_t message_type)
 {
 	int ret;
 	netvsc_packet *packet;
@@ -182,8 +185,13 @@ hv_rf_send_request(rndis_device *device, rndis_request *request)
 	    (unsigned long)&request->request_msg & (PAGE_SIZE - 1);
 
 	packet->compl.send.send_completion_context = request; /* packet */
-	packet->compl.send.on_send_completion =
-	    hv_rf_on_send_request_completion;
+	if (message_type != REMOTE_NDIS_HALT_MSG) {
+		packet->compl.send.on_send_completion =
+		    hv_rf_on_send_request_completion;
+	} else {
+		packet->compl.send.on_send_completion =
+		    hv_rf_on_send_request_halt_completion;
+	}
 	packet->compl.send.send_completion_tid = (unsigned long)device;
 
 	ret = hv_nv_on_send(device->net_dev->dev, packet);
@@ -388,7 +396,7 @@ hv_rf_query_device(rndis_device *device, uint32_t oid, void *result,
 	query->info_buffer_length = 0;
 	query->device_vc_handle = 0;
 
-	ret = hv_rf_send_request(device, request);
+	ret = hv_rf_send_request(device, request, REMOTE_NDIS_QUERY_MSG);
 	if (ret != 0) {
 		/* Fixme:  printf added */
 		printf("RNDISFILTER request failed to Send!\n");
@@ -474,7 +482,7 @@ hv_rf_set_packet_filter(rndis_device *device, uint32_t new_filter)
 	memcpy((void *)((unsigned long)set + sizeof(rndis_set_request)),
 	    &new_filter, sizeof(uint32_t));
 
-	ret = hv_rf_send_request(device, request);
+	ret = hv_rf_send_request(device, request, REMOTE_NDIS_SET_MSG);
 	if (ret != 0) {
 		goto cleanup;
 	}
@@ -541,7 +549,7 @@ hv_rf_init_device(rndis_device *device)
 	
 	device->state = RNDIS_DEV_INITIALIZING;
 
-	ret = hv_rf_send_request(device, request);
+	ret = hv_rf_send_request(device, request, REMOTE_NDIS_INITIALIZE_MSG);
 	if (ret != 0) {
 		device->state = RNDIS_DEV_UNINITIALIZED;
 		goto cleanup;
@@ -567,21 +575,27 @@ cleanup:
 	return (ret);
 }
 
+#define HALT_COMPLETION_WAIT_COUNT      25
+
 /*
  * RNDIS filter halt device
  */
-static void
+static int
 hv_rf_halt_device(rndis_device *device)
 {
 	rndis_request *request;
 	rndis_halt_request *halt;
+	int i, ret;
 
 	/* Attempt to do a rndis device halt */
 	request = hv_rndis_request(device, REMOTE_NDIS_HALT_MSG,
 	    RNDIS_MESSAGE_SIZE(rndis_halt_request));
 	if (request == NULL) {
-		goto cleanup;
+		return (-1);
 	}
+
+	/* initialize "poor man's semaphore" */
+	request->halt_complete_flag = 0;
 
 	/* Set up the rndis set */
 	halt = &request->request_msg.msg.halt_request;
@@ -589,15 +603,33 @@ hv_rf_halt_device(rndis_device *device)
 	/* Increment to get the new value (call above returns old value) */
 	halt->request_id += 1;
 	
-	/* Ignore return since this msg is optional. */
-	hv_rf_send_request(device, request);
-	
-	device->state = RNDIS_DEV_UNINITIALIZED;
+	ret = hv_rf_send_request(device, request, REMOTE_NDIS_HALT_MSG);
+	if (ret != 0) {
+		return (-1);
+	}
 
-cleanup:
+	/*
+	 * Wait for halt response from halt callback.  We must wait for
+	 * the transaction response before freeing the request and other
+	 * resources.
+	 */
+	for (i=HALT_COMPLETION_WAIT_COUNT; i > 0; i--) {
+		if (request->halt_complete_flag != 0) {
+			break;
+		}
+		DELAY(400);
+	}
+	if (i == 0) {
+		return (-1);
+	}
+
+	device->state = RNDIS_DEV_UNINITIALIZED;
+	
 	if (request != NULL) {
 		hv_put_rndis_request(device, request);
 	}
+
+	return (0);
 }
 
 /*
@@ -718,17 +750,18 @@ hv_rf_on_device_remove(struct hv_device *device, boolean_t destroy_channel)
 	hn_softc_t *sc = device_get_softc(device->device);
 	netvsc_dev *net_dev = sc->net_dev;
 	rndis_device *rndis_dev = (rndis_device *)net_dev->extension;
+	int ret;
 
 	/* Halt and release the rndis device */
-	hv_rf_halt_device(rndis_dev);
+	ret = hv_rf_halt_device(rndis_dev);
 
 	hv_put_rndis_device(rndis_dev);
 	net_dev->extension = NULL;
 
 	/* Pass control to inner driver to remove the device */
-	hv_nv_on_device_remove(device, destroy_channel);
+	ret |= hv_nv_on_device_remove(device, destroy_channel);
 
-	return (0);
+	return (ret);
 }
 
 /*
@@ -806,7 +839,7 @@ hv_rf_on_send(struct hv_device *device, netvsc_packet *pkt)
 }
 
 /*
- * RNDIS filter on send completion
+ * RNDIS filter on send completion callback
  */
 static void 
 hv_rf_on_send_completion(void *context)
@@ -818,10 +851,26 @@ hv_rf_on_send_completion(void *context)
 }
 
 /*
- * RNDIS filter on send request completion
+ * RNDIS filter on send request completion callback
  */
 static void 
 hv_rf_on_send_request_completion(void *context)
 {
+}
+
+/*
+ * RNDIS filter on send request (halt only) completion callback
+ */
+static void 
+hv_rf_on_send_request_halt_completion(void *context)
+{
+	rndis_request *request = context;
+
+	/*
+	 * Notify hv_rf_halt_device() about halt completion.
+	 * The halt code must wait for completion before freeing
+	 * the transaction resources.
+	 */
+	request->halt_complete_flag = 1;
 }
 

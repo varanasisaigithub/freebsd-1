@@ -501,7 +501,8 @@ hv_nv_send_ndis_config(struct hv_device *device, uint32_t mtu)
 
 	/* Send the configuration packet */
 	ret = hv_vmbus_channel_send_packet(device->channel, init_pkt,
-	    sizeof(nvsp_msg), (uint64_t)init_pkt, HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
+	    sizeof(nvsp_msg), (uint64_t)init_pkt,
+	    HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
 	if (ret != 0) {
 		return (-EINVAL);
 	}
@@ -574,14 +575,14 @@ hv_nv_connect_to_vsp(struct hv_device *device)
 	/* Send the init request */
 
 	ret = hv_vmbus_channel_send_packet(device->channel, init_pkt,
-	    sizeof(nvsp_msg),
-	    (uint64_t)init_pkt, HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
+	    sizeof(nvsp_msg), (uint64_t)init_pkt,
+	    HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
 	if (ret != 0) {
 		goto cleanup;
 	}
 	/*
-	 * TODO: BUGBUG - We have to wait for the above msg since the netvsp uses
-	 * KMCL which acknowledges packet (completion packet) 
+	 * TODO:  BUGBUG - We have to wait for the above msg since the netvsp
+	 * uses KMCL which acknowledges packet (completion packet) 
 	 * since our Vmbus always set the
 	 * HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED flag
 	 */
