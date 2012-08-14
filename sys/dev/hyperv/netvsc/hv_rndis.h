@@ -557,6 +557,34 @@ typedef struct rndis_per_packet_info_ {
     uint32_t                                per_packet_info_offset;
 } rndis_per_packet_info;
 
+typedef enum ndis_perpkt_infotype_ {
+	tcpip_chksum_info,
+	ipsec_info,
+	tcp_large_send_info,
+	classification_handle_info,
+	ndis_reserved,
+	sgl_info,
+	ieee_8021q_info,
+	original_pkt_info,
+	pkt_cancel_id,
+	original_netbuf_list,
+	cached_netbuf_list,
+	short_pkt_padding_info,
+	max_perpkt_info
+} ndis_perpkt_infotype;
+
+typedef struct ndis_8021q_info_ {
+	union {
+		struct {
+			uint32_t   user_pri : 3;  /* User Priority */
+			uint32_t   cfi      : 1;  /* Canonical Format ID */
+			uint32_t   vlan_id  : 12;
+			uint32_t   reserved : 16;
+		} s1;
+		uint32_t    value;
+	} u1;
+} ndis_8021q_info;
+
 /*
  * Format of Information buffer passed in a SetRequest for the OID
  * OID_GEN_RNDIS_CONFIG_PARAMETER.
