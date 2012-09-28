@@ -823,7 +823,7 @@ hv_vmbus_channel_send_packet_multipagebuffer(
 		    multi_page_buffer->offset,
 		    multi_page_buffer->length);
 
-	if ((pfn_count < 0) || (pfn_count > HV_MAX_MULTIPAGE_BUFFER_COUNT))
+	if ((pfn_count == 0) || (pfn_count > HV_MAX_MULTIPAGE_BUFFER_COUNT))
 	    return (EINVAL);
 	/*
 	 * Adjust the size down since hv_vmbus_channel_packet_multipage_buffer

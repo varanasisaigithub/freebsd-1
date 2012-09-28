@@ -378,7 +378,7 @@ vmbus_bus_init(void)
 	 * Setup interrupt filter handler
 	 */
 	ret = bus_setup_intr(vmbus_devp, intr_res,
-	    INTR_TYPE_NET | INTR_FAST | INTR_MPSAFE, hv_vmbus_isr, NULL,
+	    INTR_TYPE_NET /*| INTR_FAST*/ | INTR_MPSAFE, hv_vmbus_isr, NULL,
 	    NULL, &vmbus_cookiep);
 
 	if (ret != 0)
