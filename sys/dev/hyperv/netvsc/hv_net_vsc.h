@@ -907,7 +907,7 @@ typedef struct netvsc_dev_ {
 typedef void (*pfn_on_send_rx_completion)(void *);
 
 #define NETVSC_DEVICE_RING_BUFFER_SIZE   (64 * PAGE_SIZE)
-#define NETVSC_PACKET_MAXPAGE            4
+#define NETVSC_PACKET_MAXPAGE            16
 
 
 typedef struct xfer_page_packet_ {
