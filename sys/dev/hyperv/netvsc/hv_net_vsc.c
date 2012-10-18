@@ -493,11 +493,14 @@ hv_nv_send_ndis_config(struct hv_device *device, uint32_t mtu)
 
 	/*
 	 * Set up configuration packet, write MTU
+	 * Indicate we are capable of handling VLAN tags
 	 */
 	init_pkt = &net_dev->channel_init_packet;
 	memset(init_pkt, 0, sizeof(nvsp_msg));
 	init_pkt->hdr.msg_type = nvsp_msg_2_type_send_ndis_config;
 	init_pkt->msgs.vers_2_msgs.send_ndis_config.mtu = mtu;
+	init_pkt->msgs.vers_2_msgs.send_ndis_config.capabilities.u1.u2.ieee8021q
+	    = 1;
 
 	/* Send the configuration packet */
 	ret = hv_vmbus_channel_send_packet(device->channel, init_pkt,

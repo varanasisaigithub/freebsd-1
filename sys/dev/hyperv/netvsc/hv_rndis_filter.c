@@ -269,6 +269,8 @@ static void
 hv_rf_receive_data(rndis_device *device, rndis_msg *message, netvsc_packet *pkt)
 {
 	rndis_packet *rndis_pkt;
+	rndis_per_packet_info *rppi;
+	ndis_8021q_info       *rppi_vlan_info;
 	uint32_t data_offset;
 
 	rndis_pkt = &message->msg.packet;
@@ -288,7 +290,26 @@ hv_rf_receive_data(rndis_device *device, rndis_msg *message, netvsc_packet *pkt)
 	pkt->page_buffers[0].length -= data_offset;
 
 	pkt->is_data_pkt = TRUE;
-		
+
+	pkt->vlan_tci = 0;
+
+	/*
+	 * Read the VLAN ID if supplied by the Hyper-V infrastructure.
+	 * Let higher-level driver code decide if it wants to use it.
+	 * Ignore CFI, priority for now as FreeBSD does not support these.
+	 */
+	if (rndis_pkt->per_pkt_info_offset != 0) {
+		/* rppi struct exists; compute its address */
+		rppi = (rndis_per_packet_info *)((uint8_t *)rndis_pkt +
+		    rndis_pkt->per_pkt_info_offset);
+		/* if VLAN ppi struct, get the VLAN ID */
+		if (rppi->type == ieee_8021q_info) {
+			rppi_vlan_info = (ndis_8021q_info *)((uint8_t *)rppi +
+			    rppi->per_packet_info_offset);
+			pkt->vlan_tci = rppi_vlan_info->u1.s1.vlan_id;
+		}
+	}
+
 	netvsc_recv(device->net_dev->dev, pkt);
 }
 
@@ -797,6 +818,8 @@ hv_rf_on_send(struct hv_device *device, netvsc_packet *pkt)
 	rndis_filter_packet *filter_pkt;
 	rndis_msg *rndis_mesg;
 	rndis_packet *rndis_pkt;
+	rndis_per_packet_info *rppi;
+	ndis_8021q_info       *rppi_vlan_info;
 	uint32_t rndis_msg_size;
 	int ret = 0;
 
@@ -808,9 +831,14 @@ hv_rf_on_send(struct hv_device *device, netvsc_packet *pkt)
 	rndis_mesg = &filter_pkt->message;
 	rndis_msg_size = RNDIS_MESSAGE_SIZE(rndis_packet);
 
+	if (pkt->vlan_tci != 0) {
+		rndis_msg_size += sizeof(rndis_per_packet_info) +
+		    sizeof(ndis_8021q_info);
+	}
+
 	rndis_mesg->ndis_msg_type = REMOTE_NDIS_PACKET_MSG;
 	rndis_mesg->msg_len = pkt->tot_data_buf_len + rndis_msg_size;
-	
+
 	rndis_pkt = &rndis_mesg->msg.packet;
 	rndis_pkt->data_offset = sizeof(rndis_packet);
 	rndis_pkt->data_length = pkt->tot_data_buf_len;
@@ -828,6 +856,34 @@ hv_rf_on_send(struct hv_device *device, netvsc_packet *pkt)
 	/* Use ours */
 	pkt->compl.send.on_send_completion = hv_rf_on_send_completion;
 	pkt->compl.send.send_completion_context = filter_pkt;
+
+	/*
+	 * If there is a VLAN tag, we need to set up some additional
+	 * fields so the Hyper-V infrastructure will stuff the VLAN tag
+	 * into the frame.
+	 */
+	if (pkt->vlan_tci != 0) {
+		/* Move data offset past end of rppi + VLAN structs */
+		rndis_pkt->data_offset += sizeof(rndis_per_packet_info) +
+		    sizeof(ndis_8021q_info);
+
+		/* must be set when we have rppi, VLAN info */
+		rndis_pkt->per_pkt_info_offset = sizeof(rndis_packet);
+		rndis_pkt->per_pkt_info_length = sizeof(rndis_per_packet_info) +
+		    sizeof(ndis_8021q_info);
+
+		/* rppi immediately follows rndis_pkt */
+		rppi = (rndis_per_packet_info *)(rndis_pkt + 1);
+		rppi->size = sizeof(rndis_per_packet_info) +
+		    sizeof(ndis_8021q_info);
+		rppi->type = ieee_8021q_info;
+		rppi->per_packet_info_offset = sizeof(rndis_per_packet_info);
+
+		/* VLAN info immediately follows rppi struct */
+		rppi_vlan_info = (ndis_8021q_info *)(rppi + 1);
+		/* FreeBSD does not support CFI or priority */
+		rppi_vlan_info->u1.s1.vlan_id = pkt->vlan_tci & 0xfff;
+	}
 
 	/*
 	 * Invoke netvsc send.  If return status is bad, the caller now

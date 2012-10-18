@@ -928,6 +928,7 @@ typedef struct netvsc_packet_ {
 	STAILQ_ENTRY(netvsc_packet_) mylist_entry;
 	struct hv_device           *device;
 	hv_bool_uint8_t            is_data_pkt;      /* One byte */
+	uint16_t		   vlan_tci;
 	xfer_page_packet           *xfer_page_pkt;
 
 	/* Completion */

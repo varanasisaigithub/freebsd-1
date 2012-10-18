@@ -73,6 +73,7 @@
 #include <net/bpf.h>
 
 #include <net/if_types.h>
+#include <net/if_vlan_var.h>
 #include <net/if.h>
 
 #include <netinet/in_systm.h>
@@ -265,6 +266,13 @@ netvsc_attach(device_t dev)
 	ifp->if_snd.ifq_drv_maxlen = 511;
 	IFQ_SET_READY(&ifp->if_snd);
 
+	/*
+	 * Tell upper layers that we support full VLAN capability.
+	 */
+	ifp->if_data.ifi_hdrlen = sizeof(struct ether_vlan_header);
+	ifp->if_capabilities |= IFCAP_VLAN_HWTAGGING | IFCAP_VLAN_MTU;
+	ifp->if_capenable |= IFCAP_VLAN_HWTAGGING | IFCAP_VLAN_MTU;
+
 	ret = hv_rf_on_device_add(device_ctx, &device_info);
 	if (ret != 0) {
 		if_free(ifp);
@@ -354,6 +362,7 @@ hn_start_locked(struct ifnet *ifp)
 	int num_frags;
 	int len;
 	int xlen;
+	int rppi_size;
 	int retries = 0;
 	int ret = 0;
 
@@ -389,19 +398,28 @@ hn_start_locked(struct ifnet *ifp)
 			return (EINVAL);
 		}
 
+		rppi_size = 0;
+		if (m_head->m_flags & M_VLANTAG) {
+			rppi_size = sizeof(rndis_per_packet_info) + 
+			    sizeof(ndis_8021q_info);
+		}
+
 		/*
 		 * Allocate a buffer with space for a netvsc packet plus a
-		 * couple of reserved areas.  First comes a (currently 16
+		 * number of reserved areas.  First comes a (currently 16
 		 * bytes, currently unused) reserved data area.  Second is
 		 * the netvsc_packet, which includes (currently 4) page
-		 * buffers.  Third is an area reserved for an
-		 * rndis_filter_packet struct.
+		 * buffers.  Third (optional) is a rndis_per_packet_info
+		 * struct, but only if a VLAN tag should be inserted into the
+		 * Ethernet frame by the Hyper-V infrastructure.  Fourth is
+		 * an area reserved for an rndis_filter_packet struct.
 		 * Changed malloc to M_NOWAIT to avoid sleep under spin lock.
 		 * No longer reserving extra space for page buffers, as they
 		 * are already part of the netvsc_packet.
 		 */
 		buf = malloc(HV_NV_PACKET_OFFSET_IN_BUF +
-		    sizeof(netvsc_packet) + sizeof(rndis_filter_packet),
+		    sizeof(netvsc_packet) + rppi_size +
+		    sizeof(rndis_filter_packet),
 		    M_DEVBUF, M_ZERO | M_NOWAIT);
 		if (buf == NULL) {
 			m_freem(m);
@@ -415,7 +433,8 @@ hn_start_locked(struct ifnet *ifp)
 		/*
 		 * extension points to the area reserved for the
 		 * rndis_filter_packet, which is placed just after
-		 * the netvsc_packet.
+		 * the netvsc_packet (and rppi struct, if present;
+		 * length is updated later).
 		 */
 		packet->extension = packet + 1;
 
@@ -424,6 +443,15 @@ hn_start_locked(struct ifnet *ifp)
 
 		/* Initialize it from the mbuf */
 		packet->tot_data_buf_len = len;
+
+		/*
+		 * If the Hyper-V infrastructure needs to embed a VLAN tag,
+		 * initialize netvsc_packet and rppi struct values as needed.
+		 */
+		if (rppi_size) {
+			/* Lower layers need the VLAN TCI */
+			packet->vlan_tci = m_head->m_pkthdr.ether_vtag;
+		}
 
 		/*
 		 * Fill the page buffers with mbuf info starting at index
@@ -632,6 +660,12 @@ netvsc_recv(struct hv_device *device_ctx, netvsc_packet *packet)
 	}
 
 	m_new->m_pkthdr.rcvif = ifp;
+
+	if ((packet->vlan_tci != 0) &&
+			    (ifp->if_capenable & IFCAP_VLAN_HWTAGGING) != 0) {
+		m_new->m_pkthdr.ether_vtag = packet->vlan_tci;
+		m_new->m_flags |= M_VLANTAG;
+	}
 
 	/*
 	 * Note:  Moved RX completion back to hv_nv_on_receive() so all

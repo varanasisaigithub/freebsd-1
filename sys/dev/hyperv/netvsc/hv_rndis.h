@@ -557,7 +557,7 @@ typedef struct rndis_per_packet_info_ {
     uint32_t                                per_packet_info_offset;
 } rndis_per_packet_info;
 
-typedef enum ndis_perpkt_infotype_ {
+typedef enum ndis_per_pkt_infotype_ {
 	tcpip_chksum_info,
 	ipsec_info,
 	tcp_large_send_info,
@@ -571,7 +571,7 @@ typedef enum ndis_perpkt_infotype_ {
 	cached_netbuf_list,
 	short_pkt_padding_info,
 	max_perpkt_info
-} ndis_perpkt_infotype;
+} ndis_per_pkt_infotype;
 
 typedef struct ndis_8021q_info_ {
 	union {
