@@ -11,7 +11,7 @@ SRCS =  hv_channel.c \
 	hv_hv.c \
 	hv_ring_buffer.c \
 	hv_vmbus_drv_freebsd.c \
-	vmbus_priv.h \
+	hv_vmbus_priv.h \
 
 CFLAGS+= -I${.CURDIR}/../../../dev/hyperv/include \
 	 -I${.CURDIR}/../../../dev/hyperv/vmbus \
@@ -19,6 +19,5 @@ CFLAGS+= -I${.CURDIR}/../../../dev/hyperv/include \
 	 -I /usr/src/sys/sys/
 
 CFLAGS  += -fms-extensions -fformat-extensions ${.IMPSRC}
-
 
 .include <bsd.kmod.mk>

@@ -585,6 +585,7 @@ typedef struct ndis_8021q_info_ {
 	} u1;
 } ndis_8021q_info;
 
+
 /*
  * Format of Information buffer passed in a SetRequest for the OID
  * OID_GEN_RNDIS_CONFIG_PARAMETER.
