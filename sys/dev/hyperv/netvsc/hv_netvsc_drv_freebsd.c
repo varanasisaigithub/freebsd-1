@@ -358,6 +358,7 @@ hn_start_locked(struct ifnet *ifp)
 	uint8_t *buf;
 	netvsc_packet *packet;
 	struct mbuf *m_head, *m;
+	struct mbuf *mc_head = NULL;
 	int i;
 	int num_frags;
 	int len;
@@ -471,6 +472,17 @@ hn_start_locked(struct ifnet *ifp)
 			}
 		}
 
+		/*
+		 * If bpf, copy the mbuf chain.  This is less expensive than
+		 * it appears; the mbuf clusters are not copied, only their
+		 * reference counts are incremented.
+		 * Needed to avoid a race condition where the completion
+		 * callback is invoked, freeing the mbuf chain, before the
+		 * bpf_mtap code has a chance to run.
+		 */
+		if (ifp->if_bpf) {
+			mc_head = m_copypacket(m_head, M_DONTWAIT);
+		}
 retry_send:
 		/* Set the completion routine */
 		packet->compl.send.on_send_completion = netvsc_xmit_completion;
@@ -482,8 +494,9 @@ retry_send:
 
 		if (ret == 0) {
 			ifp->if_opackets++;
-			if (ifp->if_bpf) {
-				bpf_mtap(ifp->if_bpf, m_head);
+			/* if bpf && mc_head, call bpf_mtap code */
+			if (mc_head) {
+				ETHER_BPF_MTAP(ifp, mc_head);
 			}
 		} else {
 			retries++;
@@ -495,8 +508,9 @@ retry_send:
 			ifp->if_drv_flags |= IFF_DRV_OACTIVE;
 
 			/*
-			 * Null it since the caller will free it instead of
-			 * the completion routine
+			 * Null the mbuf pointer so the completion function
+			 * does not free the mbuf chain.  We just pushed the
+			 * mbuf chain back on the if_snd queue.
 			 */
 			packet->compl.send.send_completion_tid = 0;
 
@@ -505,6 +519,11 @@ retry_send:
 			 * send completion
 			 */
 			netvsc_xmit_completion(packet);
+		}
+
+		/* if bpf && mc_head, free the mbuf chain copy */
+		if (mc_head) {
+			m_freem(mc_head);
 		}
 	}
 
