@@ -867,6 +867,7 @@ storvsc_attach(device_t dev)
 	}
 
 	mtx_lock(&sc->hs_lock);
+	/* bus_id is set to 0, need to get it from VMBUS channel query? */
 	if (xpt_bus_register(sc->hs_sim, dev, 0) != CAM_SUCCESS) {
 		cam_sim_free(sc->hs_sim, /*free_devq*/TRUE);
 		mtx_unlock(&sc->hs_lock);
@@ -1281,9 +1282,11 @@ create_storvsc_request(union ccb *ccb, struct hv_storvsc_request *reqp)
 	uint32_t pfn_num = 0;
 	uint32_t pfn;
 	
+	/* refer to struct vmscsi_req for meanings of these two fields */
 	reqp->vstor_packet.vm_srb.port = cam_sim_unit(xpt_path_sim(ccb->ccb_h.path));
+	reqp->vstor_packet.vm_srb.path_id = cam_sim_bus(xpt_path_sim(ccb->ccb_h.path));
+
 	reqp->vstor_packet.vm_srb.target_id = ccb->ccb_h.target_id;
-	reqp->vstor_packet.vm_srb.path_id =  ccb->ccb_h.path_id;
 	reqp->vstor_packet.vm_srb.lun = ccb->ccb_h.target_lun;
 
 	reqp->vstor_packet.vm_srb.cdb_len = csio->cdb_len;

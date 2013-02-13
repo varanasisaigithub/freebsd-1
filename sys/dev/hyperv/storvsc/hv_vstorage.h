@@ -86,8 +86,11 @@ struct vmscsi_req {
 	uint8_t  srb_status;
 	uint8_t  scsi_status;
 
+	/* HBA number, set to the order number detected by initiator. */
 	uint8_t  port;
+	/* SCSI bus number or bus_id, different from CAM's path_id. */
 	uint8_t  path_id;
+
 	uint8_t  target_id;
 	uint8_t  lun;
 
