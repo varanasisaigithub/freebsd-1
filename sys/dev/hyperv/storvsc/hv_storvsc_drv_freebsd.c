@@ -150,12 +150,14 @@ enum hv_storage_type {
 
 /* {ba6163d9-04a1-4d29-b605-72e2ffb1dc7f} */
 static const hv_guid gStorVscDeviceType={
-	.data = {0xd9, 0x63, 0x61, 0xba, 0xa1, 0x04, 0x29, 0x4d, 0xb6, 0x05, 0x72, 0xe2, 0xff, 0xb1, 0xdc, 0x7f}
+	.data = {0xd9, 0x63, 0x61, 0xba, 0xa1, 0x04, 0x29, 0x4d,
+		 0xb6, 0x05, 0x72, 0xe2, 0xff, 0xb1, 0xdc, 0x7f}
 };
 
 /* {32412632-86cb-44a2-9b5c-50d1417354f5} */
 static const hv_guid gBlkVscDeviceType={
-	.data = {0x32, 0x26, 0x41, 0x32, 0xcb, 0x86, 0xa2, 0x44, 0x9b, 0x5c, 0x50, 0xd1, 0x41, 0x73, 0x54, 0xf5}
+	.data = {0x32, 0x26, 0x41, 0x32, 0xcb, 0x86, 0xa2, 0x44,
+		 0x9b, 0x5c, 0x50, 0xd1, 0x41, 0x73, 0x54, 0xf5}
 };
 
 static struct storvsc_driver_props g_drv_props_table[] = {
@@ -386,12 +388,12 @@ hv_storvsc_channel_init(struct hv_device *dev)
 	vstor_packet->flags = REQUEST_COMPLETION_FLAG;
 
 	ret = hv_vmbus_channel_send_packet(
-				dev->channel,
-				vstor_packet,
-				sizeof(struct vstor_packet),
-				(uint64_t)request,
-				HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
-				HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+			dev->channel,
+			vstor_packet,
+			sizeof(struct vstor_packet),
+			(uint64_t)request,
+			HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
+			HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 
 	if (ret != 0) {
 		goto cleanup;
@@ -551,12 +553,12 @@ hv_storvsc_io_request(struct hv_device *device,
 
 	} else {
 		ret = hv_vmbus_channel_send_packet(
-				device->channel,
-				vstor_packet,
-				sizeof(struct vstor_packet),
-				(uint64_t)request,
-				HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
-				HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
+			device->channel,
+			vstor_packet,
+			sizeof(struct vstor_packet),
+			(uint64_t)request,
+			HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
+			HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
 	}
 	mtx_lock(&request->softc->hs_lock);
 
@@ -626,11 +628,12 @@ hv_storvsc_on_channel_callback(void *context)
 
 	KASSERT(device, ("device"));
 
-	ret = hv_vmbus_channel_recv_packet(device->channel,
-					   packet,
-					   roundup2(sizeof(struct vstor_packet), 8),
-					   &bytes_recvd,
-					   &request_id);
+	ret = hv_vmbus_channel_recv_packet(
+			device->channel,
+			packet,
+			roundup2(sizeof(struct vstor_packet), 8),
+			&bytes_recvd,
+			&request_id);
 
 	while ((ret == 0) && (bytes_recvd > 0)) {
 		request = (struct hv_storvsc_request *)request_id;
@@ -646,7 +649,7 @@ hv_storvsc_on_channel_callback(void *context)
 			switch(vstor_packet->operation) {
 			case VSTOR_OPERATION_COMPLETEIO:
 				hv_storvsc_on_iocompletion(sc,
-							   vstor_packet, request);
+							vstor_packet, request);
 				break;
 			case VSTOR_OPERATION_REMOVEDEVICE:
 				/* TODO: implement */
@@ -655,11 +658,12 @@ hv_storvsc_on_channel_callback(void *context)
 				break;
 			}			
 		}
-		ret = hv_vmbus_channel_recv_packet(device->channel,
-						   packet,
-						   roundup2(sizeof(struct vstor_packet), 8),
-						   &bytes_recvd,
-						   &request_id);
+		ret = hv_vmbus_channel_recv_packet(
+				device->channel,
+				packet,
+				roundup2(sizeof(struct vstor_packet), 8),
+				&bytes_recvd,
+				&request_id);
 	}
 }
 
@@ -718,8 +722,9 @@ scan_for_luns(struct storvsc_softc *sc)
 
 		if (status != CAM_REQ_CMP) {
 			mtx_unlock(&sc->hs_lock);
-	       		xpt_print(path, "scan_for_lunYYY: can't compile path, 0x%p "
-					 "can't continue\n", sc->hs_path);
+	       		xpt_print(path, "scan_for_lunYYY: can't compile"
+					 " path, 0x%p can't continue\n",
+					 sc->hs_path);
 			free(request_ccb, M_CAMXPT);
 			free(my_path, M_CAMXPT);
 			return;
@@ -730,7 +735,8 @@ scan_for_luns(struct storvsc_softc *sc)
 		request_ccb->ccb_h.cbfcnp    = storvsc_xptdone;
 		request_ccb->crcn.flags	     = CAM_FLAG_NONE;
 
-		error = cam_periph_runccb(request_ccb, NULL, CAM_FLAG_NONE, 0, NULL);
+		error = cam_periph_runccb(request_ccb, NULL, 
+						CAM_FLAG_NONE, 0, NULL);
 		KASSERT(error == 0, ("cam_periph_runccb failed %d\n", error));
 		xpt_release_path(my_path);
 	} while ( ++lun_nb < sc->hs_drv_props->drv_max_luns_per_target);
@@ -1010,10 +1016,11 @@ storvsc_timeout_test(struct hv_storvsc_request *reqp,
 				"IO return detected" :
 				"IO return not detected");
 		/* 
-		 * Now both the timer handler and io done are running simultaneously.
-		 * We want to confirm the io done always finishes after the timer
-		 * handler exits. So reqp used by timer handler is not freed or stale.
-		 * Do busy loop for another 1/10 second to make sure io done does
+		 * Now both the timer handler and io done are running
+		 * simultaneously. We want to confirm the io done always
+		 * finishes after the timer handler exits. So reqp used by
+		 * timer handler is not freed or stale. Do busy loop for
+		 * another 1/10 second to make sure io done does
 		 * wait for the timer handler to complete.
 		 */
 		DELAY(100*1000);
@@ -1046,8 +1053,8 @@ storvsc_timeout(void *arg)
 	if (reqp->retries == 0) {
 		mtx_lock(&sc->hs_lock);
 		xpt_print(ccb->ccb_h.path,
-				  "%u: IO timed out (req=0x%p), wait for another %u secs.\n",
-				  ticks, reqp, ccb->ccb_h.timeout / 1000);
+		    "%u: IO timed out (req=0x%p), wait for another %u secs.\n",
+		    ticks, reqp, ccb->ccb_h.timeout / 1000);
 		cam_error_print(ccb, CAM_ESF_ALL, CAM_EPF_ALL);
 		mtx_unlock(&sc->hs_lock);
 
@@ -1063,10 +1070,10 @@ storvsc_timeout(void *arg)
 
 	mtx_lock(&sc->hs_lock);
 	xpt_print(ccb->ccb_h.path,
-			"%u: IO (reqp = 0x%p) did not return for %u seconds, %s.\n",
-			ticks, reqp, ccb->ccb_h.timeout * (reqp->retries+1) / 1000,
-			(sc->hs_frozen == 0)?
-			"freezing the queue" : "the queue is already frozen");
+		"%u: IO (reqp = 0x%p) did not return for %u seconds, %s.\n",
+		ticks, reqp, ccb->ccb_h.timeout * (reqp->retries+1) / 1000,
+		(sc->hs_frozen == 0)?
+		"freezing the queue" : "the queue is already frozen");
 	if (sc->hs_frozen == 0) {
 		sc->hs_frozen = 1;
 		xpt_freeze_simq(xpt_path_sim(ccb->ccb_h.path), 1);
@@ -1180,7 +1187,7 @@ storvsc_action(struct cam_sim *sim, union ccb *ccb)
 #if HVS_HOST_RESET
 		if ((res = hv_storvsc_host_reset(sc->hs_dev)) != 0) {
 			xpt_print(ccb->ccb_h.path,
-					  "hv_storvsc_host_reset failed with %d\n", res);
+				"hv_storvsc_host_reset failed with %d\n", res);
 			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
 			xpt_done(ccb);
 			return;
@@ -1247,7 +1254,7 @@ storvsc_action(struct cam_sim *sim, union ccb *ccb)
 
 		if ((res = hv_storvsc_io_request(sc->hs_dev, reqp)) != 0) {
 			xpt_print(ccb->ccb_h.path,
-					  "hv_storvsc_io_request failed with %d\n", res);
+				"hv_storvsc_io_request failed with %d\n", res);
 			ccb->ccb_h.status = CAM_PROVIDE_FAIL;
 			storvsc_free_request(sc, reqp);
 			xpt_done(ccb);
@@ -1283,17 +1290,21 @@ create_storvsc_request(union ccb *ccb, struct hv_storvsc_request *reqp)
 	uint32_t pfn;
 	
 	/* refer to struct vmscsi_req for meanings of these two fields */
-	reqp->vstor_packet.vm_srb.port = cam_sim_unit(xpt_path_sim(ccb->ccb_h.path));
-	reqp->vstor_packet.vm_srb.path_id = cam_sim_bus(xpt_path_sim(ccb->ccb_h.path));
+	reqp->vstor_packet.vm_srb.port =
+		cam_sim_unit(xpt_path_sim(ccb->ccb_h.path));
+	reqp->vstor_packet.vm_srb.path_id =
+		cam_sim_bus(xpt_path_sim(ccb->ccb_h.path));
 
 	reqp->vstor_packet.vm_srb.target_id = ccb->ccb_h.target_id;
 	reqp->vstor_packet.vm_srb.lun = ccb->ccb_h.target_lun;
 
 	reqp->vstor_packet.vm_srb.cdb_len = csio->cdb_len;
 	if(ccb->ccb_h.flags & CAM_CDB_POINTER) {
-		memcpy(&reqp->vstor_packet.vm_srb.cdb, csio->cdb_io.cdb_ptr, csio->cdb_len);
+		memcpy(&reqp->vstor_packet.vm_srb.cdb, csio->cdb_io.cdb_ptr,
+			csio->cdb_len);
 	} else {
-		memcpy(&reqp->vstor_packet.vm_srb.cdb, csio->cdb_io.cdb_bytes, csio->cdb_len);
+		memcpy(&reqp->vstor_packet.vm_srb.cdb, csio->cdb_io.cdb_bytes,
+			csio->cdb_len);
 	}
 
 	switch (ccb->ccb_h.flags & CAM_DIR_MASK) {
@@ -1327,7 +1338,8 @@ create_storvsc_request(union ccb *ccb, struct hv_storvsc_request *reqp)
 
 	while (bytes_to_copy != 0) {
 		int bytes, page_offset;
-		phys_addr = vtophys(&csio->data_ptr[reqp->data_buf.length - bytes_to_copy]);
+		phys_addr = vtophys(&csio->data_ptr[reqp->data_buf.length -
+		                                    bytes_to_copy]);
 		pfn = phys_addr >> PAGE_SHIFT;
 		reqp->data_buf.pfn_array[pfn_num] = pfn;
 		page_offset = phys_addr - trunc_page(phys_addr);
